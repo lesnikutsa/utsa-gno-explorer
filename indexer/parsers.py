@@ -1,13 +1,26 @@
 """Parsers for normalized bounded-indexer records."""
 from __future__ import annotations
 
-import base64, binascii, json
+import base64
+import binascii
+import json
 from dataclasses import dataclass
 from typing import Any
 
 from scripts.inspect_rpc import RpcError, decode_base64, parse_block as legacy_parse_block, parse_commit, parse_validators, signer_address, to_int
 
 ZERO_HASHES = {"", "AA==", "AAA=", "AAAA", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}
+
+
+@dataclass(frozen=True)
+class NormalizedBlockID:
+    hash_base64: str | None
+    hash_hex: str | None
+    parts_total: int | None
+    parts_hash_base64: str | None
+    parts_hash_hex: str | None
+    is_zero: bool
+
 
 @dataclass(frozen=True)
 class ParsedHeight:
@@ -20,112 +33,189 @@ class ParsedHeight:
 
 
 def parse_tx(index: int, tx: Any) -> dict[str, Any]:
-    raw = tx if isinstance(tx, str) else json.dumps(tx, sort_keys=True)
+    raw_base64 = tx if isinstance(tx, str) else json.dumps(tx, sort_keys=True)
     try:
-        decoded = base64.b64decode(raw, validate=True)
-        return {"index": index, "raw_base64": raw, "raw_base64_length": len(raw), "decoded_bytes": decoded, "decoded_byte_length": len(decoded), "decode_status": "decoded"}
+        decoded = base64.b64decode(raw_base64, validate=True)
     except (binascii.Error, ValueError):
-        return {"index": index, "raw_base64": raw, "raw_base64_length": len(raw), "decoded_bytes": None, "decoded_byte_length": None, "decode_status": "invalid_base64"}
+        return {
+            "index": index,
+            "raw_base64": raw_base64,
+            "raw_base64_length": len(raw_base64),
+            "decoded_bytes": None,
+            "decoded_byte_length": None,
+            "decode_status": "invalid_base64",
+        }
+    return {
+        "index": index,
+        "raw_base64": raw_base64,
+        "raw_base64_length": len(raw_base64),
+        "decoded_bytes": decoded,
+        "decoded_byte_length": len(decoded),
+        "decode_status": "decoded",
+    }
 
 
 def parse_block(payload: dict[str, Any]) -> dict[str, Any]:
     parsed = legacy_parse_block(payload)
     txs = (((payload.get("result") or {}).get("block") or {}).get("data") or {}).get("txs") or []
-    parsed["transactions"] = [parse_tx(i, tx) for i, tx in enumerate(txs)]
+    parsed["transactions"] = [parse_tx(index, tx) for index, tx in enumerate(txs)]
     return parsed
 
 
-def _block_id(precommit: dict[str, Any]) -> Any:
-    return precommit.get("block_id") or precommit.get("blockID") or precommit.get("BlockID")
-
-
-def _hash(block_id: Any) -> Any:
+def normalize_block_id(block_id: Any, field_name: str) -> NormalizedBlockID:
     if not isinstance(block_id, dict):
-        return None
-    return block_id.get("hash") or block_id.get("Hash")
-
-
-def _parts_total(block_id: Any) -> int | None:
-    if not isinstance(block_id, dict):
-        return None
-    parts = block_id.get("parts") or block_id.get("PartsHeader") or block_id.get("parts_header") or {}
+        raise RpcError(f"Malformed {field_name}: expected object")
+    block_hash = block_id.get("hash") or block_id.get("Hash")
+    parts = block_id.get("parts") or block_id.get("parts_header") or block_id.get("PartsHeader") or {}
+    if parts is None:
+        parts = {}
     if not isinstance(parts, dict):
-        return None
-    return to_int(parts.get("total") or parts.get("Total"))
+        raise RpcError(f"Malformed {field_name}.parts: expected object")
+    parts_total = to_int(parts.get("total") or parts.get("Total"))
+    parts_hash = parts.get("hash") or parts.get("Hash")
+    is_zero = (block_hash is None or block_hash in ZERO_HASHES) and (parts_total in (None, 0)) and (parts_hash is None or parts_hash in ZERO_HASHES)
+    if is_zero:
+        return NormalizedBlockID(block_hash if isinstance(block_hash, str) else None, None, parts_total, parts_hash if isinstance(parts_hash, str) else None, None, True)
+    if not isinstance(block_hash, str) or not block_hash:
+        raise RpcError(f"Malformed {field_name}: missing hash")
+    return NormalizedBlockID(
+        hash_base64=block_hash,
+        hash_hex=decode_base64(block_hash, f"{field_name}.hash").hex().upper(),
+        parts_total=parts_total,
+        parts_hash_base64=parts_hash if isinstance(parts_hash, str) and parts_hash else None,
+        parts_hash_hex=decode_base64(parts_hash, f"{field_name}.parts.hash").hex().upper() if isinstance(parts_hash, str) and parts_hash else None,
+        is_zero=False,
+    )
 
 
-def _is_zero_block_id(block_id: Any) -> bool:
-    h = _hash(block_id)
-    total = _parts_total(block_id)
-    return (h is None or h in ZERO_HASHES) and (total in (None, 0))
-
-
-def _hash_hex(value: str | None) -> str | None:
-    if not value:
-        return None
-    return decode_base64(value, "Vote.BlockID.hash").hex().upper()
+def block_ids_match(left: NormalizedBlockID, right: NormalizedBlockID) -> bool:
+    return (
+        not left.is_zero
+        and not right.is_zero
+        and left.hash_base64 == right.hash_base64
+        and left.parts_total == right.parts_total
+        and left.parts_hash_base64 == right.parts_hash_base64
+    )
 
 
 def classify_votes(height: int, commit: dict[str, Any], validators: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    active = {v["address"] for v in validators if v.get("address")}
-    commit_block_id = ((commit.get("raw") or {}).get("result") or {}).get("signed_header", {}).get("commit", {}).get("block_id")
-    commit_hash = _hash(commit_block_id)
+    active_addresses = {validator["address"] for validator in validators if validator.get("address")}
+    commit_block_id = _commit_block_id(commit)
+    malformed_precommits = []
+    outside_signers = []
     seen: dict[str, dict[str, Any]] = {}
-    invalid: dict[str, dict[str, Any]] = {}
-    outside: list[str] = []
-    for pc in commit["precommits"]:
-        if pc is None:
+    duplicate_signers: set[str] = set()
+
+    for index, precommit in enumerate(commit["precommits"]):
+        if precommit is None:
             continue
-        if not isinstance(pc, dict):
+        if not isinstance(precommit, dict):
+            malformed_precommits.append(f"precommit[{index}] is not an object")
             continue
-        addr = signer_address(pc)
-        if not addr:
+        address = signer_address(precommit)
+        if not address:
+            malformed_precommits.append(f"precommit[{index}] is missing signer address")
             continue
-        if addr not in active:
-            outside.append(addr); continue
-        if addr in seen:
-            invalid[addr] = {"reason":"duplicate signer address", "raw_precommit": pc}; continue
-        seen[addr] = pc
-    rows=[]
-    for addr in sorted(active):
-        pc = seen.get(addr)
-        if addr in invalid:
-            pc = invalid[addr]["raw_precommit"]
-            rows.append(_row(height, addr, "invalid", False, None, None, None, False, False, pc)); continue
-        if pc is None:
-            rows.append(_row(height, addr, "absent", False, None, None, None, False, False, None)); continue
-        bid = _block_id(pc)
-        if not isinstance(bid, dict):
-            rows.append(_row(height, addr, "invalid", False, None, None, None, False, False, pc)); continue
-        zero = _is_zero_block_id(bid)
-        h = _hash(bid)
-        parts = _parts_total(bid)
-        try:
-            hx = _hash_hex(h) if h else None
-        except RpcError:
-            rows.append(_row(height, addr, "invalid", False, h if isinstance(h,str) else None, None, parts, zero, False, pc)); continue
-        matches = bool(h and commit_hash and h == commit_hash)
-        sig = pc.get("signature")
-        if matches:
-            rows.append(_row(height, addr, "commit", True, h, hx, parts, False, True, None, sig))
-        elif zero:
-            rows.append(_row(height, addr, "nil", False, h if isinstance(h,str) else None, hx, parts, True, False, pc, sig))
-        else:
-            rows.append(_row(height, addr, "invalid", False, h if isinstance(h,str) else None, hx, parts, False, False, pc, sig))
-    if outside:
-        raise RpcError(f"Signer outside active validator set: {', '.join(sorted(outside))}")
+        if address not in active_addresses:
+            outside_signers.append(address)
+            continue
+        if address in seen:
+            duplicate_signers.add(address)
+            continue
+        seen[address] = precommit
+
+    if malformed_precommits:
+        raise RpcError("Malformed non-null precommit: " + "; ".join(malformed_precommits))
+    if outside_signers:
+        raise RpcError(f"Signer outside active validator set: {', '.join(sorted(outside_signers))}")
+
+    rows = []
+    for address in sorted(active_addresses):
+        precommit = seen.get(address)
+        if precommit is None:
+            rows.append(_signature_row(height, address, "absent", False, None, False, False, None, None))
+            continue
+        if address in duplicate_signers:
+            rows.append(_signature_row(height, address, "invalid", False, None, False, False, None, precommit))
+            continue
+        rows.append(_classify_precommit(height, address, precommit, commit_block_id))
     return rows
 
 
-def _row(height, addr, status, signed, h, hx, parts, zero, matches, raw, sig=None):
-    return {"height":height,"signing_address":addr,"vote_status":status,"signed":signed,"vote_block_id_hash_base64":h,"vote_block_id_hash_hex":hx,"vote_block_id_parts_total":parts,"vote_block_id_is_zero":zero,"block_id_matches_commit":matches,"signature_base64":sig,"raw_precommit":raw}
+def _commit_block_id(commit: dict[str, Any]) -> NormalizedBlockID:
+    raw_commit = ((commit.get("raw") or {}).get("result") or {}).get("signed_header", {}).get("commit", {})
+    return normalize_block_id(raw_commit.get("block_id"), "Commit.BlockID")
+
+
+def _classify_precommit(height: int, address: str, precommit: dict[str, Any], commit_block_id: NormalizedBlockID) -> dict[str, Any]:
+    try:
+        vote_block_id = normalize_block_id(_precommit_block_id(precommit), "Vote.BlockID")
+    except RpcError:
+        return _signature_row(height, address, "invalid", False, None, False, False, _signature(precommit), precommit)
+
+    signature = _signature(precommit)
+    signature_ok = _usable_signature(signature)
+    matches_commit = block_ids_match(vote_block_id, commit_block_id)
+    if matches_commit and signature_ok:
+        return _signature_row(height, address, "commit", True, vote_block_id, False, True, signature, None)
+    if vote_block_id.is_zero:
+        return _signature_row(height, address, "nil", False, vote_block_id, True, False, signature, precommit)
+    return _signature_row(height, address, "invalid", False, vote_block_id, False, False, signature, precommit)
+
+
+def _precommit_block_id(precommit: dict[str, Any]) -> Any:
+    return precommit.get("block_id") or precommit.get("blockID") or precommit.get("BlockID")
+
+
+def _signature(precommit: dict[str, Any]) -> str | None:
+    value = precommit.get("signature")
+    return value if isinstance(value, str) else None
+
+
+def _usable_signature(signature: str | None) -> bool:
+    if not signature:
+        return False
+    try:
+        base64.b64decode(signature, validate=True)
+    except (binascii.Error, ValueError):
+        return False
+    return True
+
+
+def _signature_row(
+    height: int,
+    address: str,
+    status: str,
+    signed: bool,
+    block_id: NormalizedBlockID | None,
+    is_zero: bool,
+    matches_commit: bool,
+    signature: str | None,
+    raw_precommit: dict[str, Any] | None,
+) -> dict[str, Any]:
+    return {
+        "height": height,
+        "signing_address": address,
+        "vote_status": status,
+        "signed": signed,
+        "vote_block_id_hash_base64": block_id.hash_base64 if block_id else None,
+        "vote_block_id_hash_hex": block_id.hash_hex if block_id else None,
+        "vote_block_id_parts_total": block_id.parts_total if block_id else None,
+        "vote_block_id_parts_hash_base64": block_id.parts_hash_base64 if block_id else None,
+        "vote_block_id_parts_hash_hex": block_id.parts_hash_hex if block_id else None,
+        "vote_block_id_is_zero": is_zero,
+        "block_id_matches_commit": matches_commit,
+        "signature_base64": signature,
+        "raw_precommit": raw_precommit,
+    }
 
 
 def parse_height(height: int, block_payload: dict[str, Any], commit_payload: dict[str, Any], validators_payload: dict[str, Any]) -> ParsedHeight:
     block = parse_block(block_payload)
-    commit = parse_commit(commit_payload); commit["raw"] = commit_payload
-    vals = parse_validators(validators_payload)
-    if block["height"] != height or commit["height"] != height or vals["block_height"] != height:
+    commit = parse_commit(commit_payload)
+    commit["raw"] = commit_payload
+    validators_data = parse_validators(validators_payload)
+    if block["height"] != height or commit["height"] != height or validators_data["block_height"] != height:
         raise RpcError(f"Height mismatch while parsing {height}")
-    signatures = classify_votes(height, commit, vals["validators"])
-    return ParsedHeight(height, block, block["transactions"], vals["validators"], signatures, block_payload)
+    signatures = classify_votes(height, commit, validators_data["validators"])
+    return ParsedHeight(height, block, block["transactions"], validators_data["validators"], signatures, block_payload)

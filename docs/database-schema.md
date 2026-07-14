@@ -140,3 +140,7 @@ For recent-square rendering, missing rows after the left join are not missed sig
 ## Idempotent reprocessing
 
 The indexer should use `INSERT ... ON CONFLICT ... DO UPDATE` for rows that may be reprocessed from the same RPC data. The primary keys and unique constraints ensure the second pass updates the same logical records instead of adding duplicates. `indexer_state.last_finalized_height` must be updated only in the same transaction that completed target height `S`, and processing must resume at `S + 1` without skipping intermediate heights.
+
+### `validator_signatures` BlockID part-set fields
+
+The bounded prototype stores the vote BlockID hash together with the BlockID part-set total and part-set hash. `block_id_matches_commit` is true only when the normalized vote BlockID and enclosing commit BlockID match across all available BlockID components, not just the block hash.

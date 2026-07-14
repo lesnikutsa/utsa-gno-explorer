@@ -21,9 +21,9 @@ class IndexerConfig:
 
 def configured_hard_max_heights() -> int:
     load_dotenv()
-    raw = os.environ.get("INDEXER_HARD_MAX_HEIGHTS", str(DEFAULT_HARD_MAX_HEIGHTS)).strip()
+    raw_value = os.environ.get("INDEXER_HARD_MAX_HEIGHTS", str(DEFAULT_HARD_MAX_HEIGHTS)).strip()
     try:
-        value = int(raw)
+        value = int(raw_value)
     except ValueError as exc:
         raise ValueError("INDEXER_HARD_MAX_HEIGHTS must be an integer") from exc
     if value < 1:
