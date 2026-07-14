@@ -2,6 +2,8 @@
 """Inspect Gno.land Tendermint/TM2 RPC endpoints."""
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import os
 import sys
@@ -25,7 +27,8 @@ class RpcSummary:
     signing_height: int
     node_version: str | None
     catching_up: bool | None
-    block_hash: str | None
+    block_hash_base64: str
+    block_hash_hex: str
     block_time: str | None
     proposer_address: str | None
     tx_count: int
@@ -116,6 +119,23 @@ def configured_rpc_urls() -> list[str]:
     return urls
 
 
+def configured_chain_id() -> str:
+    load_dotenv()
+    return os.environ.get("GNO_CHAIN_ID", "test-13").strip() or "test-13"
+
+
+def configured_max_height_lag() -> int:
+    load_dotenv()
+    value = os.environ.get("RPC_MAX_HEIGHT_LAG", "10").strip()
+    try:
+        lag = int(value)
+    except ValueError as exc:
+        raise RpcError("RPC_MAX_HEIGHT_LAG must be an integer") from exc
+    if lag < 0:
+        raise RpcError("RPC_MAX_HEIGHT_LAG must not be negative")
+    return lag
+
+
 def result(payload: dict[str, Any]) -> dict[str, Any]:
     value = payload.get("result", payload)
     return value if isinstance(value, dict) else {}
@@ -140,17 +160,34 @@ def parse_status(status_payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def decode_base64(value: Any, field_name: str) -> bytes:
+    if not isinstance(value, str) or not value:
+        raise RpcError(f"Malformed RPC response: missing {field_name}")
+    try:
+        return base64.b64decode(value, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise RpcError(f"Malformed RPC response: invalid base64 in {field_name}") from exc
+
+
 def parse_block(block_payload: dict[str, Any]) -> dict[str, Any]:
     data = result(block_payload)
     block = data.get("block") or {}
     header = block.get("header") or {}
     txs = block.get("data", {}).get("txs") or []
+    block_hash_base64 = data.get("block_meta", {}).get("block_id", {}).get("hash")
+    block_hash_bytes = decode_base64(block_hash_base64, "result.block_meta.block_id.hash")
+    header_num_txs = to_int(header.get("num_txs"))
+    if header_num_txs is None:
+        raise RpcError("Malformed block response: missing result.block.header.num_txs")
+    if header_num_txs != len(txs):
+        raise RpcError(f"Block transaction count mismatch: header num_txs={header_num_txs}, data txs={len(txs)}")
     return {
-        "hash": data.get("block_id", {}).get("hash"),
+        "hash_base64": block_hash_base64,
+        "hash_hex": block_hash_bytes.hex().upper(),
         "height": to_int(header.get("height")),
         "time": header.get("time"),
         "proposer_address": header.get("proposer_address"),
-        "tx_count": len(txs),
+        "tx_count": header_num_txs,
         "transactions": parse_transactions(txs),
     }
 
@@ -184,8 +221,22 @@ def parse_commit(commit_payload: dict[str, Any]) -> dict[str, Any]:
 def parse_transactions(txs: list[Any]) -> list[dict[str, Any]]:
     parsed = []
     for index, tx in enumerate(txs):
-        text = tx if isinstance(tx, str) else json.dumps(tx, sort_keys=True)
-        parsed.append({"index": index, "type": type(tx).__name__, "size_bytes": len(text.encode()), "raw_preview": text[:120]})
+        raw_base64 = tx if isinstance(tx, str) else json.dumps(tx, sort_keys=True)
+        decoded_size_bytes = 0
+        base64_decoded = False
+        try:
+            decoded_size_bytes = len(base64.b64decode(raw_base64, validate=True))
+            base64_decoded = True
+        except (binascii.Error, ValueError):
+            pass
+        parsed.append({
+            "index": index,
+            "raw_base64": raw_base64,
+            "encoded_size_chars": len(raw_base64),
+            "decoded_size_bytes": decoded_size_bytes,
+            "raw_preview": raw_base64[:120],
+            "base64_decoded": base64_decoded,
+        })
     return parsed
 
 
@@ -199,13 +250,22 @@ def parse_validators(validators_payload: dict[str, Any]) -> dict[str, Any]:
             "address": val.get("address"),
             "voting_power": to_int(val.get("voting_power")),
             "proposer_priority": to_int(val.get("proposer_priority")),
-            "pub_key_type": pub_key.get("type"),
+            "pub_key_type": pub_key.get("@type") or pub_key.get("type"),
+            "pub_key_display_type": normalize_pub_key_type(pub_key.get("@type") or pub_key.get("type")),
             "pub_key_value": pub_key.get("value"),
         })
     block_height = to_int(data.get("block_height"))
     if block_height is None:
         raise RpcError("Malformed validators response: missing result.block_height")
     return {"block_height": block_height, "total": to_int(data.get("total")), "validators": parsed}
+
+
+def normalize_pub_key_type(pub_key_type: Any) -> str | None:
+    if pub_key_type == "/tm.PubKeyEd25519":
+        return "Ed25519"
+    if isinstance(pub_key_type, str):
+        return pub_key_type.rsplit(".", 1)[-1].lstrip("/")
+    return None
 
 
 def signer_address(signature: Any) -> str | None:
@@ -249,7 +309,8 @@ def build_summary(rpc_url: str, status_payload: dict[str, Any], block_payload: d
         signing_height=signing_height,
         node_version=status["node_version"],
         catching_up=status["catching_up"],
-        block_hash=block["hash"],
+        block_hash_base64=block["hash_base64"],
+        block_hash_hex=block["hash_hex"],
         block_time=block["time"],
         proposer_address=block["proposer_address"],
         tx_count=block["tx_count"],
@@ -264,25 +325,48 @@ def build_summary(rpc_url: str, status_payload: dict[str, Any], block_payload: d
     )
 
 
-def select_healthy_rpc(urls: list[str], timeout: int = DEFAULT_TIMEOUT) -> tuple[GnoRpcClient, dict[str, Any]]:
+def validate_status_for_health(status: dict[str, Any], expected_chain_id: str) -> None:
+    if not status["chain_id"]:
+        raise RpcError("malformed status: missing chain ID")
+    if status["latest_height"] is None:
+        raise RpcError("malformed status: missing latest height")
+    if not isinstance(status["catching_up"], bool):
+        raise RpcError("malformed status: missing catching_up boolean")
+    if status["chain_id"] != expected_chain_id:
+        raise RpcError(f"wrong chain ID: expected {expected_chain_id}, got {status['chain_id']}")
+    if status["catching_up"] is True:
+        raise RpcError("endpoint is catching up")
+
+
+def select_healthy_rpc(urls: list[str], timeout: int = DEFAULT_TIMEOUT, expected_chain_id: str | None = None, max_height_lag: int | None = None) -> tuple[GnoRpcClient, dict[str, Any]]:
     if not urls:
         raise RpcError("Set GNO_RPC_URLS to a comma-separated RPC list, or temporarily set legacy GNO_RPC_URL")
-    failures = []
-    for url in urls:
+    expected_chain_id = expected_chain_id or configured_chain_id()
+    max_height_lag = configured_max_height_lag() if max_height_lag is None else max_height_lag
+    probes = []
+    for order, url in enumerate(urls):
         client = GnoRpcClient(url, timeout=timeout)
         try:
             status_payload = client.get("status")
             status = parse_status(status_payload)
-            if status["catching_up"] is True:
-                raise RpcError("endpoint is catching up")
+            validate_status_for_health(status, expected_chain_id)
+            probes.append({"order": order, "url": url, "client": client, "payload": status_payload, "status": status})
         except RpcError as exc:
-            print(f"RPC check failed: {url} ({exc})")
-            failures.append(f"{url}: {exc}")
+            print(f"RPC health failed: {url} ({exc})")
             continue
-        print(f"RPC check succeeded: {url}")
-        print(f"Selected RPC: {url}")
-        return client, status_payload
-    raise RpcError("All RPC endpoints are unavailable: " + "; ".join(failures))
+    if not probes:
+        raise RpcError("All RPC endpoints are rejected or unavailable")
+    highest_height = max(probe["status"]["latest_height"] for probe in probes)
+    for probe in probes:
+        height = probe["status"]["latest_height"]
+        lag = highest_height - height
+        probe["lag"] = lag
+        print(f"RPC health succeeded: {probe['url']} chain_id={probe['status']['chain_id']} height={height} lag={lag} catching_up={probe['status']['catching_up']}")
+    for probe in probes:
+        if probe["lag"] <= max_height_lag:
+            print(f"Selected RPC: {probe['url']} height={probe['status']['latest_height']} lag={probe['lag']}")
+            return probe["client"], probe["payload"]
+    raise RpcError(f"No suitable RPC endpoint is within RPC_MAX_HEIGHT_LAG={max_height_lag} of highest healthy height {highest_height}")
 
 
 def fetch_validators(client: GnoRpcClient, height: int) -> dict[str, Any]:
@@ -311,7 +395,8 @@ def print_summary(summary: RpcSummary) -> None:
     print(f"Signing analysis height: {summary.signing_height}")
     print(f"Node/software version: {summary.node_version}")
     print(f"Catching up: {summary.catching_up}")
-    print(f"Latest block hash: {summary.block_hash}")
+    print(f"Latest block hash (base64): {summary.block_hash_base64}")
+    print(f"Latest block hash (hex): {summary.block_hash_hex}")
     print(f"Latest block timestamp: {summary.block_time}")
     print(f"Latest block proposer address: {summary.proposer_address}")
     print(f"Latest block transaction count: {summary.tx_count}")
@@ -320,7 +405,7 @@ def print_summary(summary: RpcSummary) -> None:
     print(f"Canonical commit: {summary.canonical}")
     print(f"\nValidators at signing height ({len(summary.validators)}):")
     for val in summary.validators:
-        print(f"- {val['address']} power={val['voting_power']} pub_key={val['pub_key_type']}")
+        print(f"- {val['address']} power={val['voting_power']} pub_key={val['pub_key_type']} display={val['pub_key_display_type']}")
     print(f"\nCommit precommits ({len(summary.commit_signatures)}):")
     for sig in summary.commit_signatures:
         print(f"- validator={signer_address(sig)} signed={signature_signed(sig)} timestamp={sig.get('timestamp') if isinstance(sig, dict) else None}")
@@ -332,7 +417,7 @@ def print_summary(summary: RpcSummary) -> None:
         print(f"- {val['address']}")
     print(f"\nBasic transaction information ({len(summary.transactions)}):")
     for tx in summary.transactions:
-        print(f"- #{tx['index']} type={tx['type']} size_bytes={tx['size_bytes']} preview={tx['raw_preview']!r}")
+        print(f"- #{tx['index']} encoded_size_chars={tx['encoded_size_chars']} decoded={tx['base64_decoded']} decoded_size_bytes={tx['decoded_size_bytes']} preview={tx['raw_preview']!r}")
 
 
 def main() -> int:

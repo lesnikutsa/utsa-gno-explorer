@@ -31,9 +31,11 @@ cp .env.example .env
 ```
 
 The script automatically loads simple `KEY=VALUE` entries from `.env`. It reads
-RPC endpoints from `GNO_RPC_URLS`, a comma-separated ordered list. For temporary
-backward compatibility, it also accepts legacy `GNO_RPC_URL` when
-`GNO_RPC_URLS` is not set.
+RPC endpoints from `GNO_RPC_URLS`, a comma-separated ordered list, validates the
+chain ID with `GNO_CHAIN_ID` (default `test-13`), and limits acceptable endpoint
+staleness with `RPC_MAX_HEIGHT_LAG` (default `10`). For temporary backward
+compatibility, it also accepts legacy `GNO_RPC_URL` when `GNO_RPC_URLS` is not
+set.
 
 ```bash
 GNO_RPC_URLS="https://gnoland-testnet-rpc.itrocket.net,https://rpc.test13.testnets.gno.land" python scripts/inspect_rpc.py
@@ -47,14 +49,27 @@ Do not commit private RPC URLs or secrets.
 python scripts/inspect_rpc.py
 ```
 
-The script checks each configured RPC in order with `/status`, prints whether the
-check succeeded or failed, rejects catching-up nodes, selects the first healthy
-endpoint without silently switching, and then prints the selected RPC clearly.
+The script probes every configured RPC with `/status`, prints a health result for
+each responding endpoint, rejects malformed status responses, wrong chain IDs,
+and catching-up nodes, determines the highest healthy height, and selects the
+first configured endpoint whose height is within `RPC_MAX_HEIGHT_LAG` of that
+highest height.
 
 The output summarizes chain ID, latest block height, signing analysis height
-(`latest height - 1`), node version, sync status, latest block metadata, validator
-set, `/commit` canonical data, commit precommits, validators that signed or
-missed, and basic transaction information available in the block response.
+(`latest height - 1`), node version, sync status, latest block metadata, block
+hash in original base64 and normalized hex, validator set, `/commit` canonical
+boolean, commit precommits, validators that signed or missed, and basic
+transaction information. Transactions are preserved as raw base64 with encoded
+length, decoded byte length when valid, a short preview, and a flag indicating
+whether base64 decoding succeeded.
+
+### Live verification note
+
+Live verification succeeded on 2026-07-14 from server `exp2` against all five
+configured public Gno.land Testnet 13 RPC endpoints. All five reported chain ID
+`test-13`, `catching_up=false`, and the same latest height at the time of that
+check. The code remains strict and still validates chain ID, sync status,
+response shape, and endpoint lag on every run.
 
 ### Run tests
 
