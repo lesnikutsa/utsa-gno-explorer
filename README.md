@@ -86,3 +86,30 @@ response shape, and endpoint lag on every run.
 python -m py_compile scripts/inspect_rpc.py
 python -m unittest discover -s tests
 ```
+
+## Bounded indexer prototype
+
+This repository includes a one-shot bounded PostgreSQL indexer prototype. It is operator-controlled and intentionally does not run as a daemon, scheduler, cron job, or production historical sync.
+
+Example dry run:
+
+```bash
+python scripts/index_range.py --start-height 100 --max-heights 3 --dry-run
+```
+
+Example PostgreSQL write run after loading `database/schema.sql` into a temporary database:
+
+```bash
+DATABASE_URL=postgresql://utsa_gno_indexer:change-me@localhost:5432/utsa_gno_explorer \
+INDEXER_HARD_MAX_HEIGHTS=100 \
+python scripts/index_range.py --start-height 100 --max-heights 3
+```
+
+Safety behavior:
+
+- defaults to at most 10 heights when no explicit `--end-height` is provided;
+- rejects ranges above `INDEXER_HARD_MAX_HEIGHTS`;
+- rejects an end height above `finalized_tip = latest_rpc_height - 1`;
+- processes each finalized height in its own transaction;
+- advances `indexer_state.last_finalized_height` only after a full successful height commit;
+- supports idempotent reprocessing and stops on conflicting finalized block hashes.

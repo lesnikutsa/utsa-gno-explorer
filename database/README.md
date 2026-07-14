@@ -38,3 +38,21 @@ Future indexer writes should use PostgreSQL transactions and `INSERT ... ON CONF
 ## Secrets
 
 Do not store secrets in this schema or repository. RPC credentials, if ever needed, must come from runtime secret management and must not be written to `rpc_endpoints`.
+
+## Temporary bounded-indexer validation
+
+For local or exp2 validation, create a temporary PostgreSQL 16 database, apply `database/schema.sql`, and run only a small finalized range. Do not publish the database port unless the operator explicitly needs remote access.
+
+Useful checks after a run:
+
+```sql
+SELECT last_finalized_height, finalized_tip_height FROM indexer_state WHERE state_key = 'default';
+SELECT height, block_hash_hex, tx_count FROM blocks ORDER BY height;
+SELECT height, count(*) FROM validator_signatures GROUP BY height ORDER BY height;
+```
+
+Cleanup for a disposable validation database can drop and recreate the database, or truncate explorer tables in dependency order:
+
+```sql
+TRUNCATE rpc_endpoint_checks, indexer_state, validator_signatures, validator_set_members, transactions, blocks, validators, rpc_endpoints RESTART IDENTITY CASCADE;
+```

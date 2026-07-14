@@ -35,8 +35,8 @@ If any statement fails, the transaction rolls back. The checkpoint must not adva
 - Build the expected validator set from `/validators?height=S`.
 - Build parsed vote records from non-null precommits in `/commit?height=S`, keyed by validator signing address. Address matching is required for non-null votes; array position must not be the sole evidence of signing.
 - Do not associate a null precommit with a validator by array position unless that relationship is explicitly verified in a future discovery task.
-- Compare each parsed `Vote.BlockID` with the enclosing `Commit.BlockID` for height `S`. A non-null signature alone is not sufficient for signing.
-- Store `vote_status = 'commit'` and `signed = true` only when the validator has a non-null precommit whose `Vote.BlockID` matches the enclosing `Commit.BlockID`.
+- Validate each non-zero `Vote.BlockID` and enclosing `Commit.BlockID` as complete BlockIDs: valid non-empty base64 hash, non-null non-negative part-set total, and valid non-empty base64 part-set hash. Compare hash, part-set total, and part-set hash. A non-null signature alone is not sufficient for signing.
+- Store `vote_status = 'commit'` and `signed = true` only when the validator has a non-null precommit whose `Vote.BlockID` matches the enclosing `Commit.BlockID` and has a structurally usable base64 Ed25519 or Secp256k1 consensus signature that decodes to exactly 64 bytes.
 - Store `vote_status = 'nil'` when the validator has a non-null vote with zero `Vote.BlockID`; nil votes are not signed for uptime.
 - Store `vote_status = 'absent'` when the validator signing address is absent from the non-null precommit signer-address set.
 - Store `vote_status = 'invalid'` when a non-null vote is malformed, has an unmatched address, or has a non-zero `Vote.BlockID` that does not match the enclosing commit and needs investigation.
@@ -67,3 +67,9 @@ The first explorer version assumes finalized TM2 heights are stable once they ar
 ## Out of scope
 
 This checkpoint does not add scheduler loops, worker processes, RPC clients beyond the existing prototype, database migrations, Docker Compose, API endpoints, or UI components. Follow-up verification must confirm exact live Gno TM2 precommit field paths for `Vote.BlockID`, enclosing `Commit.BlockID`, nil votes, and validator signing addresses before implementing the continuous indexer.
+
+## Implemented bounded prototype
+
+The current implementation is the bounded one-shot prototype in `scripts/index_range.py` and the `indexer/` package. It performs the same single-height transaction shape described above, but only for an explicit finite range chosen by the operator.
+
+It is not a continuous production indexer. It has no infinite loop, no scheduler, no systemd unit, and no background worker. The future continuous service may reuse the parsing and database boundaries, but it must add operational supervision separately.

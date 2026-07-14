@@ -95,6 +95,8 @@ CREATE TABLE validator_signatures (
     vote_block_id_hash_base64 TEXT,
     vote_block_id_hash_hex TEXT,
     vote_block_id_parts_total INTEGER CHECK (vote_block_id_parts_total IS NULL OR vote_block_id_parts_total >= 0),
+    vote_block_id_parts_hash_base64 TEXT,
+    vote_block_id_parts_hash_hex TEXT,
     vote_block_id_is_zero BOOLEAN NOT NULL DEFAULT false,
     block_id_matches_commit BOOLEAN NOT NULL DEFAULT false,
     signature_base64 TEXT,
@@ -113,6 +115,9 @@ CREATE TABLE validator_signatures (
             AND NOT vote_block_id_is_zero
             AND vote_block_id_hash_base64 IS NOT NULL
             AND vote_block_id_hash_hex IS NOT NULL
+            AND vote_block_id_parts_total IS NOT NULL
+            AND vote_block_id_parts_hash_base64 IS NOT NULL
+            AND vote_block_id_parts_hash_hex IS NOT NULL
             AND signature_base64 IS NOT NULL
         )
     ),
@@ -133,6 +138,8 @@ CREATE TABLE validator_signatures (
             AND vote_block_id_hash_base64 IS NULL
             AND vote_block_id_hash_hex IS NULL
             AND vote_block_id_parts_total IS NULL
+            AND vote_block_id_parts_hash_base64 IS NULL
+            AND vote_block_id_parts_hash_hex IS NULL
             AND signature_base64 IS NULL
             AND raw_precommit IS NULL
         )
@@ -143,6 +150,9 @@ CREATE TABLE validator_signatures (
     ),
     CONSTRAINT validator_signatures_vote_hash_hex_uppercase CHECK (
         vote_block_id_hash_hex IS NULL OR vote_block_id_hash_hex = upper(vote_block_id_hash_hex)
+    ),
+    CONSTRAINT validator_signatures_vote_parts_hash_hex_uppercase CHECK (
+        vote_block_id_parts_hash_hex IS NULL OR vote_block_id_parts_hash_hex = upper(vote_block_id_parts_hash_hex)
     )
 );
 
@@ -151,6 +161,8 @@ COMMENT ON COLUMN validator_signatures.vote_status IS 'Normalized vote status: c
 COMMENT ON COLUMN validator_signatures.signed IS 'True only for commit votes whose Vote.BlockID matches the enclosing Commit.BlockID; a non-null signature alone is insufficient.';
 COMMENT ON COLUMN validator_signatures.vote_block_id_hash_base64 IS 'Parsed Vote.BlockID hash from a non-null precommit, preserved as base64 when present.';
 COMMENT ON COLUMN validator_signatures.vote_block_id_hash_hex IS 'Uppercase hex form of Vote.BlockID hash when present.';
+COMMENT ON COLUMN validator_signatures.vote_block_id_parts_hash_base64 IS 'Parsed Vote.BlockID part-set hash from a non-null precommit, preserved as base64 when present.';
+COMMENT ON COLUMN validator_signatures.vote_block_id_parts_hash_hex IS 'Uppercase hex form of the parsed Vote.BlockID part-set hash when present.';
 COMMENT ON COLUMN validator_signatures.vote_block_id_is_zero IS 'True when the parsed Vote.BlockID is zero, which represents a nil vote.';
 COMMENT ON COLUMN validator_signatures.block_id_matches_commit IS 'True only when the parsed Vote.BlockID matches the enclosing Commit.BlockID for the same height.';
 COMMENT ON COLUMN validator_signatures.raw_precommit IS 'Optional short-retention precommit JSON for parser auditing. Nil and invalid votes may retain it.';
