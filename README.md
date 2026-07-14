@@ -2,6 +2,15 @@
 
 Custom Gno.land explorer with blocks, validators, uptime and signing history.
 
+## Design documentation
+
+- [Architecture](docs/architecture.md)
+- [Database schema](docs/database-schema.md)
+- [Indexer flow](docs/indexer-flow.md)
+- [Backup and recovery](docs/backup-and-recovery.md)
+- [Database README](database/README.md)
+- [PostgreSQL schema](database/schema.sql)
+
 ## RPC discovery prototype
 
 This repository currently contains a small Python prototype for inspecting the
