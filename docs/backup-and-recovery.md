@@ -61,7 +61,7 @@ WHERE state_key = 'default';
 COMMIT;
 ```
 
-Use the correct block-height boundary for `$2`; signing height is `H - 1`, while latest block metadata is read at `H`.
+Block, transaction, validator-set, and signature rows use the same target finalized height `S`, so rollback boundaries are consistent by height. Use `$1` as the first affected target height and reset the checkpoint to `$1 - 1`.
 
 ## Raw RPC response retention
 

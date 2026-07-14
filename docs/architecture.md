@@ -19,22 +19,23 @@ The first production-ready explorer data model must support:
 ## Components
 
 1. **RPC discovery and selection** probes configured public RPC endpoints with `/status`, rejects unhealthy endpoints, and chooses a healthy endpoint within the configured height lag.
-2. **Height planner** reads latest block metadata height `H` from the selected endpoint and plans only finalized signing work for `H - 1`.
-3. **Finalized-height processor** fetches `/block?height=H`, `/commit?height=H-1`, and `/validators?height=H-1`, verifies the TM2 height invariant, and writes one finalized height in a single PostgreSQL transaction.
+2. **Height planner** reads latest RPC height `H` only to derive `finalized_tip = H - 1`, then starts from `indexer_state.last_finalized_height + 1`.
+3. **Finalized-height processor** iterates each target finalized height `S` sequentially, fetches `/block?height=S`, `/commit?height=S`, and `/validators?height=S`, verifies every parsed height equals `S`, and writes one complete height in a single PostgreSQL transaction.
 4. **PostgreSQL database** stores normalized explorer data plus limited raw JSONB fields useful for auditing changing RPC shapes.
 5. **Future API and UI** read from PostgreSQL only. They do not call RPC endpoints directly for indexed pages.
 
 ## Verified TM2 height model
 
-For a latest height `H` returned by `/status`:
+For a latest RPC height `H` returned by `/status`:
 
-- `/block?height=H` is used for latest block metadata, block hash, header fields, and transactions.
-- Signing analysis is finalized at `H - 1`, not `H`.
-- `/commit?height=H-1` and `/validators?height=H-1` must be requested at the same height.
-- The commit height parsed from `result.signed_header.header.height` and validator-set height from `result.block_height` must both equal `H - 1`.
-- A `null` precommit means the corresponding validator missed that finalized height.
+- `H` only defines `finalized_tip = H - 1`.
+- The next target finalized height is `S = indexer_state.last_finalized_height + 1`.
+- The indexer must process every intermediate `S` sequentially while `S <= finalized_tip`; downtime must not create gaps.
+- For each `S`, `/block?height=S`, `/commit?height=S`, and `/validators?height=S` must be requested at the same height.
+- The parsed block height, commit header height, and validator-set height must all equal `S`.
+- Null precommits are evidence that some signature is absent, but they must not be mapped to validators by array position unless that positional relationship is explicitly verified. Missed validators are determined by subtracting non-null signer addresses from the validator set.
 
-This model is preserved from the RPC discovery prototype and must remain an indexer invariant.
+This model is refined from the RPC discovery prototype and must remain an indexer invariant.
 
 ## Data model summary
 
@@ -43,7 +44,8 @@ This model is preserved from the RPC discovery prototype and must remain an inde
 - `validators` stores stable validator identity by signing address, with public key type and value.
 - `validator_set_members` stores the active set membership and voting power for each finalized height.
 - `validator_signatures` stores one signing result per validator per finalized height.
-- `rpc_endpoints` stores endpoint health metadata and last switch information without secrets.
+- `rpc_endpoints` stores current endpoint health metadata without secrets.
+- `rpc_endpoint_checks` stores append-only health checks and selection/switch events for auditing.
 - `indexer_state` stores the checkpoint that makes indexing resumable.
 
 No speculative application, account, contract, event, or frontend tables are included in this checkpoint.
@@ -85,16 +87,16 @@ Every finalized height has its own validator-set membership rows. Validator rows
 
 ## Idempotency and transactions
 
-One finalized height must be processed inside a single database transaction:
+One target finalized height `S` must be processed inside a single database transaction:
 
-1. upsert the latest block metadata and transactions;
-2. upsert validators seen in the finalized validator set;
-3. insert or update `validator_set_members` for the finalized height;
-4. insert or update `validator_signatures` for that same finalized height;
-5. update endpoint health metadata as needed;
-6. advance `indexer_state.last_finalized_height` only after all previous steps succeed.
+1. upsert block `S` metadata and transactions;
+2. upsert validators seen in the validator set at `S`;
+3. insert or update `validator_set_members` for `S`;
+4. insert or update `validator_signatures` for `S`;
+5. update current endpoint health metadata and append endpoint check history as needed;
+6. advance `indexer_state.last_finalized_height` only to `S` after all previous steps succeed.
 
-If any step fails, the transaction rolls back and `indexer_state` is not advanced. Reprocessing the same height is safe because primary keys and unique constraints prevent duplicate block, transaction, validator-set, and signature records.
+If any step fails, the transaction rolls back and `indexer_state` is not advanced. Reprocessing the same height is safe because primary keys and unique constraints prevent duplicate block, transaction, validator-set, and signature records. The processor then continues with `S + 1` and never skips intermediate heights.
 
 ## Assumptions and unverified behavior
 

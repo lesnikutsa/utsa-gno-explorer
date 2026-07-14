@@ -13,14 +13,14 @@ The schema supports:
 - uptime over the latest 1,000 finalized heights;
 - recent signed/missed squares over the latest 100 finalized heights;
 - recent network-wide misses;
-- RPC endpoint health and switching metadata;
+- current RPC endpoint health plus append-only check and switching history;
 - resumable indexing through `indexer_state`.
 
 It does not create a PostgreSQL server, Docker Compose stack, migration framework, backend API, frontend, or continuous indexer.
 
 ## Validation
 
-When a PostgreSQL client/server is available, validate the schema in a temporary database:
+Validate the schema against a real PostgreSQL parser before merge. A temporary PostgreSQL container is sufficient and should not leave persistent services or data behind. If local PostgreSQL tools are available, use:
 
 ```bash
 createdb utsa_gno_schema_check
@@ -29,11 +29,11 @@ psql --dbname=utsa_gno_schema_check --file=database/schema.sql --set=ON_ERROR_ST
 dropdb utsa_gno_schema_check
 ```
 
-If only the client is available, use an external temporary PostgreSQL instance and do not leave persistent data behind.
+If Docker is available, an equivalent temporary `postgres` container can be used, then removed after `psql --set=ON_ERROR_STOP=1 --file=database/schema.sql` succeeds.
 
 ## Idempotency
 
-Future indexer writes should use PostgreSQL transactions and `INSERT ... ON CONFLICT ... DO UPDATE`. One finalized height is complete only after block, transaction, validator-set, signature, endpoint, and checkpoint writes all commit successfully.
+Future indexer writes should use PostgreSQL transactions and `INSERT ... ON CONFLICT ... DO UPDATE`. One target finalized height `S` is complete only after block, transaction, validator-set, signature, endpoint, endpoint-check history, and checkpoint writes all commit successfully. The future indexer must resume from `last_finalized_height + 1` and never skip intermediate finalized heights.
 
 ## Secrets
 

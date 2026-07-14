@@ -22,15 +22,19 @@ Stores the active validator set for each finalized height. Voting power and prop
 
 ### `validator_signatures`
 
-Stores one row per `(height, signing_address)` showing whether the validator signed or missed that finalized height. `NULL` precommits are recorded as `signed = false` with `precommit_is_null = true`.
+Stores one row per `(height, signing_address)` showing whether the validator signed or missed that finalized height. Misses are recorded when an active validator signing address is absent from the non-null commit signer-address set; null precommits are not mapped to validators by array position.
 
 ### `rpc_endpoints`
 
-Stores non-secret endpoint URLs, status, latest observed height, lag, selected state, and last error text. It supports endpoint health pages and RPC switching decisions.
+Stores non-secret endpoint URLs, current status, latest observed height, lag, selected state, and last error text. It supports current endpoint selection decisions.
+
+### `rpc_endpoint_checks`
+
+Append-only history of RPC health checks and selection/switch events. It preserves historical switching evidence instead of overwriting it in `rpc_endpoints`.
 
 ### `indexer_state`
 
-Stores a named singleton checkpoint. The first version uses `state_key = 'default'`. The indexer advances `last_finalized_height` only after successfully committing all rows for that finalized height.
+Stores a named singleton checkpoint. The first version uses `state_key = 'default'`. The indexer advances `last_finalized_height` only after successfully committing all rows for target finalized height `S`.
 
 ## Critical constraints
 
@@ -39,7 +43,8 @@ Stores a named singleton checkpoint. The first version uses `state_key = 'defaul
 - `validators.signing_address` is unique and is referenced by validator-set and signature rows.
 - `validator_set_members` has primary key `(height, signing_address)`.
 - `validator_signatures` has primary key `(height, signing_address)`.
-- Foreign keys from transactions, validator-set members, signatures, and indexer state preserve relational consistency.
+- `validator_set_members.height` references `blocks.height`, and signatures also depend on membership rows for the same `(height, signing_address)`.
+- Foreign keys from transactions, validator-set members, signatures, endpoint checks, and indexer state preserve relational consistency.
 
 ## Query support
 
@@ -105,10 +110,14 @@ WITH bounds AS (
   FROM indexer_state
   WHERE state_key = 'default'
 )
-SELECT height, signing_address, signed, precommit_is_null
-FROM validator_signatures, bounds
-WHERE height BETWEEN bounds.start_height AND bounds.end_height
-ORDER BY height DESC, signing_address;
+SELECT m.height, m.signing_address, s.signed
+FROM validator_set_members m
+CROSS JOIN bounds
+LEFT JOIN validator_signatures s
+  ON s.height = m.height
+ AND s.signing_address = m.signing_address
+WHERE m.height BETWEEN bounds.start_height AND bounds.end_height
+ORDER BY m.height DESC, m.signing_address;
 ```
 
 ### Recent network-wide misses
@@ -124,6 +133,8 @@ HAVING count(*) FILTER (WHERE NOT signed) > 0
 ORDER BY height DESC;
 ```
 
+For recent-square rendering, missing rows after the left join are not missed signatures. A missing membership row means the validator was not active at that height, and a missing signature row should be treated as unknown/incomplete data rather than a miss. Misses are represented by active membership plus `validator_signatures.signed = false`.
+
 ## Idempotent reprocessing
 
-The indexer should use `INSERT ... ON CONFLICT ... DO UPDATE` for rows that may be reprocessed from the same RPC data. The primary keys and unique constraints ensure the second pass updates the same logical records instead of adding duplicates. `indexer_state.last_finalized_height` must be updated only in the same transaction that completed the height.
+The indexer should use `INSERT ... ON CONFLICT ... DO UPDATE` for rows that may be reprocessed from the same RPC data. The primary keys and unique constraints ensure the second pass updates the same logical records instead of adding duplicates. `indexer_state.last_finalized_height` must be updated only in the same transaction that completed target height `S`, and processing must resume at `S + 1` without skipping intermediate heights.
