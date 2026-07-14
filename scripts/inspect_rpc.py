@@ -1,40 +1,42 @@
 #!/usr/bin/env python3
-"""Inspect a Gno.land Tendermint-style RPC endpoint.
-
-Network access is intentionally isolated in ``GnoRpcClient``. The parsing
-functions accept plain dictionaries so tests can exercise them with fixtures.
-"""
+"""Inspect Gno.land Tendermint/TM2 RPC endpoints."""
 from __future__ import annotations
 
 import json
 import os
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urljoin
 from urllib.request import urlopen
-from urllib.error import HTTPError, URLError
-
 
 DEFAULT_TIMEOUT = 10
+DEFAULT_VALIDATORS_PER_PAGE = 100
 
 
 class RpcError(RuntimeError):
-    """Raised when the RPC endpoint cannot be queried safely."""
+    """Raised when an RPC endpoint cannot be queried or parsed safely."""
 
 
 @dataclass(frozen=True)
 class RpcSummary:
+    rpc_url: str
     chain_id: str | None
-    latest_height: int | None
+    latest_height: int
+    signing_height: int
     node_version: str | None
     catching_up: bool | None
     block_hash: str | None
     block_time: str | None
     proposer_address: str | None
     tx_count: int
+    validators_height: int
+    commit_height: int
+    canonical: Any
     validators: list[dict[str, Any]]
-    commit_signatures: list[dict[str, Any]]
+    commit_signatures: list[Any]
     signed_validators: list[dict[str, Any]]
     missed_validators: list[dict[str, Any]]
     transactions: list[dict[str, Any]]
@@ -45,7 +47,7 @@ class GnoRpcClient:
 
     def __init__(self, base_url: str, timeout: int = DEFAULT_TIMEOUT) -> None:
         if not base_url:
-            raise RpcError("GNO_RPC_URL is required")
+            raise RpcError("RPC URL is required")
         self.base_url = base_url.rstrip("/") + "/"
         self.timeout = timeout
 
@@ -66,11 +68,7 @@ class GnoRpcClient:
             raise RpcError(f"RPC request failed for {method}: {exc}") from exc
         except json.JSONDecodeError as exc:
             raise RpcError(f"RPC response for {method} was not valid JSON") from exc
-        if isinstance(payload, dict) and payload.get("error"):
-            raise RpcError(f"RPC returned an error for {method}: {payload['error']}")
-        if not isinstance(payload, dict):
-            raise RpcError(f"RPC response for {method} was not a JSON object")
-        return payload
+        return validate_payload(method, payload)
 
     def _get_with_urllib(self, url: str, method: str, params: dict[str, Any]) -> dict[str, Any]:
         query = urlencode({key: value for key, value in params.items() if value is not None})
@@ -86,11 +84,39 @@ class GnoRpcClient:
             raise RpcError(f"RPC request failed for {method}: {exc.reason}") from exc
         except json.JSONDecodeError as exc:
             raise RpcError(f"RPC response for {method} was not valid JSON") from exc
-        if isinstance(payload, dict) and payload.get("error"):
-            raise RpcError(f"RPC returned an error for {method}: {payload['error']}")
-        if not isinstance(payload, dict):
-            raise RpcError(f"RPC response for {method} was not a JSON object")
-        return payload
+        return validate_payload(method, payload)
+
+
+def validate_payload(method: str, payload: Any) -> dict[str, Any]:
+    if isinstance(payload, dict) and payload.get("error"):
+        raise RpcError(f"RPC returned an error for {method}: {payload['error']}")
+    if not isinstance(payload, dict):
+        raise RpcError(f"RPC response for {method} was not a JSON object")
+    return payload
+
+
+def load_dotenv(path: str = ".env") -> None:
+    env_path = Path(path)
+    if not env_path.exists():
+        return
+    for line in env_path.read_text().splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+def configured_rpc_urls() -> list[str]:
+    load_dotenv()
+    urls = [url.strip() for url in os.environ.get("GNO_RPC_URLS", "").split(",") if url.strip()]
+    legacy = os.environ.get("GNO_RPC_URL", "").strip()
+    if not urls and legacy:
+        urls = [legacy]
+    return urls
 
 
 def result(payload: dict[str, Any]) -> dict[str, Any]:
@@ -121,7 +147,6 @@ def parse_block(block_payload: dict[str, Any]) -> dict[str, Any]:
     data = result(block_payload)
     block = data.get("block") or {}
     header = block.get("header") or {}
-    last_commit = block.get("last_commit") or {}
     txs = block.get("data", {}).get("txs") or []
     return {
         "hash": data.get("block_id", {}).get("hash"),
@@ -130,7 +155,30 @@ def parse_block(block_payload: dict[str, Any]) -> dict[str, Any]:
         "proposer_address": header.get("proposer_address"),
         "tx_count": len(txs),
         "transactions": parse_transactions(txs),
-        "commit_signatures": last_commit.get("precommits") or last_commit.get("signatures") or [],
+    }
+
+
+def parse_commit(commit_payload: dict[str, Any]) -> dict[str, Any]:
+    data = result(commit_payload)
+    signed_header = data.get("signed_header")
+    if not isinstance(signed_header, dict):
+        raise RpcError("Malformed commit response: missing result.signed_header")
+    header = signed_header.get("header")
+    commit = signed_header.get("commit")
+    if not isinstance(header, dict) or not isinstance(commit, dict):
+        raise RpcError("Malformed commit response: missing signed_header.header or signed_header.commit")
+    precommits = commit.get("precommits")
+    if not isinstance(precommits, list):
+        raise RpcError("Malformed commit response: missing signed_header.commit.precommits")
+    header_height = to_int(header.get("height"))
+    commit_height = to_int(commit.get("height")) or header_height
+    if commit_height is None:
+        raise RpcError("Malformed commit response: missing commit height")
+    return {
+        "height": commit_height,
+        "header_height": header_height,
+        "precommits": precommits,
+        "canonical": data.get("canonical"),
     }
 
 
@@ -142,8 +190,9 @@ def parse_transactions(txs: list[Any]) -> list[dict[str, Any]]:
     return parsed
 
 
-def parse_validators(validators_payload: dict[str, Any]) -> list[dict[str, Any]]:
-    vals = result(validators_payload).get("validators") or []
+def parse_validators(validators_payload: dict[str, Any]) -> dict[str, Any]:
+    data = result(validators_payload)
+    vals = data.get("validators") or []
     parsed = []
     for val in vals:
         pub_key = val.get("pub_key") or {}
@@ -154,15 +203,17 @@ def parse_validators(validators_payload: dict[str, Any]) -> list[dict[str, Any]]
             "pub_key_type": pub_key.get("type"),
             "pub_key_value": pub_key.get("value"),
         })
-    return parsed
+    return {"height": to_int(data.get("height")), "total": to_int(data.get("total")), "validators": parsed}
 
 
-def signer_address(signature: dict[str, Any]) -> str | None:
+def signer_address(signature: Any) -> str | None:
+    if not isinstance(signature, dict):
+        return None
     return signature.get("validator_address") or signature.get("address")
 
 
-def signature_signed(signature: dict[str, Any]) -> bool:
-    if signature.get("absent") is True:
+def signature_signed(signature: Any) -> bool:
+    if not isinstance(signature, dict) or signature.get("absent") is True:
         return False
     if signature.get("signature"):
         return True
@@ -170,48 +221,122 @@ def signature_signed(signature: dict[str, Any]) -> bool:
     return flag in (2, "2", "BLOCK_ID_FLAG_COMMIT", "BlockIDFlagCommit")
 
 
-def build_summary(status_payload: dict[str, Any], block_payload: dict[str, Any], validators_payload: dict[str, Any]) -> RpcSummary:
+def build_summary(rpc_url: str, status_payload: dict[str, Any], block_payload: dict[str, Any], commit_payload: dict[str, Any], validators_payload: dict[str, Any]) -> RpcSummary:
     status = parse_status(status_payload)
     block = parse_block(block_payload)
-    validators = parse_validators(validators_payload)
-    commit_signatures = block["commit_signatures"]
-    signed_addresses = {addr for sig in commit_signatures if (addr := signer_address(sig)) and signature_signed(sig)}
+    commit = parse_commit(commit_payload)
+    validators_data = parse_validators(validators_payload)
+    latest_height = status["latest_height"] or block["height"]
+    if latest_height is None:
+        raise RpcError("Latest height is unavailable")
+    signing_height = latest_height - 1
+    if signing_height < 1:
+        raise RpcError("Latest height is too low for H-1 signing analysis")
+    validators_height = validators_data["height"] or signing_height
+    if commit["height"] != signing_height:
+        raise RpcError(f"Commit height mismatch: expected {signing_height}, got {commit['height']}")
+    if validators_height != signing_height:
+        raise RpcError(f"Validator-set height mismatch: expected {signing_height}, got {validators_height}")
+    validators = validators_data["validators"]
+    signed_addresses = {addr for sig in commit["precommits"] if (addr := signer_address(sig)) and signature_signed(sig)}
     all_addresses = {v["address"] for v in validators if v.get("address")}
     return RpcSummary(
-        chain_id=status["chain_id"], latest_height=status["latest_height"] or block["height"], node_version=status["node_version"],
-        catching_up=status["catching_up"], block_hash=block["hash"], block_time=block["time"], proposer_address=block["proposer_address"],
-        tx_count=block["tx_count"], validators=validators, commit_signatures=commit_signatures,
+        rpc_url=rpc_url,
+        chain_id=status["chain_id"],
+        latest_height=latest_height,
+        signing_height=signing_height,
+        node_version=status["node_version"],
+        catching_up=status["catching_up"],
+        block_hash=block["hash"],
+        block_time=block["time"],
+        proposer_address=block["proposer_address"],
+        tx_count=block["tx_count"],
+        validators_height=validators_height,
+        commit_height=commit["height"],
+        canonical=commit["canonical"],
+        validators=validators,
+        commit_signatures=commit["precommits"],
         signed_validators=[v for v in validators if v.get("address") in signed_addresses],
         missed_validators=[v for v in validators if v.get("address") in all_addresses - signed_addresses],
         transactions=block["transactions"],
     )
 
 
-def fetch_summary(client: GnoRpcClient) -> RpcSummary:
-    status = client.get("status")
-    height = parse_status(status)["latest_height"]
-    block = client.get("block", height=height) if height else client.get("block")
-    validators = client.get("validators", height=height) if height else client.get("validators")
-    return build_summary(status, block, validators)
+def select_healthy_rpc(urls: list[str], timeout: int = DEFAULT_TIMEOUT) -> tuple[GnoRpcClient, dict[str, Any]]:
+    if not urls:
+        raise RpcError("Set GNO_RPC_URLS to a comma-separated RPC list, or temporarily set legacy GNO_RPC_URL")
+    failures = []
+    for url in urls:
+        client = GnoRpcClient(url, timeout=timeout)
+        try:
+            status_payload = client.get("status")
+            status = parse_status(status_payload)
+            if status["catching_up"] is True:
+                raise RpcError("endpoint is catching up")
+        except RpcError as exc:
+            print(f"RPC check failed: {url} ({exc})")
+            failures.append(f"{url}: {exc}")
+            continue
+        print(f"RPC check succeeded: {url}")
+        print(f"Selected RPC: {url}")
+        return client, status_payload
+    raise RpcError("All RPC endpoints are unavailable: " + "; ".join(failures))
+
+
+def fetch_validators(client: GnoRpcClient, height: int, per_page: int = DEFAULT_VALIDATORS_PER_PAGE) -> dict[str, Any]:
+    page = 1
+    combined: dict[str, Any] | None = None
+    validators: list[dict[str, Any]] = []
+    while True:
+        payload = client.get("validators", height=height, page=page, per_page=per_page)
+        data = result(payload)
+        if combined is None:
+            combined = {"result": {**data, "validators": []}}
+        validators.extend(data.get("validators") or [])
+        total = to_int(data.get("total"))
+        if total is None or len(validators) >= total or not data.get("validators"):
+            break
+        page += 1
+    assert combined is not None
+    combined["result"]["validators"] = validators
+    return combined
+
+
+def fetch_summary(client: GnoRpcClient, status_payload: dict[str, Any]) -> RpcSummary:
+    latest_height = parse_status(status_payload)["latest_height"]
+    if latest_height is None:
+        raise RpcError("/status did not include latest_block_height")
+    signing_height = latest_height - 1
+    if signing_height < 1:
+        raise RpcError("Latest height is too low for H-1 signing analysis")
+    block = client.get("block", height=latest_height)
+    commit = client.get("commit", height=signing_height)
+    validators = fetch_validators(client, signing_height)
+    return build_summary(client.base_url.rstrip("/"), status_payload, block, commit, validators)
 
 
 def print_summary(summary: RpcSummary) -> None:
     print("Gno.land RPC discovery summary")
     print("=" * 32)
+    print(f"Selected RPC: {summary.rpc_url}")
     print(f"Chain ID: {summary.chain_id}")
     print(f"Latest block height: {summary.latest_height}")
+    print(f"Signing analysis height: {summary.signing_height}")
     print(f"Node/software version: {summary.node_version}")
     print(f"Catching up: {summary.catching_up}")
     print(f"Latest block hash: {summary.block_hash}")
     print(f"Latest block timestamp: {summary.block_time}")
     print(f"Latest block proposer address: {summary.proposer_address}")
     print(f"Latest block transaction count: {summary.tx_count}")
-    print(f"\nValidators at latest height ({len(summary.validators)}):")
+    print(f"Commit height: {summary.commit_height}")
+    print(f"Validator-set height: {summary.validators_height}")
+    print(f"Canonical commit: {json.dumps(summary.canonical, sort_keys=True)}")
+    print(f"\nValidators at signing height ({len(summary.validators)}):")
     for val in summary.validators:
         print(f"- {val['address']} power={val['voting_power']} pub_key={val['pub_key_type']}")
-    print(f"\nCommit signatures ({len(summary.commit_signatures)}):")
+    print(f"\nCommit precommits ({len(summary.commit_signatures)}):")
     for sig in summary.commit_signatures:
-        print(f"- validator={signer_address(sig)} signed={signature_signed(sig)} timestamp={sig.get('timestamp')}")
+        print(f"- validator={signer_address(sig)} signed={signature_signed(sig)} timestamp={sig.get('timestamp') if isinstance(sig, dict) else None}")
     print(f"\nValidators that signed ({len(summary.signed_validators)}):")
     for val in summary.signed_validators:
         print(f"- {val['address']}")
@@ -224,9 +349,9 @@ def print_summary(summary: RpcSummary) -> None:
 
 
 def main() -> int:
-    rpc_url = os.environ.get("GNO_RPC_URL", "").strip()
     try:
-        summary = fetch_summary(GnoRpcClient(rpc_url))
+        client, status_payload = select_healthy_rpc(configured_rpc_urls())
+        summary = fetch_summary(client, status_payload)
     except RpcError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1

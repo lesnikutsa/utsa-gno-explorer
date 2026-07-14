@@ -11,7 +11,8 @@ frontend.
 ### Requirements
 
 - Python 3.11+
-- `requests`
+- `requests` preferred; the script also has a standard-library HTTP fallback if
+  `requests` is not installed.
 
 ### Installation
 
@@ -23,16 +24,22 @@ python -m pip install -r requirements.txt
 
 ### Configuration
 
-Copy the example environment file and set `GNO_RPC_URL` to a public Gno.land
-Testnet 13 RPC endpoint:
+Copy the example environment file and review the ordered public RPC fallbacks:
 
 ```bash
 cp .env.example .env
-export GNO_RPC_URL="https://rpc.test13.gno.land"
 ```
 
-The script reads the RPC URL only from `GNO_RPC_URL`; do not commit private RPC
-URLs or secrets.
+The script automatically loads simple `KEY=VALUE` entries from `.env`. It reads
+RPC endpoints from `GNO_RPC_URLS`, a comma-separated ordered list. For temporary
+backward compatibility, it also accepts legacy `GNO_RPC_URL` when
+`GNO_RPC_URLS` is not set.
+
+```bash
+GNO_RPC_URLS="https://gnoland-testnet-rpc.itrocket.net,https://rpc.test13.testnets.gno.land" python scripts/inspect_rpc.py
+```
+
+Do not commit private RPC URLs or secrets.
 
 ### Run the RPC inspection
 
@@ -40,12 +47,18 @@ URLs or secrets.
 python scripts/inspect_rpc.py
 ```
 
-The output summarizes chain ID, latest height, node version, sync status, latest
-block metadata, validator set, commit signatures, validators that signed or
+The script checks each configured RPC in order with `/status`, prints whether the
+check succeeded or failed, rejects catching-up nodes, selects the first healthy
+endpoint without silently switching, and then prints the selected RPC clearly.
+
+The output summarizes chain ID, latest block height, signing analysis height
+(`latest height - 1`), node version, sync status, latest block metadata, validator
+set, `/commit` canonical data, commit precommits, validators that signed or
 missed, and basic transaction information available in the block response.
 
 ### Run tests
 
 ```bash
+python -m py_compile scripts/inspect_rpc.py
 python -m unittest discover -s tests
 ```
