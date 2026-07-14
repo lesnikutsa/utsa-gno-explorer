@@ -45,8 +45,30 @@ class InspectRpcParsingTests(unittest.TestCase):
         parsed = parse_status(load("status.json"))
         self.assertEqual(parsed["chain_id"], "test13")
         self.assertEqual(parsed["latest_height"], 123)
-        self.assertEqual(parsed["node_version"], "0.1.0")
+        self.assertEqual(parsed["node_version"], "tm2-build-version")
         self.assertFalse(parsed["catching_up"])
+
+    def test_status_prefers_build_version_but_falls_back_to_node_info_version(self):
+        status = load("status.json")
+        status["result"].pop("build_version")
+        self.assertEqual(parse_status(status)["node_version"], "node-fallback-version")
+
+    def test_validators_response_requires_block_height(self):
+        validators = load("validators.json")
+        validators["result"].pop("block_height")
+        with self.assertRaisesRegex(RpcError, "missing result.block_height"):
+            parse_validators(validators)
+
+    def test_commit_height_is_derived_from_signed_header_header_height(self):
+        commit = load("commit.json")
+        commit["result"]["signed_header"]["commit"]["height"] = "999"
+        self.assertEqual(parse_commit(commit)["height"], 122)
+
+    def test_commit_canonical_must_be_boolean(self):
+        commit = load("commit.json")
+        commit["result"]["canonical"] = {"height": "122"}
+        with self.assertRaisesRegex(RpcError, "canonical must be a boolean"):
+            parse_commit(commit)
 
     def test_parse_block_does_not_treat_last_commit_as_commit_for_block_height(self):
         parsed = parse_block(load("block.json"))
@@ -58,12 +80,12 @@ class InspectRpcParsingTests(unittest.TestCase):
         parsed = parse_commit(load("commit.json"))
         self.assertEqual(parsed["height"], 122)
         self.assertEqual(parsed["header_height"], 122)
-        self.assertEqual(parsed["canonical"], {"height": "122", "round": "0"})
+        self.assertIs(parsed["canonical"], True)
         self.assertEqual(len(parsed["precommits"]), 3)
 
-    def test_parse_validators_extracts_height_addresses_and_power(self):
+    def test_parse_validators_extracts_block_height_addresses_and_power(self):
         validators = parse_validators(load("validators.json"))
-        self.assertEqual(validators["height"], 122)
+        self.assertEqual(validators["block_height"], 122)
         self.assertEqual(validators["validators"][0]["address"], "VAL1")
         self.assertEqual(validators["validators"][1]["voting_power"], 20)
 
@@ -84,7 +106,7 @@ class InspectRpcParsingTests(unittest.TestCase):
 
     def test_height_mismatch_between_commit_and_validators_fails(self):
         validators = load("validators.json")
-        validators["result"]["height"] = "121"
+        validators["result"]["block_height"] = "121"
         with self.assertRaisesRegex(RpcError, "Validator-set height mismatch"):
             build_summary("http://rpc", load("status.json"), load("block.json"), load("commit.json"), validators)
 
@@ -98,7 +120,7 @@ class InspectRpcParsingTests(unittest.TestCase):
         self.assertEqual(summary.signing_height, 122)
         self.assertEqual(client.calls[0], ("block", {"height": 123}))
         self.assertEqual(client.calls[1], ("commit", {"height": 122}))
-        self.assertEqual(client.calls[2], ("validators", {"height": 122, "page": 1, "per_page": 100}))
+        self.assertEqual(client.calls[2], ("validators", {"height": 122}))
 
 
 class RpcSelectionTests(unittest.TestCase):

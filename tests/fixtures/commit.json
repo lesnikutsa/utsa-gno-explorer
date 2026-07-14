@@ -1,1 +1,1 @@
-{"result":{"signed_header":{"header":{"height":"122"},"commit":{"height":"122","precommits":[{"validator_address":"VAL1","signature":"sig1","timestamp":"2026-07-14T00:00:01Z"},null,{"validator_address":"VAL3","signature":null,"absent":true,"timestamp":null}]}},"canonical":{"height":"122","round":"0"}}}
+{"result":{"signed_header":{"header":{"height":"122"},"commit":{"precommits":[{"validator_address":"VAL1","signature":"sig1","timestamp":"2026-07-14T00:00:01Z"},null,{"validator_address":"VAL3","signature":null,"absent":true,"timestamp":null}]}},"canonical":true}}

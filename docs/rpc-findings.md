@@ -18,9 +18,10 @@ For latest height `H` from `/status`:
 - `/block?height=H` is used only for latest block metadata and transaction summary.
 - Block `H` `last_commit` must not be treated as signatures for block `H`.
 - Signing and missed-block analysis uses height `H - 1`.
-- `/commit?height=H-1` returns `result.signed_header.header`, `result.signed_header.commit`, `result.signed_header.commit.precommits`, and `result.canonical` for that signing height.
-- `/validators?height=H-1` must return the validator set for the same height as the commit.
-- The prototype fails clearly if the parsed commit height and validator-set height do not both equal `H - 1`.
+- `/commit?height=H-1` returns `result.signed_header.header`, `result.signed_header.commit`, `result.signed_header.commit.precommits`, and boolean `result.canonical` for that signing height.
+- Commit height is derived from `result.signed_header.header.height`; `signed_header.commit.height` is not expected.
+- `/validators?height=H-1` must return `result.block_height` for the same height as the commit.
+- The prototype fails clearly if the parsed commit height and validator-set `block_height` do not both equal `H - 1`.
 
 ## Important response paths
 
@@ -37,12 +38,12 @@ For latest height `H` from `/status`:
   - `result.block.data.txs` -> raw transactions present in the block response.
 - `/commit`:
   - `result.signed_header.header.height` -> signed header height.
-  - `result.signed_header.commit.height` -> commit height.
+  - Commit height is derived from `result.signed_header.header.height`.
   - `result.signed_header.commit.precommits` -> commit precommit entries; entries may be `null`.
-  - `result.canonical` -> canonical commit data returned by the RPC.
+  - `result.canonical` -> boolean canonical flag returned by the RPC.
 - `/validators`:
-  - `result.height` -> validator-set height.
-  - `result.total` -> total validator count, used for pagination.
+  - `result.block_height` -> validator-set block height; this field is required.
+  - `result.total` -> total validator count if exposed by the RPC.
   - `result.validators[].address` -> validator address.
   - `result.validators[].voting_power` -> validator voting power.
   - `result.validators[].proposer_priority` -> proposer priority if exposed.
@@ -63,7 +64,7 @@ For latest height `H` from `/status`:
 - Voting power: `result.validators[].voting_power`.
 - Public key type and value: `result.validators[].pub_key.type` and `result.validators[].pub_key.value`.
 - Proposer priority: `result.validators[].proposer_priority`, if present and meaningful on the live RPC.
-- Validator-set height: `result.height` from `/validators?height=<H-1>`.
+- Validator-set height: `result.block_height` from `/validators?height=<H-1>`.
 
 ## Fields useful for signing and missed-block calculations
 
@@ -94,6 +95,7 @@ For latest height `H` from `/status`:
 ## Still needing verification on real Testnet 13 RPC
 
 - Which public RPC endpoint is most reliable for `GNO_RPC_URLS` ordering.
+- Whether any public Testnet 13 RPC truncates `/validators?height=<height>` results without supporting TM2 pagination parameters.
 - Exact node version and chain ID values returned by the live network.
 - Exact commit precommit shape and whether absent signatures are represented with `null`, `absent`, empty `signature`, or `block_id_flag`.
 - Whether transaction data is base64, Amino/JSON, or another encoding in live block responses.

@@ -13,9 +13,6 @@ from urllib.parse import urlencode, urljoin
 from urllib.request import urlopen
 
 DEFAULT_TIMEOUT = 10
-DEFAULT_VALIDATORS_PER_PAGE = 100
-
-
 class RpcError(RuntimeError):
     """Raised when an RPC endpoint cannot be queried or parsed safely."""
 
@@ -34,7 +31,7 @@ class RpcSummary:
     tx_count: int
     validators_height: int
     commit_height: int
-    canonical: Any
+    canonical: bool
     validators: list[dict[str, Any]]
     commit_signatures: list[Any]
     signed_validators: list[dict[str, Any]]
@@ -138,7 +135,7 @@ def parse_status(status_payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "chain_id": node_info.get("network"),
         "latest_height": to_int(sync_info.get("latest_block_height")),
-        "node_version": node_info.get("version"),
+        "node_version": data.get("build_version") or node_info.get("version"),
         "catching_up": sync_info.get("catching_up"),
     }
 
@@ -171,14 +168,16 @@ def parse_commit(commit_payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(precommits, list):
         raise RpcError("Malformed commit response: missing signed_header.commit.precommits")
     header_height = to_int(header.get("height"))
-    commit_height = to_int(commit.get("height")) or header_height
-    if commit_height is None:
-        raise RpcError("Malformed commit response: missing commit height")
+    if header_height is None:
+        raise RpcError("Malformed commit response: missing signed_header.header.height")
+    canonical = data.get("canonical")
+    if not isinstance(canonical, bool):
+        raise RpcError("Malformed commit response: result.canonical must be a boolean")
     return {
-        "height": commit_height,
+        "height": header_height,
         "header_height": header_height,
         "precommits": precommits,
-        "canonical": data.get("canonical"),
+        "canonical": canonical,
     }
 
 
@@ -203,7 +202,10 @@ def parse_validators(validators_payload: dict[str, Any]) -> dict[str, Any]:
             "pub_key_type": pub_key.get("type"),
             "pub_key_value": pub_key.get("value"),
         })
-    return {"height": to_int(data.get("height")), "total": to_int(data.get("total")), "validators": parsed}
+    block_height = to_int(data.get("block_height"))
+    if block_height is None:
+        raise RpcError("Malformed validators response: missing result.block_height")
+    return {"block_height": block_height, "total": to_int(data.get("total")), "validators": parsed}
 
 
 def signer_address(signature: Any) -> str | None:
@@ -232,7 +234,7 @@ def build_summary(rpc_url: str, status_payload: dict[str, Any], block_payload: d
     signing_height = latest_height - 1
     if signing_height < 1:
         raise RpcError("Latest height is too low for H-1 signing analysis")
-    validators_height = validators_data["height"] or signing_height
+    validators_height = validators_data["block_height"]
     if commit["height"] != signing_height:
         raise RpcError(f"Commit height mismatch: expected {signing_height}, got {commit['height']}")
     if validators_height != signing_height:
@@ -283,23 +285,8 @@ def select_healthy_rpc(urls: list[str], timeout: int = DEFAULT_TIMEOUT) -> tuple
     raise RpcError("All RPC endpoints are unavailable: " + "; ".join(failures))
 
 
-def fetch_validators(client: GnoRpcClient, height: int, per_page: int = DEFAULT_VALIDATORS_PER_PAGE) -> dict[str, Any]:
-    page = 1
-    combined: dict[str, Any] | None = None
-    validators: list[dict[str, Any]] = []
-    while True:
-        payload = client.get("validators", height=height, page=page, per_page=per_page)
-        data = result(payload)
-        if combined is None:
-            combined = {"result": {**data, "validators": []}}
-        validators.extend(data.get("validators") or [])
-        total = to_int(data.get("total"))
-        if total is None or len(validators) >= total or not data.get("validators"):
-            break
-        page += 1
-    assert combined is not None
-    combined["result"]["validators"] = validators
-    return combined
+def fetch_validators(client: GnoRpcClient, height: int) -> dict[str, Any]:
+    return client.get("validators", height=height)
 
 
 def fetch_summary(client: GnoRpcClient, status_payload: dict[str, Any]) -> RpcSummary:
@@ -330,7 +317,7 @@ def print_summary(summary: RpcSummary) -> None:
     print(f"Latest block transaction count: {summary.tx_count}")
     print(f"Commit height: {summary.commit_height}")
     print(f"Validator-set height: {summary.validators_height}")
-    print(f"Canonical commit: {json.dumps(summary.canonical, sort_keys=True)}")
+    print(f"Canonical commit: {summary.canonical}")
     print(f"\nValidators at signing height ({len(summary.validators)}):")
     for val in summary.validators:
         print(f"- {val['address']} power={val['voting_power']} pub_key={val['pub_key_type']}")
