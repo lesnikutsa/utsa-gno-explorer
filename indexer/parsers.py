@@ -182,7 +182,7 @@ def _classify_precommit(
         return _signature_row(height, address, "commit", True, vote_block_id, False, True, signature, None)
     if vote_block_id.is_zero:
         return _signature_row(height, address, "nil", False, vote_block_id, True, False, signature, precommit)
-    return _signature_row(height, address, "invalid", False, vote_block_id, False, False, signature, precommit)
+    return _signature_row(height, address, "invalid", False, vote_block_id, False, matches_commit, signature, precommit)
 
 
 def _precommit_block_id(precommit: dict[str, Any]) -> Any:
@@ -194,8 +194,11 @@ def _signature(precommit: dict[str, Any]) -> str | None:
     return value if isinstance(value, str) else None
 
 
+SUPPORTED_SIGNATURE_KEY_TYPES = {"/tm.PubKeyEd25519", "/tm.PubKeySecp256k1"}
+
+
 def _usable_signature(signature: str | None, public_key_type: str | None) -> bool:
-    if public_key_type != "/tm.PubKeyEd25519":
+    if public_key_type not in SUPPORTED_SIGNATURE_KEY_TYPES:
         return False
     if not signature:
         return False

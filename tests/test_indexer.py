@@ -226,17 +226,31 @@ class ParserTests(unittest.TestCase):
             parse_height(122, block, commit, validators)
 
     def test_signature_correctness(self):
+        self.assertEqual(self.statuses()["VAL1"]["vote_status"], "commit")
+        block, commit, validators = payloads()
+        validators["result"]["validators"][0]["pub_key"]["@type"] = "/tm.PubKeySecp256k1"
+        secp_signature = parse_height(122, block, commit, validators).signatures[0]
+        self.assertEqual(secp_signature["vote_status"], "commit")
+        self.assertTrue(secp_signature["signed"])
+
         for value in (None, "", "not base64!!!", "c2hvcnQ=", "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0A="):
-            _, commit, _ = payloads()
+            block, commit, validators = payloads()
+            validators["result"]["validators"][0]["pub_key"]["@type"] = "/tm.PubKeySecp256k1"
             if value is None:
                 commit["result"]["signed_header"]["commit"]["precommits"][0].pop("signature")
             else:
                 commit["result"]["signed_header"]["commit"]["precommits"][0]["signature"] = value
-            self.assertEqual(self.statuses(commit)["VAL1"]["vote_status"], "invalid")
+            signature = parse_height(122, block, commit, validators).signatures[0]
+            self.assertEqual(signature["vote_status"], "invalid")
+            self.assertFalse(signature["signed"])
+            self.assertTrue(signature["block_id_matches_commit"])
+
         block, commit, validators = payloads()
         validators["result"]["validators"][0]["pub_key"]["@type"] = "/tm.PubKeyUnknown"
-        self.assertEqual(parse_height(122, block, commit, validators).signatures[0]["vote_status"], "invalid")
-        self.assertEqual(self.statuses()["VAL1"]["vote_status"], "commit")
+        signature = parse_height(122, block, commit, validators).signatures[0]
+        self.assertEqual(signature["vote_status"], "invalid")
+        self.assertFalse(signature["signed"])
+        self.assertTrue(signature["block_id_matches_commit"])
 
     def test_duplicate_signer_and_signer_outside_set(self):
         _, commit, _ = payloads()
