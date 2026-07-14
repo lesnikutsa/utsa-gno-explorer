@@ -67,3 +67,9 @@ The first explorer version assumes finalized TM2 heights are stable once they ar
 ## Out of scope
 
 This checkpoint does not add scheduler loops, worker processes, RPC clients beyond the existing prototype, database migrations, Docker Compose, API endpoints, or UI components. Follow-up verification must confirm exact live Gno TM2 precommit field paths for `Vote.BlockID`, enclosing `Commit.BlockID`, nil votes, and validator signing addresses before implementing the continuous indexer.
+
+## Implemented bounded prototype
+
+The current implementation is the bounded one-shot prototype in `scripts/index_range.py` and the `indexer/` package. It performs the same single-height transaction shape described above, but only for an explicit finite range chosen by the operator.
+
+It is not a continuous production indexer. It has no infinite loop, no scheduler, no systemd unit, and no background worker. The future continuous service may reuse the parsing and database boundaries, but it must add operational supervision separately.
