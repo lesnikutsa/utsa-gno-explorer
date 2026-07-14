@@ -1,0 +1,1 @@
+{"result":{"block_id":{"hash":"ABC123"},"block":{"header":{"height":"123","time":"2026-07-14T00:00:00Z","proposer_address":"VAL1"},"data":{"txs":["tx-one",{"msg":"tx-two"}]},"last_commit":{"precommits":[{"validator_address":"VAL1","signature":"sig1","timestamp":"2026-07-14T00:00:01Z"},{"validator_address":"VAL2","signature":null,"absent":true,"timestamp":null}]}}}}
