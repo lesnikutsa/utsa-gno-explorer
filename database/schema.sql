@@ -90,8 +90,13 @@ CREATE INDEX validator_set_members_signing_height_idx ON validator_set_members (
 CREATE TABLE validator_signatures (
     height BIGINT NOT NULL REFERENCES blocks(height) ON DELETE CASCADE,
     signing_address TEXT NOT NULL REFERENCES validators(signing_address) ON DELETE RESTRICT,
+    vote_status TEXT NOT NULL CHECK (vote_status IN ('commit', 'nil', 'absent', 'invalid')),
     signed BOOLEAN NOT NULL,
-    block_id_flag TEXT,
+    vote_block_id_hash_base64 TEXT,
+    vote_block_id_hash_hex TEXT,
+    vote_block_id_parts_total INTEGER CHECK (vote_block_id_parts_total IS NULL OR vote_block_id_parts_total >= 0),
+    vote_block_id_is_zero BOOLEAN NOT NULL DEFAULT false,
+    block_id_matches_commit BOOLEAN NOT NULL DEFAULT false,
     signature_base64 TEXT,
     raw_precommit JSONB,
     inserted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -100,18 +105,60 @@ CREATE TABLE validator_signatures (
     FOREIGN KEY (height, signing_address)
         REFERENCES validator_set_members(height, signing_address)
         ON DELETE CASCADE,
-    CONSTRAINT validator_signatures_signed_has_evidence CHECK (signed = false OR signature_base64 IS NOT NULL OR block_id_flag IS NOT NULL),
-    CONSTRAINT validator_signatures_missed_has_no_precommit CHECK (signed OR (signature_base64 IS NULL AND block_id_flag IS NULL AND raw_precommit IS NULL))
+    CONSTRAINT validator_signatures_signed_only_matching_commit CHECK (signed = (vote_status = 'commit' AND block_id_matches_commit)),
+    CONSTRAINT validator_signatures_commit_vote_consistent CHECK (
+        vote_status <> 'commit'
+        OR (
+            block_id_matches_commit
+            AND NOT vote_block_id_is_zero
+            AND vote_block_id_hash_base64 IS NOT NULL
+            AND vote_block_id_hash_hex IS NOT NULL
+            AND signature_base64 IS NOT NULL
+        )
+    ),
+    CONSTRAINT validator_signatures_nil_vote_consistent CHECK (
+        vote_status <> 'nil'
+        OR (
+            NOT signed
+            AND vote_block_id_is_zero
+            AND NOT block_id_matches_commit
+        )
+    ),
+    CONSTRAINT validator_signatures_absent_vote_consistent CHECK (
+        vote_status <> 'absent'
+        OR (
+            NOT signed
+            AND NOT vote_block_id_is_zero
+            AND NOT block_id_matches_commit
+            AND vote_block_id_hash_base64 IS NULL
+            AND vote_block_id_hash_hex IS NULL
+            AND vote_block_id_parts_total IS NULL
+            AND signature_base64 IS NULL
+            AND raw_precommit IS NULL
+        )
+    ),
+    CONSTRAINT validator_signatures_invalid_vote_consistent CHECK (
+        vote_status <> 'invalid'
+        OR (NOT signed AND NOT block_id_matches_commit)
+    ),
+    CONSTRAINT validator_signatures_vote_hash_hex_uppercase CHECK (
+        vote_block_id_hash_hex IS NULL OR vote_block_id_hash_hex = upper(vote_block_id_hash_hex)
+    )
 );
 
-COMMENT ON TABLE validator_signatures IS 'One signed/missed result per validator per finalized height. Primary key makes reprocessing idempotent.';
-COMMENT ON COLUMN validator_signatures.signed IS 'False means the validator signing address was absent from the non-null commit signer set; null precommits are not mapped by array position.';
-COMMENT ON COLUMN validator_signatures.raw_precommit IS 'Optional short-retention precommit JSON for parser auditing.';
+COMMENT ON TABLE validator_signatures IS 'One vote result per validator per finalized height. Primary key makes reprocessing idempotent.';
+COMMENT ON COLUMN validator_signatures.vote_status IS 'Normalized vote status: commit, nil, absent, or invalid.';
+COMMENT ON COLUMN validator_signatures.signed IS 'True only for commit votes whose Vote.BlockID matches the enclosing Commit.BlockID; a non-null signature alone is insufficient.';
+COMMENT ON COLUMN validator_signatures.vote_block_id_hash_base64 IS 'Parsed Vote.BlockID hash from a non-null precommit, preserved as base64 when present.';
+COMMENT ON COLUMN validator_signatures.vote_block_id_hash_hex IS 'Uppercase hex form of Vote.BlockID hash when present.';
+COMMENT ON COLUMN validator_signatures.vote_block_id_is_zero IS 'True when the parsed Vote.BlockID is zero, which represents a nil vote.';
+COMMENT ON COLUMN validator_signatures.block_id_matches_commit IS 'True only when the parsed Vote.BlockID matches the enclosing Commit.BlockID for the same height.';
+COMMENT ON COLUMN validator_signatures.raw_precommit IS 'Optional short-retention precommit JSON for parser auditing. Nil and invalid votes may retain it.';
 
--- Uptime over latest 1,000 finalized heights and recent 100 signature squares filter by validator and height.
-CREATE INDEX validator_signatures_signing_height_signed_idx ON validator_signatures (signing_address, height DESC, signed);
--- Recent network-wide misses group by height and filter missed signatures.
-CREATE INDEX validator_signatures_height_signed_idx ON validator_signatures (height DESC, signed, signing_address);
+-- Uptime over latest 1,000 finalized heights and recent 100 signature squares filter by validator, height, and normalized vote status.
+CREATE INDEX validator_signatures_signing_height_status_idx ON validator_signatures (signing_address, height DESC, vote_status, signed);
+-- Recent network-wide miss/nil/invalid summaries group by height and filter normalized vote status.
+CREATE INDEX validator_signatures_height_status_idx ON validator_signatures (height DESC, vote_status, signing_address);
 
 CREATE TABLE rpc_endpoints (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

@@ -33,11 +33,14 @@ If any statement fails, the transaction rolls back. The checkpoint must not adva
 ## Signature calculation
 
 - Build the expected validator set from `/validators?height=S`.
-- Build the signer-address set from non-null precommits in `/commit?height=S`.
+- Build parsed vote records from non-null precommits in `/commit?height=S`, keyed by validator signing address. Address matching is required for non-null votes; array position must not be the sole evidence of signing.
 - Do not associate a null precommit with a validator by array position unless that relationship is explicitly verified in a future discovery task.
-- A validator is marked missed when its signing address is absent from the non-null signer-address set.
-- A validator with a matching signed precommit is stored as `signed = true`.
-- Store raw or parsed precommit details only for matched signer addresses and only in limited JSONB for audit and parser debugging.
+- Compare each parsed `Vote.BlockID` with the enclosing `Commit.BlockID` for height `S`. A non-null signature alone is not sufficient for signing.
+- Store `vote_status = 'commit'` and `signed = true` only when the validator has a non-null precommit whose `Vote.BlockID` matches the enclosing `Commit.BlockID`.
+- Store `vote_status = 'nil'` when the validator has a non-null vote with zero `Vote.BlockID`; nil votes are not signed for uptime.
+- Store `vote_status = 'absent'` when the validator signing address is absent from the non-null precommit signer-address set.
+- Store `vote_status = 'invalid'` when a non-null vote is malformed, has an unmatched address, or has a non-zero `Vote.BlockID` that does not match the enclosing commit and needs investigation.
+- Nil and invalid votes may retain `raw_precommit` JSONB for audit; absent votes must not invent per-validator raw precommit data.
 
 ## RPC switching
 
@@ -63,4 +66,4 @@ The first explorer version assumes finalized TM2 heights are stable once they ar
 
 ## Out of scope
 
-This checkpoint does not add scheduler loops, worker processes, RPC clients beyond the existing prototype, database migrations, Docker Compose, API endpoints, or UI components.
+This checkpoint does not add scheduler loops, worker processes, RPC clients beyond the existing prototype, database migrations, Docker Compose, API endpoints, or UI components. Follow-up verification must confirm exact live Gno TM2 precommit field paths for `Vote.BlockID`, enclosing `Commit.BlockID`, nil votes, and validator signing addresses before implementing the continuous indexer.

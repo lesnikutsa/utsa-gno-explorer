@@ -22,7 +22,7 @@ Stores the active validator set for each finalized height. Voting power and prop
 
 ### `validator_signatures`
 
-Stores one row per `(height, signing_address)` showing whether the validator signed or missed that finalized height. Misses are recorded when an active validator signing address is absent from the non-null commit signer-address set; null precommits are not mapped to validators by array position.
+Stores one row per `(height, signing_address)` with normalized `vote_status`: `commit`, `nil`, `absent`, or `invalid`. `signed` is true only for `commit` votes whose parsed `Vote.BlockID` matches the enclosing `Commit.BlockID`; a non-null signature alone is insufficient. Address matching is used for non-null votes, and array position must not be the sole evidence of signing.
 
 ### `rpc_endpoints`
 
@@ -42,7 +42,7 @@ Stores a named singleton checkpoint. The first version uses `state_key = 'defaul
 - `transactions` has both an internal primary key and a unique `(block_height, tx_index)` constraint.
 - `validators.signing_address` is unique and is referenced by validator-set and signature rows.
 - `validator_set_members` has primary key `(height, signing_address)`.
-- `validator_signatures` has primary key `(height, signing_address)`.
+- `validator_signatures` has primary key `(height, signing_address)` and constraints that prevent impossible combinations of `vote_status`, `signed`, parsed vote BlockID fields, and `block_id_matches_commit`.
 - `validator_set_members.height` references `blocks.height`, and signatures also depend on membership rows for the same `(height, signing_address)`.
 - Foreign keys from transactions, validator-set members, signatures, endpoint checks, and indexer state preserve relational consistency.
 
@@ -92,9 +92,9 @@ WITH bounds AS (
 )
 SELECT signing_address,
        count(*) AS observed_heights,
-       count(*) FILTER (WHERE signed) AS signed_heights,
-       count(*) FILTER (WHERE NOT signed) AS missed_heights,
-       count(*) FILTER (WHERE signed)::numeric / NULLIF(count(*), 0) AS uptime_ratio
+       count(*) FILTER (WHERE vote_status = 'commit' AND signed) AS signed_heights,
+       count(*) FILTER (WHERE vote_status IN ('nil', 'absent', 'invalid') OR NOT signed) AS unsigned_heights,
+       count(*) FILTER (WHERE vote_status = 'commit' AND signed AND block_id_matches_commit)::numeric / NULLIF(count(*), 0) AS uptime_ratio
 FROM validator_signatures, bounds
 WHERE height BETWEEN bounds.start_height AND bounds.end_height
 GROUP BY signing_address
@@ -110,7 +110,7 @@ WITH bounds AS (
   FROM indexer_state
   WHERE state_key = 'default'
 )
-SELECT m.height, m.signing_address, s.signed
+SELECT m.height, m.signing_address, s.vote_status, s.signed, s.block_id_matches_commit
 FROM validator_set_members m
 CROSS JOIN bounds
 LEFT JOIN validator_signatures s
@@ -124,16 +124,18 @@ ORDER BY m.height DESC, m.signing_address;
 
 ```sql
 SELECT height,
-       count(*) FILTER (WHERE NOT signed) AS missed_validators,
+       count(*) FILTER (WHERE vote_status = 'absent') AS absent_validators,
+       count(*) FILTER (WHERE vote_status = 'nil') AS nil_votes,
+       count(*) FILTER (WHERE vote_status = 'invalid') AS invalid_votes,
        count(*) AS validators_observed
 FROM validator_signatures
 WHERE height > $1
 GROUP BY height
-HAVING count(*) FILTER (WHERE NOT signed) > 0
+HAVING count(*) FILTER (WHERE vote_status IN ('nil', 'absent', 'invalid')) > 0
 ORDER BY height DESC;
 ```
 
-For recent-square rendering, missing rows after the left join are not missed signatures. A missing membership row means the validator was not active at that height, and a missing signature row should be treated as unknown/incomplete data rather than a miss. Misses are represented by active membership plus `validator_signatures.signed = false`.
+For recent-square rendering, missing rows after the left join are not missed signatures. A missing membership row means the validator was not active at that height, and a missing signature row should be treated as unknown/incomplete data rather than a miss. Active rows use `vote_status`: `commit` is a signed square only when `signed = true` and `block_id_matches_commit = true`; `nil`, `absent`, and `invalid` are unsigned squares. `invalid` should be visually distinguishable from ordinary missed votes because it indicates malformed or unmatched vote data requiring investigation.
 
 ## Idempotent reprocessing
 

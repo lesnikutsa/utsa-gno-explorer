@@ -33,7 +33,7 @@ For a latest RPC height `H` returned by `/status`:
 - The indexer must process every intermediate `S` sequentially while `S <= finalized_tip`; downtime must not create gaps.
 - For each `S`, `/block?height=S`, `/commit?height=S`, and `/validators?height=S` must be requested at the same height.
 - The parsed block height, commit header height, and validator-set height must all equal `S`.
-- Null precommits are evidence that some signature is absent, but they must not be mapped to validators by array position unless that positional relationship is explicitly verified. Missed validators are determined by subtracting non-null signer addresses from the validator set.
+- Null precommits are evidence that some vote is absent, but they must not be mapped to validators by array position unless that positional relationship is explicitly verified. Address matching is used for non-null votes, and array position must not be the sole evidence of signing. A validator counts as signed only when its non-null precommit `Vote.BlockID` matches the enclosing `Commit.BlockID`; a non-null signature alone is insufficient.
 
 This model is refined from the RPC discovery prototype and must remain an indexer invariant.
 
@@ -43,7 +43,7 @@ This model is refined from the RPC discovery prototype and must remain an indexe
 - `transactions` stores ordered transactions per block, preserving raw base64 and decoded bytes when decoding succeeds.
 - `validators` stores stable validator identity by signing address, with public key type and value.
 - `validator_set_members` stores the active set membership and voting power for each finalized height.
-- `validator_signatures` stores one signing result per validator per finalized height.
+- `validator_signatures` stores one normalized vote result per validator per finalized height: `commit`, `nil`, `absent`, or `invalid`.
 - `rpc_endpoints` stores current endpoint health metadata without secrets.
 - `rpc_endpoint_checks` stores append-only health checks and selection/switch events for auditing.
 - `indexer_state` stores the checkpoint that makes indexing resumable.
@@ -63,11 +63,23 @@ The base64 value preserves source fidelity. The hex value supports user-facing s
 
 ### Validator identity
 
-The validator signing address from the validator set is the primary stable explorer key for signatures and misses. Public key type and value are also stored because display labels and key formats can differ across TM2 versions. Voting power is stored in `validator_set_members`, not only in `validators`, because it can change by height.
+The validator signing address from the validator set is the primary stable explorer key for matching non-null precommit votes, signatures, and misses. Public key type and value are also stored because display labels and key formats can differ across TM2 versions. Voting power is stored in `validator_set_members`, not only in `validators`, because it can change by height.
 
 ### Transactions
 
 Transactions are stored as raw base64 plus decode metadata. When base64 decoding succeeds, decoded bytes are stored in `decoded_bytes`; higher-level Gno transaction parsing is intentionally deferred. If decoding fails, the row remains useful through `raw_base64`, lengths, and `decode_status`.
+
+
+### Vote status semantics
+
+Gno TM2 precommit votes are normalized before uptime or recent-square calculations:
+
+- `commit`: a non-null precommit whose parsed `Vote.BlockID` matches the enclosing `Commit.BlockID`; only this state counts as signed.
+- `nil`: a non-null precommit with zero `Vote.BlockID`; it is unsigned for uptime and should appear as a missed/nil square.
+- `absent`: no precommit was present for the validator signing address; it is unsigned for uptime and appears as an absent square.
+- `invalid`: malformed, unmatched, or non-zero non-matching vote data requiring investigation; it is unsigned for uptime and must be visually distinguishable from ordinary missed votes in future UI/API.
+
+A non-null signature alone is not enough to count a vote as signed. The parser must compare parsed vote BlockID information with the enclosing commit BlockID.
 
 ### JSONB usage
 
@@ -83,7 +95,7 @@ Network timestamps use `TIMESTAMPTZ`. The indexer stores and displays them as UT
 
 ### Validator-set changes
 
-Every finalized height has its own validator-set membership rows. Validator rows are upserted by signing address, while membership and voting power are recorded per height. This supports joins against the exact validator set that was responsible for each commit height.
+Every finalized height has its own validator-set membership rows. Validator rows are upserted by signing address, while membership and voting power are recorded per height. This supports joins against the exact validator set that was responsible for each commit height. Vote status separates successful commit votes from nil, absent, and invalid votes so future uptime and UI state are not inferred from raw signature presence alone.
 
 ## Idempotency and transactions
 
@@ -100,7 +112,7 @@ If any step fails, the transaction rolls back and `indexer_state` is not advance
 
 ## Assumptions and unverified behavior
 
-- The exact long-term shape of non-null precommits still needs confirmation against live RPC samples.
+- The exact live field paths for non-null precommit `Vote.BlockID`, enclosing `Commit.BlockID`, nil votes, and validator signing addresses still need follow-up verification before implementation.
 - Full Gno transaction decoding is out of scope for this checkpoint.
 - Public RPC endpoint reliability and ordering should be revisited before production indexing.
 - This design stores no secrets and assumes private RPC credentials, if ever needed, are supplied only through runtime secret management.
