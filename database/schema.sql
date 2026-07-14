@@ -116,6 +116,8 @@ CREATE TABLE validator_signatures (
             AND vote_block_id_hash_base64 IS NOT NULL
             AND vote_block_id_hash_hex IS NOT NULL
             AND vote_block_id_parts_total IS NOT NULL
+            AND vote_block_id_parts_hash_base64 IS NOT NULL
+            AND vote_block_id_parts_hash_hex IS NOT NULL
             AND signature_base64 IS NOT NULL
         )
     ),

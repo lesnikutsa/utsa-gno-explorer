@@ -143,4 +143,4 @@ The indexer should use `INSERT ... ON CONFLICT ... DO UPDATE` for rows that may 
 
 ### `validator_signatures` BlockID part-set fields
 
-The bounded prototype stores the vote BlockID hash together with the BlockID part-set total and part-set hash. `block_id_matches_commit` is true only when the normalized vote BlockID and enclosing commit BlockID match across all available BlockID components, not just the block hash.
+The bounded prototype stores the vote BlockID hash together with the BlockID part-set total and part-set hash. Non-zero BlockIDs must be complete: valid non-empty base64 hash, non-null non-negative part-set total, and valid non-empty base64 part-set hash. `block_id_matches_commit` is true only when the normalized vote BlockID and enclosing commit BlockID match across all BlockID components, not just the block hash.

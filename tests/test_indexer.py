@@ -16,7 +16,7 @@ from scripts.inspect_rpc import RpcError
 FIXTURES = Path(__file__).parent / "fixtures"
 COMMIT_HASH = "AQIDBA=="
 PARTS_HASH = "BQYHCA=="
-VALID_SIGNATURE = "c2lnMQ=="
+VALID_SIGNATURE = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+Pw=="
 
 
 def load(name):
@@ -90,14 +90,18 @@ class SqlLikeDb:
             self.transactions[(parsed.height, tx["index"])] = (tx["raw_base64"], tx["decode_status"])
         for validator in parsed.validators:
             self.validators[validator["address"]] = (validator.get("pub_key_type") or "unknown", validator.get("pub_key_value") or "")
-            self.members[(parsed.height, validator["address"])] = (validator.get("voting_power") or 0, validator.get("proposer_priority"))
+            self.members[(parsed.height, validator["address"])] = (validator.get("voting_power") or 0, validator.get("proposer_priority"), parsed.validators.index(validator))
         for signature in parsed.signatures:
             self.signatures[(parsed.height, signature["signing_address"])] = (
                 signature["vote_status"],
                 signature["signed"],
                 signature["vote_block_id_hash_base64"],
+                signature["vote_block_id_hash_hex"],
                 signature["vote_block_id_parts_total"],
                 signature["vote_block_id_parts_hash_base64"],
+                signature["vote_block_id_parts_hash_hex"],
+                signature["vote_block_id_is_zero"],
+                signature["block_id_matches_commit"],
                 signature["signature_base64"],
             )
         if self.checkpoint is None or parsed.height == self.checkpoint + 1:
@@ -106,6 +110,19 @@ class SqlLikeDb:
     def _check_conflicts(self, parsed):
         if parsed.height in self.blocks and self.blocks[parsed.height] != (parsed.block["hash_base64"], parsed.block["hash_hex"]):
             raise FinalizedDataConflict("block")
+        if parsed.height in self.blocks:
+            incoming_tx_keys = {(parsed.height, tx["index"]) for tx in parsed.transactions}
+            existing_tx_keys = {key for key in self.transactions if key[0] == parsed.height}
+            if incoming_tx_keys != existing_tx_keys:
+                raise FinalizedDataConflict("transaction set")
+            incoming_member_keys = {(parsed.height, validator["address"]) for validator in parsed.validators}
+            existing_member_keys = {key for key in self.members if key[0] == parsed.height}
+            if incoming_member_keys != existing_member_keys:
+                raise FinalizedDataConflict("member set")
+            incoming_signature_keys = {(parsed.height, signature["signing_address"]) for signature in parsed.signatures}
+            existing_signature_keys = {key for key in self.signatures if key[0] == parsed.height}
+            if incoming_signature_keys != existing_signature_keys:
+                raise FinalizedDataConflict("signature set")
         for tx in parsed.transactions:
             key = (parsed.height, tx["index"])
             if key in self.transactions and self.transactions[key] != (tx["raw_base64"], tx["decode_status"]):
@@ -116,7 +133,7 @@ class SqlLikeDb:
             if key in self.validators and self.validators[key] != expected:
                 raise FinalizedDataConflict("validator")
             member_key = (parsed.height, validator["address"])
-            member_expected = (validator.get("voting_power") or 0, validator.get("proposer_priority"))
+            member_expected = (validator.get("voting_power") or 0, validator.get("proposer_priority"), parsed.validators.index(validator))
             if member_key in self.members and self.members[member_key] != member_expected:
                 raise FinalizedDataConflict("member")
         for signature in parsed.signatures:
@@ -125,8 +142,12 @@ class SqlLikeDb:
                 signature["vote_status"],
                 signature["signed"],
                 signature["vote_block_id_hash_base64"],
+                signature["vote_block_id_hash_hex"],
                 signature["vote_block_id_parts_total"],
                 signature["vote_block_id_parts_hash_base64"],
+                signature["vote_block_id_parts_hash_hex"],
+                signature["vote_block_id_is_zero"],
+                signature["block_id_matches_commit"],
                 signature["signature_base64"],
             )
             if key in self.signatures and self.signatures[key] != expected:
@@ -190,14 +211,31 @@ class ParserTests(unittest.TestCase):
         commit["result"]["signed_header"]["commit"]["precommits"][0]["block_id"]["parts"]["hash"] = "CQkJCQ=="
         self.assertEqual(self.statuses(commit)["VAL1"]["vote_status"], "invalid")
 
+    def test_complete_block_id_validation(self):
+        self.assertEqual(self.statuses()["VAL1"]["vote_status"], "commit")
+        for field in ("total", "hash"):
+            _, commit, _ = payloads()
+            commit["result"]["signed_header"]["commit"]["precommits"][0]["block_id"]["parts"].pop(field)
+            self.assertEqual(self.statuses(commit)["VAL1"]["vote_status"], "invalid")
+        _, commit, _ = payloads()
+        commit["result"]["signed_header"]["commit"]["precommits"][0]["block_id"]["parts"]["hash"] = "not base64!!!"
+        self.assertEqual(self.statuses(commit)["VAL1"]["vote_status"], "invalid")
+        block, commit, validators = payloads()
+        commit["result"]["signed_header"]["commit"]["block_id"]["parts"].pop("hash")
+        with self.assertRaisesRegex(RpcError, "Commit.BlockID"):
+            parse_height(122, block, commit, validators)
+
     def test_signature_correctness(self):
-        for value in (None, "", "not base64!!!"):
+        for value in (None, "", "not base64!!!", "c2hvcnQ=", "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0A="):
             _, commit, _ = payloads()
             if value is None:
                 commit["result"]["signed_header"]["commit"]["precommits"][0].pop("signature")
             else:
                 commit["result"]["signed_header"]["commit"]["precommits"][0]["signature"] = value
             self.assertEqual(self.statuses(commit)["VAL1"]["vote_status"], "invalid")
+        block, commit, validators = payloads()
+        validators["result"]["validators"][0]["pub_key"]["@type"] = "/tm.PubKeyUnknown"
+        self.assertEqual(parse_height(122, block, commit, validators).signatures[0]["vote_status"], "invalid")
         self.assertEqual(self.statuses()["VAL1"]["vote_status"], "commit")
 
     def test_duplicate_signer_and_signer_outside_set(self):
@@ -255,19 +293,86 @@ class ServiceAndDatabaseSemanticsTests(unittest.TestCase):
         db = SqlLikeDb(checkpoint=121)
         service = self.service(db, [122])
         service.run(plan_range(121, None, 122, None, 130, 100, False))
-        for mutate in ("block", "transaction", "member", "signature"):
+        for mutate in (
+            "block",
+            "transaction",
+            "missing_transaction",
+            "extra_transaction",
+            "member",
+            "missing_member",
+            "extra_member",
+            "changed_validator_index",
+            "signature",
+            "missing_signature",
+            "extra_signature",
+        ):
             block, commit, validators = payloads(122)
             if mutate == "block":
                 block["result"]["block_meta"]["block_id"]["hash"] = "AgMEBQ=="
             if mutate == "transaction":
                 block["result"]["block"]["data"]["txs"][0] = "bmV3"
+            if mutate == "missing_transaction":
+                block["result"]["block"]["data"]["txs"].pop()
+                block["result"]["block"]["header"]["num_txs"] = "1"
+            if mutate == "extra_transaction":
+                block["result"]["block"]["data"]["txs"].append("ZXh0cmE=")
+                block["result"]["block"]["header"]["num_txs"] = "3"
             if mutate == "member":
                 validators["result"]["validators"][0]["voting_power"] = "999"
+            if mutate == "missing_member":
+                validators["result"]["validators"].pop()
+                commit["result"]["signed_header"]["commit"]["precommits"].pop()
+            if mutate == "extra_member":
+                extra = copy.deepcopy(validators["result"]["validators"][0])
+                extra["address"] = "VAL4"
+                extra["pub_key"]["value"] = "pk4"
+                validators["result"]["validators"].append(extra)
+            if mutate == "changed_validator_index":
+                validators["result"]["validators"].reverse()
             if mutate == "signature":
-                commit["result"]["signed_header"]["commit"]["precommits"][0]["signature"] = "bmV3"
+                commit["result"]["signed_header"]["commit"]["precommits"][0]["block_id"]["parts"]["hash"] = "CQkJCQ=="
+            if mutate == "missing_signature":
+                commit["result"]["signed_header"]["commit"]["precommits"].pop()
+            if mutate == "extra_signature":
+                extra = copy.deepcopy(commit["result"]["signed_header"]["commit"]["precommits"][0])
+                extra["validator_address"] = "VAL3"
+                commit["result"]["signed_header"]["commit"]["precommits"][2] = extra
             retry = IndexerService(FakeRpc({122: {"block": block, "commit": commit, "validators": validators}}), db, "test-13", 130, [])
             with self.assertRaises(FinalizedDataConflict, msg=mutate):
                 retry.run(plan_range(130, 122, 122, None, 130, 100, False))
+
+
+    def test_existing_child_set_missing_and_extra_rows_conflict(self):
+        db = SqlLikeDb(checkpoint=121)
+        service = self.service(db, [122])
+        service.run(plan_range(121, None, 122, None, 130, 100, False))
+        original_rpc = self.service(db, [122])
+
+        removed_tx = db.transactions.pop((122, 1))
+        with self.assertRaises(FinalizedDataConflict):
+            original_rpc.run(plan_range(130, 122, 122, None, 130, 100, False))
+        db.transactions[(122, 1)] = removed_tx
+        db.transactions[(122, 99)] = ("ZXh0cmE=", "decoded")
+        with self.assertRaises(FinalizedDataConflict):
+            original_rpc.run(plan_range(130, 122, 122, None, 130, 100, False))
+        del db.transactions[(122, 99)]
+
+        removed_member = db.members.pop((122, "VAL3"))
+        with self.assertRaises(FinalizedDataConflict):
+            original_rpc.run(plan_range(130, 122, 122, None, 130, 100, False))
+        db.members[(122, "VAL3")] = removed_member
+        db.members[(122, "VALX")] = (1, 0, 99)
+        with self.assertRaises(FinalizedDataConflict):
+            original_rpc.run(plan_range(130, 122, 122, None, 130, 100, False))
+        del db.members[(122, "VALX")]
+
+        removed_signature = db.signatures.pop((122, "VAL3"))
+        with self.assertRaises(FinalizedDataConflict):
+            original_rpc.run(plan_range(130, 122, 122, None, 130, 100, False))
+        db.signatures[(122, "VAL3")] = removed_signature
+        db.signatures[(122, "VALX")] = removed_signature
+        with self.assertRaises(FinalizedDataConflict):
+            original_rpc.run(plan_range(130, 122, 122, None, 130, 100, False))
 
 
 class RpcHealthTests(unittest.TestCase):

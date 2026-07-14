@@ -73,17 +73,32 @@ def normalize_block_id(block_id: Any, field_name: str) -> NormalizedBlockID:
         raise RpcError(f"Malformed {field_name}.parts: expected object")
     parts_total = to_int(parts.get("total") or parts.get("Total"))
     parts_hash = parts.get("hash") or parts.get("Hash")
-    is_zero = (block_hash is None or block_hash in ZERO_HASHES) and (parts_total in (None, 0)) and (parts_hash is None or parts_hash in ZERO_HASHES)
+    is_zero = (
+        (block_hash is None or block_hash in ZERO_HASHES)
+        and (parts_total in (None, 0))
+        and (parts_hash is None or parts_hash in ZERO_HASHES)
+    )
     if is_zero:
-        return NormalizedBlockID(block_hash if isinstance(block_hash, str) else None, None, parts_total, parts_hash if isinstance(parts_hash, str) else None, None, True)
+        return NormalizedBlockID(
+            block_hash if isinstance(block_hash, str) else None,
+            None,
+            parts_total,
+            parts_hash if isinstance(parts_hash, str) else None,
+            None,
+            True,
+        )
     if not isinstance(block_hash, str) or not block_hash:
         raise RpcError(f"Malformed {field_name}: missing hash")
+    if parts_total is None or parts_total < 0:
+        raise RpcError(f"Malformed {field_name}: missing non-negative parts total")
+    if not isinstance(parts_hash, str) or not parts_hash:
+        raise RpcError(f"Malformed {field_name}: missing parts hash")
     return NormalizedBlockID(
         hash_base64=block_hash,
         hash_hex=decode_base64(block_hash, f"{field_name}.hash").hex().upper(),
         parts_total=parts_total,
-        parts_hash_base64=parts_hash if isinstance(parts_hash, str) and parts_hash else None,
-        parts_hash_hex=decode_base64(parts_hash, f"{field_name}.parts.hash").hex().upper() if isinstance(parts_hash, str) and parts_hash else None,
+        parts_hash_base64=parts_hash,
+        parts_hash_hex=decode_base64(parts_hash, f"{field_name}.parts.hash").hex().upper(),
         is_zero=False,
     )
 
@@ -101,6 +116,7 @@ def block_ids_match(left: NormalizedBlockID, right: NormalizedBlockID) -> bool:
 def classify_votes(height: int, commit: dict[str, Any], validators: list[dict[str, Any]]) -> list[dict[str, Any]]:
     active_addresses = {validator["address"] for validator in validators if validator.get("address")}
     commit_block_id = _commit_block_id(commit)
+    validator_key_types = {validator["address"]: validator.get("pub_key_type") for validator in validators if validator.get("address")}
     malformed_precommits = []
     outside_signers = []
     seen: dict[str, dict[str, Any]] = {}
@@ -138,7 +154,7 @@ def classify_votes(height: int, commit: dict[str, Any], validators: list[dict[st
         if address in duplicate_signers:
             rows.append(_signature_row(height, address, "invalid", False, None, False, False, None, precommit))
             continue
-        rows.append(_classify_precommit(height, address, precommit, commit_block_id))
+        rows.append(_classify_precommit(height, address, precommit, commit_block_id, validator_key_types.get(address)))
     return rows
 
 
@@ -147,14 +163,20 @@ def _commit_block_id(commit: dict[str, Any]) -> NormalizedBlockID:
     return normalize_block_id(raw_commit.get("block_id"), "Commit.BlockID")
 
 
-def _classify_precommit(height: int, address: str, precommit: dict[str, Any], commit_block_id: NormalizedBlockID) -> dict[str, Any]:
+def _classify_precommit(
+    height: int,
+    address: str,
+    precommit: dict[str, Any],
+    commit_block_id: NormalizedBlockID,
+    public_key_type: str | None,
+) -> dict[str, Any]:
     try:
         vote_block_id = normalize_block_id(_precommit_block_id(precommit), "Vote.BlockID")
     except RpcError:
         return _signature_row(height, address, "invalid", False, None, False, False, _signature(precommit), precommit)
 
     signature = _signature(precommit)
-    signature_ok = _usable_signature(signature)
+    signature_ok = _usable_signature(signature, public_key_type)
     matches_commit = block_ids_match(vote_block_id, commit_block_id)
     if matches_commit and signature_ok:
         return _signature_row(height, address, "commit", True, vote_block_id, False, True, signature, None)
@@ -172,14 +194,16 @@ def _signature(precommit: dict[str, Any]) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def _usable_signature(signature: str | None) -> bool:
+def _usable_signature(signature: str | None, public_key_type: str | None) -> bool:
+    if public_key_type != "/tm.PubKeyEd25519":
+        return False
     if not signature:
         return False
     try:
-        base64.b64decode(signature, validate=True)
+        decoded = base64.b64decode(signature, validate=True)
     except (binascii.Error, ValueError):
         return False
-    return True
+    return len(decoded) == 64
 
 
 def _signature_row(

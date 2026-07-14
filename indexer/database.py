@@ -181,18 +181,44 @@ def _advance_checkpoint(cursor, height: int, checkpoint: int | None, chain_id: s
 
 
 def _verify_finalized_conflicts(cursor, parsed) -> None:
-    _verify_block_conflict(cursor, parsed)
+    existing_height = _verify_block_conflict(cursor, parsed)
+    _verify_child_key_sets(cursor, parsed, existing_height)
     _verify_transaction_conflicts(cursor, parsed)
     _verify_validator_conflicts(cursor, parsed)
     _verify_member_conflicts(cursor, parsed)
     _verify_signature_conflicts(cursor, parsed)
 
 
-def _verify_block_conflict(cursor, parsed) -> None:
+def _verify_block_conflict(cursor, parsed) -> bool:
     cursor.execute("SELECT block_hash_base64, block_hash_hex FROM blocks WHERE height = %s", (parsed.height,))
     row = cursor.fetchone()
     if row and (row[0] != parsed.block["hash_base64"] or row[1] != parsed.block["hash_hex"]):
         raise FinalizedDataConflict(f"Conflicting finalized block hash at height {parsed.height}")
+    return row is not None
+
+
+def _verify_child_key_sets(cursor, parsed, existing_height: bool) -> None:
+    if not existing_height:
+        return
+    incoming_tx_indexes = {transaction["index"] for transaction in parsed.transactions}
+    existing_tx_indexes = _fetch_single_column_set(cursor, "SELECT tx_index FROM transactions WHERE block_height = %s", (parsed.height,))
+    if existing_tx_indexes != incoming_tx_indexes:
+        raise FinalizedDataConflict(f"Conflicting transaction index set at height {parsed.height}")
+
+    incoming_members = {validator["address"] for validator in parsed.validators}
+    existing_members = _fetch_single_column_set(cursor, "SELECT signing_address FROM validator_set_members WHERE height = %s", (parsed.height,))
+    if existing_members != incoming_members:
+        raise FinalizedDataConflict(f"Conflicting validator-set member set at height {parsed.height}")
+
+    incoming_signatures = {signature["signing_address"] for signature in parsed.signatures}
+    existing_signatures = _fetch_single_column_set(cursor, "SELECT signing_address FROM validator_signatures WHERE height = %s", (parsed.height,))
+    if existing_signatures != incoming_signatures:
+        raise FinalizedDataConflict(f"Conflicting validator signature set at height {parsed.height}")
+
+
+def _fetch_single_column_set(cursor, sql: str, params: tuple[Any, ...]) -> set[Any]:
+    cursor.execute(sql, params)
+    return {row[0] for row in cursor.fetchall()}
 
 
 def _verify_transaction_conflicts(cursor, parsed) -> None:
@@ -217,13 +243,13 @@ def _verify_validator_conflicts(cursor, parsed) -> None:
 
 
 def _verify_member_conflicts(cursor, parsed) -> None:
-    for validator in parsed.validators:
+    for validator_index, validator in enumerate(parsed.validators):
         cursor.execute(
-            "SELECT voting_power, proposer_priority FROM validator_set_members WHERE height = %s AND signing_address = %s",
+            "SELECT voting_power, proposer_priority, validator_index FROM validator_set_members WHERE height = %s AND signing_address = %s",
             (parsed.height, validator["address"]),
         )
         row = cursor.fetchone()
-        expected = (validator.get("voting_power") or 0, validator.get("proposer_priority"))
+        expected = (validator.get("voting_power") or 0, validator.get("proposer_priority"), validator_index)
         if row and tuple(row) != expected:
             raise FinalizedDataConflict(f"Conflicting validator-set member at height {parsed.height} for {validator['address']}")
 
@@ -231,7 +257,7 @@ def _verify_member_conflicts(cursor, parsed) -> None:
 def _verify_signature_conflicts(cursor, parsed) -> None:
     for signature in parsed.signatures:
         cursor.execute(
-            "SELECT vote_status, signed, vote_block_id_hash_base64, vote_block_id_parts_total, vote_block_id_parts_hash_base64, signature_base64 FROM validator_signatures WHERE height = %s AND signing_address = %s",
+            "SELECT vote_status, signed, vote_block_id_hash_base64, vote_block_id_hash_hex, vote_block_id_parts_total, vote_block_id_parts_hash_base64, vote_block_id_parts_hash_hex, vote_block_id_is_zero, block_id_matches_commit, signature_base64 FROM validator_signatures WHERE height = %s AND signing_address = %s",
             (parsed.height, signature["signing_address"]),
         )
         row = cursor.fetchone()
@@ -239,8 +265,12 @@ def _verify_signature_conflicts(cursor, parsed) -> None:
             signature["vote_status"],
             signature["signed"],
             signature["vote_block_id_hash_base64"],
+            signature["vote_block_id_hash_hex"],
             signature["vote_block_id_parts_total"],
             signature["vote_block_id_parts_hash_base64"],
+            signature["vote_block_id_parts_hash_hex"],
+            signature["vote_block_id_is_zero"],
+            signature["block_id_matches_commit"],
             signature["signature_base64"],
         )
         if row and tuple(row) != expected:
