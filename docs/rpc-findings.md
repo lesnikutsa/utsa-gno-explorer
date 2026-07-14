@@ -74,8 +74,8 @@ For latest height `H` from `/status`:
 - Validator set at the signing height: `result.validators[]` from `/validators?height=<H-1>`.
 - Commit precommits at the signing height: `result.signed_header.commit.precommits` from `/commit?height=<H-1>`.
 - Signature validator address: `validator_address` or `address` inside each non-null precommit entry.
-- Signed detection currently treats entries with a non-empty `signature` as signed, and also recognizes Tendermint-style `block_id_flag` commit values.
-- Null or non-object precommit entries are treated as not signed and never crash parsing.
+- The discovery prototype currently reports signer addresses from non-null precommit entries, but production signing detection must additionally parse `Vote.BlockID` and compare it with the enclosing `Commit.BlockID`. A non-null signature alone is not sufficient.
+- Null or non-object precommit entries are treated as not signed and never crash parsing; production indexing must not map null precommits to validators by array position unless that relationship is explicitly verified.
 - Missed validators are calculated by subtracting signer addresses from validator addresses at the same height.
 
 ## RPC endpoint fallback behavior
@@ -107,12 +107,12 @@ Confirmed live shapes:
 
 - Transaction payloads in `result.block.data.txs` are preserved as base64 and not decoded into full Gno transaction structures yet.
 - Validator address formats should be verified on the real Testnet 13 RPC before using them as database keys.
-- Commit signature fields such as `block_id_flag`, `absent`, and `signature` need live confirmation for missed-block accuracy.
+- Commit vote fields, including parsed `Vote.BlockID`, enclosing `Commit.BlockID`, nil-vote representation, validator address paths, and signature fields, need live confirmation for accurate commit/nil/absent/invalid classification.
 - The prototype queries only one latest height and one signing height and is not a continuous indexer.
 
 ## Still needing verification on real Testnet 13 RPC
 
 - Which public RPC endpoint is most reliable for `GNO_RPC_URLS` ordering.
 - Exact node version and chain ID values returned by the live network.
-- Exact commit precommit shape and whether absent signatures are represented with `null`, `absent`, empty `signature`, or `block_id_flag`.
+- Exact commit precommit shape, parsed `Vote.BlockID` paths, nil-vote representation, and whether absent signatures are represented with `null`, `absent`, or empty `signature`.
 - Whether transaction data is base64, Amino/JSON, or another encoding in live block responses.
