@@ -62,3 +62,7 @@ Production PostgreSQL setup, systemd supervision, backend API, and frontend rema
 `--once` attempts exactly one cycle. It exits `0` for a successful or caught-up cycle and exits non-zero when that only attempt ends in a transient or fatal error.
 
 `--max-cycles` counts every attempted cycle, including transient failures. The runner does not sleep after the final permitted cycle. It exits non-zero if every permitted cycle failed and no successful cycle completed; otherwise it exits `0` when the limit is reached.
+
+## Lock-acquisition startup behavior
+
+The advisory-lock session uses autocommit. Transient PostgreSQL `OperationalError` or `InterfaceError` failures while connecting or acquiring the lock are retried with bounded stop-aware backoff before any indexing cycle starts. `--once` exits non-zero after one failed lock-acquisition attempt. `--max-cycles` also bounds startup lock-acquisition attempts before the first cycle. SIGINT or SIGTERM during lock-acquisition backoff exits promptly.

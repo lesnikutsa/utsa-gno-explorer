@@ -6,6 +6,8 @@ import logging
 import signal
 import threading
 import time
+
+import psycopg
 from dataclasses import dataclass
 from typing import Callable, Protocol
 from urllib.parse import urlsplit, urlunsplit
@@ -126,6 +128,7 @@ class AdvisoryLock:
 
     def acquire(self) -> None:
         self.connection = self.database.connect()
+        self.connection.autocommit = True
         with self.connection.cursor() as cursor:
             cursor.execute("SELECT pg_try_advisory_lock(%s)", (self.key,))
             row = cursor.fetchone()
@@ -162,12 +165,12 @@ class AdvisoryLock:
 
 def run_cycle(database, chain_id: str, rpc_urls: list[str], max_height_lag: int, config: ContinuousConfig, stop: StopController) -> CycleResult:
     checkpoint = database.get_checkpoint(chain_id)
+    if checkpoint is None and config.start_height is None:
+        raise FatalIndexerError("--start-height or INDEXER_START_HEIGHT is required for an empty database")
     probes = probe_rpc_endpoints(rpc_urls, chain_id, max_height_lag)
     database.record_rpc_probe_cycle(chain_id, probes)
     selected = selected_rpc_from_probes(probes, max_height_lag)
     LOGGER.info("selected_rpc=%s latest_rpc_height=%s finalized_tip=%s checkpoint_before=%s", sanitized_url(selected.client.base_url), selected.latest_height, selected.finalized_tip, checkpoint)
-    if checkpoint is None and config.start_height is None:
-        raise FatalIndexerError("--start-height or INDEXER_START_HEIGHT is required for an empty database")
     next_height = config.start_height if checkpoint is None else checkpoint + 1
     if next_height > selected.finalized_tip:
         LOGGER.info("caught up: checkpoint=%s finalized_tip=%s", checkpoint, selected.finalized_tip)
@@ -196,7 +199,8 @@ def run_continuous(database: PostgresDatabase, chain_id: str, rpc_urls: list[str
     successful_cycles = 0
     attempted_cycles = 0
     try:
-        lock.acquire()
+        if not _acquire_lock_with_backoff(lock, config, stop, wait):
+            return 1
         while not stop.requested:
             if config.max_cycles is not None and cycle >= config.max_cycles:
                 reason = "max-cycles reached"
@@ -257,8 +261,33 @@ def run_continuous(database: PostgresDatabase, chain_id: str, rpc_urls: list[str
     except (FatalIndexerError, ValueError, DatabaseError) as exc:
         LOGGER.error("fatal continuous indexer error: %s", exc)
         return 1
+    except Exception as exc:
+        LOGGER.error("fatal continuous indexer error: %s", exc)
+        return 1
     finally:
         lock.close()
+
+
+def _acquire_lock_with_backoff(lock: AdvisoryLock, config: ContinuousConfig, stop: StopController, wait: Waiter) -> bool:
+    attempts = 0
+    backoff = config.error_backoff_seconds
+    while not stop.requested:
+        attempts += 1
+        try:
+            lock.acquire()
+            return True
+        except AdvisoryLockHeld:
+            raise
+        except Exception as exc:
+            if not _is_transient_error(exc):
+                raise
+            LOGGER.warning("transient advisory lock acquisition error: %s; backoff=%ss", exc, backoff)
+            if config.once or (config.max_cycles is not None and attempts >= config.max_cycles):
+                return False
+            if wait(backoff, stop):
+                return False
+            backoff = min(config.max_backoff_seconds, backoff * 2)
+    return False
 
 
 def _safe_checkpoint(database, chain_id: str) -> int | None:
@@ -275,9 +304,7 @@ def _is_transient_error(exc: Exception) -> bool:
         return False
     if isinstance(exc, DatabaseError):
         return False
-    class_name = exc.__class__.__name__
-    module = exc.__class__.__module__
-    return module.startswith("psycopg") and class_name in {"OperationalError", "InterfaceError"}
+    return isinstance(exc, (psycopg.OperationalError, psycopg.InterfaceError))
 
 
 def install_signal_handlers(stop: StopController) -> None:

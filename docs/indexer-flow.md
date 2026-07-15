@@ -112,3 +112,9 @@ The continuous runner uses a PostgreSQL advisory lock derived from the configure
 ### Continuous failure handling
 
 Fatal failures exit non-zero immediately: invalid configuration, chain identity mismatch, `FinalizedDataConflict`, advisory-lock contention or loss, invalid checkpoint sequence, and unsupported database/schema state. Transient failures such as all RPC endpoints unavailable, RPC timeout, or psycopg `OperationalError`/`InterfaceError` sleep with bounded exponential backoff and retry without advancing the checkpoint. Successful progress resets the backoff to the configured base.
+
+### Lock acquisition startup behavior
+
+Advisory-lock acquisition uses the same bounded, stop-aware backoff as transient cycle failures. A transient psycopg `OperationalError` or `InterfaceError` while opening or acquiring the lock is retried before any indexing cycle starts. With `--once`, one failed lock-acquisition attempt exits non-zero. With `--max-cycles`, the runner uses that value as the startup lock-acquisition retry limit before any cycle is attempted. Without either option, startup acquisition continues with bounded backoff until the lock is acquired, a fatal error occurs, or SIGINT/SIGTERM requests shutdown.
+
+The advisory-lock connection is configured for autocommit before `pg_try_advisory_lock` is executed. Liveness checks also run in autocommit mode, so the session-level lock remains held without leaving the connection idle in a transaction.

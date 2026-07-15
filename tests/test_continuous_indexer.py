@@ -1,5 +1,13 @@
 import signal
 import unittest
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+import psycopg
 from dataclasses import dataclass
 from unittest.mock import patch
 
@@ -198,14 +206,7 @@ class ContinuousIndexerTests(unittest.TestCase):
         self.assertEqual(advisory_lock_key("test-13"), advisory_lock_key("test-13"))
 
 
-if __name__ == "__main__":
-    unittest.main()
 
-class PsycopgOperationalError(Exception):
-    pass
-
-PsycopgOperationalError.__module__ = "psycopg"
-PsycopgOperationalError.__name__ = "OperationalError"
 
 
 class ReviewSemanticsTests(unittest.TestCase):
@@ -254,7 +255,7 @@ class ReviewSemanticsTests(unittest.TestCase):
             def write_height(self, parsed, chain_id, finalized_tip):
                 self.calls.append(parsed.height)
                 if len(self.calls) == 1:
-                    raise PsycopgOperationalError("temporary connection failure")
+                    raise psycopg.OperationalError("temporary connection failure")
                 return super().write_height(parsed, chain_id, finalized_tip)
         db = FlakyDb()
         waits = []
@@ -299,6 +300,104 @@ class ReviewSemanticsTests(unittest.TestCase):
         with patch("indexer.runner.probe_rpc_endpoints", side_effect=RpcError("down")):
             self.assertEqual(run_continuous(SqlLikeDb(None), "test-13", ["x"], 10, self.config(), stop=stop, wait=stopping_wait, lock_factory=FakeLock), 1)
 
+
+    def test_empty_database_without_start_height_fails_before_rpc_and_backoff(self):
+        db = SqlLikeDb(None)
+        waits = []
+        with patch("indexer.runner.probe_rpc_endpoints", side_effect=RpcError("down")) as probe:
+            code = run_continuous(db, "test-13", ["x"], 10, self.config(start_height=None, max_cycles=2), wait=lambda s, stop: waits.append(s) or False, lock_factory=FakeLock)
+        self.assertEqual(code, 1)
+        self.assertEqual(waits, [])
+        probe.assert_not_called()
+
+    def test_advisory_lock_connection_is_autocommit(self):
+        from indexer.runner import AdvisoryLock
+        class Cursor:
+            def __init__(self, connection):
+                self.connection = connection
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def execute(self, sql, params=None):
+                self.connection.statements.append((sql, self.connection.autocommit))
+            def fetchone(self):
+                return (True,)
+        class Connection:
+            def __init__(self):
+                self.autocommit = False
+                self.closed = False
+                self.statements = []
+            def cursor(self):
+                return Cursor(self)
+            def commit(self):
+                self.statements.append(("COMMIT", self.autocommit))
+            def close(self):
+                self.closed = True
+        class Db:
+            def __init__(self):
+                self.connection = Connection()
+            def connect(self):
+                return self.connection
+        db = Db()
+        lock = AdvisoryLock(db, "test-13")
+        lock.acquire()
+        lock.ensure_alive()
+        self.assertTrue(db.connection.autocommit)
+        self.assertTrue(all(autocommit for _sql, autocommit in db.connection.statements if _sql != "COMMIT"))
+        lock.close()
+
+    def test_lock_connection_failure_then_success_before_processing(self):
+        class FlakyLock(FakeLock):
+            attempts = 0
+            def acquire(self):
+                FlakyLock.attempts += 1
+                if FlakyLock.attempts == 1:
+                    raise psycopg.OperationalError("temporary lock connection failure")
+                super().acquire()
+        db = SqlLikeDb(None)
+        waits = []
+        with patch("indexer.runner.probe_rpc_endpoints", return_value=selected(12).probes):
+            code = run_continuous(db, "test-13", ["x"], 10, self.config(max_cycles=2, batch_size=1), wait=lambda s, stop: waits.append(s) or False, lock_factory=FlakyLock)
+        self.assertEqual(code, 0)
+        self.assertEqual(waits, [1])
+        self.assertEqual(db.checkpoint, 11)
+
+    def test_repeated_lock_connection_failure_exits_without_processing(self):
+        class FailingLock(FakeLock):
+            def acquire(self):
+                raise psycopg.InterfaceError("temporary lock connection failure")
+        db = SqlLikeDb(None)
+        waits = []
+        with patch("indexer.runner.probe_rpc_endpoints", return_value=selected(12).probes) as probe:
+            code = run_continuous(db, "test-13", ["x"], 10, self.config(max_cycles=2), wait=lambda s, stop: waits.append(s) or False, lock_factory=FailingLock)
+        self.assertEqual(code, 1)
+        self.assertEqual(waits, [1])
+        self.assertIsNone(db.checkpoint)
+        probe.assert_not_called()
+
+    def test_stop_during_lock_acquisition_backoff_exits_promptly(self):
+        class FailingLock(FakeLock):
+            def acquire(self):
+                raise psycopg.OperationalError("temporary lock connection failure")
+        db = SqlLikeDb(None)
+        stop = StopController()
+        def stopping_wait(seconds, controller):
+            controller.request_stop("SIGTERM")
+            return True
+        with patch("indexer.runner.probe_rpc_endpoints", return_value=selected(12).probes) as probe:
+            code = run_continuous(db, "test-13", ["x"], 10, self.config(), stop=stop, wait=stopping_wait, lock_factory=FailingLock)
+        self.assertEqual(code, 1)
+        self.assertIsNone(db.checkpoint)
+        probe.assert_not_called()
+
+    def test_non_transient_psycopg_error_is_clean_fatal(self):
+        class BadDb(SqlLikeDb):
+            def get_checkpoint(self, chain_id):
+                raise psycopg.ProgrammingError("undefined table")
+        with patch("indexer.runner.probe_rpc_endpoints", return_value=selected(12).probes):
+            self.assertEqual(run_continuous(BadDb(None), "test-13", ["x"], 10, self.config(max_cycles=1), lock_factory=FakeLock), 1)
+
     def test_hard_batch_limit_validation(self):
         validate_continuous_config(self.config(batch_size=3, hard_max_heights=3))
         with self.assertRaisesRegex(FatalIndexerError, "batch_size"):
@@ -332,3 +431,7 @@ class CliConfigurationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("batch_size", result.stderr)
         self.assertNotIn("Traceback", result.stderr)
+
+
+if __name__ == "__main__":
+    unittest.main()
