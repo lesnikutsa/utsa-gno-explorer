@@ -51,6 +51,12 @@ def run_checked(command: list[str], stdout=None, stdin=None) -> None:
 
 
 def create_backup(backup_dir: Path, compose_file: Path, env_file: Path, retention: int) -> Path:
+    if retention < 0:
+        raise ValueError("retention must be greater than or equal to 0")
+    if not compose_file.is_file():
+        raise FileNotFoundError(f"Compose file not found: {compose_file}")
+    if not env_file.is_file():
+        raise FileNotFoundError(f"Compose env file not found: {env_file}")
     old_umask = os.umask(0o077)
     try:
         backup_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -60,9 +66,9 @@ def create_backup(backup_dir: Path, compose_file: Path, env_file: Path, retentio
             raise RuntimeError(f"Backup path already exists for current timestamp: {final_path.name}")
         try:
             with part_path.open("xb") as output:
-                run_checked(compose_command(compose_file, env_file, "exec", "-T", "postgres", "sh", "-c", "pg_dump -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\" -Fc"), stdout=output)
+                run_checked(compose_command(compose_file, env_file, "exec", "-T", "postgres", "sh", "-c", "pg_dump -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\" -Fc --no-owner --no-privileges"), stdout=output)
             with part_path.open("rb") as archive:
-                run_checked(compose_command(compose_file, env_file, "exec", "-T", "postgres", "pg_restore", "--list", "-"), stdout=subprocess.DEVNULL, stdin=archive)
+                run_checked(compose_command(compose_file, env_file, "exec", "-T", "postgres", "pg_restore", "--list"), stdout=subprocess.DEVNULL, stdin=archive)
         except Exception:
             try:
                 part_path.unlink()

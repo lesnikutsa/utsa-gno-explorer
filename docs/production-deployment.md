@@ -19,22 +19,24 @@ This guide packages the existing foreground continuous indexer without changing 
 Create only real production files outside the repository:
 
 ```bash
-sudo install -d -o root -g root -m 750 /etc/utsa-gno-explorer
-sudo install -d -o root -g root -m 750 /var/lib/utsa-gno-explorer
+getent group utsa-gno >/dev/null || sudo groupadd --system utsa-gno
+id -u utsa-gno >/dev/null 2>&1 || sudo useradd --system --gid utsa-gno --home-dir /nonexistent --shell /usr/sbin/nologin utsa-gno
+sudo install -d -o root -g utsa-gno -m 750 /etc/utsa-gno-explorer
+sudo install -d -o root -g root -m 755 /var/lib/utsa-gno-explorer
 sudo install -d -o 999 -g 999 -m 700 /var/lib/utsa-gno-explorer/postgres
-sudo install -o root -g root -m 640 deploy/postgres/postgres.env.example /etc/utsa-gno-explorer/postgres.env
-sudo install -o root -g root -m 640 deploy/systemd/indexer.env.example /etc/utsa-gno-explorer/indexer.env
+sudo install -o root -g root -m 600 deploy/postgres/postgres.env.example /etc/utsa-gno-explorer/postgres.env
+sudo install -o root -g utsa-gno -m 640 deploy/systemd/indexer.env.example /etc/utsa-gno-explorer/indexer.env
 sudo install -o root -g root -m 600 /dev/null /etc/utsa-gno-explorer/postgres-password
 sudo editor /etc/utsa-gno-explorer/postgres.env
 sudo editor /etc/utsa-gno-explorer/indexer.env
-sudo sh -c 'umask 077; printf "%s" "REPLACE_WITH_REAL_PASSWORD" > /etc/utsa-gno-explorer/postgres-password'
+sudo sh -c 'umask 077; stty -echo; printf "PostgreSQL password: " >&2; read password; stty echo; printf "\n" >&2; printf "%s" "$password" > /etc/utsa-gno-explorer/postgres-password'
 ```
 
-Do not print or paste `DATABASE_URL`, database passwords, or credential-bearing RPC URLs in logs, tickets, or terminal transcripts. The PostgreSQL data directory must be writable only by the PostgreSQL container runtime identity.
+Do not print or paste `DATABASE_URL`, database passwords, or credential-bearing RPC URLs in logs, tickets, or terminal transcripts. The PostgreSQL data directory must be writable only by the PostgreSQL container runtime identity. The repository and `.venv` under `/opt/utsa-gno-explorer` must be readable/executable by `utsa-gno` but must not be writable by the service user; use root-owned files with group/other read and execute bits as appropriate for the host policy.
 
 ## PostgreSQL Compose architecture
 
-`deploy/postgres/compose.yml` runs only `postgres:16.4-bookworm`. It binds `127.0.0.1:${POSTGRES_PORT}:5432`, so PostgreSQL is reachable from the host and systemd service but is not exposed on a public host interface. Data is persisted through the host bind mount `${POSTGRES_DATA_DIR:-/var/lib/utsa-gno-explorer/postgres}`. The password is provided through Docker Compose secret file `/etc/utsa-gno-explorer/postgres-password`; the real password is not committed.
+`deploy/postgres/compose.yml` runs only `postgres:16.14-bookworm`. It binds `127.0.0.1:${POSTGRES_PORT}:5432`, so PostgreSQL is reachable from the host and systemd service but is not exposed on a public host interface. Data is persisted through the host bind mount `${POSTGRES_DATA_DIR:-/var/lib/utsa-gno-explorer/postgres}`; the same safe default is present in Compose, while `/etc/utsa-gno-explorer/postgres.env` remains the operator-controlled production source of truth. The password is provided through Docker Compose secret file `/etc/utsa-gno-explorer/postgres-password`; the real password is not committed. `POSTGRES_PASSWORD_FILE` is used by the official PostgreSQL image only when initializing a new empty data directory; replacing the password file later does not rotate the existing database role password. Password rotation requires an explicit `ALTER ROLE` inside PostgreSQL and a matching `/etc/utsa-gno-explorer/indexer.env` update. Do not type literal passwords directly into shell commands or shell history.
 
 Start PostgreSQL explicitly:
 
@@ -50,7 +52,7 @@ docker compose -f deploy/postgres/compose.yml --env-file deploy/postgres/postgre
 
 ## Database initialization
 
-Apply schema only by an explicit operator command. The schema uses `CREATE ... IF NOT EXISTS`, stops on SQL errors, and does not drop tables or databases.
+Apply schema only by an explicit operator command. The initialization script creates the schema transactionally only when the public schema is empty; otherwise it performs explicit catalog compatibility validation and fails on incompatible or partial schemas. It stops on SQL errors and does not drop tables or databases.
 
 ```bash
 set -a
@@ -80,18 +82,19 @@ docker compose -f deploy/postgres/compose.yml --env-file /etc/utsa-gno-explorer/
 docker compose -f deploy/postgres/compose.yml --env-file /etc/utsa-gno-explorer/postgres.env ps
 docker inspect --format '{{json .State.Health}}' utsa-gno-postgres
 ss -ltnp | grep ':5432' | grep '127.0.0.1'
-docker compose -f deploy/postgres/compose.yml --env-file /etc/utsa-gno-explorer/postgres.env exec postgres pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
-psql "$DATABASE_URL" -c "select table_name from information_schema.tables where table_schema='public' order by table_name;"
+docker compose -f deploy/postgres/compose.yml --env-file /etc/utsa-gno-explorer/postgres.env exec postgres sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+docker compose -f deploy/postgres/compose.yml --env-file /etc/utsa-gno-explorer/postgres.env exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select table_name from information_schema.tables where table_schema = current_schema() order by table_name;"'
 systemctl status utsa-gno-indexer.service
 journalctl -u utsa-gno-indexer.service -n 100 --no-pager
+systemd-analyze verify /etc/systemd/system/utsa-gno-indexer.service
 systemd-analyze security utsa-gno-indexer.service
-psql "$DATABASE_URL" -c "select locktype, granted from pg_locks where locktype='advisory';"
-psql "$DATABASE_URL" -c "select chain_id,last_finalized_height,finalized_tip_height,updated_at from indexer_state;"
+docker compose -f deploy/postgres/compose.yml --env-file /etc/utsa-gno-explorer/postgres.env exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select locktype, granted from pg_locks where locktype = chr(97)||chr(100)||chr(118)||chr(105)||chr(115)||chr(111)||chr(114)||chr(121);"'
+docker compose -f deploy/postgres/compose.yml --env-file /etc/utsa-gno-explorer/postgres.env exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select chain_id,last_finalized_height,finalized_tip_height,updated_at from indexer_state;"'
 python scripts/inspect_rpc.py
 sudo systemctl restart utsa-gno-indexer.service
 docker compose -f deploy/postgres/compose.yml --env-file /etc/utsa-gno-explorer/postgres.env restart postgres
 sudo reboot
-sudo -u utsa-gno /opt/utsa-gno-explorer/.venv/bin/python /opt/utsa-gno-explorer/scripts/run_indexer.py --once
+sudo -u utsa-gno sh -c 'set -a; . /etc/utsa-gno-explorer/indexer.env; set +a; cd /opt/utsa-gno-explorer && .venv/bin/python scripts/run_indexer.py --once'
 python scripts/backup_database.py --backup-dir /var/backups/utsa-gno-explorer
 pg_restore --list /var/backups/utsa-gno-explorer/utsa-gno-explorer-YYYYMMDDTHHMMSSZ.dump >/dev/null
 ```
@@ -124,12 +127,14 @@ Never test restores against production first. Safe validation flow:
 Example isolated validation database:
 
 ```bash
-docker run --rm --name utsa-gno-restore-validation -e POSTGRES_USER=validation -e POSTGRES_DB=validation -e POSTGRES_PASSWORD=validation -p 127.0.0.1:55432:5432 -d postgres:16.4-bookworm
+docker run --rm --name utsa-gno-restore-validation -e POSTGRES_USER=validation -e POSTGRES_DB=validation -e POSTGRES_PASSWORD=validation -p 127.0.0.1:55432:5432 -d postgres:16.14-bookworm
 PGPASSWORD=validation pg_isready -h 127.0.0.1 -p 55432 -U validation -d validation
-PGPASSWORD=validation pg_restore -h 127.0.0.1 -p 55432 -U validation -d validation --clean --if-exists /var/backups/utsa-gno-explorer/utsa-gno-explorer-YYYYMMDDTHHMMSSZ.dump
-PGPASSWORD=validation psql -h 127.0.0.1 -p 55432 -U validation -d validation -c "select count(*) from information_schema.tables where table_schema='public';"
-PGPASSWORD=validation psql -h 127.0.0.1 -p 55432 -U validation -d validation -c "select * from indexer_state;"
-PGPASSWORD=validation psql -h 127.0.0.1 -p 55432 -U validation -d validation -c "select (select count(*) from blocks) blocks, (select count(*) from transactions) transactions, (select count(*) from validator_signatures) signatures;"
+until PGPASSWORD=validation pg_isready -h 127.0.0.1 -p 55432 -U validation -d validation; do sleep 1; done
+PGPASSWORD=validation pg_restore -h 127.0.0.1 -p 55432 -U validation -d validation --no-owner --no-privileges --exit-on-error --single-transaction /var/backups/utsa-gno-explorer/utsa-gno-explorer-YYYYMMDDTHHMMSSZ.dump
+PGPASSWORD=validation psql -h 127.0.0.1 -p 55432 -U validation -d validation -v ON_ERROR_STOP=1 -c "select array_agg(table_name order by table_name) from information_schema.tables where table_schema = current_schema() having array_agg(table_name order by table_name) = ARRAY['blocks','indexer_state','rpc_endpoint_checks','rpc_endpoints','transactions','validator_set_members','validator_signatures','validators'];"
+PGPASSWORD=validation psql -h 127.0.0.1 -p 55432 -U validation -d validation -v ON_ERROR_STOP=1 -c "select * from indexer_state;"
+PGPASSWORD=validation psql -h 127.0.0.1 -p 55432 -U validation -d validation -v ON_ERROR_STOP=1 -c "select (select count(*) from blocks) blocks, (select count(*) from transactions) transactions, (select count(*) from validator_signatures) signatures;"
+PGPASSWORD=validation psql -h 127.0.0.1 -p 55432 -U validation -d validation -v ON_ERROR_STOP=1 -c "select last_finalized_height <= finalized_tip_height as checkpoint_consistent from indexer_state;"
 docker stop utsa-gno-restore-validation
 ```
 
@@ -158,6 +163,15 @@ sudo systemctl start utsa-gno-indexer.service
 8. Check schema compatibility with `python scripts/init_database.py` against the target database.
 9. `sudo systemctl start utsa-gno-indexer.service`.
 10. Check journal output and checkpoint progression.
+
+## PostgreSQL minor-version upgrade
+
+1. Create and validate a backup.
+2. Stop the indexer: `sudo systemctl stop utsa-gno-indexer.service`.
+3. Pull the pinned PostgreSQL 16 minor image manually: `docker compose -f deploy/postgres/compose.yml --env-file /etc/utsa-gno-explorer/postgres.env pull postgres`.
+4. Recreate only the PostgreSQL container: `docker compose -f deploy/postgres/compose.yml --env-file /etc/utsa-gno-explorer/postgres.env up -d --no-deps postgres`.
+5. Confirm the server major version remains 16 and healthcheck is healthy.
+6. Start the indexer and verify checkpoint progression. Systemd never pulls images automatically.
 
 ## Rollback procedure
 

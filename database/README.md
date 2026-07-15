@@ -83,4 +83,4 @@ set +a
 python scripts/init_database.py
 ```
 
-The schema uses `CREATE ... IF NOT EXISTS` so reapplying it to a compatible database is safe, while SQL errors still stop the command. The script does not drop tables, drop databases, or delete existing data. For the first empty database, configure `INDEXER_START_HEIGHT` in the external indexer environment before starting the continuous indexer. See [Production deployment](../docs/production-deployment.md) for backup, validation restore, upgrade, and rollback procedures.
+The initialization script applies `database/schema.sql` only to an empty database; when tables already exist, it performs explicit catalog compatibility validation and fails on missing tables, incompatible columns, constraints, foreign keys, or index definitions. The script does not drop tables, drop databases, or delete existing data. For the first empty database, configure `INDEXER_START_HEIGHT` in the external indexer environment before starting the continuous indexer. See [Production deployment](../docs/production-deployment.md) for backup, validation restore, upgrade, and rollback procedures.

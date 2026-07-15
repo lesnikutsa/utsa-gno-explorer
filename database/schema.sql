@@ -1,7 +1,7 @@
 -- PostgreSQL schema for the UTSA Gno.land explorer design checkpoint.
 -- This file is intentionally limited to tables required by the first explorer version.
 
-CREATE TABLE IF NOT EXISTS blocks (
+CREATE TABLE blocks (
     height BIGINT PRIMARY KEY,
     block_hash_base64 TEXT NOT NULL,
     block_hash_hex TEXT NOT NULL,
@@ -24,9 +24,9 @@ COMMENT ON COLUMN blocks.raw_block_response IS 'Optional short-retention RPC JSO
 
 -- Latest block pages use the primary-key B-tree on height, which PostgreSQL can scan backward.
 -- Block time can power future recent-block and time-range filters.
-CREATE INDEX IF NOT EXISTS blocks_time_utc_idx ON blocks (time_utc DESC);
+CREATE INDEX blocks_time_utc_idx ON blocks (time_utc DESC);
 
-CREATE TABLE IF NOT EXISTS transactions (
+CREATE TABLE transactions (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     block_height BIGINT NOT NULL REFERENCES blocks(height) ON DELETE CASCADE,
     tx_index INTEGER NOT NULL CHECK (tx_index >= 0),
@@ -52,7 +52,7 @@ COMMENT ON COLUMN transactions.payload_summary IS 'Limited JSONB for future deco
 
 -- Block detail pages use the unique constraint index on (block_height, tx_index).
 
-CREATE TABLE IF NOT EXISTS validators (
+CREATE TABLE validators (
     signing_address TEXT PRIMARY KEY,
     public_key_type TEXT NOT NULL,
     public_key_value TEXT NOT NULL,
@@ -67,7 +67,7 @@ COMMENT ON TABLE validators IS 'Validator identity keyed by the signing address 
 COMMENT ON COLUMN validators.public_key_type IS 'TM2 public key type, for example /tm.PubKeyEd25519.';
 COMMENT ON COLUMN validators.public_key_value IS 'Public key value exactly as returned by RPC.';
 
-CREATE TABLE IF NOT EXISTS validator_set_members (
+CREATE TABLE validator_set_members (
     height BIGINT NOT NULL REFERENCES blocks(height) ON DELETE CASCADE,
     signing_address TEXT NOT NULL REFERENCES validators(signing_address) ON DELETE RESTRICT,
     voting_power NUMERIC(78, 0) NOT NULL CHECK (voting_power >= 0),
@@ -83,11 +83,11 @@ COMMENT ON COLUMN validator_set_members.height IS 'Target finalized height S fro
 COMMENT ON COLUMN validator_set_members.raw_validator IS 'Optional short-retention validator JSON for auditing RPC shape changes.';
 
 -- Active validator page for a height and voting-power ordering.
-CREATE INDEX IF NOT EXISTS validator_set_members_height_power_idx ON validator_set_members (height, voting_power DESC, signing_address);
+CREATE INDEX validator_set_members_height_power_idx ON validator_set_members (height, voting_power DESC, signing_address);
 -- Validator detail pages need membership history by validator.
-CREATE INDEX IF NOT EXISTS validator_set_members_signing_height_idx ON validator_set_members (signing_address, height DESC);
+CREATE INDEX validator_set_members_signing_height_idx ON validator_set_members (signing_address, height DESC);
 
-CREATE TABLE IF NOT EXISTS validator_signatures (
+CREATE TABLE validator_signatures (
     height BIGINT NOT NULL REFERENCES blocks(height) ON DELETE CASCADE,
     signing_address TEXT NOT NULL REFERENCES validators(signing_address) ON DELETE RESTRICT,
     vote_status TEXT NOT NULL CHECK (vote_status IN ('commit', 'nil', 'absent', 'invalid')),
@@ -168,11 +168,11 @@ COMMENT ON COLUMN validator_signatures.block_id_matches_commit IS 'True only whe
 COMMENT ON COLUMN validator_signatures.raw_precommit IS 'Optional short-retention precommit JSON for parser auditing. Nil and invalid votes may retain it.';
 
 -- Uptime over latest 1,000 finalized heights and recent 100 signature squares filter by validator, height, and normalized vote status.
-CREATE INDEX IF NOT EXISTS validator_signatures_signing_height_status_idx ON validator_signatures (signing_address, height DESC, vote_status, signed);
+CREATE INDEX validator_signatures_signing_height_status_idx ON validator_signatures (signing_address, height DESC, vote_status, signed);
 -- Recent network-wide miss/nil/invalid summaries group by height and filter normalized vote status.
-CREATE INDEX IF NOT EXISTS validator_signatures_height_status_idx ON validator_signatures (height DESC, vote_status, signing_address);
+CREATE INDEX validator_signatures_height_status_idx ON validator_signatures (height DESC, vote_status, signing_address);
 
-CREATE TABLE IF NOT EXISTS rpc_endpoints (
+CREATE TABLE rpc_endpoints (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     url TEXT NOT NULL,
     chain_id TEXT NOT NULL,
@@ -195,11 +195,11 @@ COMMENT ON TABLE rpc_endpoints IS 'Non-secret RPC endpoint health and selection 
 COMMENT ON CONSTRAINT rpc_endpoints_no_secret_url ON rpc_endpoints IS 'Best-effort guard against committing common credential query parameters.';
 
 -- Endpoint selection checks enabled healthy endpoints by chain and observed freshness.
-CREATE INDEX IF NOT EXISTS rpc_endpoints_health_idx ON rpc_endpoints (chain_id, is_enabled, healthy, latest_observed_height DESC);
+CREATE INDEX rpc_endpoints_health_idx ON rpc_endpoints (chain_id, is_enabled, healthy, latest_observed_height DESC);
 -- Only one selected endpoint is allowed per chain at a time.
-CREATE UNIQUE INDEX IF NOT EXISTS rpc_endpoints_one_selected_per_chain_idx ON rpc_endpoints (chain_id) WHERE is_selected;
+CREATE UNIQUE INDEX rpc_endpoints_one_selected_per_chain_idx ON rpc_endpoints (chain_id) WHERE is_selected;
 
-CREATE TABLE IF NOT EXISTS rpc_endpoint_checks (
+CREATE TABLE rpc_endpoint_checks (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     rpc_endpoint_id BIGINT NOT NULL REFERENCES rpc_endpoints(id) ON DELETE CASCADE,
     checked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -218,11 +218,11 @@ COMMENT ON COLUMN rpc_endpoint_checks.selected_for_cycle IS 'True when this heal
 COMMENT ON COLUMN rpc_endpoint_checks.switch_reason IS 'Optional non-secret reason recorded when selected endpoint changes.';
 
 -- RPC operations pages query recent checks by endpoint and time.
-CREATE INDEX IF NOT EXISTS rpc_endpoint_checks_endpoint_time_idx ON rpc_endpoint_checks (rpc_endpoint_id, checked_at DESC);
+CREATE INDEX rpc_endpoint_checks_endpoint_time_idx ON rpc_endpoint_checks (rpc_endpoint_id, checked_at DESC);
 -- Switching audit queries inspect selected historical checks by chain and time.
-CREATE INDEX IF NOT EXISTS rpc_endpoint_checks_chain_selected_time_idx ON rpc_endpoint_checks (chain_id, selected_for_cycle, checked_at DESC);
+CREATE INDEX rpc_endpoint_checks_chain_selected_time_idx ON rpc_endpoint_checks (chain_id, selected_for_cycle, checked_at DESC);
 
-CREATE TABLE IF NOT EXISTS indexer_state (
+CREATE TABLE indexer_state (
     state_key TEXT PRIMARY KEY,
     chain_id TEXT NOT NULL,
     last_finalized_height BIGINT NOT NULL CHECK (last_finalized_height >= 0),

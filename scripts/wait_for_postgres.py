@@ -23,6 +23,13 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def is_permanent_connection_error(exc: Exception) -> bool:
+    name = exc.__class__.__name__.lower()
+    message = str(exc).lower()
+    permanent_markers = ("invalid dsn", "missing =", "invalid connection option", "unsupported connection option", "could not parse", "malformed")
+    return name in {"programmingerror"} or any(marker in message for marker in permanent_markers)
+
+
 def wait_for_postgres(database_url: str, timeout: float, retry_interval: float, connect=None, sleep=time.sleep, monotonic=time.monotonic) -> bool:
     if not database_url:
         print("PostgreSQL readiness failed: DATABASE_URL is not set", file=sys.stderr)
@@ -38,7 +45,10 @@ def wait_for_postgres(database_url: str, timeout: float, retry_interval: float, 
             with connect(database_url, connect_timeout=max(1, min(5, int(retry_interval)))):
                 print("PostgreSQL is ready")
                 return True
-        except Exception as exc:  # readiness probe intentionally retries driver errors
+        except Exception as exc:  # readiness probe intentionally retries transient driver errors
+            if is_permanent_connection_error(exc):
+                print(f"PostgreSQL readiness failed: {exc.__class__.__name__}", file=sys.stderr)
+                return False
             if monotonic() >= deadline:
                 print(f"PostgreSQL readiness timed out after {timeout:g}s: {exc.__class__.__name__}", file=sys.stderr)
                 return False
