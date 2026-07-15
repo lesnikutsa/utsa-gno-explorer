@@ -71,3 +71,16 @@ ORDER BY pid;
 ```
 
 The lock is only a single-instance guard for the continuous foreground runner. It does not replace PostgreSQL backups, migrations, production deployment, or future process supervision.
+
+## Production initialization
+
+Production schema initialization is operator-controlled and is not run by the PostgreSQL container entrypoint or the systemd indexer service. After PostgreSQL is running and `/etc/utsa-gno-explorer/indexer.env` contains the real `DATABASE_URL`, apply the schema from the repository root:
+
+```bash
+set -a
+. /etc/utsa-gno-explorer/indexer.env
+set +a
+python scripts/init_database.py
+```
+
+The schema uses `CREATE ... IF NOT EXISTS` so reapplying it to a compatible database is safe, while SQL errors still stop the command. The script does not drop tables, drop databases, or delete existing data. For the first empty database, configure `INDEXER_START_HEIGHT` in the external indexer environment before starting the continuous indexer. See [Production deployment](../docs/production-deployment.md) for backup, validation restore, upgrade, and rollback procedures.
