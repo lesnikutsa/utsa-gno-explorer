@@ -113,3 +113,33 @@ Safety behavior:
 - processes each finalized height in its own transaction;
 - advances `indexer_state.last_finalized_height` only after a full successful height commit;
 - supports idempotent reprocessing and stops on conflicting finalized block hashes.
+
+## Foreground continuous indexer prototype
+
+Issue #7 adds a safe foreground continuous indexer. It is still an operator-run prototype: it does not daemonize itself and this repository still does not include systemd, production PostgreSQL deployment, backend API, or frontend work.
+
+Example foreground run against a temporary PostgreSQL database:
+
+```bash
+DATABASE_URL=postgresql://utsa_gno_indexer:change-me@localhost:5432/utsa_gno_explorer \
+INDEXER_START_HEIGHT=100 \
+python scripts/run_indexer.py --batch-size 10
+```
+
+Run exactly one probe/catch-up cycle:
+
+```bash
+python scripts/run_indexer.py --start-height 100 --once --batch-size 3
+```
+
+Run a deterministic validation window:
+
+```bash
+python scripts/run_indexer.py --start-height 100 --max-cycles 5 --batch-size 2
+```
+
+The continuous indexer probes all configured RPC endpoints once per cycle, records one `rpc_endpoint_checks` row for each endpoint, selects one healthy endpoint, computes `finalized_tip = latest_rpc_height - 1`, and processes at most `INDEXER_BATCH_SIZE` missing finalized heights in strict order. If it is caught up, it writes no heights and sleeps for `INDEXER_POLL_INTERVAL_SECONDS`.
+
+Press Ctrl+C to request graceful shutdown. The process does not start another height after SIGINT or SIGTERM; if a signal arrives while one height is being written, the existing single-height PostgreSQL transaction either commits completely or rolls back through the database driver. The final log line includes the shutdown reason and checkpoint.
+
+A PostgreSQL advisory lock scoped to `GNO_CHAIN_ID` prevents two continuous indexers for the same chain from running at once. A second process exits with a clear fatal error. The lock uses a dedicated PostgreSQL session and is released on normal exit; losing that PostgreSQL connection naturally releases the session lock.

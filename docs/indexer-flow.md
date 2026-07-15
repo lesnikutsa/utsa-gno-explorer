@@ -73,3 +73,52 @@ This checkpoint does not add scheduler loops, worker processes, RPC clients beyo
 The current implementation is the bounded one-shot prototype in `scripts/index_range.py` and the `indexer/` package. It performs the same single-height transaction shape described above, but only for an explicit finite range chosen by the operator.
 
 It is not a continuous production indexer. It has no infinite loop, no scheduler, no systemd unit, and no background worker. The future continuous service may reuse the parsing and database boundaries, but it must add operational supervision separately.
+
+## Implemented foreground continuous runner
+
+`scripts/run_indexer.py` adds a foreground continuous runner on top of the existing parsing and single-height transaction boundary. It is not a daemon and does not add systemd, cron, Docker Compose, production PostgreSQL deployment, backend API, frontend, metrics, or alerts.
+
+### Continuous per-cycle flow
+
+1. Verify that the dedicated PostgreSQL advisory-lock session is still live before attempting the cycle.
+2. Read `indexer_state.last_finalized_height` first so a configured chain mismatch fails before writing RPC probe rows.
+3. Probe every configured RPC endpoint once with `/status`.
+4. Persist one `rpc_endpoint_checks` row per configured endpoint, even when no endpoint is selectable.
+5. Select one healthy endpoint for the whole batch or raise a transient no-healthy-RPC error after probe persistence.
+6. Compute `finalized_tip = latest_rpc_height - 1` from the selected endpoint.
+7. If the database is empty, require `--start-height` or `INDEXER_START_HEIGHT`.
+8. Plan the next range from `checkpoint + 1` or the bootstrap start height.
+9. Process at most `batch_size` finalized heights, strictly sequentially.
+10. Commit each height through the existing atomic PostgreSQL transaction.
+11. Stop the batch on any failed height; the next attempted cycle re-probes RPC and retries the same height.
+12. If caught up, write no heights and wait with a stop-aware poll interval.
+
+### Continuous catch-up and steady state
+
+For checkpoint `C` and finalized tip `T`, the next height is always `C + 1`. One cycle processes no more than `min(T - C, batch_size)` heights, and `batch_size` must not exceed `INDEXER_HARD_MAX_HEIGHTS`. The runner never skips intermediate heights and never jumps directly to the tip after downtime. When `C >= T`, the runner is in steady state: it records the probe cycle, writes no block data, and waits for the next poll.
+
+### Continuous exit codes and waits
+
+`--once` performs exactly one attempted probe/catch-up cycle. It exits `0` after a successful or caught-up cycle and exits non-zero when that single attempt ends in a transient or fatal error.
+
+`--max-cycles` counts every attempted cycle, including transient failures. The runner does not sleep after the final permitted cycle. It exits non-zero if every permitted cycle failed and no successful cycle completed; otherwise it exits `0` when the limit is reached.
+
+Poll waits and transient backoff waits are stop-aware. SIGINT or SIGTERM during a wait requests shutdown promptly instead of waiting for the full interval.
+
+### Advisory-lock behavior
+
+The continuous runner uses a PostgreSQL advisory lock derived from the configured chain ID and held on a dedicated PostgreSQL session. The runner verifies that session before every cycle and exits non-zero if the session is lost, so it never indexes without a proven lock. Advisory lock close is best-effort; unlock or close failures are logged and do not mask the original exit reason.
+
+### Continuous failure handling
+
+Fatal failures exit non-zero immediately: invalid configuration, chain identity mismatch, `FinalizedDataConflict`, advisory-lock contention or loss, invalid checkpoint sequence, and unsupported database/schema state. Transient failures such as all RPC endpoints unavailable, RPC timeout, or psycopg `OperationalError`/`InterfaceError` sleep with bounded exponential backoff and retry without advancing the checkpoint. Successful progress resets the backoff to the configured base.
+
+### Lock acquisition startup behavior
+
+Advisory-lock acquisition uses the same bounded, stop-aware backoff as transient cycle failures. A transient psycopg `OperationalError` or `InterfaceError` while opening or acquiring the lock is retried before any indexing cycle starts. With `--once`, one failed lock-acquisition attempt exits non-zero. With `--max-cycles`, the runner uses that value as the startup lock-acquisition retry limit before any cycle is attempted. Without either option, startup acquisition continues with bounded backoff until the lock is acquired, a fatal error occurs, or SIGINT/SIGTERM requests shutdown.
+
+The advisory-lock connection is configured for autocommit before `pg_try_advisory_lock` is executed. Liveness checks also run in autocommit mode, so the session-level lock remains held without leaving the connection idle in a transaction.
+
+Empty RPC configuration is a fatal startup configuration error. The runner validates that the RPC URL list is non-empty before advisory-lock acquisition, before any backoff, and before any database write for heights or RPC checks. A configured but unavailable non-empty RPC list remains a transient RPC outage.
+
+Advisory-lock acquisition is exception-safe: if the PostgreSQL connection is created but autocommit setup, cursor creation, `pg_try_advisory_lock`, or `fetchone` fails, the runner closes that exact connection best-effort, resets the stored connection reference, and retries later with a fresh connection when the failure is transient.

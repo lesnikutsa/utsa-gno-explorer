@@ -61,20 +61,19 @@ def get_checkpoint_cursor(cursor, chain_id: str) -> int | None:
     return int(last_finalized_height)
 
 
-def record_rpc_probe_cycle_cursor(cursor, chain_id: str, probes: list[RpcProbeResult]) -> int:
+def record_rpc_probe_cycle_cursor(cursor, chain_id: str, probes: list[RpcProbeResult]) -> int | None:
     selected_probe = next((probe for probe in probes if probe.selected), None)
-    if selected_probe is None:
-        raise DatabaseError("RPC probe cycle has no selected endpoint")
 
     endpoint_ids: dict[str, int] = {}
     previous_selected_id = _current_selected_endpoint_id(cursor, chain_id)
     for probe in probes:
         endpoint_ids[probe.url] = _upsert_rpc_endpoint(cursor, chain_id, probe, selected=False)
 
-    selected_endpoint_id = endpoint_ids[selected_probe.url]
-    switch_reason = "bounded one-shot RPC switch" if previous_selected_id not in (None, selected_endpoint_id) else None
-    cursor.execute("UPDATE rpc_endpoints SET is_selected = false, updated_at = now() WHERE chain_id = %s AND is_selected", (chain_id,))
-    _mark_rpc_endpoint_selected(cursor, selected_endpoint_id, selected_probe)
+    selected_endpoint_id = endpoint_ids[selected_probe.url] if selected_probe is not None else None
+    switch_reason = "RPC endpoint switch" if selected_endpoint_id is not None and previous_selected_id not in (None, selected_endpoint_id) else None
+    if selected_probe is not None and selected_endpoint_id is not None:
+        cursor.execute("UPDATE rpc_endpoints SET is_selected = false, updated_at = now() WHERE chain_id = %s AND is_selected", (chain_id,))
+        _mark_rpc_endpoint_selected(cursor, selected_endpoint_id, selected_probe)
 
     for probe in probes:
         _insert_rpc_endpoint_check(cursor, endpoint_ids[probe.url], chain_id, probe, switch_reason if probe.selected else None)

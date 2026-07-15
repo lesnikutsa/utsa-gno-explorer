@@ -32,3 +32,41 @@ If a run fails while processing height `S`, verify that `indexer_state.last_fina
 ## Cleanup
 
 For disposable validation databases, either drop the database or run the cleanup query documented in `database/README.md`.
+
+## Foreground continuous validation
+
+The continuous runner is intended for foreground validation against a temporary database:
+
+```bash
+python scripts/run_indexer.py --start-height 100 --once --batch-size 3
+python scripts/run_indexer.py --start-height 100 --max-cycles 5 --batch-size 2
+python scripts/run_indexer.py --start-height 100 --batch-size 10
+```
+
+Use Ctrl+C to request graceful shutdown. The process exits after the current height transaction is complete and before starting the next height. SIGTERM follows the same behavior.
+
+## Advisory-lock diagnostics
+
+Only one continuous indexer per `GNO_CHAIN_ID` can run. If a second process starts while the first holds the lock, it exits with an advisory-lock error. Inspect advisory locks from PostgreSQL with the query in `database/README.md`. Do not use PID files as supervision or locking.
+
+## Recovery after transient failure
+
+For all-RPC-unavailable, timeout, or temporary PostgreSQL connection failures, the runner logs the retry height and bounded backoff. The checkpoint is unchanged, so the next cycle repeats the same missing height after probing all RPC endpoints again.
+
+## Remaining follow-up milestones
+
+Production PostgreSQL setup, systemd supervision, backend API, and frontend remain separate work and are intentionally not part of this validation runbook.
+
+## Continuous exit-code behavior
+
+`--once` attempts exactly one cycle. It exits `0` for a successful or caught-up cycle and exits non-zero when that only attempt ends in a transient or fatal error.
+
+`--max-cycles` counts every attempted cycle, including transient failures. The runner does not sleep after the final permitted cycle. It exits non-zero if every permitted cycle failed and no successful cycle completed; otherwise it exits `0` when the limit is reached.
+
+## Lock-acquisition startup behavior
+
+The advisory-lock session uses autocommit. Transient PostgreSQL `OperationalError` or `InterfaceError` failures while connecting or acquiring the lock are retried with bounded stop-aware backoff before any indexing cycle starts. `--once` exits non-zero after one failed lock-acquisition attempt. `--max-cycles` also bounds startup lock-acquisition attempts before the first cycle. SIGINT or SIGTERM during lock-acquisition backoff exits promptly.
+
+An empty `GNO_RPC_URLS` configuration is fatal and exits with code `1` before advisory-lock acquisition. Configure at least one endpoint to distinguish operator misconfiguration from a transient outage of a non-empty endpoint list.
+
+If advisory-lock acquisition fails after opening a PostgreSQL connection, the runner closes that failed connection best-effort before retrying. A later retry uses a fresh connection, so any session-level lock that may have been acquired is naturally released with the failed session.
