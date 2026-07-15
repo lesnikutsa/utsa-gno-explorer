@@ -56,3 +56,18 @@ Cleanup for a disposable validation database can drop and recreate the database,
 ```sql
 TRUNCATE rpc_endpoint_checks, indexer_state, validator_signatures, validator_set_members, transactions, blocks, validators, rpc_endpoints RESTART IDENTITY CASCADE;
 ```
+
+## Continuous indexer advisory lock
+
+`scripts/run_indexer.py` uses a PostgreSQL advisory lock derived from the configured chain ID. The lock is held on a dedicated PostgreSQL session for the lifetime of the foreground process. A normal exit unlocks it, and a lost PostgreSQL connection releases it naturally.
+
+Diagnostic query for active advisory locks:
+
+```sql
+SELECT pid, locktype, objid, granted
+FROM pg_locks
+WHERE locktype = 'advisory'
+ORDER BY pid;
+```
+
+The lock is only a single-instance guard for the continuous foreground runner. It does not replace PostgreSQL backups, migrations, production deployment, or future process supervision.
