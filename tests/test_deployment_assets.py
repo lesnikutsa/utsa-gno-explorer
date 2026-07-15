@@ -80,6 +80,20 @@ class DeploymentAssetTests(unittest.TestCase):
         self.assertIn("systemd-analyze verify", doc)
         self.assertIn("systemd-analyze security", doc)
 
+    def test_restore_validation_documentation_fails_closed(self):
+        doc = self.text("docs/production-deployment.md")
+        self.assertIn("set -euo pipefail", doc)
+        self.assertIn("trap cleanup_restore_validation EXIT", doc)
+        self.assertIn("for attempt in $(seq 1 60)", doc)
+        self.assertIn("--exit-on-error", doc)
+        self.assertIn("--single-transaction", doc)
+        self.assertIn("--no-owner", doc)
+        self.assertIn("--no-privileges", doc)
+        self.assertIn("RAISE EXCEPTION 'validation failed: expected tables", doc)
+        self.assertIn("RAISE EXCEPTION 'validation failed: checkpoint", doc)
+        self.assertIn("secrets.token_urlsafe", doc)
+        self.assertNotIn("POSTGRES_PASSWORD=validation", doc)
+
     def test_init_database_help_runs(self):
         result = subprocess.run([sys.executable, "scripts/init_database.py", "--help"], cwd=ROOT, text=True, capture_output=True, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -99,8 +113,8 @@ class SchemaValidationTests(unittest.TestCase):
             "primary_keys": dict(init_database.EXPECTED_PRIMARY_KEYS),
             "unique_constraints": set(init_database.EXPECTED_UNIQUES),
             "foreign_keys": set(init_database.EXPECTED_FOREIGN_KEYS),
-            "check_constraints": set(init_database.EXPECTED_CHECKS),
-            "indexes": {name: "CREATE UNIQUE INDEX rpc_endpoints_one_selected_per_chain_idx ON public.rpc_endpoints USING btree (chain_id) WHERE is_selected" if name == "rpc_endpoints_one_selected_per_chain_idx" else "CREATE INDEX %s ON public.%s USING btree (%s)" % (name, spec["table"], ", ".join(spec["must_contain"])) for name, spec in init_database.EXPECTED_INDEXES.items()},
+            "check_constraints": dict(init_database.EXPECTED_CHECKS),
+            "indexes": dict(init_database.EXPECTED_INDEXES),
         }
 
     def test_compatible_schema_snapshot_passes(self):
@@ -158,19 +172,140 @@ class SchemaValidationTests(unittest.TestCase):
         with self.assertRaises(init_database.SchemaCompatibilityError): init_database.validate_schema_snapshot(snapshot)
 
     def test_wrong_column_type_fails(self):
-        snapshot = self.snapshot(); snapshot["columns"]["blocks"]["height"] = ("integer", "NO")
+        snapshot = self.snapshot(); snapshot["columns"]["blocks"]["height"] = ("integer", "NO", "", None)
         with self.assertRaises(init_database.SchemaCompatibilityError): init_database.validate_schema_snapshot(snapshot)
 
     def test_missing_constraint_fails(self):
-        snapshot = self.snapshot(); snapshot["check_constraints"].remove("indexer_state_default_key")
+        snapshot = self.snapshot(); snapshot["check_constraints"].pop("indexer_state_default_key")
         with self.assertRaises(init_database.SchemaCompatibilityError): init_database.validate_schema_snapshot(snapshot)
 
     def test_wrong_index_definition_fails(self):
-        snapshot = self.snapshot(); snapshot["indexes"]["rpc_endpoints_one_selected_per_chain_idx"] = "CREATE INDEX bad ON rpc_endpoints(chain_id)"
+        snapshot = self.snapshot(); snapshot["indexes"]["rpc_endpoints_one_selected_per_chain_idx"] = ("rpc_endpoints", False, (("chain_id", "ASC"),), None)
+        with self.assertRaises(init_database.SchemaCompatibilityError): init_database.validate_schema_snapshot(snapshot)
+
+
+    def test_pg_catalog_introspection_preserves_composite_constraints(self):
+        snapshot = self.snapshot()
+        class CatalogCursor:
+            def __init__(self):
+                self.calls = 0
+            def execute(self, sql):
+                self.calls += 1
+            def fetchall(self):
+                if self.calls == 1:
+                    return [(table,) for table in sorted(snapshot["tables"])]
+                if self.calls == 2:
+                    return [
+                        (table, column, values[0], values[1], values[2], values[3])
+                        for table, cols in snapshot["columns"].items()
+                        for column, values in cols.items()
+                    ]
+                if self.calls == 3:
+                    rows = []
+                    oid = 1
+                    for table, cols in snapshot["primary_keys"].items():
+                        rows.append((oid, table, "p", f"{table}_pkey", list(cols), None, [], " ", "PRIMARY KEY (" + ", ".join(cols) + ")")); oid += 1
+                    for table, cols in snapshot["unique_constraints"]:
+                        rows.append((oid, table, "u", f"{table}_{'_'.join(cols)}_key", list(cols), None, [], " ", "UNIQUE (" + ", ".join(cols) + ")")); oid += 1
+                    for table, cols, ref_table, ref_cols, action in snapshot["foreign_keys"]:
+                        rows.append((oid, table, "f", f"{table}_{'_'.join(cols)}_fkey", list(cols), ref_table, list(ref_cols), action, "FOREIGN KEY")); oid += 1
+                    for name, definition in snapshot["check_constraints"].items():
+                        rows.append((oid, "blocks", "c", name, [], None, [], " ", definition)); oid += 1
+                    return rows
+                if self.calls == 4:
+                    return [
+                        (name, table, unique, [column for column, _ in columns], [direction for _, direction in columns], predicate)
+                        for name, (table, unique, columns, predicate) in snapshot["indexes"].items()
+                    ]
+                return []
+        fetched = init_database.fetch_schema_snapshot(CatalogCursor())
+        self.assertEqual(fetched["primary_keys"]["validator_set_members"], ("height", "signing_address"))
+        self.assertEqual(fetched["primary_keys"]["validator_signatures"], ("height", "signing_address"))
+        self.assertIn(("validator_signatures", ("height", "signing_address"), "validator_set_members", ("height", "signing_address"), "c"), fetched["foreign_keys"])
+        self.assertIn(("transactions", ("block_height", "tx_index")), fetched["unique_constraints"])
+        self.assertIn(("validators", ("public_key_type", "public_key_value")), fetched["unique_constraints"])
+        init_database.validate_schema_snapshot(fetched)
+
+    def test_unexpected_extra_table_fails(self):
+        snapshot = self.snapshot(); snapshot["tables"].add("surprise")
+        with self.assertRaises(init_database.SchemaCompatibilityError): init_database.validate_schema_snapshot(snapshot)
+
+    def test_wrong_check_definition_fails(self):
+        snapshot = self.snapshot(); snapshot["check_constraints"]["indexer_state_default_key"] = "CHECK ((state_key <> 'default'::text))"
+        with self.assertRaises(init_database.SchemaCompatibilityError): init_database.validate_schema_snapshot(snapshot)
+
+    def test_wrong_foreign_key_action_fails(self):
+        snapshot = self.snapshot(); snapshot["foreign_keys"].remove(("validator_signatures", ("height", "signing_address"), "validator_set_members", ("height", "signing_address"), "c")); snapshot["foreign_keys"].add(("validator_signatures", ("height", "signing_address"), "validator_set_members", ("height", "signing_address"), "r"))
+        with self.assertRaises(init_database.SchemaCompatibilityError): init_database.validate_schema_snapshot(snapshot)
+
+    def test_wrong_partial_index_predicate_fails(self):
+        snapshot = self.snapshot(); snapshot["indexes"]["rpc_endpoints_one_selected_per_chain_idx"] = ("rpc_endpoints", True, (("chain_id", "ASC"),), "healthy")
         with self.assertRaises(init_database.SchemaCompatibilityError): init_database.validate_schema_snapshot(snapshot)
 
     def test_init_database_does_not_use_subprocess_argv_for_database_url(self):
         self.assertNotIn("subprocess", Path("scripts/init_database.py").read_text())
+
+
+    def test_compatible_existing_schema_executes_no_create(self):
+        class Cursor:
+            def __init__(self): self.calls = []
+            def execute(self, sql): self.calls.append(sql)
+            def fetchall(self): return [("blocks",)] if len(self.calls) == 1 else []
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+        class Conn:
+            def __init__(self): self.cursor_obj = Cursor(); self.committed = False
+            def cursor(self): return self.cursor_obj
+            def commit(self): self.committed = True
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+        conn = Conn()
+        with patch("scripts.init_database.fetch_schema_snapshot", return_value=self.snapshot()):
+            init_database.initialize_or_validate("postgresql://safe", connect=lambda url: conn)
+        self.assertTrue(conn.committed)
+        self.assertFalse(any("CREATE TABLE" in call for call in conn.cursor_obj.calls))
+
+    def test_schema_sql_failure_rolls_back_by_not_committing(self):
+        class Cursor:
+            def execute(self, sql):
+                if "CREATE TABLE" in sql:
+                    raise RuntimeError("sql failed")
+            def fetchall(self): return []
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+        class Conn:
+            def __init__(self): self.committed = False
+            def cursor(self): return Cursor()
+            def commit(self): self.committed = True
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+        conn = Conn()
+        with tempfile.NamedTemporaryFile("w") as schema:
+            schema.write("CREATE TABLE broken();")
+            schema.flush()
+            with self.assertRaises(RuntimeError):
+                init_database.initialize_or_validate("postgresql://safe", Path(schema.name), connect=lambda url: conn)
+        self.assertFalse(conn.committed)
+
+    def test_post_create_validation_failure_rolls_back_by_not_committing(self):
+        class Cursor:
+            def execute(self, sql): pass
+            def fetchall(self): return []
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+        class Conn:
+            def __init__(self): self.committed = False
+            def cursor(self): return Cursor()
+            def commit(self): self.committed = True
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+        conn = Conn()
+        with tempfile.NamedTemporaryFile("w") as schema:
+            schema.write("CREATE TABLE blocks(height bigint primary key);")
+            schema.flush()
+            with patch("scripts.init_database.fetch_schema_snapshot", return_value={"tables": {"blocks"}}), self.assertRaises(init_database.SchemaCompatibilityError):
+                init_database.initialize_or_validate("postgresql://safe", Path(schema.name), connect=lambda url: conn)
+        self.assertFalse(conn.committed)
 
     def test_init_database_main_sanitizes_error_output(self):
         err = io.StringIO()

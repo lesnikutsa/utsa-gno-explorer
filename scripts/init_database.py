@@ -15,110 +15,242 @@ EXPECTED_TABLES = {
     "blocks", "transactions", "validators", "validator_set_members", "validator_signatures", "rpc_endpoints", "rpc_endpoint_checks", "indexer_state",
 }
 EXPECTED_COLUMNS = {
-    "blocks": {"height": ("bigint", "NO"), "block_hash_base64": ("text", "NO"), "block_hash_hex": ("text", "NO"), "time_utc": ("timestamp with time zone", "NO"), "tx_count": ("integer", "NO")},
-    "transactions": {"id": ("bigint", "NO"), "block_height": ("bigint", "NO"), "tx_index": ("integer", "NO"), "raw_base64": ("text", "NO"), "decode_status": ("text", "NO")},
-    "validators": {"signing_address": ("text", "NO"), "public_key_type": ("text", "NO"), "public_key_value": ("text", "NO"), "first_seen_height": ("bigint", "NO"), "last_seen_height": ("bigint", "NO")},
-    "validator_set_members": {"height": ("bigint", "NO"), "signing_address": ("text", "NO"), "voting_power": ("numeric", "NO")},
-    "validator_signatures": {"height": ("bigint", "NO"), "signing_address": ("text", "NO"), "vote_status": ("text", "NO"), "signed": ("boolean", "NO")},
-    "rpc_endpoints": {"id": ("bigint", "NO"), "url": ("text", "NO"), "chain_id": ("text", "NO"), "is_selected": ("boolean", "NO")},
-    "rpc_endpoint_checks": {"id": ("bigint", "NO"), "rpc_endpoint_id": ("bigint", "NO"), "chain_id": ("text", "NO"), "healthy": ("boolean", "NO")},
-    "indexer_state": {"state_key": ("text", "NO"), "chain_id": ("text", "NO"), "last_finalized_height": ("bigint", "NO")},
+    "blocks": {
+        "height": ("bigint", "NO", "", None), "block_hash_base64": ("text", "NO", "", None), "block_hash_hex": ("text", "NO", "", None),
+        "time_utc": ("timestamp with time zone", "NO", "", None), "proposer_address": ("text", "YES", "", None), "tx_count": ("integer", "NO", "", None),
+        "raw_block_response": ("jsonb", "YES", "", None), "inserted_at": ("timestamp with time zone", "NO", "", "now()"), "updated_at": ("timestamp with time zone", "NO", "", "now()"),
+    },
+    "transactions": {
+        "id": ("bigint", "NO", "a", None), "block_height": ("bigint", "NO", "", None), "tx_index": ("integer", "NO", "", None), "raw_base64": ("text", "NO", "", None),
+        "raw_base64_length": ("integer", "NO", "", None), "decoded_bytes": ("bytea", "YES", "", None), "decoded_byte_length": ("integer", "YES", "", None),
+        "decode_status": ("text", "NO", "", None), "payload_summary": ("jsonb", "YES", "", None), "inserted_at": ("timestamp with time zone", "NO", "", "now()"),
+    },
+    "validators": {
+        "signing_address": ("text", "NO", "", None), "public_key_type": ("text", "NO", "", None), "public_key_value": ("text", "NO", "", None),
+        "first_seen_height": ("bigint", "NO", "", None), "last_seen_height": ("bigint", "NO", "", None), "inserted_at": ("timestamp with time zone", "NO", "", "now()"), "updated_at": ("timestamp with time zone", "NO", "", "now()"),
+    },
+    "validator_set_members": {
+        "height": ("bigint", "NO", "", None), "signing_address": ("text", "NO", "", None), "voting_power": ("numeric(78,0)", "NO", "", None),
+        "proposer_priority": ("numeric(78,0)", "YES", "", None), "validator_index": ("integer", "YES", "", None), "raw_validator": ("jsonb", "YES", "", None), "inserted_at": ("timestamp with time zone", "NO", "", "now()"),
+    },
+    "validator_signatures": {
+        "height": ("bigint", "NO", "", None), "signing_address": ("text", "NO", "", None), "vote_status": ("text", "NO", "", None), "signed": ("boolean", "NO", "", None),
+        "vote_block_id_hash_base64": ("text", "YES", "", None), "vote_block_id_hash_hex": ("text", "YES", "", None), "vote_block_id_parts_total": ("integer", "YES", "", None),
+        "vote_block_id_parts_hash_base64": ("text", "YES", "", None), "vote_block_id_parts_hash_hex": ("text", "YES", "", None), "vote_block_id_is_zero": ("boolean", "NO", "", "false"),
+        "block_id_matches_commit": ("boolean", "NO", "", "false"), "signature_base64": ("text", "YES", "", None), "raw_precommit": ("jsonb", "YES", "", None),
+        "inserted_at": ("timestamp with time zone", "NO", "", "now()"), "updated_at": ("timestamp with time zone", "NO", "", "now()"),
+    },
+    "rpc_endpoints": {
+        "id": ("bigint", "NO", "a", None), "url": ("text", "NO", "", None), "chain_id": ("text", "NO", "", None), "is_enabled": ("boolean", "NO", "", "true"), "is_selected": ("boolean", "NO", "", "false"),
+        "last_checked_at": ("timestamp with time zone", "YES", "", None), "last_selected_at": ("timestamp with time zone", "YES", "", None), "latest_observed_height": ("bigint", "YES", "", None), "observed_lag": ("bigint", "YES", "", None),
+        "catching_up": ("boolean", "YES", "", None), "healthy": ("boolean", "YES", "", None), "last_error": ("text", "YES", "", None), "inserted_at": ("timestamp with time zone", "NO", "", "now()"), "updated_at": ("timestamp with time zone", "NO", "", "now()"),
+    },
+    "rpc_endpoint_checks": {
+        "id": ("bigint", "NO", "a", None), "rpc_endpoint_id": ("bigint", "NO", "", None), "checked_at": ("timestamp with time zone", "NO", "", "now()"), "chain_id": ("text", "NO", "", None),
+        "latest_observed_height": ("bigint", "YES", "", None), "observed_lag": ("bigint", "YES", "", None), "catching_up": ("boolean", "YES", "", None), "healthy": ("boolean", "NO", "", None),
+        "selected_for_cycle": ("boolean", "NO", "", "false"), "switch_reason": ("text", "YES", "", None), "error_message": ("text", "YES", "", None),
+    },
+    "indexer_state": {
+        "state_key": ("text", "NO", "", None), "chain_id": ("text", "NO", "", None), "last_finalized_height": ("bigint", "NO", "", None), "finalized_tip_height": ("bigint", "YES", "", None), "selected_rpc_endpoint_id": ("bigint", "YES", "", None), "updated_at": ("timestamp with time zone", "NO", "", "now()"),
+    },
 }
-EXPECTED_PRIMARY_KEYS = {
-    "blocks": ("height",), "transactions": ("id",), "validators": ("signing_address",), "validator_set_members": ("height", "signing_address"), "validator_signatures": ("height", "signing_address"), "rpc_endpoints": ("id",), "rpc_endpoint_checks": ("id",), "indexer_state": ("state_key",),
-}
+EXPECTED_PRIMARY_KEYS = {"blocks": ("height",), "transactions": ("id",), "validators": ("signing_address",), "validator_set_members": ("height", "signing_address"), "validator_signatures": ("height", "signing_address"), "rpc_endpoints": ("id",), "rpc_endpoint_checks": ("id",), "indexer_state": ("state_key",)}
 EXPECTED_UNIQUES = {("blocks", ("block_hash_base64",)), ("blocks", ("block_hash_hex",)), ("transactions", ("block_height", "tx_index")), ("validators", ("public_key_type", "public_key_value")), ("rpc_endpoints", ("url",))}
-EXPECTED_FOREIGN_KEYS = {("transactions", ("block_height",), "blocks"), ("validator_set_members", ("height",), "blocks"), ("validator_set_members", ("signing_address",), "validators"), ("validator_signatures", ("height", "signing_address"), "validator_set_members"), ("rpc_endpoint_checks", ("rpc_endpoint_id",), "rpc_endpoints")}
-EXPECTED_CHECKS = {"blocks_block_hash_hex_uppercase", "transactions_decode_status_consistent", "validators_public_key_unique", "validator_signatures_signed_only_matching_commit", "rpc_endpoints_no_secret_url", "indexer_state_default_key"}
+EXPECTED_FOREIGN_KEYS = {
+    ("transactions", ("block_height",), "blocks", ("height",), "c"),
+    ("validator_set_members", ("height",), "blocks", ("height",), "c"),
+    ("validator_set_members", ("signing_address",), "validators", ("signing_address",), "r"),
+    ("validator_signatures", ("height", "signing_address"), "validator_set_members", ("height", "signing_address"), "c"),
+    ("rpc_endpoint_checks", ("rpc_endpoint_id",), "rpc_endpoints", ("id",), "c"),
+    ("indexer_state", ("selected_rpc_endpoint_id",), "rpc_endpoints", ("id",), "n"),
+}
+EXPECTED_CHECKS = {
+    "blocks_tx_count_check": "check",
+    "blocks_block_hash_hex_uppercase": "check ((block_hash_hex = upper(block_hash_hex)))",
+    "transactions_tx_index_check": "check",
+    "transactions_raw_base64_length_check": "check",
+    "transactions_decoded_byte_length_check": "check",
+    "transactions_decode_status_check": "check",
+    "transactions_raw_base64_length_matches": "check ((raw_base64_length = char_length(raw_base64)))",
+    "transactions_decode_status_consistent": "check",
+    "validators_first_seen_height_check": "check",
+    "validators_last_seen_height_check": "check ((last_seen_height >= first_seen_height))",
+    "validator_set_members_voting_power_check": "check ((voting_power >= (0)::numeric))",
+    "validator_set_members_validator_index_check": "check",
+    "validator_signatures_vote_status_check": "check",
+    "validator_signatures_vote_block_id_parts_total_check": "check",
+    "validator_signatures_signed_only_matching_commit": "check",
+    "validator_signatures_commit_vote_consistent": "check",
+    "validator_signatures_nil_vote_consistent": "check",
+    "validator_signatures_absent_vote_consistent": "check",
+    "validator_signatures_invalid_vote_consistent": "check",
+    "validator_signatures_vote_hash_hex_uppercase": "check",
+    "validator_signatures_vote_parts_hash_hex_uppercase": "check",
+    "rpc_endpoints_latest_observed_height_check": "check",
+    "rpc_endpoints_observed_lag_check": "check",
+    "rpc_endpoints_no_secret_url": "check",
+    "rpc_endpoint_checks_latest_observed_height_check": "check",
+    "rpc_endpoint_checks_observed_lag_check": "check",
+    "indexer_state_last_finalized_height_check": "check",
+    "indexer_state_finalized_tip_height_check": "check",
+    "indexer_state_default_key": "check ((state_key = 'default'::text))",
+}
 EXPECTED_INDEXES = {
-    "blocks_time_utc_idx": {"table": "blocks", "must_contain": ["time_utc DESC"]},
-    "validator_set_members_height_power_idx": {"table": "validator_set_members", "must_contain": ["voting_power DESC", "signing_address"]},
-    "validator_signatures_height_status_idx": {"table": "validator_signatures", "must_contain": ["height DESC", "vote_status", "signing_address"]},
-    "rpc_endpoints_one_selected_per_chain_idx": {"table": "rpc_endpoints", "must_contain": ["UNIQUE", "chain_id", "WHERE is_selected"]},
-    "rpc_endpoint_checks_endpoint_time_idx": {"table": "rpc_endpoint_checks", "must_contain": ["rpc_endpoint_id", "checked_at DESC"]},
+    "blocks_time_utc_idx": ("blocks", False, (("time_utc", "DESC"),), None),
+    "validator_set_members_height_power_idx": ("validator_set_members", False, (("height", "ASC"), ("voting_power", "DESC"), ("signing_address", "ASC")), None),
+    "validator_set_members_signing_height_idx": ("validator_set_members", False, (("signing_address", "ASC"), ("height", "DESC")), None),
+    "validator_signatures_signing_height_status_idx": ("validator_signatures", False, (("signing_address", "ASC"), ("height", "DESC"), ("vote_status", "ASC"), ("signed", "ASC")), None),
+    "validator_signatures_height_status_idx": ("validator_signatures", False, (("height", "DESC"), ("vote_status", "ASC"), ("signing_address", "ASC")), None),
+    "rpc_endpoints_health_idx": ("rpc_endpoints", False, (("chain_id", "ASC"), ("is_enabled", "ASC"), ("healthy", "ASC"), ("latest_observed_height", "DESC")), None),
+    "rpc_endpoints_one_selected_per_chain_idx": ("rpc_endpoints", True, (("chain_id", "ASC"),), "is_selected"),
+    "rpc_endpoint_checks_endpoint_time_idx": ("rpc_endpoint_checks", False, (("rpc_endpoint_id", "ASC"), ("checked_at", "DESC")), None),
+    "rpc_endpoint_checks_chain_selected_time_idx": ("rpc_endpoint_checks", False, (("chain_id", "ASC"), ("selected_for_cycle", "ASC"), ("checked_at", "DESC")), None),
 }
 
 class SchemaCompatibilityError(RuntimeError):
-    """Raised when an existing schema is not exactly compatible enough to run."""
+    """Raised when an existing schema is not compatible with the expected v0.4 schema."""
 
 
-def _norm(sql: str) -> str:
-    return re.sub(r"\s+", " ", sql).strip()
+def _norm(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return re.sub(r"\s+", " ", value.strip()).lower()
+
+
+def _default_matches(actual: str | None, expected: str | None) -> bool:
+    if expected is None:
+        return actual is None
+    return _norm(actual) == expected or (expected == "now()" and _norm(actual) == "now()")
 
 
 def validate_schema_snapshot(snapshot: dict[str, Any]) -> None:
     tables = set(snapshot.get("tables", set()))
-    missing = EXPECTED_TABLES - tables
-    if missing:
-        raise SchemaCompatibilityError(f"missing expected tables: {', '.join(sorted(missing))}")
-    for table, columns in EXPECTED_COLUMNS.items():
-        actual = snapshot.get("columns", {}).get(table, {})
-        for column, expected in columns.items():
-            if column not in actual:
-                raise SchemaCompatibilityError(f"missing column {table}.{column}")
-            if tuple(actual[column]) != expected:
-                raise SchemaCompatibilityError(f"incompatible column {table}.{column}: expected {expected[0]} nullable={expected[1]}")
+    if tables != EXPECTED_TABLES:
+        missing = EXPECTED_TABLES - tables
+        extra = tables - EXPECTED_TABLES
+        details = []
+        if missing:
+            details.append(f"missing expected tables: {', '.join(sorted(missing))}")
+        if extra:
+            details.append(f"unexpected public tables: {', '.join(sorted(extra))}")
+        raise SchemaCompatibilityError("; ".join(details))
+    for table, expected_columns in EXPECTED_COLUMNS.items():
+        actual_columns = snapshot.get("columns", {}).get(table, {})
+        if set(actual_columns) != set(expected_columns):
+            raise SchemaCompatibilityError(f"incompatible column set for {table}")
+        for column, expected in expected_columns.items():
+            actual = tuple(actual_columns[column])
+            if actual[:3] != expected[:3] or not _default_matches(actual[3], expected[3]):
+                raise SchemaCompatibilityError(f"incompatible column {table}.{column}")
     for table, columns in EXPECTED_PRIMARY_KEYS.items():
         if tuple(snapshot.get("primary_keys", {}).get(table, ())) != columns:
             raise SchemaCompatibilityError(f"incompatible primary key for {table}")
-    uniques = {(table, tuple(cols)) for table, cols in snapshot.get("unique_constraints", set())}
-    if not EXPECTED_UNIQUES.issubset(uniques):
-        raise SchemaCompatibilityError("missing expected unique constraints")
-    fks = {(table, tuple(cols), ref) for table, cols, ref in snapshot.get("foreign_keys", set())}
-    if not EXPECTED_FOREIGN_KEYS.issubset(fks):
-        raise SchemaCompatibilityError("missing expected foreign keys")
-    checks = set(snapshot.get("check_constraints", set()))
-    if not EXPECTED_CHECKS.issubset(checks):
-        raise SchemaCompatibilityError("missing expected check constraints")
+    if EXPECTED_UNIQUES != {(table, tuple(cols)) for table, cols in snapshot.get("unique_constraints", set())}:
+        raise SchemaCompatibilityError("incompatible unique constraints")
+    if EXPECTED_FOREIGN_KEYS != {(table, tuple(cols), ref, tuple(ref_cols), action) for table, cols, ref, ref_cols, action in snapshot.get("foreign_keys", set())}:
+        raise SchemaCompatibilityError("incompatible foreign keys")
+    checks = snapshot.get("check_constraints", {})
+    if set(checks) != set(EXPECTED_CHECKS):
+        raise SchemaCompatibilityError("incompatible check constraint set")
+    for name, expected in EXPECTED_CHECKS.items():
+        actual = _norm(checks[name]) or ""
+        if expected != "check" and actual != expected:
+            raise SchemaCompatibilityError(f"incompatible check constraint {name}")
+        if expected == "check" and not actual.startswith("check"):
+            raise SchemaCompatibilityError(f"incompatible check constraint {name}")
     indexes = snapshot.get("indexes", {})
+    if set(indexes) != set(EXPECTED_INDEXES):
+        raise SchemaCompatibilityError("incompatible explicit index set")
     for name, expected in EXPECTED_INDEXES.items():
-        definition = indexes.get(name)
-        if not definition:
-            raise SchemaCompatibilityError(f"missing expected index {name}")
-        normalized = _norm(definition)
-        for part in expected["must_contain"]:
-            if part not in normalized:
-                raise SchemaCompatibilityError(f"incompatible index {name}")
+        actual = indexes[name]
+        if (actual[0], bool(actual[1]), tuple(actual[2]), _norm(actual[3])) != (expected[0], expected[1], expected[2], _norm(expected[3])):
+            raise SchemaCompatibilityError(f"incompatible index {name}")
 
 
 def fetch_schema_snapshot(cursor) -> dict[str, Any]:
-    cursor.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
-    tables = {row[0] for row in cursor.fetchall()}
-    cursor.execute("SELECT table_name, column_name, data_type, is_nullable FROM information_schema.columns WHERE table_schema = 'public'")
-    columns: dict[str, dict[str, tuple[str, str]]] = {}
-    for table, column, data_type, nullable in cursor.fetchall():
-        columns.setdefault(table, {})[column] = (data_type, nullable)
     cursor.execute("""
-        SELECT tc.table_name, tc.constraint_type, tc.constraint_name, kcu.column_name, ccu.table_name
-        FROM information_schema.table_constraints tc
-        LEFT JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
-        LEFT JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name AND tc.table_schema = ccu.table_schema
-        WHERE tc.table_schema = 'public'
-        ORDER BY tc.table_name, tc.constraint_name, kcu.ordinal_position
+        SELECT c.relname
+        FROM pg_catalog.pg_class c
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND c.relkind = 'r'
+        ORDER BY c.relname
     """)
-    primary: dict[str, list[str]] = {}
-    unique: dict[tuple[str, str], list[str]] = {}
-    foreign: dict[tuple[str, str, str], list[str]] = {}
-    checks: set[str] = set()
-    for table, ctype, cname, column, ref_table in cursor.fetchall():
-        if ctype == "PRIMARY KEY" and column:
-            primary.setdefault(table, []).append(column)
-        elif ctype == "UNIQUE" and column:
-            unique.setdefault((table, cname), []).append(column)
-        elif ctype == "FOREIGN KEY" and column:
-            foreign.setdefault((table, cname, ref_table), []).append(column)
-        elif ctype == "CHECK":
-            checks.add(cname)
-    cursor.execute("SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = 'public'")
-    return {
-        "tables": tables,
-        "columns": columns,
-        "primary_keys": {table: tuple(cols) for table, cols in primary.items()},
-        "unique_constraints": {(table, tuple(cols)) for (table, _), cols in unique.items()},
-        "foreign_keys": {(table, tuple(cols), ref_table) for (table, _, ref_table), cols in foreign.items()},
-        "check_constraints": checks,
-        "indexes": {name: definition for name, definition in cursor.fetchall()},
-    }
+    tables = {row[0] for row in cursor.fetchall()}
+
+    cursor.execute("""
+        SELECT c.relname, a.attname, pg_catalog.format_type(a.atttypid, a.atttypmod),
+               CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END,
+               a.attidentity,
+               pg_catalog.pg_get_expr(d.adbin, d.adrelid)
+        FROM pg_catalog.pg_class c
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
+        LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid = c.oid AND d.adnum = a.attnum
+        WHERE n.nspname = 'public' AND c.relkind = 'r' AND a.attnum > 0 AND NOT a.attisdropped
+        ORDER BY c.relname, a.attnum
+    """)
+    columns: dict[str, dict[str, tuple[str, str, str, str | None]]] = {}
+    for table, column, data_type, nullable, identity, default in cursor.fetchall():
+        columns.setdefault(table, {})[column] = (data_type, nullable, identity or "", default)
+
+    cursor.execute("""
+        SELECT con.oid, rel.relname, con.contype, con.conname,
+               COALESCE(local_cols.columns, ARRAY[]::text[]), ref_rel.relname,
+               COALESCE(ref_cols.columns, ARRAY[]::text[]), con.confdeltype,
+               pg_catalog.pg_get_constraintdef(con.oid)
+        FROM pg_catalog.pg_constraint con
+        JOIN pg_catalog.pg_class rel ON rel.oid = con.conrelid
+        JOIN pg_catalog.pg_namespace n ON n.oid = rel.relnamespace
+        LEFT JOIN pg_catalog.pg_class ref_rel ON ref_rel.oid = con.confrelid
+        LEFT JOIN LATERAL (
+            SELECT array_agg(att.attname ORDER BY keys.ord) AS columns
+            FROM unnest(con.conkey) WITH ORDINALITY AS keys(attnum, ord)
+            JOIN pg_catalog.pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = keys.attnum
+        ) local_cols ON true
+        LEFT JOIN LATERAL (
+            SELECT array_agg(att.attname ORDER BY keys.ord) AS columns
+            FROM unnest(con.confkey) WITH ORDINALITY AS keys(attnum, ord)
+            JOIN pg_catalog.pg_attribute att ON att.attrelid = con.confrelid AND att.attnum = keys.attnum
+        ) ref_cols ON true
+        WHERE n.nspname = 'public' AND rel.relkind = 'r'
+        ORDER BY rel.relname, con.oid
+    """)
+    primary: dict[str, tuple[str, ...]] = {}
+    uniques: set[tuple[str, tuple[str, ...]]] = set()
+    foreign_keys: set[tuple[str, tuple[str, ...], str, tuple[str, ...], str]] = set()
+    checks: dict[str, str] = {}
+    for _oid, table, contype, name, local_cols, ref_table, ref_cols, delete_action, definition in cursor.fetchall():
+        local_tuple = tuple(local_cols or ())
+        if contype == "p":
+            primary[table] = local_tuple
+        elif contype == "u":
+            uniques.add((table, local_tuple))
+        elif contype == "f":
+            foreign_keys.add((table, local_tuple, ref_table, tuple(ref_cols or ()), delete_action))
+        elif contype == "c":
+            checks[name] = _norm(definition) or ""
+
+    cursor.execute("""
+        SELECT idx.relname, tbl.relname, i.indisunique,
+               array_agg(att.attname ORDER BY keys.ord),
+               array_agg(CASE WHEN (i.indoption[keys.ord - 1] & 1) = 1 THEN 'DESC' ELSE 'ASC' END ORDER BY keys.ord),
+               pg_catalog.pg_get_expr(i.indpred, i.indrelid)
+        FROM pg_catalog.pg_index i
+        JOIN pg_catalog.pg_class idx ON idx.oid = i.indexrelid
+        JOIN pg_catalog.pg_class tbl ON tbl.oid = i.indrelid
+        JOIN pg_catalog.pg_namespace n ON n.oid = tbl.relnamespace
+        JOIN unnest(i.indkey) WITH ORDINALITY AS keys(attnum, ord) ON keys.attnum <> 0
+        JOIN pg_catalog.pg_attribute att ON att.attrelid = tbl.oid AND att.attnum = keys.attnum
+        WHERE n.nspname = 'public' AND NOT i.indisprimary AND NOT EXISTS (
+            SELECT 1 FROM pg_catalog.pg_constraint con WHERE con.conindid = i.indexrelid AND con.contype IN ('u', 'p')
+        )
+        GROUP BY idx.relname, tbl.relname, i.indisunique, i.indpred, i.indrelid
+        ORDER BY idx.relname
+    """)
+    indexes = {}
+    for name, table, unique, cols, directions, predicate in cursor.fetchall():
+        indexes[name] = (table, bool(unique), tuple(zip(cols, directions)), predicate)
+    return {"tables": tables, "columns": columns, "primary_keys": primary, "unique_constraints": uniques, "foreign_keys": foreign_keys, "check_constraints": checks, "indexes": indexes}
 
 
 def initialize_or_validate(database_url: str, schema_path: Path = SCHEMA, connect=None) -> None:
@@ -130,12 +262,15 @@ def initialize_or_validate(database_url: str, schema_path: Path = SCHEMA, connec
     schema_sql = schema_path.read_text()
     with connect(database_url) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
+            cursor.execute("""
+                SELECT c.relname FROM pg_catalog.pg_class c
+                JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'public' AND c.relkind = 'r'
+            """)
             existing = {row[0] for row in cursor.fetchall()}
             if not existing:
                 cursor.execute(schema_sql)
-                snapshot = fetch_schema_snapshot(cursor)
-                validate_schema_snapshot(snapshot)
+                validate_schema_snapshot(fetch_schema_snapshot(cursor))
             else:
                 validate_schema_snapshot(fetch_schema_snapshot(cursor))
         connection.commit()

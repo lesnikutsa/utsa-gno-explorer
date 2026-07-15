@@ -127,16 +127,89 @@ Never test restores against production first. Safe validation flow:
 Example isolated validation database:
 
 ```bash
-docker run --rm --name utsa-gno-restore-validation -e POSTGRES_USER=validation -e POSTGRES_DB=validation -e POSTGRES_PASSWORD=validation -p 127.0.0.1:55432:5432 -d postgres:16.14-bookworm
-PGPASSWORD=validation pg_isready -h 127.0.0.1 -p 55432 -U validation -d validation
-until PGPASSWORD=validation pg_isready -h 127.0.0.1 -p 55432 -U validation -d validation; do sleep 1; done
-PGPASSWORD=validation pg_restore -h 127.0.0.1 -p 55432 -U validation -d validation --no-owner --no-privileges --exit-on-error --single-transaction /var/backups/utsa-gno-explorer/utsa-gno-explorer-YYYYMMDDTHHMMSSZ.dump
-PGPASSWORD=validation psql -h 127.0.0.1 -p 55432 -U validation -d validation -v ON_ERROR_STOP=1 -c "select array_agg(table_name order by table_name) from information_schema.tables where table_schema = current_schema() having array_agg(table_name order by table_name) = ARRAY['blocks','indexer_state','rpc_endpoint_checks','rpc_endpoints','transactions','validator_set_members','validator_signatures','validators'];"
-PGPASSWORD=validation psql -h 127.0.0.1 -p 55432 -U validation -d validation -v ON_ERROR_STOP=1 -c "select * from indexer_state;"
-PGPASSWORD=validation psql -h 127.0.0.1 -p 55432 -U validation -d validation -v ON_ERROR_STOP=1 -c "select (select count(*) from blocks) blocks, (select count(*) from transactions) transactions, (select count(*) from validator_signatures) signatures;"
-PGPASSWORD=validation psql -h 127.0.0.1 -p 55432 -U validation -d validation -v ON_ERROR_STOP=1 -c "select last_finalized_height <= finalized_tip_height as checkpoint_consistent from indexer_state;"
-docker stop utsa-gno-restore-validation
+set -euo pipefail
+VALIDATION_CONTAINER="utsa-gno-restore-validation"
+VALIDATION_PASSWORD_FILE="$(mktemp)"
+cleanup_restore_validation() {
+  docker rm -f "$VALIDATION_CONTAINER" >/dev/null 2>&1 || true
+  rm -f "$VALIDATION_PASSWORD_FILE"
+}
+trap cleanup_restore_validation EXIT
+umask 077
+python - <<'PY' >"$VALIDATION_PASSWORD_FILE"
+import secrets
+print(secrets.token_urlsafe(32))
+PY
+VALIDATION_PASSWORD="$(cat "$VALIDATION_PASSWORD_FILE")"
+docker run --name "$VALIDATION_CONTAINER" \
+  -e POSTGRES_USER=validation \
+  -e POSTGRES_DB=validation \
+  -e POSTGRES_PASSWORD="$VALIDATION_PASSWORD" \
+  -p 127.0.0.1:55432:5432 \
+  -d postgres:16.14-bookworm
+for attempt in $(seq 1 60); do
+  if PGPASSWORD="$VALIDATION_PASSWORD" pg_isready -h 127.0.0.1 -p 55432 -U validation -d validation; then
+    break
+  fi
+  if [ "$attempt" -eq 60 ]; then
+    echo "validation PostgreSQL readiness timed out" >&2
+    exit 1
+  fi
+  sleep 1
+done
+PGPASSWORD="$VALIDATION_PASSWORD" pg_restore \
+  -h 127.0.0.1 -p 55432 -U validation -d validation \
+  --no-owner --no-privileges --exit-on-error --single-transaction \
+  /var/backups/utsa-gno-explorer/utsa-gno-explorer-YYYYMMDDTHHMMSSZ.dump
+PGPASSWORD="$VALIDATION_PASSWORD" psql \
+  -h 127.0.0.1 -p 55432 -U validation -d validation \
+  -v ON_ERROR_STOP=1 <<'SQL'
+DO $$
+DECLARE
+  expected_tables text[] := ARRAY['blocks','indexer_state','rpc_endpoint_checks','rpc_endpoints','transactions','validator_set_members','validator_signatures','validators'];
+  actual_tables text[];
+  state_rows integer;
+  checkpoint_height bigint;
+  tip_height bigint;
+BEGIN
+  SELECT array_agg(table_name ORDER BY table_name)
+    INTO actual_tables
+    FROM information_schema.tables
+   WHERE table_schema = 'public' AND table_type = 'BASE TABLE';
+  IF actual_tables IS DISTINCT FROM expected_tables THEN
+    RAISE EXCEPTION 'validation failed: expected tables %, got %', expected_tables, actual_tables;
+  END IF;
+
+  SELECT count(*), max(last_finalized_height), max(finalized_tip_height)
+    INTO state_rows, checkpoint_height, tip_height
+    FROM indexer_state;
+  IF state_rows <> 1 THEN
+    RAISE EXCEPTION 'validation failed: indexer_state row count is %', state_rows;
+  END IF;
+  IF checkpoint_height IS NULL THEN
+    RAISE EXCEPTION 'validation failed: indexer_state checkpoint is null';
+  END IF;
+  IF tip_height IS NOT NULL AND checkpoint_height > tip_height THEN
+    RAISE EXCEPTION 'validation failed: checkpoint % is above finalized tip %', checkpoint_height, tip_height;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM blocks WHERE height = checkpoint_height) THEN
+    RAISE EXCEPTION 'validation failed: checkpoint block % is missing', checkpoint_height;
+  END IF;
+  IF EXISTS (SELECT 1 FROM transactions t LEFT JOIN blocks b ON b.height = t.block_height WHERE b.height IS NULL) THEN
+    RAISE EXCEPTION 'validation failed: transaction without block';
+  END IF;
+  IF EXISTS (SELECT 1 FROM validator_signatures s LEFT JOIN validator_set_members m ON m.height = s.height AND m.signing_address = s.signing_address WHERE m.height IS NULL) THEN
+    RAISE EXCEPTION 'validation failed: signature without validator-set member';
+  END IF;
+END
+$$;
+SELECT
+  (SELECT count(*) FROM blocks) AS blocks,
+  (SELECT count(*) FROM transactions) AS transactions,
+  (SELECT count(*) FROM validator_signatures) AS signatures;
+SQL
 ```
+
 
 ## Destructive production restore
 
