@@ -56,3 +56,9 @@ For all-RPC-unavailable, timeout, or temporary PostgreSQL connection failures, t
 ## Remaining follow-up milestones
 
 Production PostgreSQL setup, systemd supervision, backend API, and frontend remain separate work and are intentionally not part of this validation runbook.
+
+## Continuous exit-code behavior
+
+`--once` attempts exactly one cycle. It exits `0` for a successful or caught-up cycle and exits non-zero when that only attempt ends in a transient or fatal error.
+
+`--max-cycles` counts every attempted cycle, including transient failures. The runner does not sleep after the final permitted cycle. It exits non-zero if every permitted cycle failed and no successful cycle completed; otherwise it exits `0` when the limit is reached.

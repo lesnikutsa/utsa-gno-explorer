@@ -30,29 +30,33 @@ class SelectedRpc:
     probes: list[RpcProbeResult]
 
 
-def select_rpc(urls: list[str], chain_id: str, max_height_lag: int, timeout: int = 10) -> SelectedRpc:
+def probe_rpc_endpoints(urls: list[str], chain_id: str, max_height_lag: int, timeout: int = 10) -> list[RpcProbeResult]:
     if not urls:
         raise RpcError("Set GNO_RPC_URLS to a comma-separated RPC list, or temporarily set legacy GNO_RPC_URL")
-
     raw_probes = [_probe_endpoint(url, chain_id, timeout) for url in urls]
     healthy_heights = [probe.latest_height for probe in raw_probes if probe.healthy and probe.latest_height is not None]
     if not healthy_heights:
-        raise RpcError("All RPC endpoints are rejected or unavailable")
-
+        return raw_probes
     highest_height = max(healthy_heights)
     probes_with_lag = [_with_lag(probe, highest_height, max_height_lag) for probe in raw_probes]
     selected_index = _selected_probe_index(probes_with_lag, max_height_lag)
-    if selected_index is None:
+    return [
+        RpcProbeResult(**{**probe.__dict__, "selected": index == selected_index})
+        for index, probe in enumerate(probes_with_lag)
+    ]
+
+
+def selected_rpc_from_probes(probes: list[RpcProbeResult], max_height_lag: int) -> SelectedRpc:
+    healthy_heights = [probe.latest_height for probe in probes if probe.healthy and probe.latest_height is not None]
+    if not healthy_heights:
+        raise RpcError("All RPC endpoints are rejected or unavailable")
+    highest_height = max(healthy_heights)
+    selected_probe = next((probe for probe in probes if probe.selected), None)
+    if selected_probe is None:
         raise RpcError(
             f"No suitable RPC endpoint is within RPC_MAX_HEIGHT_LAG={max_height_lag} "
             f"of highest healthy height {highest_height}"
         )
-
-    selected_probe = probes_with_lag[selected_index]
-    selected_probes = [
-        RpcProbeResult(**{**probe.__dict__, "selected": index == selected_index})
-        for index, probe in enumerate(probes_with_lag)
-    ]
     if selected_probe.client is None or selected_probe.status_payload is None or selected_probe.latest_height is None:
         raise RpcError("Selected RPC probe is missing successful payload data")
     return SelectedRpc(
@@ -60,8 +64,13 @@ def select_rpc(urls: list[str], chain_id: str, max_height_lag: int, timeout: int
         status_payload=selected_probe.status_payload,
         latest_height=selected_probe.latest_height,
         finalized_tip=selected_probe.latest_height - 1,
-        probes=selected_probes,
+        probes=probes,
     )
+
+
+def select_rpc(urls: list[str], chain_id: str, max_height_lag: int, timeout: int = 10) -> SelectedRpc:
+    probes = probe_rpc_endpoints(urls, chain_id, max_height_lag, timeout)
+    return selected_rpc_from_probes(probes, max_height_lag)
 
 
 def _probe_endpoint(url: str, expected_chain_id: str, timeout: int) -> RpcProbeResult:

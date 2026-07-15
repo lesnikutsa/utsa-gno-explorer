@@ -74,4 +74,5 @@ def load_continuous_config():
         poll_interval_seconds=_positive_int("INDEXER_POLL_INTERVAL_SECONDS", DEFAULT_INDEXER_POLL_INTERVAL_SECONDS),
         error_backoff_seconds=_positive_int("INDEXER_ERROR_BACKOFF_SECONDS", DEFAULT_INDEXER_ERROR_BACKOFF_SECONDS),
         max_backoff_seconds=_positive_int("INDEXER_MAX_BACKOFF_SECONDS", DEFAULT_INDEXER_MAX_BACKOFF_SECONDS),
+        hard_max_heights=configured_hard_max_heights(),
     )
