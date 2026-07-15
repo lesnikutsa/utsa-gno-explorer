@@ -66,3 +66,7 @@ Production PostgreSQL setup, systemd supervision, backend API, and frontend rema
 ## Lock-acquisition startup behavior
 
 The advisory-lock session uses autocommit. Transient PostgreSQL `OperationalError` or `InterfaceError` failures while connecting or acquiring the lock are retried with bounded stop-aware backoff before any indexing cycle starts. `--once` exits non-zero after one failed lock-acquisition attempt. `--max-cycles` also bounds startup lock-acquisition attempts before the first cycle. SIGINT or SIGTERM during lock-acquisition backoff exits promptly.
+
+An empty `GNO_RPC_URLS` configuration is fatal and exits with code `1` before advisory-lock acquisition. Configure at least one endpoint to distinguish operator misconfiguration from a transient outage of a non-empty endpoint list.
+
+If advisory-lock acquisition fails after opening a PostgreSQL connection, the runner closes that failed connection best-effort before retrying. A later retry uses a fresh connection, so any session-level lock that may have been acquired is naturally released with the failed session.

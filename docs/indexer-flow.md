@@ -118,3 +118,7 @@ Fatal failures exit non-zero immediately: invalid configuration, chain identity 
 Advisory-lock acquisition uses the same bounded, stop-aware backoff as transient cycle failures. A transient psycopg `OperationalError` or `InterfaceError` while opening or acquiring the lock is retried before any indexing cycle starts. With `--once`, one failed lock-acquisition attempt exits non-zero. With `--max-cycles`, the runner uses that value as the startup lock-acquisition retry limit before any cycle is attempted. Without either option, startup acquisition continues with bounded backoff until the lock is acquired, a fatal error occurs, or SIGINT/SIGTERM requests shutdown.
 
 The advisory-lock connection is configured for autocommit before `pg_try_advisory_lock` is executed. Liveness checks also run in autocommit mode, so the session-level lock remains held without leaving the connection idle in a transaction.
+
+Empty RPC configuration is a fatal startup configuration error. The runner validates that the RPC URL list is non-empty before advisory-lock acquisition, before any backoff, and before any database write for heights or RPC checks. A configured but unavailable non-empty RPC list remains a transient RPC outage.
+
+Advisory-lock acquisition is exception-safe: if the PostgreSQL connection is created but autocommit setup, cursor creation, `pg_try_advisory_lock`, or `fetchone` fails, the runner closes that exact connection best-effort, resets the stored connection reference, and retries later with a fresh connection when the failure is transient.

@@ -398,6 +398,86 @@ class ReviewSemanticsTests(unittest.TestCase):
         with patch("indexer.runner.probe_rpc_endpoints", return_value=selected(12).probes):
             self.assertEqual(run_continuous(BadDb(None), "test-13", ["x"], 10, self.config(max_cycles=1), lock_factory=FakeLock), 1)
 
+
+    def test_acquire_partial_failure_cleanup_and_later_retry_in_run(self):
+        class PartialConnection:
+            def __init__(self, fail_fetch):
+                self.fail_fetch = fail_fetch
+                self.autocommit = False
+                self.closed = False
+            def cursor(self):
+                connection = self
+                class Cursor:
+                    def __enter__(self): return self
+                    def __exit__(self, *args): return False
+                    def execute(self, sql, params=None): pass
+                    def fetchone(self):
+                        if connection.fail_fetch:
+                            raise psycopg.OperationalError("fetch failed")
+                        return (True,)
+                return Cursor()
+            def close(self):
+                self.closed = True
+        class Db:
+            def __init__(self):
+                self.created = []
+            def connect(self):
+                connection = PartialConnection(fail_fetch=len(self.created) == 0)
+                self.created.append(connection)
+                return connection
+        from indexer.runner import AdvisoryLock
+        lock_db = Db()
+        lock = AdvisoryLock(lock_db, "test-13")
+        with self.assertRaises(psycopg.OperationalError):
+            lock.acquire()
+        self.assertTrue(lock_db.created[0].closed)
+        self.assertIsNone(lock.connection)
+        lock.acquire()
+        self.assertIs(lock.connection, lock_db.created[1])
+        self.assertFalse(lock_db.created[1].closed)
+        lock.close()
+
+    def test_lock_partial_failure_retry_uses_fresh_connection_before_processing(self):
+        class PartialLock(FakeLock):
+            attempts = 0
+            failed_closed = False
+            def acquire(self):
+                PartialLock.attempts += 1
+                if PartialLock.attempts == 1:
+                    PartialLock.failed_closed = True
+                    raise psycopg.OperationalError("partial acquisition failure")
+                super().acquire()
+        db = SqlLikeDb(None)
+        waits = []
+        with patch("indexer.runner.probe_rpc_endpoints", return_value=selected(12).probes):
+            code = run_continuous(db, "test-13", ["x"], 10, self.config(max_cycles=2, batch_size=1), wait=lambda s, stop: waits.append(s) or False, lock_factory=PartialLock)
+        self.assertEqual(code, 0)
+        self.assertTrue(PartialLock.failed_closed)
+        self.assertEqual(waits, [1])
+        self.assertEqual(db.checkpoint, 11)
+
+    def test_empty_rpc_urls_are_fatal_before_lock_and_backoff(self):
+        class CountingLock(FakeLock):
+            attempts = 0
+            def acquire(self):
+                CountingLock.attempts += 1
+                super().acquire()
+        db = SqlLikeDb(None)
+        waits = []
+        code = run_continuous(db, "test-13", [], 10, self.config(), wait=lambda s, stop: waits.append(s) or False, lock_factory=CountingLock)
+        self.assertEqual(code, 1)
+        self.assertEqual(CountingLock.attempts, 0)
+        self.assertEqual(waits, [])
+        self.assertIsNone(db.checkpoint)
+        self.assertEqual(db.probe_cycles, [])
+
+    def test_non_empty_unavailable_rpc_urls_remain_transient(self):
+        waits = []
+        with patch("indexer.runner.probe_rpc_endpoints", side_effect=RpcError("down")):
+            code = run_continuous(SqlLikeDb(None), "test-13", ["x"], 10, self.config(max_cycles=2), wait=lambda s, stop: waits.append(s) or False, lock_factory=FakeLock)
+        self.assertEqual(code, 1)
+        self.assertEqual(waits, [1])
+
     def test_hard_batch_limit_validation(self):
         validate_continuous_config(self.config(batch_size=3, hard_max_heights=3))
         with self.assertRaisesRegex(FatalIndexerError, "batch_size"):

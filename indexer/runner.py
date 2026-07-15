@@ -127,14 +127,21 @@ class AdvisoryLock:
         self.key = advisory_lock_key(chain_id)
 
     def acquire(self) -> None:
-        self.connection = self.database.connect()
-        self.connection.autocommit = True
-        with self.connection.cursor() as cursor:
-            cursor.execute("SELECT pg_try_advisory_lock(%s)", (self.key,))
-            row = cursor.fetchone()
-        if not row or not row[0]:
+        if self.connection is not None:
             self.close()
-            raise AdvisoryLockHeld(f"continuous indexer advisory lock is already held for chain_id={self.chain_id}")
+        connection = self.database.connect()
+        try:
+            connection.autocommit = True
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT pg_try_advisory_lock(%s)", (self.key,))
+                row = cursor.fetchone()
+            if not row or not row[0]:
+                raise AdvisoryLockHeld(f"continuous indexer advisory lock is already held for chain_id={self.chain_id}")
+        except Exception:
+            self._close_connection_best_effort(connection)
+            self.connection = None
+            raise
+        self.connection = connection
 
     def ensure_alive(self) -> None:
         if self.connection is None or getattr(self.connection, "closed", False):
@@ -154,9 +161,11 @@ class AdvisoryLock:
         try:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT pg_advisory_unlock(%s)", (self.key,))
-            connection.commit()
         except Exception as exc:
             LOGGER.warning("best-effort advisory unlock failed: %s", exc)
+        self._close_connection_best_effort(connection)
+
+    def _close_connection_best_effort(self, connection) -> None:
         try:
             connection.close()
         except Exception as exc:
@@ -191,6 +200,9 @@ def run_cycle(database, chain_id: str, rpc_urls: list[str], max_height_lag: int,
 
 def run_continuous(database: PostgresDatabase, chain_id: str, rpc_urls: list[str], max_height_lag: int, config: ContinuousConfig, stop: StopController | None = None, wait: Waiter = stop_aware_wait, lock_factory: Callable[[PostgresDatabase, str], AdvisoryLock] = AdvisoryLock) -> int:
     validate_continuous_config(config)
+    if not rpc_urls:
+        LOGGER.error("fatal continuous indexer error: GNO_RPC_URLS must contain at least one RPC endpoint")
+        return 1
     stop = stop or StopController()
     lock = lock_factory(database, chain_id)
     cycle = 0
