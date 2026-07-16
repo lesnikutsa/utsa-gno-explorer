@@ -129,6 +129,60 @@ WHERE block_height = %s
 ORDER BY tx_index ASC
 """
 
+VALIDATORS_CHECKPOINT_SQL = """
+SELECT
+    s.last_finalized_height AS height,
+    b.height IS NOT NULL AS block_exists,
+    (SELECT count(*) FROM (
+        SELECT height FROM blocks WHERE height <= s.last_finalized_height ORDER BY height DESC LIMIT 20
+    ) recent_20) AS network_blocks_20,
+    (SELECT count(*) FROM (
+        SELECT height FROM blocks WHERE height <= s.last_finalized_height ORDER BY height DESC LIMIT 100
+    ) recent_100) AS network_blocks_100
+FROM indexer_state s
+LEFT JOIN blocks b ON b.height = s.last_finalized_height
+WHERE s.state_key = %s
+"""
+
+ACTIVE_VALIDATORS_SQL = """
+WITH recent_blocks AS (
+    SELECT height, row_number() OVER (ORDER BY height DESC) AS position
+    FROM (
+        SELECT height FROM blocks WHERE height <= %s ORDER BY height DESC LIMIT 100
+    ) bounded_blocks
+), current_validators AS (
+    SELECT vsm.signing_address, vsm.voting_power, vsm.proposer_priority, v.public_key_type
+    FROM validator_set_members vsm
+    LEFT JOIN validators v ON v.signing_address = vsm.signing_address
+    WHERE vsm.height = %s
+)
+SELECT
+    current.signing_address AS address,
+    current.public_key_type,
+    current.voting_power,
+    current.proposer_priority,
+    count(membership.signing_address) FILTER (WHERE recent.position <= 20)::bigint AS active_blocks_20,
+    count(signature.signing_address) FILTER (WHERE recent.position <= 20 AND signature.signed = true)::bigint AS signed_blocks_20,
+    count(signature.signing_address) FILTER (WHERE recent.position <= 20 AND signature.vote_status = 'nil')::bigint AS nil_blocks_20,
+    count(signature.signing_address) FILTER (WHERE recent.position <= 20 AND signature.vote_status = 'absent')::bigint AS absent_blocks_20,
+    count(signature.signing_address) FILTER (WHERE recent.position <= 20 AND signature.vote_status = 'invalid')::bigint AS invalid_blocks_20,
+    count(membership.signing_address) FILTER (WHERE recent.position <= 20 AND signature.signing_address IS NULL)::bigint AS unknown_blocks_20,
+    count(membership.signing_address)::bigint AS active_blocks_100,
+    count(signature.signing_address) FILTER (WHERE signature.signed = true)::bigint AS signed_blocks_100,
+    count(signature.signing_address) FILTER (WHERE signature.vote_status = 'nil')::bigint AS nil_blocks_100,
+    count(signature.signing_address) FILTER (WHERE signature.vote_status = 'absent')::bigint AS absent_blocks_100,
+    count(signature.signing_address) FILTER (WHERE signature.vote_status = 'invalid')::bigint AS invalid_blocks_100,
+    count(membership.signing_address) FILTER (WHERE signature.signing_address IS NULL)::bigint AS unknown_blocks_100
+FROM current_validators current
+CROSS JOIN recent_blocks recent
+LEFT JOIN validator_set_members membership
+  ON membership.height = recent.height AND membership.signing_address = current.signing_address
+LEFT JOIN validator_signatures signature
+  ON signature.height = membership.height AND signature.signing_address = membership.signing_address
+GROUP BY current.signing_address, current.public_key_type, current.voting_power, current.proposer_priority
+ORDER BY current.voting_power DESC, current.signing_address ASC
+"""
+
 
 class MissingIndexerStateError(RuntimeError):
     """Raised when the singleton indexer state row is missing."""
@@ -242,6 +296,24 @@ class ApiDatabase:
             "commit": commit,
             "transactions": [dict(row) for row in transaction_rows],
         }
+
+    def fetch_active_validators(self) -> dict[str, Any]:
+        """Return the checkpoint and its active validators using one pooled connection."""
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(VALIDATORS_CHECKPOINT_SQL, ("default",))
+                checkpoint = cursor.fetchone()
+                if checkpoint is None:
+                    raise MissingIndexerStateError("Default indexer state is missing")
+                checkpoint = dict(checkpoint)
+                if not checkpoint["block_exists"]:
+                    raise MissingIndexedBlockError("Indexed block is missing")
+                height = checkpoint["height"]
+                cursor.execute(ACTIVE_VALIDATORS_SQL, (height, height))
+                rows = cursor.fetchall()
+        return {"checkpoint": checkpoint, "items": [dict(row) for row in rows]}
 
 
 database = ApiDatabase()
