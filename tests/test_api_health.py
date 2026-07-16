@@ -2,7 +2,7 @@ import importlib
 import logging
 import sys
 import unittest
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -11,8 +11,8 @@ from api.config import ApiConfig
 from api.database import MissingIndexerStateError
 
 SECRET_URL = "postgresql://api_user:super-secret-password@db.internal:5432/explorer"
-FIXED_NOW = datetime(2026, 7, 16, 12, 35, 0, tzinfo=UTC)
-RECENT_CHECK = datetime(2026, 7, 16, 12, 34, 55, tzinfo=UTC)
+FIXED_NOW = datetime(2026, 7, 16, 12, 35, 0, tzinfo=timezone.utc)
+RECENT_CHECK = datetime(2026, 7, 16, 12, 34, 55, tzinfo=timezone.utc)
 
 
 class FakeDatabase:

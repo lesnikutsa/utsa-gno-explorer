@@ -1,7 +1,7 @@
 """FastAPI application for the read-only explorer API."""
 
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 import logging
 
 from fastapi import FastAPI, HTTPException
@@ -36,7 +36,7 @@ app = FastAPI(title="UTSA Gno.land Explorer API", lifespan=lifespan)
 
 
 def utc_now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 def _health_response_from_row(row: dict, config) -> HealthResponse:
@@ -58,8 +58,8 @@ def _health_response_from_row(row: dict, config) -> HealthResponse:
         now = utc_now()
         checked_at = rpc_last_checked_at
         if checked_at.tzinfo is None:
-            checked_at = checked_at.replace(tzinfo=UTC)
-        if (now - checked_at.astimezone(UTC)).total_seconds() > config.rpc_check_stale_seconds:
+            checked_at = checked_at.replace(tzinfo=timezone.utc)
+        if (now - checked_at.astimezone(timezone.utc)).total_seconds() > config.rpc_check_stale_seconds:
             degraded = True
 
     return HealthResponse(

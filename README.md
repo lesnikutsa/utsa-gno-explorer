@@ -94,7 +94,7 @@ This repository now includes the first minimal FastAPI foundation for the v0.6.0
 
 ### API installation
 
-Use Python 3.11+ and install the runtime dependencies:
+Use Python 3.10+ and install the runtime dependencies:
 
 ```bash
 python -m pip install -r requirements.txt
