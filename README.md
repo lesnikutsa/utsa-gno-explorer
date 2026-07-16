@@ -87,6 +87,47 @@ python -m py_compile scripts/inspect_rpc.py
 python -m unittest discover -s tests
 ```
 
+
+## Read-only API foundation
+
+This repository now includes the first minimal FastAPI foundation for the v0.6.0 explorer MVP. This PR adds only the API application package and `GET /api/health`; it does not add production API deployment, frontend work, Nginx, HTTPS, systemd units, Docker packaging for the API, schema migrations, or additional API endpoints.
+
+### API installation
+
+Use Python 3.11+ and install the runtime dependencies:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+### API configuration
+
+The API requires `DATABASE_URL` in the environment. Keep credentials outside the repository and do not commit secret values. The API also accepts these optional settings with conservative defaults:
+
+- `API_VERSION` (default `0.6.0`)
+- `API_INDEXER_LAG_DEGRADED_THRESHOLD` (default `10`)
+- `API_RPC_CHECK_STALE_SECONDS` (default `60`)
+
+Example placeholder configuration:
+
+```bash
+export DATABASE_URL='postgresql://user:password@127.0.0.1:5432/utsa_gno_explorer'
+```
+
+### Run the API locally
+
+```bash
+python -m uvicorn api.app:app --host 127.0.0.1 --port 8000
+```
+
+### Health check
+
+```bash
+curl http://127.0.0.1:8000/api/health
+```
+
+`GET /api/health` performs a read-only PostgreSQL check against the existing `indexer_state` and `rpc_endpoints` tables and returns the database/indexer health summary. Degraded health still returns HTTP 200. Database connection failures, failed health queries, and a missing default `indexer_state` row return HTTP 503 with a generic safe response body.
+
 ## Bounded indexer prototype
 
 This repository includes a one-shot bounded PostgreSQL indexer prototype. It is operator-controlled and intentionally does not run as a daemon, scheduler, cron job, or production historical sync.
