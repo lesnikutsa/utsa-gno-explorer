@@ -88,8 +88,8 @@ CREATE INDEX validator_set_members_height_power_idx ON validator_set_members (he
 CREATE INDEX validator_set_members_signing_height_idx ON validator_set_members (signing_address, height DESC);
 
 CREATE TABLE validator_signatures (
-    height BIGINT NOT NULL REFERENCES blocks(height) ON DELETE CASCADE,
-    signing_address TEXT NOT NULL REFERENCES validators(signing_address) ON DELETE RESTRICT,
+    height BIGINT NOT NULL,
+    signing_address TEXT NOT NULL,
     vote_status TEXT NOT NULL CHECK (vote_status IN ('commit', 'nil', 'absent', 'invalid')),
     signed BOOLEAN NOT NULL,
     vote_block_id_hash_base64 TEXT,

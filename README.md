@@ -158,3 +158,14 @@ Production deployment assets are available for the verified foreground continuou
 - Full operator guide: [Production deployment](docs/production-deployment.md)
 
 Production secrets are expected outside the repository under `/etc/utsa-gno-explorer`. PostgreSQL binds to localhost only, persists data under `/var/lib/utsa-gno-explorer/postgres` by default, and is started only by an explicit operator `docker compose` command. The Python indexer runs on the host as a foreground systemd service and logs to journald.
+
+### Development and integration tests
+
+Production deployments should install only `requirements.txt`. Developers who need to run the optional PostgreSQL integration tests can create a separate local development virtualenv and install:
+
+```bash
+python -m pip install -r requirements-dev.txt
+RUN_POSTGRES_INTEGRATION=1 python -m unittest tests.test_postgres_integration -v
+```
+
+The integration test starts a temporary `postgres:16.14-bookworm` Docker container, initializes the schema with `scripts/init_database.py`, validates a second run, checks catalog objects, verifies incompatible schema rejection, and confirms failed initialization rolls back partial DDL. It is skipped unless `RUN_POSTGRES_INTEGRATION=1` is set and Docker is available.

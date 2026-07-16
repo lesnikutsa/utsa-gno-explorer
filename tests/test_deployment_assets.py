@@ -183,6 +183,14 @@ class SchemaValidationTests(unittest.TestCase):
         with self.assertRaises(init_database.SchemaCompatibilityError): init_database.validate_schema_snapshot(snapshot)
 
 
+
+    def test_postgresql_formatted_check_definitions_are_normalized(self):
+        snapshot = self.snapshot()
+        snapshot["check_constraints"]["transactions_decode_status_check"] = "CHECK ((decode_status = ANY (ARRAY['decoded'::text, 'invalid_base64'::text, 'not_attempted'::text])))"
+        snapshot["check_constraints"]["indexer_state_default_key"] = "CHECK ((state_key = 'default'::text))"
+        snapshot["check_constraints"]["validator_set_members_voting_power_check"] = "CHECK ((voting_power >= (0)::numeric))"
+        init_database.validate_schema_snapshot(snapshot)
+
     def test_check_constraint_true_with_correct_name_fails(self):
         snapshot = self.snapshot(); snapshot["check_constraints"]["blocks_tx_count_check"] = "CHECK (true)"
         with self.assertRaises(init_database.SchemaCompatibilityError): init_database.validate_schema_snapshot(snapshot)

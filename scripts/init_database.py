@@ -115,10 +115,12 @@ def _norm(value: str | None) -> str | None:
     if value is None:
         return None
     normalized = value.strip().lower()
+    normalized = re.sub(r"\((\d+)\)::(?:text|numeric|bigint|integer|boolean)", r"\1", normalized)
     normalized = re.sub(r"::(?:text|numeric|bigint|integer|boolean)", "", normalized)
-    normalized = re.sub(r"\bany \(array\[(.*?)\]\)", r"in (\1)", normalized)
+    normalized = re.sub(r"([a-z_]+) = any \(array\[(.*?)\]\)", r"\1 in (\2)", normalized)
     normalized = re.sub(r"\s+", " ", normalized)
-    normalized = normalized.replace("((", "(").replace("))", ")")
+    while "((" in normalized or "))" in normalized:
+        normalized = normalized.replace("((", "(").replace("))", ")")
     normalized = normalized.replace("(0)", "0")
     return normalized.strip()
 
@@ -151,20 +153,26 @@ def validate_schema_snapshot(snapshot: dict[str, Any]) -> None:
     for table, columns in EXPECTED_PRIMARY_KEYS.items():
         if tuple(snapshot.get("primary_keys", {}).get(table, ())) != columns:
             raise SchemaCompatibilityError(f"incompatible primary key for {table}")
-    if EXPECTED_UNIQUES != {(table, tuple(cols)) for table, cols in snapshot.get("unique_constraints", set())}:
-        raise SchemaCompatibilityError("incompatible unique constraints")
-    if EXPECTED_FOREIGN_KEYS != {(table, tuple(cols), ref, tuple(ref_cols), action) for table, cols, ref, ref_cols, action in snapshot.get("foreign_keys", set())}:
-        raise SchemaCompatibilityError("incompatible foreign keys")
+    actual_uniques = {(table, tuple(cols)) for table, cols in snapshot.get("unique_constraints", set())}
+    if EXPECTED_UNIQUES != actual_uniques:
+        raise SchemaCompatibilityError(f"incompatible unique constraints: missing={sorted(EXPECTED_UNIQUES - actual_uniques)} unexpected={sorted(actual_uniques - EXPECTED_UNIQUES)}")
+    actual_foreign_keys = {(table, tuple(cols), ref, tuple(ref_cols), action) for table, cols, ref, ref_cols, action in snapshot.get("foreign_keys", set())}
+    if EXPECTED_FOREIGN_KEYS != actual_foreign_keys:
+        raise SchemaCompatibilityError(f"incompatible foreign keys: missing={sorted(EXPECTED_FOREIGN_KEYS - actual_foreign_keys)} unexpected={sorted(actual_foreign_keys - EXPECTED_FOREIGN_KEYS)}")
     checks = snapshot.get("check_constraints", {})
-    if set(checks) != set(EXPECTED_CHECKS):
-        raise SchemaCompatibilityError("incompatible check constraint set")
+    actual_check_names = set(checks)
+    expected_check_names = set(EXPECTED_CHECKS)
+    if actual_check_names != expected_check_names:
+        raise SchemaCompatibilityError(f"incompatible check constraint set: missing={sorted(expected_check_names - actual_check_names)} unexpected={sorted(actual_check_names - expected_check_names)}")
     for name, expected in EXPECTED_CHECKS.items():
         actual = _norm(checks[name]) or ""
         if actual != _norm(expected):
             raise SchemaCompatibilityError(f"incompatible check constraint {name}")
     indexes = snapshot.get("indexes", {})
-    if set(indexes) != set(EXPECTED_INDEXES):
-        raise SchemaCompatibilityError("incompatible explicit index set")
+    actual_index_names = set(indexes)
+    expected_index_names = set(EXPECTED_INDEXES)
+    if actual_index_names != expected_index_names:
+        raise SchemaCompatibilityError(f"incompatible explicit index set: missing={sorted(expected_index_names - actual_index_names)} unexpected={sorted(actual_index_names - expected_index_names)}")
     for name, expected in EXPECTED_INDEXES.items():
         actual = indexes[name]
         if (actual[0], bool(actual[1]), tuple(actual[2]), _norm(actual[3])) != (expected[0], expected[1], expected[2], _norm(expected[3])):
