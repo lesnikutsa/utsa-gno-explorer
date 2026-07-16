@@ -65,35 +65,35 @@ EXPECTED_FOREIGN_KEYS = {
     ("indexer_state", ("selected_rpc_endpoint_id",), "rpc_endpoints", ("id",), "n"),
 }
 EXPECTED_CHECKS = {
-    "blocks_tx_count_check": "check",
-    "blocks_block_hash_hex_uppercase": "check ((block_hash_hex = upper(block_hash_hex)))",
-    "transactions_tx_index_check": "check",
-    "transactions_raw_base64_length_check": "check",
-    "transactions_decoded_byte_length_check": "check",
-    "transactions_decode_status_check": "check",
-    "transactions_raw_base64_length_matches": "check ((raw_base64_length = char_length(raw_base64)))",
-    "transactions_decode_status_consistent": "check",
-    "validators_first_seen_height_check": "check",
-    "validators_last_seen_height_check": "check ((last_seen_height >= first_seen_height))",
-    "validator_set_members_voting_power_check": "check ((voting_power >= (0)::numeric))",
-    "validator_set_members_validator_index_check": "check",
-    "validator_signatures_vote_status_check": "check",
-    "validator_signatures_vote_block_id_parts_total_check": "check",
-    "validator_signatures_signed_only_matching_commit": "check",
-    "validator_signatures_commit_vote_consistent": "check",
-    "validator_signatures_nil_vote_consistent": "check",
-    "validator_signatures_absent_vote_consistent": "check",
-    "validator_signatures_invalid_vote_consistent": "check",
-    "validator_signatures_vote_hash_hex_uppercase": "check",
-    "validator_signatures_vote_parts_hash_hex_uppercase": "check",
-    "rpc_endpoints_latest_observed_height_check": "check",
-    "rpc_endpoints_observed_lag_check": "check",
-    "rpc_endpoints_no_secret_url": "check",
-    "rpc_endpoint_checks_latest_observed_height_check": "check",
-    "rpc_endpoint_checks_observed_lag_check": "check",
-    "indexer_state_last_finalized_height_check": "check",
-    "indexer_state_finalized_tip_height_check": "check",
-    "indexer_state_default_key": "check ((state_key = 'default'::text))",
+    "blocks_tx_count_check": "CHECK (tx_count >= 0)",
+    "blocks_block_hash_hex_uppercase": "CHECK (block_hash_hex = upper(block_hash_hex))",
+    "transactions_tx_index_check": "CHECK (tx_index >= 0)",
+    "transactions_raw_base64_length_check": "CHECK (raw_base64_length >= 0)",
+    "transactions_decoded_byte_length_check": "CHECK (decoded_byte_length IS NULL OR decoded_byte_length >= 0)",
+    "transactions_decode_status_check": "CHECK (decode_status IN ('decoded', 'invalid_base64', 'not_attempted'))",
+    "transactions_raw_base64_length_matches": "CHECK (raw_base64_length = char_length(raw_base64))",
+    "transactions_decode_status_consistent": "CHECK ((decode_status = 'decoded' AND decoded_bytes IS NOT NULL AND decoded_byte_length = octet_length(decoded_bytes)) OR (decode_status IN ('invalid_base64', 'not_attempted') AND decoded_bytes IS NULL AND decoded_byte_length IS NULL))",
+    "validators_first_seen_height_check": "CHECK (first_seen_height >= 0)",
+    "validators_last_seen_height_check": "CHECK (last_seen_height >= first_seen_height)",
+    "validator_set_members_voting_power_check": "CHECK (voting_power >= 0)",
+    "validator_set_members_validator_index_check": "CHECK (validator_index IS NULL OR validator_index >= 0)",
+    "validator_signatures_vote_status_check": "CHECK (vote_status IN ('commit', 'nil', 'absent', 'invalid'))",
+    "validator_signatures_vote_block_id_parts_total_check": "CHECK (vote_block_id_parts_total IS NULL OR vote_block_id_parts_total >= 0)",
+    "validator_signatures_signed_only_matching_commit": "CHECK (signed = (vote_status = 'commit' AND block_id_matches_commit))",
+    "validator_signatures_commit_vote_consistent": "CHECK (vote_status <> 'commit' OR (block_id_matches_commit AND NOT vote_block_id_is_zero AND vote_block_id_hash_base64 IS NOT NULL AND vote_block_id_hash_hex IS NOT NULL AND vote_block_id_parts_total IS NOT NULL AND vote_block_id_parts_hash_base64 IS NOT NULL AND vote_block_id_parts_hash_hex IS NOT NULL AND signature_base64 IS NOT NULL))",
+    "validator_signatures_nil_vote_consistent": "CHECK (vote_status <> 'nil' OR (NOT signed AND vote_block_id_is_zero AND NOT block_id_matches_commit))",
+    "validator_signatures_absent_vote_consistent": "CHECK (vote_status <> 'absent' OR (NOT signed AND NOT vote_block_id_is_zero AND NOT block_id_matches_commit AND vote_block_id_hash_base64 IS NULL AND vote_block_id_hash_hex IS NULL AND vote_block_id_parts_total IS NULL AND vote_block_id_parts_hash_base64 IS NULL AND vote_block_id_parts_hash_hex IS NULL AND signature_base64 IS NULL AND raw_precommit IS NULL))",
+    "validator_signatures_invalid_vote_consistent": "CHECK (vote_status <> 'invalid' OR (NOT signed AND NOT block_id_matches_commit))",
+    "validator_signatures_vote_hash_hex_uppercase": "CHECK (vote_block_id_hash_hex IS NULL OR vote_block_id_hash_hex = upper(vote_block_id_hash_hex))",
+    "validator_signatures_vote_parts_hash_hex_uppercase": "CHECK (vote_block_id_parts_hash_hex IS NULL OR vote_block_id_parts_hash_hex = upper(vote_block_id_parts_hash_hex))",
+    "rpc_endpoints_latest_observed_height_check": "CHECK (latest_observed_height IS NULL OR latest_observed_height >= 0)",
+    "rpc_endpoints_observed_lag_check": "CHECK (observed_lag IS NULL OR observed_lag >= 0)",
+    "rpc_endpoints_no_secret_url": "CHECK (url !~* '(password|token|apikey|api_key|secret)=')",
+    "rpc_endpoint_checks_latest_observed_height_check": "CHECK (latest_observed_height IS NULL OR latest_observed_height >= 0)",
+    "rpc_endpoint_checks_observed_lag_check": "CHECK (observed_lag IS NULL OR observed_lag >= 0)",
+    "indexer_state_last_finalized_height_check": "CHECK (last_finalized_height >= 0)",
+    "indexer_state_finalized_tip_height_check": "CHECK (finalized_tip_height IS NULL OR finalized_tip_height >= last_finalized_height)",
+    "indexer_state_default_key": "CHECK (state_key = 'default')",
 }
 EXPECTED_INDEXES = {
     "blocks_time_utc_idx": ("blocks", False, (("time_utc", "DESC"),), None),
@@ -114,7 +114,13 @@ class SchemaCompatibilityError(RuntimeError):
 def _norm(value: str | None) -> str | None:
     if value is None:
         return None
-    return re.sub(r"\s+", " ", value.strip()).lower()
+    normalized = value.strip().lower()
+    normalized = re.sub(r"::(?:text|numeric|bigint|integer|boolean)", "", normalized)
+    normalized = re.sub(r"\bany \(array\[(.*?)\]\)", r"in (\1)", normalized)
+    normalized = re.sub(r"\s+", " ", normalized)
+    normalized = normalized.replace("((", "(").replace("))", ")")
+    normalized = normalized.replace("(0)", "0")
+    return normalized.strip()
 
 
 def _default_matches(actual: str | None, expected: str | None) -> bool:
@@ -154,9 +160,7 @@ def validate_schema_snapshot(snapshot: dict[str, Any]) -> None:
         raise SchemaCompatibilityError("incompatible check constraint set")
     for name, expected in EXPECTED_CHECKS.items():
         actual = _norm(checks[name]) or ""
-        if expected != "check" and actual != expected:
-            raise SchemaCompatibilityError(f"incompatible check constraint {name}")
-        if expected == "check" and not actual.startswith("check"):
+        if actual != _norm(expected):
             raise SchemaCompatibilityError(f"incompatible check constraint {name}")
     indexes = snapshot.get("indexes", {})
     if set(indexes) != set(EXPECTED_INDEXES):

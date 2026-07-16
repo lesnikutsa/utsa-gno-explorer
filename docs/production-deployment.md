@@ -140,15 +140,14 @@ python - <<'PY' >"$VALIDATION_PASSWORD_FILE"
 import secrets
 print(secrets.token_urlsafe(32))
 PY
-VALIDATION_PASSWORD="$(cat "$VALIDATION_PASSWORD_FILE")"
 docker run --name "$VALIDATION_CONTAINER" \
   -e POSTGRES_USER=validation \
   -e POSTGRES_DB=validation \
-  -e POSTGRES_PASSWORD="$VALIDATION_PASSWORD" \
-  -p 127.0.0.1:55432:5432 \
+  -e POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password \
+  -v "$VALIDATION_PASSWORD_FILE:/run/secrets/postgres_password:ro" \
   -d postgres:16.14-bookworm
 for attempt in $(seq 1 60); do
-  if PGPASSWORD="$VALIDATION_PASSWORD" pg_isready -h 127.0.0.1 -p 55432 -U validation -d validation; then
+  if docker exec "$VALIDATION_CONTAINER" sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'; then
     break
   fi
   if [ "$attempt" -eq 60 ]; then
@@ -157,13 +156,9 @@ for attempt in $(seq 1 60); do
   fi
   sleep 1
 done
-PGPASSWORD="$VALIDATION_PASSWORD" pg_restore \
-  -h 127.0.0.1 -p 55432 -U validation -d validation \
-  --no-owner --no-privileges --exit-on-error --single-transaction \
-  /var/backups/utsa-gno-explorer/utsa-gno-explorer-YYYYMMDDTHHMMSSZ.dump
-PGPASSWORD="$VALIDATION_PASSWORD" psql \
-  -h 127.0.0.1 -p 55432 -U validation -d validation \
-  -v ON_ERROR_STOP=1 <<'SQL'
+docker exec -i "$VALIDATION_CONTAINER" sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --no-privileges --exit-on-error --single-transaction' \
+  < /var/backups/utsa-gno-explorer/utsa-gno-explorer-YYYYMMDDTHHMMSSZ.dump
+docker exec -i "$VALIDATION_CONTAINER" sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' <<'SQL'
 DO $$
 DECLARE
   expected_tables text[] := ARRAY['blocks','indexer_state','rpc_endpoint_checks','rpc_endpoints','transactions','validator_set_members','validator_signatures','validators'];
@@ -209,6 +204,7 @@ SELECT
   (SELECT count(*) FROM validator_signatures) AS signatures;
 SQL
 ```
+
 
 
 ## Destructive production restore

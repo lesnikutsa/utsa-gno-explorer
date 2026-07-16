@@ -89,10 +89,17 @@ class DeploymentAssetTests(unittest.TestCase):
         self.assertIn("--single-transaction", doc)
         self.assertIn("--no-owner", doc)
         self.assertIn("--no-privileges", doc)
+        self.assertIn("POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password", doc)
+        self.assertIn(":/run/secrets/postgres_password:ro", doc)
+        self.assertIn("docker exec \"$VALIDATION_CONTAINER\" sh -c 'pg_isready", doc)
+        self.assertIn("docker exec -i \"$VALIDATION_CONTAINER\" sh -c 'pg_restore", doc)
+        self.assertIn("docker exec -i \"$VALIDATION_CONTAINER\" sh -c 'psql", doc)
+        self.assertNotIn("PGPASSWORD=", doc)
+        self.assertNotIn("POSTGRES_PASSWORD=validation", doc)
+        self.assertNotIn("-e POSTGRES_PASSWORD=", doc)
         self.assertIn("RAISE EXCEPTION 'validation failed: expected tables", doc)
         self.assertIn("RAISE EXCEPTION 'validation failed: checkpoint", doc)
         self.assertIn("secrets.token_urlsafe", doc)
-        self.assertNotIn("POSTGRES_PASSWORD=validation", doc)
 
     def test_init_database_help_runs(self):
         result = subprocess.run([sys.executable, "scripts/init_database.py", "--help"], cwd=ROOT, text=True, capture_output=True, check=False)
@@ -173,6 +180,23 @@ class SchemaValidationTests(unittest.TestCase):
 
     def test_wrong_column_type_fails(self):
         snapshot = self.snapshot(); snapshot["columns"]["blocks"]["height"] = ("integer", "NO", "", None)
+        with self.assertRaises(init_database.SchemaCompatibilityError): init_database.validate_schema_snapshot(snapshot)
+
+
+    def test_check_constraint_true_with_correct_name_fails(self):
+        snapshot = self.snapshot(); snapshot["check_constraints"]["blocks_tx_count_check"] = "CHECK (true)"
+        with self.assertRaises(init_database.SchemaCompatibilityError): init_database.validate_schema_snapshot(snapshot)
+
+    def test_changed_transactions_decode_status_consistent_fails(self):
+        snapshot = self.snapshot(); snapshot["check_constraints"]["transactions_decode_status_consistent"] = "CHECK (decode_status IN ('decoded', 'invalid_base64', 'not_attempted'))"
+        with self.assertRaises(init_database.SchemaCompatibilityError): init_database.validate_schema_snapshot(snapshot)
+
+    def test_changed_validator_signatures_commit_consistency_fails(self):
+        snapshot = self.snapshot(); snapshot["check_constraints"]["validator_signatures_commit_vote_consistent"] = "CHECK (vote_status <> 'commit' OR block_id_matches_commit)"
+        with self.assertRaises(init_database.SchemaCompatibilityError): init_database.validate_schema_snapshot(snapshot)
+
+    def test_changed_rpc_endpoint_no_secret_check_fails(self):
+        snapshot = self.snapshot(); snapshot["check_constraints"]["rpc_endpoints_no_secret_url"] = "CHECK (url !~* '(password)=')"
         with self.assertRaises(init_database.SchemaCompatibilityError): init_database.validate_schema_snapshot(snapshot)
 
     def test_missing_constraint_fails(self):
