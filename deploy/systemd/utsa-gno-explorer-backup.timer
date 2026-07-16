@@ -1,0 +1,13 @@
+[Unit]
+Description=Run UTSA Gno Explorer PostgreSQL backup daily
+Documentation=file:/opt/utsa-gno-explorer/docs/production-deployment.md
+
+[Timer]
+OnCalendar=*-*-* 03:15:00 UTC
+Persistent=true
+RandomizedDelaySec=15m
+AccuracySec=1m
+Unit=utsa-gno-explorer-backup.service
+
+[Install]
+WantedBy=timers.target

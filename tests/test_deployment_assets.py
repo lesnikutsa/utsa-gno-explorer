@@ -60,6 +60,44 @@ class DeploymentAssetTests(unittest.TestCase):
         self.assertNotIn("git pull", unit)
         self.assertNotIn("--start-height", unit)
 
+
+    def test_compose_has_stable_project_name_with_override(self):
+        compose = self.text("deploy/postgres/compose.yml")
+        self.assertIn("name: ${COMPOSE_PROJECT_NAME:-utsa-gno-explorer}", compose)
+        self.assertIn("COMPOSE_PROJECT_NAME", compose)
+        self.assertLess(compose.index("name:"), compose.index("services:"))
+
+    def test_backup_systemd_service_uses_absolute_production_paths(self):
+        unit = self.text("deploy/systemd/utsa-gno-explorer-backup.service")
+        self.assertIn("Type=oneshot", unit)
+        self.assertIn("WorkingDirectory=/opt/utsa-gno-explorer", unit)
+        self.assertIn("/opt/utsa-gno-explorer/.venv/bin/python /opt/utsa-gno-explorer/scripts/backup_database.py", unit)
+        self.assertIn("--backup-dir /var/backups/utsa-gno-explorer", unit)
+        self.assertIn("--retention 14", unit)
+        self.assertIn("--compose-file /opt/utsa-gno-explorer/deploy/postgres/compose.yml", unit)
+        self.assertIn("--env-file /etc/utsa-gno-explorer/postgres.env", unit)
+        self.assertIn("StandardOutput=journal", unit)
+        self.assertIn("StandardError=journal", unit)
+        self.assertNotIn("systemctl stop utsa-gno-indexer", unit)
+
+    def test_backup_systemd_service_runs_as_root_with_restrictive_umask(self):
+        unit = self.text("deploy/systemd/utsa-gno-explorer-backup.service")
+        for value in ["User=root", "Group=root", "UMask=0077", "NoNewPrivileges=true", "ProtectSystem=strict", "ReadWritePaths=/var/backups/utsa-gno-explorer /run/utsa-gno-explorer-backup"]:
+            self.assertIn(value, unit)
+        self.assertNotIn("User=utsa-gno", unit)
+        self.assertNotIn("SupplementaryGroups=docker", unit)
+
+    def test_backup_systemd_timer_schedule_and_target(self):
+        timer = self.text("deploy/systemd/utsa-gno-explorer-backup.timer")
+        for value in ["OnCalendar=*-*-* 03:15:00 UTC", "Persistent=true", "RandomizedDelaySec=15m", "AccuracySec=1m", "Unit=utsa-gno-explorer-backup.service", "WantedBy=timers.target"]:
+            self.assertIn(value, timer)
+
+    def test_backup_systemd_command_does_not_contain_credentials(self):
+        unit = self.text("deploy/systemd/utsa-gno-explorer-backup.service")
+        exec_lines = [line for line in unit.splitlines() if line.startswith("ExecStart=")]
+        self.assertEqual(len(exec_lines), 1)
+        self.assertNotRegex(exec_lines[0], r"(DATABASE_URL|PASSWORD|PGPASSWORD|postgresql://|://[^\s:]+:[^\s@]+@)")
+
     def test_example_indexer_env_uses_placeholders(self):
         env = self.text("deploy/systemd/indexer.env.example")
         self.assertIn("REPLACE_WITH_PASSWORD", env)
