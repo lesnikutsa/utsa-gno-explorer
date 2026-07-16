@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import logging
 import re
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Path, Query
 
 from api.config import ConfigError, load_config
 from api.database import (
@@ -15,8 +15,11 @@ from api.database import (
     isoformat_utc_z,
 )
 from api.schemas import (
+    BlockCommitSummary,
+    BlockDetailResponse,
     BlockSummary,
     BlocksPagination,
+    BlockTransactionSummary,
     BlocksResponse,
     HealthResponse,
     NetworkResponse,
@@ -54,13 +57,51 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _normalize_block_hash(block_hash_hex: str) -> str:
+    if block_hash_hex.startswith(("0x", "0X")):
+        block_hash_hex = block_hash_hex[2:]
+    return block_hash_hex.upper()
+
+
 def _block_summary_from_row(row: dict) -> BlockSummary:
     return BlockSummary(
         height=row["height"],
-        block_hash=row["block_hash_hex"].removeprefix("0x").removeprefix("0X").upper(),
+        block_hash=_normalize_block_hash(row["block_hash_hex"]),
         time=isoformat_utc_z(row["time_utc"]),
         proposer_address=row["proposer_address"],
         tx_count=row["tx_count"],
+    )
+
+
+def _block_detail_from_row(detail: dict) -> BlockDetailResponse:
+    block = detail["block"]
+    commit = detail["commit"]
+    return BlockDetailResponse(
+        height=block["height"],
+        block_hash=_normalize_block_hash(block["block_hash_hex"]),
+        block_hash_base64=block["block_hash_base64"],
+        time=isoformat_utc_z(block["time_utc"]),
+        proposer_address=block["proposer_address"],
+        tx_count=block["tx_count"],
+        commit=BlockCommitSummary(
+            validators=commit["validators"],
+            signed=commit["signed"],
+            missed=commit["missed"],
+            nil=commit["nil"],
+            absent=commit["absent"],
+            invalid=commit["invalid"],
+            unknown=commit["unknown"],
+        ),
+        transactions=[
+            BlockTransactionSummary(
+                index=row["tx_index"],
+                raw_base64=row["raw_base64"],
+                raw_base64_length=row["raw_base64_length"],
+                decoded_byte_length=row["decoded_byte_length"],
+                decode_status=row["decode_status"],
+            )
+            for row in detail["transactions"]
+        ],
     )
 
 
@@ -213,3 +254,15 @@ def get_blocks(
         items=[_block_summary_from_row(row) for row in page_rows],
         pagination=BlocksPagination(limit=limit, next_before_height=next_before_height),
     )
+
+
+@app.get("/api/blocks/{height}", response_model=BlockDetailResponse)
+def get_block_detail(height: int = Path(gt=0)) -> BlockDetailResponse:
+    try:
+        detail = database.fetch_block_detail(height)
+    except Exception:
+        LOGGER.error("Explorer database block detail query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Block not found")
+    return _block_detail_from_row(detail)

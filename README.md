@@ -135,9 +135,10 @@ curl http://127.0.0.1:8000/api/network
 curl 'http://127.0.0.1:8000/api/blocks?limit=20'
 curl 'http://127.0.0.1:8000/api/blocks?before_height=869000&limit=20'
 curl 'http://127.0.0.1:8000/api/blocks?hash=<exact-hash>'
+curl http://127.0.0.1:8000/api/blocks/870117
 ```
 
-`GET /api/network` returns the completed indexer checkpoint, latest indexed block, validator-set aggregate, and selected RPC metadata using read-only PostgreSQL queries. `GET /api/blocks` returns descending block summaries with cursor pagination or exact hash lookup. Block detail and validator endpoints are not part of this PR.
+`GET /api/network` returns the completed indexer checkpoint, latest indexed block, validator-set aggregate, and selected RPC metadata using read-only PostgreSQL queries. `GET /api/blocks` returns descending block summaries with cursor pagination or exact hash lookup. `GET /api/blocks/{height}` returns a block summary, commit aggregate, and ordered transactions for one stored block. Validator list/detail endpoints remain outside this PR.
 
 ## Bounded indexer prototype
 
