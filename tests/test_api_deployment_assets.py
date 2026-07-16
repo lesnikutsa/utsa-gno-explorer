@@ -9,6 +9,31 @@ UNIT_PATH = ROOT / "deploy/systemd/utsa-gno-api.service"
 DOC_PATH = ROOT / "docs/production-deployment.md"
 
 
+POSTGRES_URL = re.compile(rb"postgres(?:ql)?://[^\s\"<>]+")
+PLACEHOLDER_PASSWORDS = {b"password", b"secret", b"super-secret-password", b"change-me"}
+
+
+def credential_passwords(data):
+    """Return passwords from bounded, single-token PostgreSQL URLs."""
+    passwords = []
+    for match in POSTGRES_URL.finditer(data):
+        authority = match.group().split(b"://", 1)[1].split(b"/", 1)[0]
+        userinfo, separator, _host = authority.rpartition(b"@")
+        if separator and b":" in userinfo:
+            passwords.append(userinfo.split(b":", 1)[1])
+    return passwords
+
+
+def is_placeholder_password(password):
+    lowered = password.lower()
+    return (
+        lowered in PLACEHOLDER_PASSWORDS
+        or b"replace" in lowered
+        or b"placeholder" in lowered
+        or (lowered.startswith(b"{") and lowered.endswith(b"}"))
+    )
+
+
 class ApiDeploymentAssetTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -29,11 +54,12 @@ class ApiDeploymentAssetTests(unittest.TestCase):
         exec_start = next(
             line for line in self.unit.splitlines() if line.startswith("ExecStart=")
         )
-        self.assertTrue(
-            exec_start.startswith(
-                "ExecStart=/opt/utsa-gno-explorer/.venv/bin/uvicorn "
-            )
+        expected = (
+            "ExecStart=/opt/utsa-gno-explorer/.venv/bin/uvicorn api.app:app "
+            "--host ${API_BIND_HOST} --port ${API_BIND_PORT} --workers 1 "
+            "--log-level ${API_LOG_LEVEL} --no-access-log"
         )
+        self.assertEqual(exec_start, expected)
         self.assertNotIn("python -m uvicorn", exec_start)
         self.assertIn("--host ${API_BIND_HOST}", exec_start)
         self.assertIn("--port ${API_BIND_PORT}", exec_start)
@@ -81,24 +107,44 @@ class ApiDeploymentAssetTests(unittest.TestCase):
     def test_documentation_normalizes_and_verifies_service_permissions(self):
         self.assertIn("chown -R root:utsa-gno", self.documentation)
         self.assertIn("chmod -R u=rwX,g=rX,o=", self.documentation)
+        for path in [".venv", "api", "scripts"]:
+            self.assertIn(f"/opt/utsa-gno-explorer/{path}", self.documentation)
+        self.assertIn("scripts/wait_for_postgres.py", self.documentation)
         self.assertIn("sudo -u utsa-gno test -r", self.documentation)
         self.assertIn("/opt/utsa-gno-explorer/.venv/bin/uvicorn", self.documentation)
         self.assertIn(r"\( -type f -o -type d \) -perm -g+w -print", self.documentation)
         self.assertNotIn("find -L", self.documentation)
+        self.assertNotRegex(self.documentation, r"chmod[^\n]*(?:g\+w|g=rw)")
+
+    def test_documented_updates_run_as_root(self):
+        for command in [
+            "sudo git -C /opt/utsa-gno-explorer fetch origin",
+            "sudo git -C /opt/utsa-gno-explorer switch main",
+            "sudo git -C /opt/utsa-gno-explorer merge --ff-only origin/main",
+            "sudo /opt/utsa-gno-explorer/.venv/bin/python",
+        ]:
+            self.assertIn(command, self.documentation)
+        self.assertIn("-r /opt/utsa-gno-explorer/requirements.txt", self.documentation)
+
+    def test_credential_parser_rejects_common_uri_password_characters(self):
+        prefix = b"postgresql://api_user:"
+        suffix = b"@127.0.0.1:5432/explorer"
+        for password in [b"real+password", b"real!password"]:
+            parsed = credential_passwords(prefix + password + suffix)
+            self.assertEqual(parsed, [password])
+            self.assertFalse(is_placeholder_password(parsed[0]))
 
     def test_tracked_files_contain_no_embedded_real_url_password(self):
         result = subprocess.run(
             ["git", "ls-files", "-z"], cwd=ROOT, check=True, capture_output=True
         )
-        credential_url = re.compile(rb"postgres(?:ql)?://[A-Za-z0-9_.~-]+:([A-Za-z0-9_.~%-]+)@[A-Za-z0-9.-]+(?=[:/])")
         for relative in result.stdout.split(b"\0"):
             if not relative:
                 continue
             data = (ROOT / relative.decode()).read_bytes()
-            for match in credential_url.finditer(data):
-                password = match.group(1)
+            for password in credential_passwords(data):
                 self.assertTrue(
-                    any(marker in password.lower() for marker in [b"replace", b"placeholder", b"password", b"secret", b"change-me"]),
+                    is_placeholder_password(password),
                     f"possible real credential in {relative.decode()}",
                 )
 

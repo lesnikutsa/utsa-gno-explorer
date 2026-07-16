@@ -329,15 +329,17 @@ First confirm the default port is free. No output means no listener was found:
 ss -ltnp | grep ':18180'
 ```
 
-The service user needs read access to files and directory-traverse access under `/opt/utsa-gno-explorer/api` and `/opt/utsa-gno-explorer/.venv`, but it must not have write access. Normalize these permissions after creating or recreating the virtualenv, after every pip install or dependency upgrade, and after checking out API code that may have been created under a restrictive umask:
+The service user needs read access to files and directory-traverse access under `/opt/utsa-gno-explorer/api`, `/opt/utsa-gno-explorer/scripts`, and `/opt/utsa-gno-explorer/.venv`, but it must not have write access. Normalize these permissions after creating or recreating the virtualenv, after every pip install or dependency upgrade, and after checking out API code that may have been created under a restrictive umask:
 
 ```bash
 sudo chown -R root:utsa-gno \
   /opt/utsa-gno-explorer/.venv \
-  /opt/utsa-gno-explorer/api
+  /opt/utsa-gno-explorer/api \
+  /opt/utsa-gno-explorer/scripts
 sudo chmod -R u=rwX,g=rX,o= \
   /opt/utsa-gno-explorer/.venv \
-  /opt/utsa-gno-explorer/api
+  /opt/utsa-gno-explorer/api \
+  /opt/utsa-gno-explorer/scripts
 ```
 
 Root remains the owner. The `utsa-gno` group receives read and directory-traverse access plus execute access to files that were already executable, without write permission. In symbolic mode, `X` adds execute only to directories and files that already had an execute bit. A symlink display such as `lrwxrwxrwx` describes the link itself and is not evidence that its target is group-writable.
@@ -347,6 +349,8 @@ Verify service-user access and confirm that `find` reports no group-writable reg
 ```bash
 sudo -u utsa-gno test -r \
   /opt/utsa-gno-explorer/api/app.py
+sudo -u utsa-gno test -r \
+  /opt/utsa-gno-explorer/scripts/wait_for_postgres.py
 sudo -u utsa-gno sh -c '
   cd /opt/utsa-gno-explorer &&
   .venv/bin/python -c "from api.app import app; print(app.title)"
@@ -355,6 +359,7 @@ sudo -u utsa-gno \
   /opt/utsa-gno-explorer/.venv/bin/uvicorn \
   --version
 find /opt/utsa-gno-explorer/.venv /opt/utsa-gno-explorer/api \
+  /opt/utsa-gno-explorer/scripts \
   \( -type f -o -type d \) -perm -g+w -print
 ```
 
@@ -414,19 +419,22 @@ For API-only changes, do not stop PostgreSQL or the indexer. Create an isolated 
 ```bash
 git worktree add /tmp/utsa-gno-api-validation origin/PR_BRANCH
 # Validate the PR in the isolated worktree, then remove it according to operator policy.
-cd /opt/utsa-gno-explorer
-git fetch origin
-git switch main
-git merge --ff-only origin/main
+sudo git -C /opt/utsa-gno-explorer fetch origin
+sudo git -C /opt/utsa-gno-explorer switch main
+sudo git -C /opt/utsa-gno-explorer merge --ff-only origin/main
 # Run only when requirements.txt changed:
-.venv/bin/python -m pip install -r requirements.txt
+sudo /opt/utsa-gno-explorer/.venv/bin/python \
+  -m pip install \
+  -r /opt/utsa-gno-explorer/requirements.txt
 # Required after pip installs/upgrades and restrictive-umask checkouts:
 sudo chown -R root:utsa-gno \
   /opt/utsa-gno-explorer/.venv \
-  /opt/utsa-gno-explorer/api
+  /opt/utsa-gno-explorer/api \
+  /opt/utsa-gno-explorer/scripts
 sudo chmod -R u=rwX,g=rX,o= \
   /opt/utsa-gno-explorer/.venv \
-  /opt/utsa-gno-explorer/api
+  /opt/utsa-gno-explorer/api \
+  /opt/utsa-gno-explorer/scripts
 sudo systemctl restart utsa-gno-api.service
 ```
 
