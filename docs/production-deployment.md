@@ -36,9 +36,9 @@ Do not print or paste `DATABASE_URL`, database passwords, or credential-bearing 
 
 ## PostgreSQL Compose architecture
 
-`deploy/postgres/compose.yml` runs only `postgres:16.14-bookworm`. It binds `127.0.0.1:${POSTGRES_PORT}:5432`, so PostgreSQL is reachable from the host and systemd service but is not exposed on a public host interface. Data is persisted through the host bind mount `${POSTGRES_DATA_DIR:-/var/lib/utsa-gno-explorer/postgres}`; the same safe default is present in Compose, while `/etc/utsa-gno-explorer/postgres.env` remains the operator-controlled production source of truth. The password is provided through Docker Compose secret file `/etc/utsa-gno-explorer/postgres-password`; the real password is not committed. `POSTGRES_PASSWORD_FILE` is used by the official PostgreSQL image only when initializing a new empty data directory; replacing the password file later does not rotate the existing database role password. Password rotation requires an explicit `ALTER ROLE` inside PostgreSQL and a matching `/etc/utsa-gno-explorer/indexer.env` update. Do not type literal passwords directly into shell commands or shell history.
+`deploy/postgres/compose.yml` sets a stable Compose project name with `name: ${COMPOSE_PROJECT_NAME:-utsa-gno-explorer}` and runs only `postgres:16.14-bookworm`. It binds `127.0.0.1:${POSTGRES_PORT}:5432`, so PostgreSQL is reachable from the host and systemd service but is not exposed on a public host interface. Data is persisted through the host bind mount `${POSTGRES_DATA_DIR:-/var/lib/utsa-gno-explorer/postgres}`; the same safe default is present in Compose, while `/etc/utsa-gno-explorer/postgres.env` remains the operator-controlled production source of truth. The password is provided through Docker Compose secret file `/etc/utsa-gno-explorer/postgres-password`; the real password is not committed. `POSTGRES_PASSWORD_FILE` is used by the official PostgreSQL image only when initializing a new empty data directory; replacing the password file later does not rotate the existing database role password. Password rotation requires an explicit `ALTER ROLE` inside PostgreSQL and a matching `/etc/utsa-gno-explorer/indexer.env` update. Do not type literal passwords directly into shell commands or shell history.
 
-Start PostgreSQL explicitly:
+Start PostgreSQL explicitly. The default Compose project is `utsa-gno-explorer`; set `COMPOSE_PROJECT_NAME` only for isolated integration or validation environments that intentionally use an alternate project identity:
 
 ```bash
 docker compose -f deploy/postgres/compose.yml --env-file /etc/utsa-gno-explorer/postgres.env up -d postgres
@@ -103,13 +103,49 @@ The second indexer command is expected to fail while the service owns the adviso
 
 ## Backup
 
-Backups use `pg_dump -Fc` through the PostgreSQL Compose container. Online logical backups are acceptable while the indexer is running for routine recovery points because `pg_dump` reads a consistent database snapshot; stop the indexer first when you need a backup tied to a known final checkpoint before an upgrade or destructive restore.
+Backups use `pg_dump -Fc` through the PostgreSQL Compose container. Online logical backups are acceptable while the indexer is running for routine daily recovery points because `pg_dump` reads a consistent database snapshot; the daily backup does not stop the indexer. Before destructive upgrades, create a separate checkpoint-aligned backup after stopping the indexer.
+
+Manual backup command:
 
 ```bash
 python scripts/backup_database.py --backup-dir /var/backups/utsa-gno-explorer --retention 14
 ```
 
-The script uses umask `077`, writes a `.part` file first, validates the archive with `pg_restore --list`, atomically renames only after success, and deletes only older files matching `utsa-gno-explorer-YYYYMMDDTHHMMSSZ.dump`. It never deletes the newest backup it just created and does not stop the indexer.
+Install the automated backup timer:
+
+```bash
+install -o root -g root -m 0644 \
+  deploy/systemd/utsa-gno-explorer-backup.service \
+  /etc/systemd/system/utsa-gno-explorer-backup.service
+install -o root -g root -m 0644 \
+  deploy/systemd/utsa-gno-explorer-backup.timer \
+  /etc/systemd/system/utsa-gno-explorer-backup.timer
+systemctl daemon-reload
+install -d -o root -g root -m 0700 \
+  /var/backups/utsa-gno-explorer
+systemctl enable --now utsa-gno-explorer-backup.timer
+```
+
+Manually test and inspect the timer:
+
+```bash
+systemctl start utsa-gno-explorer-backup.service
+systemctl status utsa-gno-explorer-backup.service
+systemctl status utsa-gno-explorer-backup.timer
+systemctl list-timers utsa-gno-explorer-backup.timer
+journalctl -u utsa-gno-explorer-backup.service
+```
+
+Verify backup archives:
+
+```bash
+find /var/backups/utsa-gno-explorer \
+  -maxdepth 1 \
+  -type f \
+  -name 'utsa-gno-explorer-*.dump'
+```
+
+The service runs as root so it can access Docker without adding `utsa-gno` to the docker group, logs to journald, uses restrictive `UMask=0077`, and passes only file paths and non-secret options in argv. Backup files and the backup directory remain root-only. The script uses umask `077`, writes a `.part` file first, validates the archive with `pg_restore --list`, atomically renames only after success, and deletes only older files matching `utsa-gno-explorer-YYYYMMDDTHHMMSSZ.dump`. Retention keeps 14 successful backups. It never deletes the newest backup it just created and does not stop the indexer.
 
 ## Validation restore
 
