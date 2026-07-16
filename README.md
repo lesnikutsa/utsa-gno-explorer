@@ -128,6 +128,17 @@ curl http://127.0.0.1:8000/api/health
 
 `GET /api/health` performs a read-only PostgreSQL check against the existing `indexer_state` and `rpc_endpoints` tables and returns the database/indexer health summary. Degraded health still returns HTTP 200. Database connection failures, failed health queries, and a missing default `indexer_state` row return HTTP 503 with a generic safe response body.
 
+### Network and blocks API
+
+```bash
+curl http://127.0.0.1:8000/api/network
+curl 'http://127.0.0.1:8000/api/blocks?limit=20'
+curl 'http://127.0.0.1:8000/api/blocks?before_height=869000&limit=20'
+curl 'http://127.0.0.1:8000/api/blocks?hash=<exact-hash>'
+```
+
+`GET /api/network` returns the completed indexer checkpoint, latest indexed block, validator-set aggregate, and selected RPC metadata using read-only PostgreSQL queries. `GET /api/blocks` returns descending block summaries with cursor pagination or exact hash lookup. Block detail and validator endpoints are not part of this PR.
+
 ## Bounded indexer prototype
 
 This repository includes a one-shot bounded PostgreSQL indexer prototype. It is operator-controlled and intentionally does not run as a daemon, scheduler, cron job, or production historical sync.

@@ -3,15 +3,30 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import logging
+import re
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 
 from api.config import ConfigError, load_config
-from api.database import MissingIndexerStateError, database, isoformat_utc_z
-from api.schemas import HealthResponse
+from api.database import (
+    MissingIndexedBlockError,
+    MissingIndexerStateError,
+    database,
+    isoformat_utc_z,
+)
+from api.schemas import (
+    BlockSummary,
+    BlocksPagination,
+    BlocksResponse,
+    HealthResponse,
+    NetworkResponse,
+    NetworkValidators,
+    SelectedRpc,
+)
 
 LOGGER = logging.getLogger(__name__)
 UNAVAILABLE_DETAIL = "Explorer database is unavailable"
+HEX_HASH_RE = re.compile(r"^(?:0[xX])?([0-9a-fA-F]{64})$")
 
 
 @asynccontextmanager
@@ -37,6 +52,16 @@ app = FastAPI(title="UTSA Gno.land Explorer API", lifespan=lifespan)
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _block_summary_from_row(row: dict) -> BlockSummary:
+    return BlockSummary(
+        height=row["height"],
+        block_hash=row["block_hash_hex"].removeprefix("0x").removeprefix("0X").upper(),
+        time=isoformat_utc_z(row["time_utc"]),
+        proposer_address=row["proposer_address"],
+        tx_count=row["tx_count"],
+    )
 
 
 def _health_response_from_row(row: dict, config) -> HealthResponse:
@@ -74,6 +99,60 @@ def _health_response_from_row(row: dict, config) -> HealthResponse:
     )
 
 
+def _network_response_from_row(row: dict) -> NetworkResponse:
+    indexed_height = row["indexed_height"]
+    finalized_tip_height = row["finalized_tip_height"]
+    indexer_lag = None
+    if finalized_tip_height is not None:
+        indexer_lag = max(finalized_tip_height - indexed_height, 0)
+
+    selected_rpc = None
+    if row["rpc_url"] is not None:
+        selected_rpc = SelectedRpc(
+            url=row["rpc_url"],
+            healthy=row["rpc_healthy"],
+            catching_up=row["rpc_catching_up"],
+            observed_height=row["rpc_observed_height"],
+            lag=row["rpc_lag"],
+            last_checked_at=isoformat_utc_z(row["rpc_last_checked_at"]),
+        )
+
+    return NetworkResponse(
+        chain_id=row["chain_id"],
+        rpc_height=row["rpc_observed_height"] if selected_rpc is not None else None,
+        finalized_tip_height=finalized_tip_height,
+        indexed_height=indexed_height,
+        indexer_lag=indexer_lag,
+        latest_block=_block_summary_from_row(
+            {
+                "height": row["block_height"],
+                "block_hash_hex": row["block_hash_hex"],
+                "time_utc": row["time_utc"],
+                "proposer_address": row["proposer_address"],
+                "tx_count": row["tx_count"],
+            }
+        ),
+        validators=NetworkValidators(
+            height=indexed_height,
+            active_count=row["validator_active_count"],
+            total_voting_power=str(row["validator_total_voting_power"]),
+        ),
+        selected_rpc=selected_rpc,
+    )
+
+
+def _normalize_hash_query(value: str) -> tuple[str | None, str | None]:
+    stripped = value.strip()
+    if not stripped:
+        raise HTTPException(status_code=422, detail="hash must not be empty")
+    if len(stripped) > 200:
+        raise HTTPException(status_code=422, detail="hash is too long")
+    match = HEX_HASH_RE.match(stripped)
+    if match is not None:
+        return match.group(1).upper(), None
+    return None, stripped
+
+
 @app.get("/api/health", response_model=HealthResponse)
 def get_health() -> HealthResponse:
     config = app.state.api_config
@@ -85,3 +164,52 @@ def get_health() -> HealthResponse:
         LOGGER.error("Explorer database health query failed")
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
     return _health_response_from_row(row, config)
+
+
+@app.get("/api/network", response_model=NetworkResponse)
+def get_network() -> NetworkResponse:
+    try:
+        row = database.fetch_network_overview()
+    except (MissingIndexerStateError, MissingIndexedBlockError):
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+    except Exception:
+        LOGGER.error("Explorer database network query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+    return _network_response_from_row(row)
+
+
+@app.get("/api/blocks", response_model=BlocksResponse)
+def get_blocks(
+    limit: int = Query(default=20, ge=1, le=100),
+    before_height: int | None = Query(default=None, gt=0),
+    hash: str | None = Query(default=None, max_length=200),
+) -> BlocksResponse:
+    if before_height is not None and hash is not None:
+        raise HTTPException(status_code=422, detail="before_height and hash are mutually exclusive")
+
+    try:
+        if hash is not None:
+            normalized_hex, block_hash_base64 = _normalize_hash_query(hash)
+            row = database.fetch_block_by_hash(
+                normalized_hex=normalized_hex,
+                block_hash_base64=block_hash_base64,
+            )
+            items = [] if row is None else [_block_summary_from_row(row)]
+            return BlocksResponse(
+                items=items,
+                pagination=BlocksPagination(limit=limit, next_before_height=None),
+            )
+
+        rows = database.fetch_blocks(limit=limit, before_height=before_height)
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.error("Explorer database blocks query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+
+    page_rows = rows[:limit]
+    next_before_height = page_rows[-1]["height"] if len(rows) > limit and page_rows else None
+    return BlocksResponse(
+        items=[_block_summary_from_row(row) for row in page_rows],
+        pagination=BlocksPagination(limit=limit, next_before_height=next_before_height),
+    )
