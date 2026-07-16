@@ -30,9 +30,70 @@ FROM indexer_state s
 WHERE s.state_key = %s
 """
 
+NETWORK_SQL = """
+SELECT
+    s.chain_id,
+    s.last_finalized_height AS indexed_height,
+    s.finalized_tip_height,
+    b.height AS block_height,
+    b.block_hash_hex,
+    b.time_utc,
+    b.proposer_address,
+    b.tx_count,
+    COALESCE(v.active_count, 0) AS validator_active_count,
+    COALESCE(v.total_voting_power, 0)::text AS validator_total_voting_power,
+    r.url AS rpc_url,
+    r.healthy AS rpc_healthy,
+    r.catching_up AS rpc_catching_up,
+    r.latest_observed_height AS rpc_observed_height,
+    r.observed_lag AS rpc_lag,
+    r.last_checked_at AS rpc_last_checked_at
+FROM indexer_state s
+JOIN blocks b ON b.height = s.last_finalized_height
+LEFT JOIN LATERAL (
+    SELECT count(*)::bigint AS active_count, COALESCE(sum(vsm.voting_power), 0) AS total_voting_power
+    FROM validator_set_members vsm
+    WHERE vsm.height = s.last_finalized_height
+) v ON true
+LEFT JOIN rpc_endpoints r ON r.id = s.selected_rpc_endpoint_id
+WHERE s.state_key = %s
+"""
+
+BLOCK_COLUMNS = """
+    height,
+    block_hash_hex,
+    time_utc,
+    proposer_address,
+    tx_count
+"""
+
+BLOCKS_SQL = f"""
+SELECT {BLOCK_COLUMNS}
+FROM blocks
+WHERE (%s::bigint IS NULL OR height < %s::bigint)
+ORDER BY height DESC
+LIMIT %s
+"""
+
+BLOCK_BY_HEX_SQL = f"""
+SELECT {BLOCK_COLUMNS}
+FROM blocks
+WHERE block_hash_hex = %s
+"""
+
+BLOCK_BY_BASE64_SQL = f"""
+SELECT {BLOCK_COLUMNS}
+FROM blocks
+WHERE block_hash_base64 = %s
+"""
+
 
 class MissingIndexerStateError(RuntimeError):
     """Raised when the singleton indexer state row is missing."""
+
+
+class MissingIndexedBlockError(RuntimeError):
+    """Raised when the completed checkpoint points to a missing block row."""
 
 
 class ApiDatabase:
@@ -71,6 +132,47 @@ class ApiDatabase:
         if row is None:
             raise MissingIndexerStateError("Default indexer state is missing")
         return dict(row)
+
+    def fetch_network_overview(self) -> dict[str, Any]:
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(NETWORK_SQL, ("default",))
+                row = cursor.fetchone()
+        if row is None:
+            if not self._default_indexer_state_exists():
+                raise MissingIndexerStateError("Default indexer state is missing")
+            raise MissingIndexedBlockError("Indexed block is missing")
+        return dict(row)
+
+    def _default_indexer_state_exists(self) -> bool:
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1 FROM indexer_state WHERE state_key = %s", ("default",))
+                return cursor.fetchone() is not None
+
+    def fetch_blocks(self, *, limit: int, before_height: int | None) -> list[dict[str, Any]]:
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(BLOCKS_SQL, (before_height, before_height, limit + 1))
+                rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    def fetch_block_by_hash(self, *, normalized_hex: str | None, block_hash_base64: str | None) -> dict[str, Any] | None:
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        sql = BLOCK_BY_HEX_SQL if normalized_hex is not None else BLOCK_BY_BASE64_SQL
+        value = normalized_hex if normalized_hex is not None else block_hash_base64
+        with self.pool.connection(timeout=2.0) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(sql, (value,))
+                row = cursor.fetchone()
+        return None if row is None else dict(row)
 
 
 database = ApiDatabase()
