@@ -62,6 +62,12 @@ class ApiDeploymentAssetTests(unittest.TestCase):
         self.assertIn("the `UPDATE` check to be `false`", self.documentation)
         self.assertNotRegex(self.documentation, r"(?i)ufw\s+allow\s+18180")
 
+    def test_documentation_uses_correct_container_psql_quoting(self):
+        command = "sh -c 'psql -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\"'"
+        self.assertIn(command, self.documentation)
+        self.assertNotIn(r'\"$POSTGRES_USER\"', self.documentation)
+        self.assertNotIn(r'\"$POSTGRES_DB\"', self.documentation)
+
     def test_tracked_files_contain_no_embedded_real_url_password(self):
         result = subprocess.run(
             ["git", "ls-files", "-z"], cwd=ROOT, check=True, capture_output=True
