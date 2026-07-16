@@ -183,6 +183,52 @@ GROUP BY current.signing_address, current.public_key_type, current.voting_power,
 ORDER BY current.voting_power DESC, current.signing_address ASC
 """
 
+VALIDATOR_IDENTITY_SQL = """
+SELECT signing_address AS address, public_key_type, public_key_value,
+       first_seen_height, last_seen_height
+FROM validators
+WHERE signing_address = %s
+"""
+
+VALIDATOR_CURRENT_SQL = """
+SELECT
+    s.last_finalized_height AS height,
+    b.height IS NOT NULL AS block_exists,
+    current.voting_power,
+    current.proposer_priority,
+    COALESCE(total.voting_power, 0) AS total_voting_power
+FROM indexer_state s
+LEFT JOIN blocks b ON b.height = s.last_finalized_height
+LEFT JOIN validator_set_members current
+  ON current.height = s.last_finalized_height AND current.signing_address = %s
+LEFT JOIN LATERAL (
+    SELECT COALESCE(sum(voting_power), 0) AS voting_power
+    FROM validator_set_members
+    WHERE height = s.last_finalized_height
+) total ON true
+WHERE s.state_key = %s
+"""
+
+VALIDATOR_HISTORY_SQL = """
+WITH recent_blocks AS (
+    SELECT height, time_utc
+    FROM blocks
+    WHERE height <= %s
+    ORDER BY height DESC
+    LIMIT 100
+)
+SELECT recent.height, recent.time_utc,
+       membership.signing_address AS membership_address,
+       signature.signing_address AS signature_address,
+       signature.signed, signature.vote_status
+FROM recent_blocks recent
+LEFT JOIN validator_set_members membership
+  ON membership.height = recent.height AND membership.signing_address = %s
+LEFT JOIN validator_signatures signature
+  ON signature.height = membership.height AND signature.signing_address = membership.signing_address
+ORDER BY recent.height ASC
+"""
+
 
 class MissingIndexerStateError(RuntimeError):
     """Raised when the singleton indexer state row is missing."""
@@ -314,6 +360,34 @@ class ApiDatabase:
                 cursor.execute(ACTIVE_VALIDATORS_SQL, (height, height))
                 rows = cursor.fetchall()
         return {"checkpoint": checkpoint, "items": [dict(row) for row in rows]}
+
+    def fetch_validator_detail(self, address: str) -> dict[str, Any] | None:
+        """Return identity, checkpoint membership, and bounded history on one connection."""
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(VALIDATOR_IDENTITY_SQL, (address,))
+                identity = cursor.fetchone()
+                if identity is None:
+                    return None
+
+                cursor.execute(VALIDATOR_CURRENT_SQL, (address, "default"))
+                current = cursor.fetchone()
+                if current is None:
+                    raise MissingIndexerStateError("Default indexer state is missing")
+                current = dict(current)
+                if not current["block_exists"]:
+                    raise MissingIndexedBlockError("Indexed block is missing")
+
+                cursor.execute(VALIDATOR_HISTORY_SQL, (current["height"], address))
+                history = cursor.fetchall()
+
+        return {
+            "identity": dict(identity),
+            "current": current,
+            "history": [dict(row) for row in history],
+        }
 
 
 database = ApiDatabase()

@@ -1,5 +1,7 @@
 """Response schemas for the read-only API."""
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -113,3 +115,36 @@ class ValidatorsResponse(BaseModel):
     total: int
     total_voting_power: str
     items: list[ValidatorListItem]
+
+
+class ValidatorCurrentStatus(BaseModel):
+    active: bool
+    height: int = Field(ge=0)
+    voting_power: str | None
+    voting_power_percent: float
+    proposer_priority: str | None
+
+
+class ValidatorSigningHistoryItem(BaseModel):
+    height: int = Field(ge=0)
+    time: str
+    status: Literal["commit", "nil", "absent", "invalid", "not_active", "unknown"]
+
+
+class ValidatorSigningHistory(BaseModel):
+    network_blocks: int = Field(ge=0)
+    start_height: int | None = Field(default=None, ge=0)
+    end_height: int | None = Field(default=None, ge=0)
+    items: list[ValidatorSigningHistoryItem]
+
+
+class ValidatorDetailResponse(BaseModel):
+    address: str
+    public_key_type: str | None
+    public_key_value: str
+    first_seen_height: int = Field(ge=0)
+    last_seen_height: int = Field(ge=0)
+    current: ValidatorCurrentStatus
+    uptime_20: ValidatorUptime
+    uptime_100: ValidatorUptime
+    signing_history: ValidatorSigningHistory
