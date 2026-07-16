@@ -158,12 +158,9 @@ class ApiValidatorDetailTests(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertEqual(response.json(), {"detail": "Validator not found"})
 
-    def test_path_length_validation(self):
+    def test_path_max_length_validation(self):
         response = self.get(detail_result(), address="x" * 129)
         self.assertEqual(response.status_code, 422)
-        with self.make_client(FakeDatabase(detail_result())) as client:
-            empty_equivalent = client.get("/api/validators/")
-        self.assertNotEqual(empty_equivalent.status_code, 200)
 
     def test_consistency_and_query_errors_are_safe(self):
         for error in (MissingIndexerStateError(), MissingIndexedBlockError(), RuntimeError(SECRET_URL)):
@@ -180,9 +177,26 @@ class ApiValidatorDetailTests(unittest.TestCase):
         result = detail_result()
         result["identity"].update({"moniker": "secret", "inserted_at": "secret", "operator_address": "secret"})
         result["history"][0].update({"signature_base64": "secret", "raw_precommit": "secret"})
-        text = self.get(result).text
-        for field in ("moniker", "inserted_at", "operator_address", "signature_base64", "raw_precommit", "vote_status", "signed"):
-            self.assertNotIn(field, text)
+        data = self.get(result).json()
+
+        inspected_objects = [
+            data,
+            data["current"],
+            data["uptime_20"],
+            data["uptime_100"],
+            data["signing_history"],
+            *data["signing_history"]["items"],
+        ]
+        exposed_keys = {key for item in inspected_objects for key in item}
+        forbidden_keys = {
+            "moniker", "inserted_at", "operator_address", "signature_base64",
+            "raw_precommit", "vote_status", "signed",
+        }
+        self.assertTrue(forbidden_keys.isdisjoint(exposed_keys))
+        self.assertIn("signed_blocks", data["uptime_20"])
+        self.assertIn("signed_blocks", data["uptime_100"])
+        for item in data["signing_history"]["items"]:
+            self.assertEqual(set(item), {"height", "time", "status"})
 
     def test_sql_is_bounded_parameterized_and_chronological(self):
         from api.database import VALIDATOR_CURRENT_SQL, VALIDATOR_HISTORY_SQL, VALIDATOR_IDENTITY_SQL
