@@ -100,6 +100,8 @@ install -o root -g root -m 0644 \
   deploy/systemd/utsa-gno-explorer-backup.timer \
   /etc/systemd/system/utsa-gno-explorer-backup.timer
 systemctl daemon-reload
+install -d -o root -g root -m 0700 \
+  /var/backups/utsa-gno-explorer
 systemctl enable --now utsa-gno-explorer-backup.timer
 ```
 

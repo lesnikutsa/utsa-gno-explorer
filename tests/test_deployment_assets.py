@@ -87,6 +87,13 @@ class DeploymentAssetTests(unittest.TestCase):
         self.assertNotIn("User=utsa-gno", unit)
         self.assertNotIn("SupplementaryGroups=docker", unit)
 
+    def test_backup_installation_docs_create_root_only_backup_directory(self):
+        expected = "install -d -o root -g root -m 0700 \\\n  /var/backups/utsa-gno-explorer"
+        for relative in ["docs/production-deployment.md", "docs/operator-runbook.md"]:
+            doc = self.text(relative)
+            self.assertIn(expected, doc)
+            self.assertLess(doc.index(expected), doc.index("systemctl enable --now utsa-gno-explorer-backup.timer"))
+
     def test_backup_systemd_timer_schedule_and_target(self):
         timer = self.text("deploy/systemd/utsa-gno-explorer-backup.timer")
         for value in ["OnCalendar=*-*-* 03:15:00 UTC", "Persistent=true", "RandomizedDelaySec=15m", "AccuracySec=1m", "Unit=utsa-gno-explorer-backup.service", "WantedBy=timers.target"]:
