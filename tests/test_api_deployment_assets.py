@@ -7,6 +7,19 @@ ROOT = Path(__file__).resolve().parents[1]
 ENV_PATH = ROOT / "deploy/systemd/api.env.example"
 UNIT_PATH = ROOT / "deploy/systemd/utsa-gno-api.service"
 DOC_PATH = ROOT / "docs/production-deployment.md"
+CREDENTIAL_URL = re.compile(
+    rb"postgres(?:ql)?://[A-Za-z0-9_.~-]+:([^@\s]+)@[^\s/]+"
+)
+PLACEHOLDER_PASSWORDS = {
+    b"password",
+    b"secret",
+    b"super-secret-password",
+    b"change-me",
+    b"REPLACE_WITH_PASSWORD",
+    b"REPLACE_WITH_URL_SAFE_PASSWORD",
+    b"{cls.password}",
+    b"{self.password}",
+}
 
 
 class ApiDeploymentAssetTests(unittest.TestCase):
@@ -24,12 +37,20 @@ class ApiDeploymentAssetTests(unittest.TestCase):
         self.assertNotIn("GNO_RPC_URLS", self.environment)
 
     def test_unit_uses_external_bind_configuration_and_one_worker(self):
+        expected_exec_start = (
+            "ExecStart=/opt/utsa-gno-explorer/.venv/bin/uvicorn api.app:app "
+            "--host ${API_BIND_HOST} --port ${API_BIND_PORT} --workers 1 "
+            "--log-level ${API_LOG_LEVEL} --no-access-log"
+        )
+        self.assertIn(expected_exec_start, self.unit.splitlines())
+        self.assertNotIn("python -m uvicorn", self.unit)
         self.assertNotIn("8000", self.unit)
         self.assertNotIn("0.0.0.0", self.unit)
         self.assertIn("--host ${API_BIND_HOST}", self.unit)
         self.assertIn("--port ${API_BIND_PORT}", self.unit)
         self.assertIn("--workers 1", self.unit)
         self.assertNotIn("--reload", self.unit)
+        self.assertIn("${API_LOG_LEVEL}", self.unit)
 
     def test_unit_uses_unprivileged_identity_and_external_environment(self):
         self.assertIn("User=utsa-gno", self.unit)
@@ -68,21 +89,59 @@ class ApiDeploymentAssetTests(unittest.TestCase):
         self.assertNotIn(r'\"$POSTGRES_USER\"', self.documentation)
         self.assertNotIn(r'\"$POSTGRES_DB\"', self.documentation)
 
+    def test_documentation_defines_read_only_runtime_permissions(self):
+        for path in [".venv", "api", "scripts"]:
+            self.assertIn(f"/opt/utsa-gno-explorer/{path}", self.documentation)
+        self.assertIn("sudo chown -R root:utsa-gno", self.documentation)
+        self.assertIn("sudo chmod -R u=rwX,g=rX,o=", self.documentation)
+        self.assertNotIn("g=rwX", self.documentation)
+        self.assertIn("-type f -perm /g=w", self.documentation)
+        self.assertIn("-type d -perm /g=w", self.documentation)
+
+    def test_documentation_uses_root_owned_api_update(self):
+        expected_commands = [
+            "sudo git -C /opt/utsa-gno-explorer fetch origin",
+            "sudo git -C /opt/utsa-gno-explorer switch main",
+            "sudo git -C /opt/utsa-gno-explorer merge --ff-only origin/main",
+            "sudo /opt/utsa-gno-explorer/.venv/bin/python \\",
+            "-r /opt/utsa-gno-explorer/requirements.txt",
+        ]
+        for command in expected_commands:
+            self.assertIn(command, self.documentation)
+
+    def assert_urls_have_placeholder_passwords(self, data):
+        for match in CREDENTIAL_URL.finditer(data):
+            self.assertIn(match.group(1), PLACEHOLDER_PASSWORDS)
+
+    def test_credential_url_scanning_handles_common_uri_password_characters(self):
+        for password in [b"real+" + b"password", b"real!" + b"password"]:
+            with self.subTest(password=password):
+                with self.assertRaises(AssertionError):
+                    self.assert_urls_have_placeholder_passwords(
+                        b"postgresql://user:" + password + b"@db.internal:5432/database"
+                    )
+
+    def test_credential_url_scanning_allows_known_placeholders(self):
+        for password in PLACEHOLDER_PASSWORDS:
+            with self.subTest(password=password):
+                self.assert_urls_have_placeholder_passwords(
+                    b"postgresql://user:" + password + b"@localhost:5432/database"
+                )
+
     def test_tracked_files_contain_no_embedded_real_url_password(self):
         result = subprocess.run(
             ["git", "ls-files", "-z"], cwd=ROOT, check=True, capture_output=True
         )
-        credential_url = re.compile(rb"postgres(?:ql)?://[A-Za-z0-9_.~-]+:([A-Za-z0-9_.~%-]+)@[A-Za-z0-9.-]+(?=[:/])")
         for relative in result.stdout.split(b"\0"):
             if not relative:
                 continue
             data = (ROOT / relative.decode()).read_bytes()
-            for match in credential_url.finditer(data):
-                password = match.group(1)
-                self.assertTrue(
-                    any(marker in password.lower() for marker in [b"replace", b"placeholder", b"password", b"secret", b"change-me"]),
-                    f"possible real credential in {relative.decode()}",
-                )
+            try:
+                self.assert_urls_have_placeholder_passwords(data)
+            except AssertionError as error:
+                raise AssertionError(
+                    f"possible real credential in {relative.decode()}"
+                ) from error
 
 
 if __name__ == "__main__":

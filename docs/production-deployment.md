@@ -332,6 +332,14 @@ ss -ltnp | grep ':18180'
 Install the external environment and unit. Edit the real `DATABASE_URL` securely without printing it; keep the default bind on localhost. The environment file is readable by root and the service group only.
 
 ```bash
+sudo chown -R root:utsa-gno \
+  /opt/utsa-gno-explorer/.venv \
+  /opt/utsa-gno-explorer/api \
+  /opt/utsa-gno-explorer/scripts
+sudo chmod -R u=rwX,g=rX,o= \
+  /opt/utsa-gno-explorer/.venv \
+  /opt/utsa-gno-explorer/api \
+  /opt/utsa-gno-explorer/scripts
 sudo install -o root -g utsa-gno -m 0640 \
   deploy/systemd/api.env.example /etc/utsa-gno-explorer/api.env
 sudo editor /etc/utsa-gno-explorer/api.env
@@ -341,6 +349,28 @@ sudo systemd-analyze verify /etc/systemd/system/utsa-gno-api.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now utsa-gno-api.service
 ```
+
+These ownership and mode commands keep `root` as the owner while giving the
+`utsa-gno` group read and directory traversal access, including executable bits
+already present. They grant `utsa-gno` no write access. A symbolic link mode such
+as `lrwxrwxrwx` describes the link, not its target, and does not mean that the
+target is group-writable.
+
+Verify runtime access and confirm that no regular file or directory is
+group-writable. The `find` checks do not follow symbolic links:
+
+```bash
+sudo -u utsa-gno test -r /opt/utsa-gno-explorer/api/app.py
+sudo -u utsa-gno test -r /opt/utsa-gno-explorer/scripts/wait_for_postgres.py
+sudo -u utsa-gno sh -c 'cd /opt/utsa-gno-explorer && .venv/bin/python -c "import api.app"'
+sudo -u utsa-gno /opt/utsa-gno-explorer/.venv/bin/uvicorn --version
+find -P /opt/utsa-gno-explorer/.venv /opt/utsa-gno-explorer/api /opt/utsa-gno-explorer/scripts \
+  -type f -perm /g=w -print
+find -P /opt/utsa-gno-explorer/.venv /opt/utsa-gno-explorer/api /opt/utsa-gno-explorer/scripts \
+  -type d -perm /g=w -print
+```
+
+Both `find` commands must produce no output.
 
 The default internal address is `127.0.0.1:18180`, sourced from `/etc/utsa-gno-explorer/api.env`. Keep `API_BIND_HOST=127.0.0.1`; a localhost-only listener needs no firewall opening. If the port changes, update the future reverse-proxy target at the same time. The unit grants no writable paths.
 
@@ -385,12 +415,22 @@ For API-only changes, do not stop PostgreSQL or the indexer. Create an isolated 
 ```bash
 git worktree add /tmp/utsa-gno-api-validation origin/PR_BRANCH
 # Validate the PR in the isolated worktree, then remove it according to operator policy.
-cd /opt/utsa-gno-explorer
-git fetch origin
-git switch main
-git merge --ff-only origin/main
+sudo git -C /opt/utsa-gno-explorer fetch origin
+sudo git -C /opt/utsa-gno-explorer switch main
+sudo git -C /opt/utsa-gno-explorer merge --ff-only origin/main
 # Run only when requirements.txt changed:
-.venv/bin/python -m pip install -r requirements.txt
+sudo /opt/utsa-gno-explorer/.venv/bin/python \
+  -m pip install \
+  -r /opt/utsa-gno-explorer/requirements.txt
+# Normalize runtime permissions after Git and pip operations.
+sudo chown -R root:utsa-gno \
+  /opt/utsa-gno-explorer/.venv \
+  /opt/utsa-gno-explorer/api \
+  /opt/utsa-gno-explorer/scripts
+sudo chmod -R u=rwX,g=rX,o= \
+  /opt/utsa-gno-explorer/.venv \
+  /opt/utsa-gno-explorer/api \
+  /opt/utsa-gno-explorer/scripts
 sudo systemctl restart utsa-gno-api.service
 ```
 
