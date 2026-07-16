@@ -50,6 +50,8 @@ def _health_response_from_row(row: dict, config) -> HealthResponse:
     degraded = False
     if indexer_lag is not None and indexer_lag > config.indexer_lag_degraded_threshold:
         degraded = True
+    if not row["has_healthy_rpc"]:
+        degraded = True
     if rpc_last_checked_at is None:
         degraded = True
     else:

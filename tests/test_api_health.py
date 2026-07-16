@@ -45,6 +45,7 @@ def health_row(**overrides):
         "indexed_height": 845840,
         "finalized_tip_height": 845840,
         "rpc_last_checked_at": RECENT_CHECK,
+        "has_healthy_rpc": True,
     }
     row.update(overrides)
     return row
@@ -87,6 +88,31 @@ class ApiHealthTests(unittest.TestCase):
                 "api_version": "0.6.0",
             },
         )
+
+
+    def test_at_least_one_healthy_enabled_rpc_allows_ok_status(self):
+        fake_database = FakeDatabase(health_row(has_healthy_rpc=True))
+        with self.make_client(fake_database) as client:
+            response = client.get("/api/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "ok")
+
+    def test_no_healthy_enabled_rpc_produces_degraded_status(self):
+        fake_database = FakeDatabase(health_row(has_healthy_rpc=False))
+        with self.make_client(fake_database) as client:
+            response = client.get("/api/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "degraded")
+
+    def test_fresh_rpc_last_checked_at_does_not_hide_no_healthy_rpc(self):
+        fake_database = FakeDatabase(
+            health_row(rpc_last_checked_at=RECENT_CHECK, has_healthy_rpc=False)
+        )
+        with self.make_client(fake_database) as client:
+            response = client.get("/api/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["rpc_last_checked_at"], "2026-07-16T12:34:55Z")
+        self.assertEqual(response.json()["status"], "degraded")
 
     def test_degraded_response_caused_by_indexer_lag(self):
         fake_database = FakeDatabase(health_row(indexed_height=100, finalized_tip_height=111))

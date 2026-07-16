@@ -18,7 +18,14 @@ SELECT
         FROM rpc_endpoints r
         WHERE r.chain_id = s.chain_id
           AND r.is_enabled = %s
-    ) AS rpc_last_checked_at
+    ) AS rpc_last_checked_at,
+    EXISTS (
+        SELECT 1
+        FROM rpc_endpoints healthy_rpc
+        WHERE healthy_rpc.chain_id = s.chain_id
+          AND healthy_rpc.is_enabled = %s
+          AND healthy_rpc.healthy = %s
+    ) AS has_healthy_rpc
 FROM indexer_state s
 WHERE s.state_key = %s
 """
@@ -59,7 +66,7 @@ class ApiDatabase:
             raise RuntimeError("Database pool is not open")
         with self.pool.connection(timeout=2.0) as connection:
             with connection.cursor() as cursor:
-                cursor.execute(HEALTH_SQL, (True, "default"))
+                cursor.execute(HEALTH_SQL, (True, True, True, "default"))
                 row = cursor.fetchone()
         if row is None:
             raise MissingIndexerStateError("Default indexer state is missing")
