@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import logging
 import re
+from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import FastAPI, HTTPException, Path, Query
 
@@ -25,6 +26,9 @@ from api.schemas import (
     NetworkResponse,
     NetworkValidators,
     SelectedRpc,
+    ValidatorListItem,
+    ValidatorsResponse,
+    ValidatorUptime,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -194,6 +198,48 @@ def _normalize_hash_query(value: str) -> tuple[str | None, str | None]:
     return None, stripped
 
 
+def _rounded_percent(numerator: Decimal | int, denominator: Decimal | int) -> float:
+    if denominator == 0:
+        return 0.0
+    value = Decimal(numerator) * Decimal(100) / Decimal(denominator)
+    return float(value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
+def _validators_response_from_rows(result: dict) -> ValidatorsResponse:
+    rows = result["items"]
+    total_voting_power = sum((Decimal(row["voting_power"]) for row in rows), Decimal(0))
+    checkpoint = result["checkpoint"]
+    items = []
+    for row in rows:
+        uptimes = {}
+        for window in (20, 100):
+            active = int(row[f"active_blocks_{window}"])
+            signed = int(row[f"signed_blocks_{window}"])
+            uptimes[window] = ValidatorUptime(
+                network_blocks=int(checkpoint[f"network_blocks_{window}"]),
+                active_blocks=active,
+                signed_blocks=signed,
+                nil_blocks=int(row[f"nil_blocks_{window}"]),
+                absent_blocks=int(row[f"absent_blocks_{window}"]),
+                invalid_blocks=int(row[f"invalid_blocks_{window}"]),
+                unknown_blocks=int(row[f"unknown_blocks_{window}"]),
+                uptime_percent=_rounded_percent(signed, active),
+            )
+        items.append(ValidatorListItem(
+            address=row["address"],
+            public_key_type=row["public_key_type"],
+            voting_power=str(row["voting_power"]),
+            percent=_rounded_percent(row["voting_power"], total_voting_power),
+            proposer_priority=None if row["proposer_priority"] is None else str(row["proposer_priority"]),
+            uptime_20=uptimes[20],
+            uptime_100=uptimes[100],
+        ))
+    return ValidatorsResponse(
+        height=checkpoint["height"], total=len(items),
+        total_voting_power=str(total_voting_power), items=items,
+    )
+
+
 @app.get("/api/health", response_model=HealthResponse)
 def get_health() -> HealthResponse:
     config = app.state.api_config
@@ -217,6 +263,15 @@ def get_network() -> NetworkResponse:
         LOGGER.error("Explorer database network query failed")
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
     return _network_response_from_row(row)
+
+
+@app.get("/api/validators", response_model=ValidatorsResponse)
+def get_validators() -> ValidatorsResponse:
+    try:
+        return _validators_response_from_rows(database.fetch_active_validators())
+    except Exception:
+        LOGGER.error("Explorer database validators query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
 
 
 @app.get("/api/blocks", response_model=BlocksResponse)

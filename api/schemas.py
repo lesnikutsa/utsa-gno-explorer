@@ -1,6 +1,6 @@
 """Response schemas for the read-only API."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class HealthResponse(BaseModel):
@@ -85,3 +85,31 @@ class BlocksPagination(BaseModel):
 class BlocksResponse(BaseModel):
     items: list[BlockSummary]
     pagination: BlocksPagination
+
+
+class ValidatorUptime(BaseModel):
+    network_blocks: int = Field(ge=0)
+    active_blocks: int = Field(ge=0)
+    signed_blocks: int = Field(ge=0)
+    nil_blocks: int = Field(ge=0)
+    absent_blocks: int = Field(ge=0)
+    invalid_blocks: int = Field(ge=0)
+    unknown_blocks: int = Field(ge=0)
+    uptime_percent: float
+
+
+class ValidatorListItem(BaseModel):
+    address: str
+    public_key_type: str | None
+    voting_power: str
+    percent: float
+    proposer_priority: str | None
+    uptime_20: ValidatorUptime
+    uptime_100: ValidatorUptime
+
+
+class ValidatorsResponse(BaseModel):
+    height: int
+    total: int
+    total_voting_power: str
+    items: list[ValidatorListItem]
