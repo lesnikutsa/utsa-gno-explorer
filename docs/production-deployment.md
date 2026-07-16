@@ -8,7 +8,9 @@ This guide packages the existing foreground continuous indexer without changing 
 - Virtualenv: `/opt/utsa-gno-explorer/.venv`
 - PostgreSQL Compose file: `deploy/postgres/compose.yml`
 - PostgreSQL environment example: `deploy/postgres/postgres.env.example`
-- systemd unit: `deploy/systemd/utsa-gno-indexer.service`
+- Indexer systemd unit: `deploy/systemd/utsa-gno-indexer.service`
+- API systemd unit: `deploy/systemd/utsa-gno-api.service`
+- API environment example: `deploy/systemd/api.env.example`
 - Indexer environment example: `deploy/systemd/indexer.env.example`
 - External production secrets and environment: `/etc/utsa-gno-explorer/`
 - Default PostgreSQL data directory: `/var/lib/utsa-gno-explorer/postgres`
@@ -255,6 +257,157 @@ sudo systemctl stop utsa-gno-indexer.service
 # docker compose ... exec -T postgres pg_restore --clean --if-exists -U "$POSTGRES_USER" -d "$POSTGRES_DB" < approved-backup.dump
 sudo systemctl start utsa-gno-indexer.service
 ```
+
+## Read-only API deployment
+
+The API is a host Python process supervised by systemd and logged by journald. It reads PostgreSQL only; it does not call Gno RPC. Its credentials must be separate from the PostgreSQL owner/admin and indexer roles: never reuse the indexer role or its `DATABASE_URL`. This procedure makes no schema changes.
+
+### Create and verify the API database role
+
+Open an interactive administrator session without putting a password in shell history (the exact container-side administrator role comes from the production PostgreSQL configuration):
+
+```bash
+docker compose -f deploy/postgres/compose.yml \
+  --env-file /etc/utsa-gno-explorer/postgres.env \
+  exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+```
+
+At the `psql` prompt, run:
+
+```sql
+CREATE ROLE utsa_gno_api LOGIN;
+\password utsa_gno_api
+
+ALTER ROLE utsa_gno_api
+  SET default_transaction_read_only = on;
+ALTER ROLE utsa_gno_api
+  SET statement_timeout = '5s';
+ALTER ROLE utsa_gno_api
+  SET idle_in_transaction_session_timeout = '10s';
+
+GRANT CONNECT
+  ON DATABASE utsa_gno_explorer
+  TO utsa_gno_api;
+GRANT USAGE
+  ON SCHEMA public
+  TO utsa_gno_api;
+GRANT SELECT
+  ON ALL TABLES IN SCHEMA public
+  TO utsa_gno_api;
+```
+
+Do not grant this role `CREATE`, `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `REFERENCES`, `TRIGGER`, ownership, superuser, createdb, createrole, replication, or bypassrls. `default_transaction_read_only` adds a database-level safety layer, but application SQL must still remain read-only. Future tables need an explicit `SELECT` grant unless deliberate, owner-specific default privileges are configured. No default privileges or other schema changes are part of this procedure.
+
+After installing the real API environment file below, connect interactively as `utsa_gno_api` (allow `psql` to prompt for its password; do not put a password or URL in the command) and run:
+
+```bash
+psql -h 127.0.0.1 -U utsa_gno_api -d utsa_gno_explorer
+```
+
+```sql
+SHOW default_transaction_read_only;
+SHOW statement_timeout;
+SELECT has_table_privilege(
+  current_user,
+  'public.blocks',
+  'SELECT'
+);
+SELECT has_table_privilege(
+  current_user,
+  'public.blocks',
+  'UPDATE'
+);
+```
+
+Expect `default_transaction_read_only` to be `on`, `statement_timeout` to be `5s`, the `SELECT` check to be `true`, and the `UPDATE` check to be `false`.
+
+### Install and operate the API service
+
+First confirm the default port is free. No output means no listener was found:
+
+```bash
+ss -ltnp | grep ':18180'
+```
+
+Install the external environment and unit. Edit the real `DATABASE_URL` securely without printing it; keep the default bind on localhost. The environment file is readable by root and the service group only.
+
+```bash
+sudo install -o root -g utsa-gno -m 0640 \
+  deploy/systemd/api.env.example /etc/utsa-gno-explorer/api.env
+sudo editor /etc/utsa-gno-explorer/api.env
+sudo install -o root -g root -m 0644 \
+  deploy/systemd/utsa-gno-api.service /etc/systemd/system/utsa-gno-api.service
+sudo systemd-analyze verify /etc/systemd/system/utsa-gno-api.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now utsa-gno-api.service
+```
+
+The default internal address is `127.0.0.1:18180`, sourced from `/etc/utsa-gno-explorer/api.env`. Keep `API_BIND_HOST=127.0.0.1`; a localhost-only listener needs no firewall opening. If the port changes, update the future reverse-proxy target at the same time. The unit grants no writable paths.
+
+Inspect the process, journal, and listener:
+
+```bash
+systemctl status utsa-gno-api.service
+journalctl -u utsa-gno-api.service -n 100 --no-pager
+ss -ltnp | grep ':18180' | grep '127.0.0.1'
+```
+
+Run local smoke tests for every endpoint (replace example path values with known records where applicable):
+
+```bash
+curl --fail --silent --show-error \
+  http://127.0.0.1:18180/api/health
+curl --fail --silent --show-error \
+  http://127.0.0.1:18180/api/network
+curl --fail --silent --show-error \
+  'http://127.0.0.1:18180/api/blocks?limit=2'
+curl --fail --silent --show-error \
+  http://127.0.0.1:18180/api/blocks/REPLACE_WITH_HEIGHT
+curl --fail --silent --show-error \
+  http://127.0.0.1:18180/api/validators
+curl --fail --silent --show-error \
+  http://127.0.0.1:18180/api/validators/REPLACE_WITH_ADDRESS
+```
+
+Lifecycle commands remain operator-controlled:
+
+```bash
+sudo systemctl stop utsa-gno-api.service
+sudo systemctl start utsa-gno-api.service
+sudo systemctl restart utsa-gno-api.service
+sudo systemctl disable --now utsa-gno-api.service
+```
+
+### API-only update and rollback
+
+For API-only changes, do not stop PostgreSQL or the indexer. Create an isolated Git worktree for PR validation, validate there, and merge only after validation. Then explicitly fast-forward the production checkout and restart only the API:
+
+```bash
+git worktree add /tmp/utsa-gno-api-validation origin/PR_BRANCH
+# Validate the PR in the isolated worktree, then remove it according to operator policy.
+cd /opt/utsa-gno-explorer
+git fetch origin
+git switch main
+git merge --ff-only origin/main
+# Run only when requirements.txt changed:
+.venv/bin/python -m pip install -r requirements.txt
+sudo systemctl restart utsa-gno-api.service
+```
+
+Repeat the local curl smoke tests after restart. Neither systemd nor the application performs Git operations, dependency installation, database initialization, migrations, restore, or deployment automatically.
+
+For rollback, stop the API, check out or reset only to a previously verified commit according to the repository's existing operator policy, reinstall dependencies only if required, start only the API, and verify `/api/health` locally:
+
+```bash
+sudo systemctl stop utsa-gno-api.service
+# Apply the operator-approved checkout/reset to a previously verified commit here.
+# Reinstall requirements only when that verified commit requires it.
+sudo systemctl start utsa-gno-api.service
+curl --fail --silent --show-error \
+  http://127.0.0.1:18180/api/health
+```
+
+There is no database rollback step for an API-only release because this deployment adds no schema changes.
 
 ## Upgrade procedure
 
