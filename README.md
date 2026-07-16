@@ -138,7 +138,7 @@ curl 'http://127.0.0.1:8000/api/blocks?hash=<exact-hash>'
 curl http://127.0.0.1:8000/api/blocks/870117
 ```
 
-`GET /api/network` returns the completed indexer checkpoint, latest indexed block, validator-set aggregate, and selected RPC metadata using read-only PostgreSQL queries. `GET /api/blocks` returns descending block summaries with cursor pagination or exact hash lookup. `GET /api/blocks/{height}` returns a block summary, commit aggregate, and ordered transactions for one stored block. Validator detail endpoints remain outside this PR.
+`GET /api/network` returns the completed indexer checkpoint, latest indexed block, validator-set aggregate, and selected RPC metadata using read-only PostgreSQL queries. `GET /api/blocks` returns descending block summaries with cursor pagination or exact hash lookup. `GET /api/blocks/{height}` returns a block summary, commit aggregate, and ordered transactions for one stored block.
 
 ### Validators API
 
@@ -146,7 +146,17 @@ curl http://127.0.0.1:8000/api/blocks/870117
 curl http://127.0.0.1:8000/api/validators
 ```
 
-The response contains the active validator set at the completed checkpoint, current voting power, and 20-block and 100-block active-membership uptime. Addresses are consensus signing addresses. Monikers, operator addresses, and validator detail are outside this PR.
+Validator detail uses the exact consensus signing address and includes validator identity,
+current active status and voting power, 20-block and 100-block active-membership uptime,
+and chronological signing history for up to 100 actual stored blocks:
+
+```bash
+curl http://127.0.0.1:8000/api/validators/<consensus-signing-address>
+```
+
+Monikers, logos, and operator addresses remain outside this work.
+
+The list response contains the active validator set at the completed checkpoint, current voting power, and 20-block and 100-block active-membership uptime. Addresses are consensus signing addresses.
 
 ## Bounded indexer prototype
 

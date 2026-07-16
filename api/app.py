@@ -27,6 +27,10 @@ from api.schemas import (
     NetworkValidators,
     SelectedRpc,
     ValidatorListItem,
+    ValidatorCurrentStatus,
+    ValidatorDetailResponse,
+    ValidatorSigningHistory,
+    ValidatorSigningHistoryItem,
     ValidatorsResponse,
     ValidatorUptime,
 )
@@ -240,6 +244,67 @@ def _validators_response_from_rows(result: dict) -> ValidatorsResponse:
     )
 
 
+def _history_status(row: dict) -> str:
+    if row["membership_address"] is None:
+        return "not_active"
+    if row["signature_address"] is None:
+        return "unknown"
+    if row["signed"] is True:
+        return "commit"
+    if row["vote_status"] in ("nil", "absent", "invalid"):
+        return row["vote_status"]
+    return "unknown"
+
+
+def _uptime_from_history(items: list[ValidatorSigningHistoryItem]) -> ValidatorUptime:
+    statuses = [item.status for item in items]
+    active = sum(status != "not_active" for status in statuses)
+    counts = {status: statuses.count(status) for status in ("commit", "nil", "absent", "invalid", "unknown")}
+    return ValidatorUptime(
+        network_blocks=len(items),
+        active_blocks=active,
+        signed_blocks=counts["commit"],
+        nil_blocks=counts["nil"],
+        absent_blocks=counts["absent"],
+        invalid_blocks=counts["invalid"],
+        unknown_blocks=counts["unknown"],
+        uptime_percent=_rounded_percent(counts["commit"], active),
+    )
+
+
+def _validator_detail_from_rows(result: dict) -> ValidatorDetailResponse:
+    identity = result["identity"]
+    current_row = result["current"]
+    active = current_row["voting_power"] is not None
+    history_items = [
+        ValidatorSigningHistoryItem(
+            height=row["height"], time=isoformat_utc_z(row["time_utc"]), status=_history_status(row)
+        )
+        for row in result["history"]
+    ]
+    heights = [item.height for item in history_items]
+    current_power = current_row["voting_power"]
+    return ValidatorDetailResponse(
+        **identity,
+        current=ValidatorCurrentStatus(
+            active=active,
+            height=current_row["height"],
+            voting_power=str(current_power) if active else None,
+            voting_power_percent=_rounded_percent(current_power, current_row["total_voting_power"]) if active else 0.0,
+            proposer_priority=(None if not active or current_row["proposer_priority"] is None
+                               else str(current_row["proposer_priority"])),
+        ),
+        uptime_20=_uptime_from_history(history_items[-20:]),
+        uptime_100=_uptime_from_history(history_items),
+        signing_history=ValidatorSigningHistory(
+            network_blocks=len(history_items),
+            start_height=min(heights) if heights else None,
+            end_height=max(heights) if heights else None,
+            items=history_items,
+        ),
+    )
+
+
 @app.get("/api/health", response_model=HealthResponse)
 def get_health() -> HealthResponse:
     config = app.state.api_config
@@ -271,6 +336,20 @@ def get_validators() -> ValidatorsResponse:
         return _validators_response_from_rows(database.fetch_active_validators())
     except Exception:
         LOGGER.error("Explorer database validators query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+
+
+@app.get("/api/validators/{address}", response_model=ValidatorDetailResponse)
+def get_validator_detail(address: str = Path(min_length=1, max_length=128)) -> ValidatorDetailResponse:
+    try:
+        result = database.fetch_validator_detail(address)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Validator not found")
+        return _validator_detail_from_rows(result)
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.error("Explorer database validator detail query failed")
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
 
 
