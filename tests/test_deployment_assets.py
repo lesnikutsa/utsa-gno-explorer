@@ -87,6 +87,27 @@ class DeploymentAssetTests(unittest.TestCase):
         self.assertNotIn("User=utsa-gno", unit)
         self.assertNotIn("SupplementaryGroups=docker", unit)
 
+
+    def test_backup_systemd_service_uses_runtime_directory_for_docker_config(self):
+        unit = self.text("deploy/systemd/utsa-gno-explorer-backup.service")
+        lines = unit.splitlines()
+        runtime = self._single_value(lines, "RuntimeDirectory")
+        docker_config = self._single_value(lines, "Environment=DOCKER_CONFIG")
+
+        self.assertEqual(runtime, "utsa-gno-explorer-backup")
+        self.assertEqual(docker_config, "/run/utsa-gno-explorer-backup")
+        self.assertEqual(docker_config, f"/run/{runtime}")
+        self.assertIn("ProtectHome=true", lines)
+        self.assertNotIn("/usr/libexec/docker/cli-plugins/docker-compose", unit)
+
+    @staticmethod
+    def _single_value(lines, key):
+        prefix = f"{key}="
+        matches = [line.removeprefix(prefix) for line in lines if line.startswith(prefix)]
+        if len(matches) != 1:
+            raise AssertionError(f"Expected exactly one {key} entry, found {len(matches)}")
+        return matches[0]
+
     def test_backup_installation_docs_create_root_only_backup_directory(self):
         expected = "install -d -o root -g root -m 0700 \\\n  /var/backups/utsa-gno-explorer"
         for relative in ["docs/production-deployment.md", "docs/operator-runbook.md"]:
