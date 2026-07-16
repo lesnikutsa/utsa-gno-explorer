@@ -43,7 +43,7 @@ class ApiDatabase:
             kwargs={"row_factory": dict_row},
         )
         try:
-            pool.open(wait=True)
+            pool.open(wait=False)
         except Exception:
             pool.close()
             raise
@@ -57,7 +57,7 @@ class ApiDatabase:
     def fetch_health_row(self) -> dict[str, Any]:
         if self.pool is None:
             raise RuntimeError("Database pool is not open")
-        with self.pool.connection() as connection:
+        with self.pool.connection(timeout=2.0) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(HEALTH_SQL, (True, "default"))
                 row = cursor.fetchone()

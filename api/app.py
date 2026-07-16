@@ -22,10 +22,10 @@ async def lifespan(app: FastAPI):
         app.state.api_config = config
     except ConfigError as exc:
         LOGGER.error("API configuration error: %s", exc)
-        raise RuntimeError("API configuration error") from exc
-    except Exception as exc:
+        raise RuntimeError("API configuration error") from None
+    except Exception:
         LOGGER.error("Explorer database startup failed")
-        raise RuntimeError(UNAVAILABLE_DETAIL) from exc
+        raise RuntimeError(UNAVAILABLE_DETAIL) from None
     try:
         yield
     finally:
@@ -33,6 +33,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="UTSA Gno.land Explorer API", lifespan=lifespan)
+
+
+def utc_now() -> datetime:
+    return datetime.now(UTC)
 
 
 def _health_response_from_row(row: dict, config) -> HealthResponse:
@@ -49,7 +53,7 @@ def _health_response_from_row(row: dict, config) -> HealthResponse:
     if rpc_last_checked_at is None:
         degraded = True
     else:
-        now = datetime.now(UTC)
+        now = utc_now()
         checked_at = rpc_last_checked_at
         if checked_at.tzinfo is None:
             checked_at = checked_at.replace(tzinfo=UTC)
