@@ -67,6 +67,15 @@ BLOCK_COLUMNS = """
     tx_count
 """
 
+BLOCK_DETAIL_COLUMNS = """
+    height,
+    block_hash_hex,
+    block_hash_base64,
+    time_utc,
+    proposer_address,
+    tx_count
+"""
+
 BLOCKS_SQL = f"""
 SELECT {BLOCK_COLUMNS}
 FROM blocks
@@ -85,6 +94,39 @@ BLOCK_BY_BASE64_SQL = f"""
 SELECT {BLOCK_COLUMNS}
 FROM blocks
 WHERE block_hash_base64 = %s
+"""
+
+BLOCK_DETAIL_SQL = f"""
+SELECT {BLOCK_DETAIL_COLUMNS}
+FROM blocks
+WHERE height = %s
+"""
+
+BLOCK_COMMIT_SQL = """
+SELECT
+    count(vsm.signing_address)::bigint AS validators,
+    count(vs.signing_address) FILTER (WHERE vs.signed = true)::bigint AS signed,
+    count(vs.signing_address) FILTER (WHERE vs.vote_status = 'nil')::bigint AS nil,
+    count(vs.signing_address) FILTER (WHERE vs.vote_status = 'absent')::bigint AS absent,
+    count(vs.signing_address) FILTER (WHERE vs.vote_status = 'invalid')::bigint AS invalid,
+    count(vsm.signing_address) FILTER (WHERE vs.signing_address IS NULL)::bigint AS unknown
+FROM validator_set_members vsm
+LEFT JOIN validator_signatures vs
+  ON vs.height = vsm.height
+ AND vs.signing_address = vsm.signing_address
+WHERE vsm.height = %s
+"""
+
+BLOCK_TRANSACTIONS_SQL = """
+SELECT
+    tx_index,
+    raw_base64,
+    raw_base64_length,
+    decoded_byte_length,
+    decode_status
+FROM transactions
+WHERE block_height = %s
+ORDER BY tx_index ASC
 """
 
 
@@ -173,6 +215,33 @@ class ApiDatabase:
                 cursor.execute(sql, (value,))
                 row = cursor.fetchone()
         return None if row is None else dict(row)
+
+    def fetch_block_detail(self, height: int) -> dict[str, Any] | None:
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(BLOCK_DETAIL_SQL, (height,))
+                block_row = cursor.fetchone()
+                if block_row is None:
+                    return None
+
+                cursor.execute(BLOCK_COMMIT_SQL, (height,))
+                commit_row = cursor.fetchone()
+
+                cursor.execute(BLOCK_TRANSACTIONS_SQL, (height,))
+                transaction_rows = cursor.fetchall()
+
+        commit = dict(commit_row) if commit_row is not None else {}
+        for key in ("validators", "signed", "nil", "absent", "invalid", "unknown"):
+            commit[key] = int(commit.get(key) or 0)
+        commit["missed"] = commit["nil"] + commit["absent"] + commit["invalid"]
+
+        return {
+            "block": dict(block_row),
+            "commit": commit,
+            "transactions": [dict(row) for row in transaction_rows],
+        }
 
 
 database = ApiDatabase()

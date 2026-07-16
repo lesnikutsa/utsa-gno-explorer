@@ -48,6 +48,35 @@ class NetworkResponse(BaseModel):
     selected_rpc: SelectedRpc | None
 
 
+class BlockCommitSummary(BaseModel):
+    validators: int
+    signed: int
+    missed: int
+    nil: int
+    absent: int
+    invalid: int
+    unknown: int
+
+
+class BlockTransactionSummary(BaseModel):
+    index: int
+    raw_base64: str
+    raw_base64_length: int
+    decoded_byte_length: int | None
+    decode_status: str
+
+
+class BlockDetailResponse(BaseModel):
+    height: int
+    block_hash: str
+    block_hash_base64: str
+    time: str
+    proposer_address: str | None
+    tx_count: int
+    commit: BlockCommitSummary
+    transactions: list[BlockTransactionSummary]
+
+
 class BlocksPagination(BaseModel):
     limit: int
     next_before_height: int | None
