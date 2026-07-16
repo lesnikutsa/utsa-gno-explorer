@@ -191,6 +191,26 @@ class SchemaValidationTests(unittest.TestCase):
         snapshot["check_constraints"]["validator_set_members_voting_power_check"] = "CHECK ((voting_power >= (0)::numeric))"
         init_database.validate_schema_snapshot(snapshot)
 
+
+    def test_postgresql_16_check_expression_fixtures_are_normalized(self):
+        snapshot = self.snapshot()
+        snapshot["check_constraints"]["transactions_decoded_byte_length_check"] = "((decoded_byte_length IS NULL) OR (decoded_byte_length >= 0))"
+        snapshot["check_constraints"]["transactions_decode_status_check"] = "(decode_status = ANY (ARRAY['decoded'::text, 'invalid_base64'::text, 'not_attempted'::text]))"
+        snapshot["check_constraints"]["transactions_decode_status_consistent"] = "(((decode_status = 'decoded'::text) AND (decoded_bytes IS NOT NULL) AND (decoded_byte_length = octet_length(decoded_bytes))) OR ((decode_status = ANY (ARRAY['invalid_base64'::text, 'not_attempted'::text])) AND (decoded_bytes IS NULL) AND (decoded_byte_length IS NULL)))"
+        snapshot["check_constraints"]["validator_signatures_nil_vote_consistent"] = "((vote_status <> 'nil'::text) OR ((NOT signed) AND vote_block_id_is_zero AND (NOT block_id_matches_commit)))"
+        snapshot["check_constraints"]["rpc_endpoints_no_secret_url"] = "(url !~* '(password|token|apikey|api_key|secret)='::text)"
+        snapshot["check_constraints"]["validators_last_seen_height_check"] = "(last_seen_height >= first_seen_height)"
+        init_database.validate_schema_snapshot(snapshot)
+
+    def test_incompatible_check_diagnostic_includes_expected_and_actual(self):
+        snapshot = self.snapshot()
+        snapshot["check_constraints"]["transactions_decoded_byte_length_check"] = "CHECK (true)"
+        with self.assertRaisesRegex(
+            init_database.SchemaCompatibilityError,
+            r"transactions_decoded_byte_length_check: expected=.*actual=",
+        ):
+            init_database.validate_schema_snapshot(snapshot)
+
     def test_check_constraint_true_with_correct_name_fails(self):
         snapshot = self.snapshot(); snapshot["check_constraints"]["blocks_tx_count_check"] = "CHECK (true)"
         with self.assertRaises(init_database.SchemaCompatibilityError): init_database.validate_schema_snapshot(snapshot)

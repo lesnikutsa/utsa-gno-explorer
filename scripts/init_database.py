@@ -111,18 +111,157 @@ class SchemaCompatibilityError(RuntimeError):
     """Raised when an existing schema is not compatible with the expected v0.4 schema."""
 
 
+def _is_wrapped(value: str) -> bool:
+    if not (value.startswith("(") and value.endswith(")")):
+        return False
+    depth = 0
+    for index, char in enumerate(value):
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0 and index != len(value) - 1:
+                return False
+    return depth == 0
+
+
+def _strip_outer_parentheses(value: str) -> str:
+    while _is_wrapped(value):
+        value = value[1:-1].strip()
+    return value
+
+
+def _is_identifier_char(char: str) -> bool:
+    return char.isalnum() or char == "_"
+
+
+def _find_matching_parenthesis(value: str, start: int) -> int | None:
+    depth = 0
+    in_quote = False
+    index = start
+    while index < len(value):
+        char = value[index]
+        if char == "'":
+            if in_quote and index + 1 < len(value) and value[index + 1] == "'":
+                index += 2
+                continue
+            in_quote = not in_quote
+        elif not in_quote:
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    return index
+        index += 1
+    return None
+
+
+def _has_top_level_boolean_operator(value: str) -> bool:
+    in_quote = False
+    depth = 0
+    index = 0
+    lowered = value.lower()
+    while index < len(value):
+        char = value[index]
+        if char == "'":
+            if in_quote and index + 1 < len(value) and value[index + 1] == "'":
+                index += 2
+                continue
+            in_quote = not in_quote
+        elif not in_quote:
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+            elif depth == 0:
+                if lowered.startswith("and", index) or lowered.startswith("or", index):
+                    before = lowered[index - 1] if index > 0 else " "
+                    after_index = index + (3 if lowered.startswith("and", index) else 2)
+                    after = lowered[after_index] if after_index < len(value) else " "
+                    if not _is_identifier_char(before) and not _is_identifier_char(after):
+                        return True
+        index += 1
+    return False
+
+
+def _has_top_level_comma(value: str) -> bool:
+    in_quote = False
+    depth = 0
+    index = 0
+    while index < len(value):
+        char = value[index]
+        if char == "'":
+            if in_quote and index + 1 < len(value) and value[index + 1] == "'":
+                index += 2
+                continue
+            in_quote = not in_quote
+        elif not in_quote:
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+            elif char == "," and depth == 0:
+                return True
+        index += 1
+    return False
+
+
+def _can_remove_parentheses(value: str, start: int, end: int) -> bool:
+    before_index = start - 1
+    while before_index >= 0 and value[before_index].isspace():
+        before_index -= 1
+    if before_index >= 0 and _is_identifier_char(value[before_index]):
+        token_end = before_index + 1
+        token_start = before_index
+        while token_start >= 0 and _is_identifier_char(value[token_start]):
+            token_start -= 1
+        previous_token = value[token_start + 1:token_end].lower()
+        if previous_token not in {"and", "or", "not", "in"}:
+            return False
+    inner = value[start + 1:end].strip()
+    if not inner:
+        return False
+    if _has_top_level_comma(inner):
+        return False
+    if _has_top_level_boolean_operator(inner):
+        return False
+    return True
+
+
+def _remove_atomic_parentheses(value: str) -> str:
+    changed = True
+    while changed:
+        changed = False
+        index = 0
+        while index < len(value):
+            if value[index] != "(":
+                index += 1
+                continue
+            end = _find_matching_parenthesis(value, index)
+            if end is None:
+                break
+            if _can_remove_parentheses(value, index, end):
+                value = value[:index] + value[index + 1:end] + value[end + 1:]
+                changed = True
+                break
+            index += 1
+    return value
+
 def _norm(value: str | None) -> str | None:
     if value is None:
         return None
     normalized = value.strip().lower()
+    if normalized.startswith("check"):
+        normalized = normalized[5:].strip()
     normalized = re.sub(r"\((\d+)\)::(?:text|numeric|bigint|integer|boolean)", r"\1", normalized)
     normalized = re.sub(r"::(?:text|numeric|bigint|integer|boolean)", "", normalized)
     normalized = re.sub(r"([a-z_]+) = any \(array\[(.*?)\]\)", r"\1 in (\2)", normalized)
-    normalized = re.sub(r"\s+", " ", normalized)
-    while "((" in normalized or "))" in normalized:
-        normalized = normalized.replace("((", "(").replace("))", ")")
-    normalized = normalized.replace("(0)", "0")
-    return normalized.strip()
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    normalized = _strip_outer_parentheses(normalized)
+    normalized = _remove_atomic_parentheses(normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
 
 
 def _default_matches(actual: str | None, expected: str | None) -> bool:
@@ -166,8 +305,9 @@ def validate_schema_snapshot(snapshot: dict[str, Any]) -> None:
         raise SchemaCompatibilityError(f"incompatible check constraint set: missing={sorted(expected_check_names - actual_check_names)} unexpected={sorted(actual_check_names - expected_check_names)}")
     for name, expected in EXPECTED_CHECKS.items():
         actual = _norm(checks[name]) or ""
-        if actual != _norm(expected):
-            raise SchemaCompatibilityError(f"incompatible check constraint {name}")
+        expected_normalized = _norm(expected) or ""
+        if actual != expected_normalized:
+            raise SchemaCompatibilityError(f"incompatible check constraint {name}: expected={expected_normalized!r} actual={actual!r}")
     indexes = snapshot.get("indexes", {})
     actual_index_names = set(indexes)
     expected_index_names = set(EXPECTED_INDEXES)
@@ -209,7 +349,10 @@ def fetch_schema_snapshot(cursor) -> dict[str, Any]:
         SELECT con.oid, rel.relname, con.contype, con.conname,
                COALESCE(local_cols.columns, ARRAY[]::text[]), ref_rel.relname,
                COALESCE(ref_cols.columns, ARRAY[]::text[]), con.confdeltype,
-               pg_catalog.pg_get_constraintdef(con.oid)
+               CASE
+                   WHEN con.contype = 'c' THEN pg_catalog.pg_get_expr(con.conbin, con.conrelid)
+                   ELSE pg_catalog.pg_get_constraintdef(con.oid)
+               END
         FROM pg_catalog.pg_constraint con
         JOIN pg_catalog.pg_class rel ON rel.oid = con.conrelid
         JOIN pg_catalog.pg_namespace n ON n.oid = rel.relnamespace
