@@ -124,4 +124,4 @@ find /var/backups/utsa-gno-explorer \
   -name 'utsa-gno-explorer-*.dump'
 ```
 
-Backups use `pg_dump -Fc`, write archives as `.part` first, validate each archive with `pg_restore --list`, then atomically rename successful backups. Retention keeps 14 successful backups. Backup files and the backup directory remain root-only. The daily backup is online and does not stop the indexer. Before destructive upgrades, stop the indexer and create a separate checkpoint-aligned backup.
+Backups use `pg_dump -Fc`, write archives as `.part` first, validate each archive with `pg_restore --list`, then atomically rename successful backups. Retention keeps 14 successful backups. Backup files and the backup directory remain root-only. The systemd service sets `DOCKER_CONFIG=/run/utsa-gno-explorer-backup`, using its private `RuntimeDirectory=utsa-gno-explorer-backup` as Docker CLI configuration storage so the hardened `ProtectHome=true` sandbox does not depend on `/root/.docker`. The daily backup is online and does not stop the indexer. Before destructive upgrades, stop the indexer and create a separate checkpoint-aligned backup.
