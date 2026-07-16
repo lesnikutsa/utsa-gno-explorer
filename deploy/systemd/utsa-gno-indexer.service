@@ -1,0 +1,38 @@
+[Unit]
+Description=UTSA Gno Explorer continuous indexer
+Documentation=file:/opt/utsa-gno-explorer/docs/production-deployment.md
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=utsa-gno
+Group=utsa-gno
+WorkingDirectory=/opt/utsa-gno-explorer
+EnvironmentFile=/etc/utsa-gno-explorer/indexer.env
+ExecStartPre=/opt/utsa-gno-explorer/.venv/bin/python /opt/utsa-gno-explorer/scripts/wait_for_postgres.py --timeout 120 --retry-interval 2
+ExecStart=/opt/utsa-gno-explorer/.venv/bin/python scripts/run_indexer.py
+Restart=on-failure
+RestartSec=15
+KillSignal=SIGTERM
+TimeoutStopSec=180
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+UMask=0077
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

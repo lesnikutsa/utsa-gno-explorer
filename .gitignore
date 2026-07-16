@@ -4,3 +4,13 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .coverage
+
+# Local deployment secrets; keep committed *.example files visible.
+deploy/**/.env
+deploy/**/*password*
+*.local.env
+/etc/utsa-gno-explorer/
+runtime/secrets/
+postgres-password
+indexer.env
+postgres.env

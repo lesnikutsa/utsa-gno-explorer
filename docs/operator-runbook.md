@@ -70,3 +70,22 @@ The advisory-lock session uses autocommit. Transient PostgreSQL `OperationalErro
 An empty `GNO_RPC_URLS` configuration is fatal and exits with code `1` before advisory-lock acquisition. Configure at least one endpoint to distinguish operator misconfiguration from a transient outage of a non-empty endpoint list.
 
 If advisory-lock acquisition fails after opening a PostgreSQL connection, the runner closes that failed connection best-effort before retrying. A later retry uses a fresh connection, so any session-level lock that may have been acquired is naturally released with the failed session.
+
+## Production runtime
+
+Use [Production deployment](production-deployment.md) for the production-oriented runtime introduced for PostgreSQL 16 Compose plus host systemd. The production flow is separate from local development:
+
+- development and tests may use `.env` and temporary databases;
+- production secrets live outside Git under `/etc/utsa-gno-explorer`;
+- PostgreSQL is started explicitly with Docker Compose and binds only to `127.0.0.1`;
+- the continuous indexer runs in the foreground under systemd and logs to journald;
+- schema initialization, backup, validation restore, destructive restore, upgrade, and rollback are manual operator actions.
+
+Quick production checks:
+
+```bash
+docker compose -f deploy/postgres/compose.yml --env-file /etc/utsa-gno-explorer/postgres.env ps
+systemctl status utsa-gno-indexer.service
+journalctl -u utsa-gno-indexer.service -n 100 --no-pager
+python scripts/backup_database.py --backup-dir /var/backups/utsa-gno-explorer
+```
