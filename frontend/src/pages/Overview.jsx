@@ -70,11 +70,11 @@ export function Overview({ explorerData, mascotSrc = null }) {
     const timers = []
     if (previousLatestHeight.current !== null && latestHeight !== previousLatestHeight.current) {
       setUpdatedLatestHeight(latestHeight)
-      timers.push(window.setTimeout(() => setUpdatedLatestHeight(null), 280))
+      timers.push(window.setTimeout(() => setUpdatedLatestHeight(null), 720))
     }
     if (previousFirstBlockHeight.current !== null && firstBlockHeight !== previousFirstBlockHeight.current) {
       setInsertedBlockHeight(firstBlockHeight)
-      timers.push(window.setTimeout(() => setInsertedBlockHeight(null), 300))
+      timers.push(window.setTimeout(() => setInsertedBlockHeight(null), 900))
     }
     previousLatestHeight.current = latestHeight
     previousFirstBlockHeight.current = firstBlockHeight
@@ -93,7 +93,7 @@ export function Overview({ explorerData, mascotSrc = null }) {
       <div className="dashboard-grid">
         <section className="panel dashboard-grid__blocks">
           <div className="panel__heading"><div><span className="eyebrow">Live feed</span><h2>Latest Blocks</h2></div><span className="panel__meta panel__meta--live"><span className="live-dot" />Live · every 5s</span></div>
-          <DataTable columns={blockColumns} rows={data.blocks.slice(0, 5)} rowKey={(row) => row.height} rowClassName={(row) => row.height === insertedBlockHeight ? 'is-new-row' : ''} loading={loading} emptyMessage={errors.blocks ? 'Blocks are currently unavailable.' : 'No blocks returned.'} />
+          <DataTable columns={blockColumns} rows={data.blocks.slice(0, 5)} rowKey={(row) => row.height} rowClassName={(row, index) => insertedBlockHeight === null ? '' : index === 0 && row.height === insertedBlockHeight ? 'is-new-row' : 'is-settling-row'} loading={loading} emptyMessage={errors.blocks ? 'Blocks are currently unavailable.' : 'No blocks returned.'} />
         </section>
         <section className="panel dashboard-grid__validators">
           <div className="panel__heading"><div><span className="eyebrow">Validator Performance</span><h2>Validators by Missed Blocks</h2></div><span className="panel__meta">Last 100 blocks</span></div>
