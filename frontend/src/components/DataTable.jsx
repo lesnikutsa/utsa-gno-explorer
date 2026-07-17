@@ -1,4 +1,4 @@
-export function DataTable({ columns, rows, rowKey, emptyMessage, loading }) {
+export function DataTable({ columns, rows, rowKey, rowClassName, emptyMessage, loading }) {
   return (
     <div className="table-scroll">
       <table className="data-table">
@@ -7,7 +7,7 @@ export function DataTable({ columns, rows, rowKey, emptyMessage, loading }) {
           {loading && <tr><td className="table-message" colSpan={columns.length}>Loading live data…</td></tr>}
           {!loading && rows.length === 0 && <tr><td className="table-message" colSpan={columns.length}>{emptyMessage}</td></tr>}
           {!loading && rows.map((row) => (
-            <tr key={rowKey(row)}>{columns.map((column) => <td key={column.key}>{column.render ? column.render(row) : row[column.key]}</td>)}</tr>
+            <tr key={rowKey(row)} className={rowClassName?.(row) ?? ''}>{columns.map((column) => <td key={column.key}>{column.render ? column.render(row) : row[column.key]}</td>)}</tr>
           ))}
         </tbody>
       </table>

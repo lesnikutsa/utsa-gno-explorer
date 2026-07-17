@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { Card } from '../components/Card'
 import { DataTable } from '../components/DataTable'
 import { ResourceStrip } from '../components/ResourceStrip'
@@ -38,11 +39,32 @@ const validatorColumns = [
 export function Overview({ explorerData, mascotSrc = null }) {
   const { data, errors, loading, healthState } = explorerData
   const networkLabel = { loading: '—', healthy: 'Healthy', degraded: 'Degraded', error: 'Error' }[healthState]
+  const latestHeight = data.network?.latest_block.height ?? null
+  const firstBlockHeight = data.blocks[0]?.height ?? null
+  const previousLatestHeight = useRef(null)
+  const previousFirstBlockHeight = useRef(null)
+  const [updatedLatestHeight, setUpdatedLatestHeight] = useState(null)
+  const [insertedBlockHeight, setInsertedBlockHeight] = useState(null)
+
+  useEffect(() => {
+    const timers = []
+    if (previousLatestHeight.current !== null && latestHeight !== previousLatestHeight.current) {
+      setUpdatedLatestHeight(latestHeight)
+      timers.push(window.setTimeout(() => setUpdatedLatestHeight(null), 280))
+    }
+    if (previousFirstBlockHeight.current !== null && firstBlockHeight !== previousFirstBlockHeight.current) {
+      setInsertedBlockHeight(firstBlockHeight)
+      timers.push(window.setTimeout(() => setInsertedBlockHeight(null), 300))
+    }
+    previousLatestHeight.current = latestHeight
+    previousFirstBlockHeight.current = firstBlockHeight
+    return () => timers.forEach((timer) => window.clearTimeout(timer))
+  }, [latestHeight, firstBlockHeight])
 
   return (
     <>
       <section className="status-grid" aria-label="Network summary">
-        <Card eyebrow="Latest Block" icon={BlocksIcon} value={data.network ? `#${data.network.latest_block.height.toLocaleString()}` : errors.network ? 'Unavailable' : '—'} loading={loading} />
+        <Card eyebrow="Latest Block" icon={BlocksIcon} value={data.network ? `#${data.network.latest_block.height.toLocaleString()}` : errors.network ? 'Unavailable' : '—'} meta="Auto-refresh every 5s" updating={updatedLatestHeight === latestHeight} loading={loading} />
         <Card eyebrow="Network Status" icon={NetworkIcon} value={networkLabel} tone={healthState} meta={errors.health ? 'API connection unavailable' : 'API connection status'} loading={loading} />
         <Card eyebrow="Active Validators" icon={ValidatorsIcon} value={data.network?.validators?.active_count?.toLocaleString() ?? (errors.network ? 'Unavailable' : '—')} meta="Current validator set" loading={loading} />
         <Card eyebrow="Chain ID" icon={ChainIcon} value={data.network?.chain_id ?? (errors.network ? 'Unavailable' : '—')} meta={<RpcStatus rpc={data.network?.selected_rpc} />} loading={loading} />
@@ -50,8 +72,8 @@ export function Overview({ explorerData, mascotSrc = null }) {
 
       <div className="dashboard-grid">
         <section className="panel dashboard-grid__blocks">
-          <div className="panel__heading"><div><span className="eyebrow">Live feed</span><h2>Latest Blocks</h2></div><span className="panel__meta">Auto-updated</span></div>
-          <DataTable columns={blockColumns} rows={data.blocks.slice(0, 5)} rowKey={(row) => row.height} loading={loading} emptyMessage={errors.blocks ? 'Blocks are currently unavailable.' : 'No blocks returned.'} />
+          <div className="panel__heading"><div><span className="eyebrow">Live feed</span><h2>Latest Blocks</h2></div><span className="panel__meta panel__meta--live"><span className="live-dot" />Live · every 5s</span></div>
+          <DataTable columns={blockColumns} rows={data.blocks.slice(0, 5)} rowKey={(row) => row.height} rowClassName={(row) => row.height === insertedBlockHeight ? 'is-new-row' : ''} loading={loading} emptyMessage={errors.blocks ? 'Blocks are currently unavailable.' : 'No blocks returned.'} />
         </section>
         <section className="panel dashboard-grid__validators">
           <div className="panel__heading"><div><span className="eyebrow">Validator set</span><h2>Validator Overview</h2></div><span className="panel__meta">Top voting power</span></div>

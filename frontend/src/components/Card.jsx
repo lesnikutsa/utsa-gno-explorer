@@ -1,6 +1,6 @@
-export function Card({ eyebrow, value, meta, icon: Icon, loading = false, tone = '' }) {
+export function Card({ eyebrow, value, meta, icon: Icon, loading = false, tone = '', updating = false }) {
   return (
-    <article className="card status-card">
+    <article className={`card status-card ${updating ? 'is-updating' : ''}`}>
       <div className="status-card__heading">
         <span className="eyebrow">{eyebrow}</span>
         {Icon && <span className="status-card__icon"><Icon /></span>}
