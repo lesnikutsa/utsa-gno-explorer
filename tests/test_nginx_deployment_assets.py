@@ -90,6 +90,15 @@ class NginxDeploymentAssetsTests(unittest.TestCase):
         self.assertNotIn("add_header Access-Control-", self.final)
         self.assertNotRegex(self.final, r"(?m)^\s*auth_(?:basic|request|jwt)\b")
 
+    def test_nginx_deployment_follows_api_deployment(self):
+        api_deployment = self.docs.index("## Read-only API deployment")
+        api_update = self.docs.index("### API-only update and rollback")
+        nginx_deployment = self.docs.index("## Nginx HTTPS reverse proxy")
+        upgrade = self.docs.index("## Upgrade procedure")
+        self.assertLess(api_deployment, api_update)
+        self.assertLess(api_update, nginx_deployment)
+        self.assertLess(nginx_deployment, upgrade)
+
     def test_documentation_validates_before_each_reload(self):
         commands = re.findall(r"^\s*(sudo (?:nginx -t|systemctl (?:reload|restart) nginx))\s*$", self.docs, re.MULTILINE)
         reload_indexes = [index for index, command in enumerate(commands) if command == "sudo systemctl reload nginx"]

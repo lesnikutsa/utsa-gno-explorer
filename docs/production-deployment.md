@@ -103,92 +103,6 @@ pg_restore --list /var/backups/utsa-gno-explorer/utsa-gno-explorer-YYYYMMDDTHHMM
 
 The second indexer command is expected to fail while the service owns the advisory lock.
 
-## Nginx HTTPS reverse proxy
-
-The Explorer uses an independent `exp.gno.utsa.tech` server block. The API continues to listen only on `127.0.0.1:18180`; Nginx exposes only the `/api/` prefix. This procedure does not require stopping PostgreSQL, the indexer, the API service, or unrelated Nginx sites. Reload Nginx rather than restarting it so existing sites remain available.
-
-### Certificate bootstrap
-
-1. Confirm that every configured A and AAAA record for `exp.gno.utsa.tech` resolves to the production server. An AAAA record is optional and must only be configured if `exp2` is publicly reachable over IPv6:
-
-   ```bash
-   getent ahosts exp.gno.utsa.tech
-   ```
-
-2. Create the dedicated ACME webroot with root-owned permissions:
-
-   ```bash
-   sudo install -d -o root -g root -m 0755 /var/www/letsencrypt/.well-known/acme-challenge
-   ```
-
-3. Install the HTTP-only bootstrap configuration and enable it:
-
-   ```bash
-   sudo install -o root -g root -m 0644 deploy/nginx/exp.gno.utsa.tech.bootstrap.conf /etc/nginx/sites-available/exp.gno.utsa.tech.conf
-   sudo ln -s /etc/nginx/sites-available/exp.gno.utsa.tech.conf /etc/nginx/sites-enabled/exp.gno.utsa.tech.conf
-   ```
-
-4. Validate the complete Nginx configuration before reloading it:
-
-   ```bash
-   sudo nginx -t
-   sudo systemctl reload nginx
-   ```
-
-5. Obtain the first certificate through the dedicated webroot. Certbot writes certificate material under `/etc/letsencrypt`; do not display or copy private-key contents. The deploy hook runs after successful certificate issuance and after each future successful renewal, validating the complete Nginx configuration before reloading it:
-
-   ```bash
-   sudo certbot certonly --webroot \
-     -w /var/www/letsencrypt \
-     -d exp.gno.utsa.tech \
-     --deploy-hook 'nginx -t && systemctl reload nginx'
-   ```
-
-### Final HTTPS installation
-
-1. Replace the bootstrap configuration with the tracked HTTPS configuration:
-
-   ```bash
-   sudo install -o root -g root -m 0644 deploy/nginx/exp.gno.utsa.tech.conf /etc/nginx/sites-available/exp.gno.utsa.tech.conf
-   ```
-
-2. Validate the complete Nginx configuration before reloading it:
-
-   ```bash
-   sudo nginx -t
-   sudo systemctl reload nginx
-   ```
-
-3. Confirm that Uvicorn remains localhost-only and that UFW has no rule exposing its internal port:
-
-   ```bash
-   sudo ss -ltnp '( sport = :18180 )'
-   sudo ufw status numbered
-   ```
-
-   The socket output must show `127.0.0.1:18180`, never a wildcard or public address. The UFW output must contain no rule allowing port `18180`; do not add one.
-
-4. Run public HTTPS smoke tests. Replace the height and validator address placeholders with known public values:
-
-   ```bash
-   curl --fail --show-error https://exp.gno.utsa.tech/api/health
-   curl --fail --show-error https://exp.gno.utsa.tech/api/network
-   curl --fail --show-error 'https://exp.gno.utsa.tech/api/blocks?limit=2'
-   curl --fail --show-error https://exp.gno.utsa.tech/api/blocks/REPLACE_WITH_HEIGHT
-   curl --fail --show-error https://exp.gno.utsa.tech/api/validators
-   curl --fail --show-error https://exp.gno.utsa.tech/api/validators/REPLACE_WITH_ADDRESS
-   ```
-
-5. Verify the public boundary and read-only policy:
-
-   ```bash
-   curl --output /dev/null --write-out '%{http_code}\n' --request POST https://exp.gno.utsa.tech/api/health
-   curl --connect-timeout 5 --output /dev/null --show-error http://exp.gno.utsa.tech:18180/api/health
-   curl --output /dev/null --write-out '%{http_code}\n' https://exp.gno.utsa.tech/
-   ```
-
-   The POST must be rejected, direct public access to port `18180` must be unavailable, and the request outside `/api/` must return `404` until a frontend is deployed. `OPTIONS` requests are forwarded to FastAPI; Nginx does not synthesize CORS responses.
-
 ## Backup
 
 Backups use `pg_dump -Fc` through the PostgreSQL Compose container. Online logical backups are acceptable while the indexer is running for routine daily recovery points because `pg_dump` reads a consistent database snapshot; the daily backup does not stop the indexer. Before destructive upgrades, create a separate checkpoint-aligned backup after stopping the indexer.
@@ -534,6 +448,92 @@ curl --fail --silent --show-error \
 ```
 
 There is no database rollback step for an API-only release because this deployment adds no schema changes.
+
+## Nginx HTTPS reverse proxy
+
+The Explorer uses an independent `exp.gno.utsa.tech` server block. The API continues to listen only on `127.0.0.1:18180`; Nginx exposes only the `/api/` prefix. This procedure does not require stopping PostgreSQL, the indexer, the API service, or unrelated Nginx sites. Reload Nginx rather than restarting it so existing sites remain available.
+
+### Certificate bootstrap
+
+1. Confirm that every configured A and AAAA record for `exp.gno.utsa.tech` resolves to the production server. An AAAA record is optional and must only be configured if `exp2` is publicly reachable over IPv6:
+
+   ```bash
+   getent ahosts exp.gno.utsa.tech
+   ```
+
+2. Create the dedicated ACME webroot with root-owned permissions:
+
+   ```bash
+   sudo install -d -o root -g root -m 0755 /var/www/letsencrypt/.well-known/acme-challenge
+   ```
+
+3. Install the HTTP-only bootstrap configuration and enable it:
+
+   ```bash
+   sudo install -o root -g root -m 0644 deploy/nginx/exp.gno.utsa.tech.bootstrap.conf /etc/nginx/sites-available/exp.gno.utsa.tech.conf
+   sudo ln -s /etc/nginx/sites-available/exp.gno.utsa.tech.conf /etc/nginx/sites-enabled/exp.gno.utsa.tech.conf
+   ```
+
+4. Validate the complete Nginx configuration before reloading it:
+
+   ```bash
+   sudo nginx -t
+   sudo systemctl reload nginx
+   ```
+
+5. Obtain the first certificate through the dedicated webroot. Certbot writes certificate material under `/etc/letsencrypt`; do not display or copy private-key contents. The deploy hook runs after successful certificate issuance and after each future successful renewal, validating the complete Nginx configuration before reloading it:
+
+   ```bash
+   sudo certbot certonly --webroot \
+     -w /var/www/letsencrypt \
+     -d exp.gno.utsa.tech \
+     --deploy-hook 'nginx -t && systemctl reload nginx'
+   ```
+
+### Final HTTPS installation
+
+1. Replace the bootstrap configuration with the tracked HTTPS configuration:
+
+   ```bash
+   sudo install -o root -g root -m 0644 deploy/nginx/exp.gno.utsa.tech.conf /etc/nginx/sites-available/exp.gno.utsa.tech.conf
+   ```
+
+2. Validate the complete Nginx configuration before reloading it:
+
+   ```bash
+   sudo nginx -t
+   sudo systemctl reload nginx
+   ```
+
+3. Confirm that Uvicorn remains localhost-only and that UFW has no rule exposing its internal port:
+
+   ```bash
+   sudo ss -ltnp '( sport = :18180 )'
+   sudo ufw status numbered
+   ```
+
+   The socket output must show `127.0.0.1:18180`, never a wildcard or public address. The UFW output must contain no rule allowing port `18180`; do not add one.
+
+4. Run public HTTPS smoke tests. Replace the height and validator address placeholders with known public values:
+
+   ```bash
+   curl --fail --show-error https://exp.gno.utsa.tech/api/health
+   curl --fail --show-error https://exp.gno.utsa.tech/api/network
+   curl --fail --show-error 'https://exp.gno.utsa.tech/api/blocks?limit=2'
+   curl --fail --show-error https://exp.gno.utsa.tech/api/blocks/REPLACE_WITH_HEIGHT
+   curl --fail --show-error https://exp.gno.utsa.tech/api/validators
+   curl --fail --show-error https://exp.gno.utsa.tech/api/validators/REPLACE_WITH_ADDRESS
+   ```
+
+5. Verify the public boundary and read-only policy:
+
+   ```bash
+   curl --output /dev/null --write-out '%{http_code}\n' --request POST https://exp.gno.utsa.tech/api/health
+   curl --connect-timeout 5 --output /dev/null --show-error http://exp.gno.utsa.tech:18180/api/health
+   curl --output /dev/null --write-out '%{http_code}\n' https://exp.gno.utsa.tech/
+   ```
+
+   The POST must be rejected, direct public access to port `18180` must be unavailable, and the request outside `/api/` must return `404` until a frontend is deployed. `OPTIONS` requests are forwarded to FastAPI; Nginx does not synthesize CORS responses.
 
 ## Upgrade procedure
 
