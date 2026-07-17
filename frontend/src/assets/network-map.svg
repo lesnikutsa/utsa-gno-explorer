@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 180" role="img" aria-labelledby="title desc">
+  <title id="title">Global peer network preview</title>
+  <desc id="desc">A dotted world map with restrained network nodes and connection arcs.</desc>
+  <defs>
+    <pattern id="dots" width="5" height="5" patternUnits="userSpaceOnUse"><circle cx="1.2" cy="1.2" r=".85" fill="#7890a1" opacity=".62"/></pattern>
+    <filter id="glow" x="-200%" y="-200%" width="400%" height="400%"><feGaussianBlur stdDeviation="2" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g fill="url(#dots)" opacity=".8">
+    <path d="M37 46l26-21 50-8 42 10 33 22-17 12-24-3-11 15-21-2-14 17-17 1-9 20-16-5-6-25-20-12z"/>
+    <path d="M150 102l20 8 15 23-6 35-16 8-11-29-15-25z"/>
+    <path d="M250 40l30-19 53 5 17 13 35-8 62 13 55-3 46 19-13 17-42 4-21 13-35-4-20 14-34-3-20-23-30-2-10-16-31 7-31-11z"/>
+    <path d="M318 83l40 6 20 26-10 43-25 17-21-27-6-31-17-17z"/>
+    <path d="M480 119l28-13 37 10 18 22-20 20-44-5-23-18z"/>
+    <path d="M565 78l17-7 16 9-12 13z"/>
+  </g>
+  <g fill="none" stroke="#c84b31" stroke-width="1" opacity=".46">
+    <path d="M91 72Q205 18 333 70"/><path d="M106 88Q235 142 359 75"/><path d="M333 70Q425 27 499 91"/><path d="M359 75Q442 126 520 130"/><path d="M165 116Q262 50 409 91"/>
+  </g>
+  <g fill="#ed765c" filter="url(#glow)">
+    <circle cx="91" cy="72" r="2.4"/><circle cx="106" cy="88" r="1.8"/><circle cx="165" cy="116" r="2.2"/><circle cx="333" cy="70" r="2.7"/><circle cx="359" cy="75" r="1.8"/><circle cx="409" cy="91" r="2.5"/><circle cx="499" cy="91" r="2.3"/><circle cx="520" cy="130" r="2"/>
+  </g>
+</svg>
