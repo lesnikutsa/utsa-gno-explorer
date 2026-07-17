@@ -109,7 +109,7 @@ The Explorer uses an independent `exp.gno.utsa.tech` server block. The API conti
 
 ### Certificate bootstrap
 
-1. Confirm that both IPv4 and IPv6 DNS records configured for `exp.gno.utsa.tech` resolve to the production server:
+1. Confirm that every configured A and AAAA record for `exp.gno.utsa.tech` resolves to the production server. An AAAA record is optional and must only be configured if `exp2` is publicly reachable over IPv6:
 
    ```bash
    getent ahosts exp.gno.utsa.tech
