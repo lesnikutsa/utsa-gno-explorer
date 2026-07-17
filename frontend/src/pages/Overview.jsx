@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Card } from '../components/Card'
 import { DataTable } from '../components/DataTable'
 import { ResourceStrip } from '../components/ResourceStrip'
@@ -9,6 +9,15 @@ import { relativeTime } from '../utils/time'
 const shortAddress = (value) => value ? `${value.slice(0, 8)}…${value.slice(-6)}` : '—'
 const missedBlocks = (uptime = {}) => (uptime.nil_blocks ?? 0) + (uptime.absent_blocks ?? 0) + (uptime.invalid_blocks ?? 0)
 const missedTitle = (uptime = {}) => `Nil: ${uptime.nil_blocks ?? 0}\nAbsent: ${uptime.absent_blocks ?? 0}\nInvalid: ${uptime.invalid_blocks ?? 0}`
+const missedSeverity = (missed) => missed >= 10 ? 'high' : missed >= 2 ? 'medium' : 'low'
+
+const formatUptime = (value) => {
+  if (value === null || value === undefined || value === '') return '—'
+  const uptime = Number(value)
+  return Number.isFinite(uptime) ? `${uptime.toFixed(2)}%` : '—'
+}
+
+const sortableUptime = (value) => value === null || value === undefined || value === '' ? Infinity : Number(value)
 
 function RpcStatus({ rpc }) {
   if (!rpc) return <span className="rpc-meta">RPC unavailable</span>
@@ -31,8 +40,8 @@ const blockColumns = [
 const validatorColumns = [
   // Monikers and operator addresses require future backend/indexer enrichment.
   { key: 'address', label: 'Signing Address', render: (row) => <span className="mono" title={row.address}>{shortAddress(row.address)}</span> },
-  { key: 'voting_power', label: 'Voting Power', render: (row) => <span className="voting-power" title={`Raw voting power: ${row.voting_power}`}><strong>{Number(row.percent).toFixed(2)}%</strong><small>VP {row.voting_power}</small></span> },
-  { key: 'missed', label: 'Missed (last 100)', render: (row) => <span title={missedTitle(row.uptime_100)}>{missedBlocks(row.uptime_100)}</span> },
+  { key: 'missed', label: 'Missed (last 100)', render: (row) => <strong className={`missed-value missed-value--${missedSeverity(row.missedTotal)}`} title={missedTitle(row.uptime_100)}>{row.missedTotal}</strong> },
+  { key: 'uptime', label: 'Uptime (last 100)', render: (row) => <span className="mono" title={row.uptime_100?.uptime_percent ?? undefined}>{formatUptime(row.uptime_100?.uptime_percent)}</span> },
   { key: 'status', label: 'Status', render: () => <StatusBadge tone="success">Active</StatusBadge> },
 ]
 
@@ -45,6 +54,17 @@ export function Overview({ explorerData, mascotSrc = null }) {
   const previousFirstBlockHeight = useRef(null)
   const [updatedLatestHeight, setUpdatedLatestHeight] = useState(null)
   const [insertedBlockHeight, setInsertedBlockHeight] = useState(null)
+  const validatorsByMisses = useMemo(() => data.validators
+    .map((validator) => ({ ...validator, missedTotal: missedBlocks(validator.uptime_100) }))
+    .filter((validator) => validator.missedTotal > 0)
+    .sort((left, right) => {
+      if (right.missedTotal !== left.missedTotal) return right.missedTotal - left.missedTotal
+      const leftUptime = sortableUptime(left.uptime_100?.uptime_percent)
+      const rightUptime = sortableUptime(right.uptime_100?.uptime_percent)
+      const uptimeDifference = (Number.isFinite(leftUptime) ? leftUptime : Infinity) - (Number.isFinite(rightUptime) ? rightUptime : Infinity)
+      return uptimeDifference || left.address.localeCompare(right.address)
+    })
+    .slice(0, 5), [data.validators])
 
   useEffect(() => {
     const timers = []
@@ -76,8 +96,8 @@ export function Overview({ explorerData, mascotSrc = null }) {
           <DataTable columns={blockColumns} rows={data.blocks.slice(0, 5)} rowKey={(row) => row.height} rowClassName={(row) => row.height === insertedBlockHeight ? 'is-new-row' : ''} loading={loading} emptyMessage={errors.blocks ? 'Blocks are currently unavailable.' : 'No blocks returned.'} />
         </section>
         <section className="panel dashboard-grid__validators">
-          <div className="panel__heading"><div><span className="eyebrow">Validator set</span><h2>Validator Overview</h2></div><span className="panel__meta">Top voting power</span></div>
-          <DataTable columns={validatorColumns} rows={data.validators.slice(0, 5)} rowKey={(row) => row.address} loading={loading} emptyMessage={errors.validators ? 'Validators are currently unavailable.' : 'No validators returned.'} />
+          <div className="panel__heading"><div><span className="eyebrow">Validator Performance</span><h2>Validators by Missed Blocks</h2></div><span className="panel__meta">Last 100 blocks</span></div>
+          <DataTable columns={validatorColumns} rows={validatorsByMisses} rowKey={(row) => row.address} loading={loading} emptyMessage={errors.validators ? 'Validators are currently unavailable.' : 'No validator misses in the last 100 blocks.'} />
         </section>
       </div>
 
