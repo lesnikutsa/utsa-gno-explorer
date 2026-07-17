@@ -81,8 +81,15 @@ export function Overview() {
       </div>
 
       <section className="map-placeholder">
-        <div className="map-placeholder__visual" aria-hidden="true"><span className="map-dot map-dot--one" /><span className="map-dot map-dot--two" /><span className="map-dot map-dot--three" /></div>
-        <div><span className="eyebrow">Coming soon</span><h2>Peers & Decentralization Map</h2><p>Peers data and network map coming soon.</p></div>
+        <div className="map-placeholder__content">
+          <span className="eyebrow">Coming soon</span><h2>Peers & Decentralization Map</h2><p>Peers data and network map coming soon.</p>
+          <div className="map-placeholder__metrics" aria-label="Future peer metrics">
+            <div><span>Peers</span><strong>—</strong></div>
+            <div><span>Countries</span><strong>—</strong></div>
+            <div><span>Regions</span><strong>—</strong></div>
+          </div>
+        </div>
+        <div className="map-placeholder__asset" aria-hidden="true"><span>Explorer network illustration</span></div>
         <StatusBadge>Future module</StatusBadge>
       </section>
 
