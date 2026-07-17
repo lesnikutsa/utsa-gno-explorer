@@ -135,10 +135,13 @@ The Explorer uses an independent `exp.gno.utsa.tech` server block. The API conti
    sudo systemctl reload nginx
    ```
 
-5. Obtain the first certificate through the dedicated webroot. Certbot writes certificate material under `/etc/letsencrypt`; do not display or copy private-key contents:
+5. Obtain the first certificate through the dedicated webroot. Certbot writes certificate material under `/etc/letsencrypt`; do not display or copy private-key contents. The deploy hook runs after successful certificate issuance and after each future successful renewal, validating the complete Nginx configuration before reloading it:
 
    ```bash
-   sudo certbot certonly --webroot -w /var/www/letsencrypt -d exp.gno.utsa.tech
+   sudo certbot certonly --webroot \
+     -w /var/www/letsencrypt \
+     -d exp.gno.utsa.tech \
+     --deploy-hook 'nginx -t && systemctl reload nginx'
    ```
 
 ### Final HTTPS installation

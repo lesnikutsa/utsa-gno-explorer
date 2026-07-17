@@ -45,9 +45,15 @@ class NginxDeploymentAssetsTests(unittest.TestCase):
             "ssl_certificate /etc/letsencrypt/live/exp.gno.utsa.tech/fullchain.pem;",
             "ssl_certificate_key /etc/letsencrypt/live/exp.gno.utsa.tech/privkey.pem;",
             "ssl_trusted_certificate /etc/letsencrypt/live/exp.gno.utsa.tech/chain.pem;",
-            "include snippets/ssl-params.conf;",
+            "ssl_protocols TLSv1.2 TLSv1.3;",
+            "ssl_session_timeout 1d;",
+            "ssl_session_cache shared:UTSA_GNO_EXPLORER_SSL:10m;",
+            "ssl_session_tickets off;",
         ):
             self.assertIn(directive, self.final)
+        self.assertNotIn("include snippets/ssl-params.conf;", self.final)
+        self.assertNotIn("add_header Strict-Transport-Security", self.final)
+        self.assertNotIn("ssl_ciphers", self.final)
         self.assertIn("return 301 https://exp.gno.utsa.tech$request_uri;", self.final)
 
     def test_api_proxy_preserves_request_uri_and_is_not_public(self):
@@ -92,6 +98,18 @@ class NginxDeploymentAssetsTests(unittest.TestCase):
             self.assertGreater(index, 0)
             self.assertEqual(commands[index - 1], "sudo nginx -t")
         self.assertNotIn("systemctl restart nginx", self.docs)
+
+    def test_certbot_deploy_hook_validates_before_reload(self):
+        expected_command = (
+            "sudo certbot certonly --webroot \\\n"
+            "     -w /var/www/letsencrypt \\\n"
+            "     -d exp.gno.utsa.tech \\\n"
+            "     --deploy-hook 'nginx -t && systemctl reload nginx'"
+        )
+        self.assertIn(expected_command, self.docs)
+        hooks = re.findall(r"--deploy-hook\s+'([^']+)'", self.docs)
+        self.assertEqual(hooks, ["nginx -t && systemctl reload nginx"])
+        self.assertNotIn("--deploy-hook 'systemctl reload nginx'", self.docs)
 
     def test_documentation_does_not_open_internal_port_or_expose_secrets(self):
         self.assertNotRegex(self.docs, r"(?i)ufw\s+allow\s+18180")
