@@ -6,7 +6,7 @@ export function Card({ eyebrow, value, meta, icon: Icon, loading = false, tone =
         {Icon && <span className="status-card__icon"><Icon /></span>}
       </div>
       <div className={loading ? 'status-card__value skeleton' : `status-card__value ${tone ? `status-card__value--${tone}` : ''}`}>{loading ? 'Loading' : value}</div>
-      <div className="status-card__meta">{meta}</div>
+      {meta && <div className="status-card__meta">{meta}</div>}
     </article>
   )
 }

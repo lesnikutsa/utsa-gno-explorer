@@ -6,7 +6,7 @@ export default function App() {
   const explorerData = useExplorerData()
 
   return (
-    <ExplorerLayout healthState={explorerData.healthState} lastUpdatedAt={explorerData.lastUpdatedAt}>
+    <ExplorerLayout healthState={explorerData.healthState} nextFastRefreshAt={explorerData.nextFastRefreshAt}>
       <Overview explorerData={explorerData} />
     </ExplorerLayout>
   )

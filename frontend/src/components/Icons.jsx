@@ -11,3 +11,4 @@ export const ChainIcon = () => <Icon><path d="M9.5 14.5 8 16a3 3 0 0 1-4-4l3-3a3
 export const SearchIcon = () => <Icon><circle cx="11" cy="11" r="6" /><path d="m16 16 4 4" /></Icon>
 export const MenuIcon = () => <Icon><path d="M4 7h16M4 12h16M4 17h16" /></Icon>
 export const ChevronDownIcon = () => <Icon><path d="m8 10 4 4 4-4" /></Icon>
+export const ExternalLinkIcon = () => <Icon><path d="M14 5h5v5M19 5l-8 8" /><path d="M17 13v6H5V7h6" /></Icon>

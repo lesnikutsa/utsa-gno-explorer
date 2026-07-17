@@ -7,6 +7,17 @@ import { relativeTime } from '../utils/time'
 
 const shortAddress = (value) => value ? `${value.slice(0, 8)}…${value.slice(-6)}` : '—'
 const missedBlocks = (uptime = {}) => (uptime.nil_blocks ?? 0) + (uptime.absent_blocks ?? 0) + (uptime.invalid_blocks ?? 0)
+const missedTitle = (uptime = {}) => `Nil: ${uptime.nil_blocks ?? 0}\nAbsent: ${uptime.absent_blocks ?? 0}\nInvalid: ${uptime.invalid_blocks ?? 0}`
+
+function RpcStatus({ rpc }) {
+  if (!rpc) return <span className="rpc-meta">RPC unavailable</span>
+
+  let hostname = rpc.url
+  try { hostname = new URL(rpc.url).hostname } catch { /* Preserve the API value when the URL cannot be parsed. */ }
+  const tone = rpc.healthy === true ? 'success' : 'error'
+
+  return <span className="rpc-meta" title={rpc.url}><span className={`rpc-meta__dot rpc-meta__dot--${tone}`} />RPC: {hostname}</span>
+}
 
 const blockColumns = [
   { key: 'height', label: 'Height', render: (row) => <span className="accent-value mono">#{row.height.toLocaleString()}</span> },
@@ -17,9 +28,10 @@ const blockColumns = [
 ]
 
 const validatorColumns = [
-  { key: 'address', label: 'Validator', render: (row) => <span className="mono" title={row.address}>{shortAddress(row.address)}</span> },
-  { key: 'voting_power', label: 'Voting Power', render: (row) => <span className="mono" title={`Raw voting power: ${row.voting_power}`}>{Number(row.percent).toFixed(2)}%</span> },
-  { key: 'missed', label: 'Missed (100)', render: (row) => missedBlocks(row.uptime_100) },
+  // Monikers and operator addresses require future backend/indexer enrichment.
+  { key: 'address', label: 'Signing Address', render: (row) => <span className="mono" title={row.address}>{shortAddress(row.address)}</span> },
+  { key: 'voting_power', label: 'Voting Power', render: (row) => <span className="voting-power" title={`Raw voting power: ${row.voting_power}`}><strong>{Number(row.percent).toFixed(2)}%</strong><small>VP {row.voting_power}</small></span> },
+  { key: 'missed', label: 'Missed (last 100)', render: (row) => <span title={missedTitle(row.uptime_100)}>{missedBlocks(row.uptime_100)}</span> },
   { key: 'status', label: 'Status', render: () => <StatusBadge tone="success">Active</StatusBadge> },
 ]
 
@@ -30,10 +42,10 @@ export function Overview({ explorerData, mascotSrc = null }) {
   return (
     <>
       <section className="status-grid" aria-label="Network summary">
-        <Card eyebrow="Latest Block" icon={BlocksIcon} value={data.network ? `#${data.network.latest_block.height.toLocaleString()}` : errors.network ? 'Unavailable' : '—'} meta={data.network ? relativeTime(data.network.latest_block.time) : 'Waiting for network data'} loading={loading} />
+        <Card eyebrow="Latest Block" icon={BlocksIcon} value={data.network ? `#${data.network.latest_block.height.toLocaleString()}` : errors.network ? 'Unavailable' : '—'} loading={loading} />
         <Card eyebrow="Network Status" icon={NetworkIcon} value={networkLabel} tone={healthState} meta={errors.health ? 'API connection unavailable' : 'API connection status'} loading={loading} />
         <Card eyebrow="Active Validators" icon={ValidatorsIcon} value={data.network?.validators?.active_count?.toLocaleString() ?? (errors.network ? 'Unavailable' : '—')} meta="Current validator set" loading={loading} />
-        <Card eyebrow="Chain ID" icon={ChainIcon} value={data.network?.chain_id ?? (errors.network ? 'Unavailable' : '—')} meta="Connected network" loading={loading} />
+        <Card eyebrow="Chain ID" icon={ChainIcon} value={data.network?.chain_id ?? (errors.network ? 'Unavailable' : '—')} meta={<RpcStatus rpc={data.network?.selected_rpc} />} loading={loading} />
       </section>
 
       <div className="dashboard-grid">
