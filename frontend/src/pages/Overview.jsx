@@ -5,6 +5,8 @@ import { ResourceStrip } from '../components/ResourceStrip'
 import { StatusBadge } from '../components/StatusBadge'
 import { BlocksIcon, ChainIcon, NetworkIcon, ValidatorsIcon } from '../components/Icons'
 import { relativeTime } from '../utils/time'
+import networkMap from '../assets/network-map.svg'
+import networkMascotScene from '../assets/network-mascot-scene.svg'
 
 const shortAddress = (value) => value ? `${value.slice(0, 8)}…${value.slice(-6)}` : '—'
 const missedBlocks = (uptime = {}) => (uptime.nil_blocks ?? 0) + (uptime.absent_blocks ?? 0) + (uptime.invalid_blocks ?? 0)
@@ -45,7 +47,7 @@ const validatorColumns = [
   { key: 'status', label: 'Status', render: () => <StatusBadge tone="success">Active</StatusBadge> },
 ]
 
-export function Overview({ explorerData, mascotSrc = null }) {
+export function Overview({ explorerData, mascotSrc = '/assets/network-mascot.png' }) {
   const { data, errors, loading, healthState } = explorerData
   const networkLabel = { loading: '—', healthy: 'Healthy', degraded: 'Degraded', error: 'Error' }[healthState]
   const latestHeight = data.network?.latest_block.height ?? null
@@ -101,17 +103,22 @@ export function Overview({ explorerData, mascotSrc = null }) {
         </section>
       </div>
 
-      <section className="map-placeholder">
-        <div className="map-placeholder__summary">
+      <section className="network-preview">
+        <div className="network-preview__metrics">
           <span className="eyebrow">Coming soon</span><h2>Peers & Decentralization Map</h2>
-          <div className="map-placeholder__stats" aria-label="Future peer metrics">
+          <div className="network-preview__stats" aria-label="Future peer metrics">
             <div><span>Total Peers</span><strong>—</strong></div>
             <div><span>Countries</span><strong>—</strong></div>
             <div><span>Decentralization</span><strong>—</strong></div>
           </div>
         </div>
-        <div className="map-placeholder__canvas"><span>Future network map</span></div>
-        <div className="map-placeholder__asset" aria-hidden="true">{mascotSrc ? <img src={mascotSrc} alt="" /> : <span>Network mascot</span>}</div>
+        <div className="network-preview__map">
+          <img src={networkMap} alt="Stylized preview of a dotted world map with decorative network connections" />
+        </div>
+        <div className="network-preview__scene" aria-hidden="true">
+          <img className="network-preview__scenery" src={networkMascotScene} alt="" />
+          <img className="network-preview__mascot" src={mascotSrc} alt="" />
+        </div>
       </section>
 
       <ResourceStrip />
