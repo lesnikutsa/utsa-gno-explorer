@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { DataTable } from '../components/DataTable'
 import { shortAddress } from '../utils/address'
 import { relativeTime } from '../utils/time'
@@ -23,6 +24,10 @@ const columns = [
 ]
 
 export function Blocks({ blocksPage }) {
+  const searchInputRef = useRef(null)
+  const restoreFocusRef = useRef(false)
+  const selectionRef = useRef({ start: null, end: null })
+  const wasBackgroundRefreshingRef = useRef(false)
   const {
     blocks,
     loading,
@@ -51,6 +56,36 @@ export function Blocks({ blocksPage }) {
         ? 'Block not found.'
         : 'No blocks have been indexed yet.'
 
+  useEffect(() => {
+    const input = searchInputRef.current
+
+    if (backgroundRefreshing && !wasBackgroundRefreshingRef.current) {
+      restoreFocusRef.current = document.activeElement === input
+      if (restoreFocusRef.current) {
+        selectionRef.current = { start: input.selectionStart, end: input.selectionEnd }
+      }
+    }
+
+    let animationFrameId
+    if (!backgroundRefreshing && wasBackgroundRefreshingRef.current && restoreFocusRef.current) {
+      animationFrameId = window.requestAnimationFrame(() => {
+        const activeElement = document.activeElement
+        const focusWasNotMoved = activeElement === input || activeElement === document.body
+        if (focusWasNotMoved && input) {
+          input.focus({ preventScroll: true })
+          const { start, end } = selectionRef.current
+          if (start !== null && end !== null) input.setSelectionRange(start, end)
+        }
+        restoreFocusRef.current = false
+      })
+    }
+
+    wasBackgroundRefreshingRef.current = backgroundRefreshing
+    return () => {
+      if (animationFrameId !== undefined) window.cancelAnimationFrame(animationFrameId)
+    }
+  }, [backgroundRefreshing])
+
   return (
     <section className="blocks-page" aria-labelledby="blocks-page-title">
       <header className="blocks-page__header">
@@ -67,6 +102,7 @@ export function Blocks({ blocksPage }) {
 
       <form className="blocks-search" role="search" onSubmit={submitSearch}>
         <input
+          ref={searchInputRef}
           type="search"
           value={searchInput}
           onChange={(event) => setSearchInput(event.target.value)}

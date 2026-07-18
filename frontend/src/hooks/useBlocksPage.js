@@ -39,15 +39,14 @@ export function useBlocksPage() {
     setNextRefreshAt(Date.now() + BLOCKS_POLL_MS)
   }, [])
 
-  const loadPage = useCallback(async (cursor, { background = false, manual = false, targetIndex = 0, history } = {}) => {
+  const loadPage = useCallback(async (cursor, { manual = false, targetIndex = 0, history } = {}) => {
     if (inFlight.current) return false
     clearRefreshTimer()
     inFlight.current = true
     const id = ++requestId.current
 
-    if ((background || manual) && blocksRef.current.length) {
-      if (background) setBackgroundRefreshing(true)
-      if (manual) setManualRefreshing(true)
+    if (manual && blocksRef.current.length) {
+      setManualRefreshing(true)
     } else {
       setLoading(true)
       setBlocks([])
@@ -75,13 +74,43 @@ export function useBlocksPage() {
     } finally {
       if (mounted.current && id === requestId.current) {
         setLoading(false)
-        setBackgroundRefreshing(false)
         setManualRefreshing(false)
         inFlight.current = false
         if (pageIndexRef.current === 0 && !searchQueryRef.current) scheduleRefresh()
       }
     }
   }, [clearRefreshTimer, scheduleRefresh])
+
+  const refreshLatestInBackground = useCallback(async () => {
+    if (inFlight.current || pageIndexRef.current !== 0 || searchQueryRef.current) return false
+    inFlight.current = true
+    setBackgroundRefreshing(true)
+    setNextRefreshAt(null)
+    const id = ++requestId.current
+
+    try {
+      const response = await getBlocks({ limit: PAGE_SIZE })
+      if (!mounted.current || id !== requestId.current) return false
+      const rows = response.items ?? []
+      setBlocks(rows)
+      blocksRef.current = rows
+      setNextBeforeHeight(response.pagination?.next_before_height ?? null)
+      setError(false)
+      setHealthState('healthy')
+      return true
+    } catch {
+      if (!mounted.current || id !== requestId.current) return false
+      setError(true)
+      setHealthState(blocksRef.current.length ? 'degraded' : 'error')
+      return false
+    } finally {
+      if (mounted.current && id === requestId.current) {
+        setBackgroundRefreshing(false)
+        inFlight.current = false
+        scheduleRefresh()
+      }
+    }
+  }, [scheduleRefresh])
 
   const refresh = useCallback(() => loadPage(null, { manual: blocksRef.current.length > 0 }), [loadPage])
 
@@ -168,13 +197,13 @@ export function useBlocksPage() {
     if (!nextRefreshAt || pageIndex !== 0 || searchQuery) return undefined
     timerId.current = window.setTimeout(() => {
       timerId.current = null
-      loadPage(null, { background: true })
+      refreshLatestInBackground()
     }, Math.max(0, nextRefreshAt - Date.now()))
     return () => {
       if (timerId.current !== null) window.clearTimeout(timerId.current)
       timerId.current = null
     }
-  }, [loadPage, nextRefreshAt, pageIndex, searchQuery])
+  }, [nextRefreshAt, pageIndex, refreshLatestInBackground, searchQuery])
 
   const searchMode = Boolean(searchQuery)
   return {
