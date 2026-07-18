@@ -71,9 +71,9 @@ export function Blocks({ blocksPage }) {
           onChange={(event) => setSearchInput(event.target.value)}
           placeholder="Search by exact height or block hash"
           aria-label="Search blocks by exact height or block hash"
-          disabled={loading}
+          disabled={loading || refreshing}
         />
-        <button className="blocks-page__button blocks-page__button--accent" type="submit" disabled={loading || !searchInput.trim()}>Search</button>
+        <button className="blocks-page__button blocks-page__button--accent" type="submit" disabled={loading || refreshing || !searchInput.trim()}>Search</button>
         {searchMode && <button className="blocks-page__button" type="button" onClick={resetSearch} disabled={loading}>Reset</button>}
       </form>
 

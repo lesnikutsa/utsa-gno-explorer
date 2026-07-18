@@ -156,6 +156,7 @@ export function useBlocksPage() {
     return () => {
       mounted.current = false
       requestId.current += 1
+      inFlight.current = false
       if (timerId.current !== null) window.clearTimeout(timerId.current)
     }
   }, [loadPage])
