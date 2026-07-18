@@ -45,7 +45,7 @@ const validatorColumns = [
   { key: 'status', label: 'Status', render: () => <StatusBadge tone="success">Active</StatusBadge> },
 ]
 
-export function Overview({ explorerData, mascotSrc = null }) {
+export function Overview({ explorerData }) {
   const { data, errors, loading, healthState } = explorerData
   const networkLabel = { loading: '—', healthy: 'Healthy', degraded: 'Degraded', error: 'Error' }[healthState]
   const latestHeight = data.network?.latest_block.height ?? null
@@ -110,8 +110,9 @@ export function Overview({ explorerData, mascotSrc = null }) {
             <div><span>Decentralization</span><strong>—</strong></div>
           </div>
         </div>
-        <div className="map-placeholder__canvas"><span>Future network map</span></div>
-        <div className="map-placeholder__asset" aria-hidden="true">{mascotSrc ? <img src={mascotSrc} alt="" /> : <span>Network mascot</span>}</div>
+        <div className="map-placeholder__scene" aria-hidden="true">
+          <img src="/assets/network-scene.png" alt="" />
+        </div>
       </section>
 
       <ResourceStrip />
