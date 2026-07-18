@@ -53,9 +53,9 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 @keyframes shimmer { 50% { opacity: .55; } }
 .dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.16fr) minmax(0, .84fr); gap: 10px; }
 .panel { overflow: hidden; }
-.panel__heading { display: flex; align-items: center; justify-content: space-between; padding: 10px 13px; border-bottom: 1px solid var(--color-border-soft); }
-.panel__heading h2 { margin-top: 5px; }
-.panel__meta { color: var(--color-text-secondary); font-size: 10px; }
+.panel__heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 13px; border-bottom: 1px solid var(--color-border-soft); }
+.panel__heading h2 { min-width: 0; margin: 0; }
+.panel__meta { flex: 0 0 auto; color: var(--color-text-secondary); font-size: 10px; white-space: nowrap; }
 .panel__meta--live { display: inline-flex; align-items: center; gap: 6px; }
 .live-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--color-success); animation: live-pulse 1.7s ease-in-out infinite; }
 .table-scroll { overflow-x: auto; }
@@ -80,8 +80,9 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .muted { color: var(--color-text-secondary); }
 .accent-value { color: #dc795e; }
 .network-preview { margin: 10px 0; padding: 11px 13px 13px; border: 1px solid var(--color-border-soft); border-radius: 7px; background: rgba(15,34,53,.62); }
-.network-preview__header { margin-bottom: 10px; }
-.network-preview__header h2 { margin-top: 5px; font-size: 14px; }
+.network-preview__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.network-preview__header h2 { min-width: 0; margin: 0; font-size: 14px; }
+.network-preview__header .eyebrow { flex: 0 0 auto; white-space: nowrap; }
 .network-preview__content { display: grid; min-height: 155px; grid-template-columns: minmax(145px, 160px) minmax(300px, 1fr) minmax(160px, 190px) minmax(190px, 230px); gap: 12px; align-items: stretch; }
 .network-preview__metrics, .network-preview__map, .network-preview__insight, .network-preview__mascot { min-width: 0; border: 1px solid var(--color-border-soft); border-radius: 5px; background: rgba(9,24,39,.38); }
 .network-preview__metrics { display: grid; gap: 6px; padding: 9px; }
