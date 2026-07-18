@@ -1,5 +1,4 @@
 import { DataTable } from '../components/DataTable'
-import { useBlocksPage } from '../hooks/useBlocksPage'
 import { shortAddress } from '../utils/address'
 import { relativeTime } from '../utils/time'
 
@@ -7,7 +6,7 @@ const columns = [
   {
     key: 'height',
     label: 'Height',
-    render: (block) => <a className="blocks-table__height mono" href={`/blocks/${block.height}`}>#{block.height.toLocaleString()}</a>,
+    render: (block) => <span className="blocks-table__height mono">#{block.height.toLocaleString()}</span>,
   },
   { key: 'time', label: 'Time', render: (block) => relativeTime(block.time) },
   {
@@ -23,8 +22,8 @@ const columns = [
   },
 ]
 
-export function Blocks() {
-  const { blocks, loading, error, refresh } = useBlocksPage()
+export function Blocks({ blocksPage }) {
+  const { blocks, loading, error, refresh } = blocksPage
 
   return (
     <section className="blocks-page" aria-labelledby="blocks-page-title">
@@ -36,12 +35,10 @@ export function Blocks() {
         <button className="blocks-page__refresh" type="button" onClick={refresh} disabled={loading}>Refresh</button>
       </header>
 
-      {error && <div className="blocks-page__error" role="alert">Blocks could not be loaded. Please try again.</div>}
-
       <div className="panel blocks-page__table">
         <DataTable
           columns={columns}
-          rows={blocks}
+          rows={error ? [] : blocks}
           rowKey={(block) => block.height}
           loading={loading}
           emptyMessage={error ? 'Blocks are currently unavailable.' : 'No blocks have been indexed yet.'}

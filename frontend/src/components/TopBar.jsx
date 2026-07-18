@@ -3,13 +3,14 @@ import { MenuIcon, SearchIcon } from './Icons'
 
 const labels = { loading: 'Connecting', healthy: 'Healthy', degraded: 'Degraded', error: 'Unavailable' }
 
-export function TopBar({ onMenuClick, healthState, nextFastRefreshAt }) {
+export function TopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefreshCountdown = true }) {
   const [clock, setClock] = useState(Date.now())
 
   useEffect(() => {
+    if (!showRefreshCountdown) return undefined
     const intervalId = window.setInterval(() => setClock(Date.now()), 1_000)
     return () => window.clearInterval(intervalId)
-  }, [])
+  }, [showRefreshCountdown])
 
   const secondsUntilRefresh = nextFastRefreshAt
     ? Math.min(5, Math.max(0, Math.ceil((nextFastRefreshAt - clock) / 1_000)))
@@ -25,7 +26,7 @@ export function TopBar({ onMenuClick, healthState, nextFastRefreshAt }) {
       </label>
       <div className="network-update">
         <span className={`pulse pulse--${healthState}`} />
-        <div><strong>{labels[healthState]}</strong><span>Next refresh: {secondsUntilRefresh}s</span></div>
+        <div><strong>{labels[healthState]}</strong>{showRefreshCountdown && <span>Next refresh: {secondsUntilRefresh}s</span>}</div>
       </div>
     </header>
   )
