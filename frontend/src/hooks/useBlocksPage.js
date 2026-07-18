@@ -27,6 +27,8 @@ export function useBlocksPage() {
   const blocksRef = useRef([])
   const pageIndexRef = useRef(0)
   const searchQueryRef = useRef('')
+  const searchFocusedRef = useRef(false)
+  const searchDraftRef = useRef('')
 
   const clearRefreshTimer = useCallback(() => {
     if (timerId.current !== null) window.clearTimeout(timerId.current)
@@ -35,7 +37,14 @@ export function useBlocksPage() {
   }, [])
 
   const scheduleRefresh = useCallback(() => {
-    if (!mounted.current || pageIndexRef.current !== 0 || searchQueryRef.current) return
+    if (
+      !mounted.current
+      || pageIndexRef.current !== 0
+      || searchQueryRef.current
+      || searchFocusedRef.current
+      || searchDraftRef.current
+      || inFlight.current
+    ) return
     setNextRefreshAt(Date.now() + BLOCKS_POLL_MS)
   }, [])
 
@@ -82,7 +91,13 @@ export function useBlocksPage() {
   }, [clearRefreshTimer, scheduleRefresh])
 
   const refreshLatestInBackground = useCallback(async () => {
-    if (inFlight.current || pageIndexRef.current !== 0 || searchQueryRef.current) return false
+    if (
+      inFlight.current
+      || pageIndexRef.current !== 0
+      || searchQueryRef.current
+      || searchFocusedRef.current
+      || searchDraftRef.current
+    ) return false
     inFlight.current = true
     setBackgroundRefreshing(true)
     setNextRefreshAt(null)
@@ -91,6 +106,12 @@ export function useBlocksPage() {
     try {
       const response = await getBlocks({ limit: PAGE_SIZE })
       if (!mounted.current || id !== requestId.current) return false
+      if (
+        pageIndexRef.current !== 0
+        || searchQueryRef.current
+        || searchFocusedRef.current
+        || searchDraftRef.current
+      ) return false
       const rows = response.items ?? []
       setBlocks(rows)
       blocksRef.current = rows
@@ -113,6 +134,26 @@ export function useBlocksPage() {
   }, [scheduleRefresh])
 
   const refresh = useCallback(() => loadPage(null, { manual: blocksRef.current.length > 0 }), [loadPage])
+
+  const handleSearchFocus = useCallback(() => {
+    searchFocusedRef.current = true
+    clearRefreshTimer()
+  }, [clearRefreshTimer])
+
+  const handleSearchBlur = useCallback(() => {
+    searchFocusedRef.current = false
+    if (!searchDraftRef.current && !inFlight.current) scheduleRefresh()
+  }, [scheduleRefresh])
+
+  const handleSearchInputChange = useCallback((value) => {
+    searchDraftRef.current = value
+    setSearchInput(value)
+    if (value) {
+      clearRefreshTimer()
+    } else if (!searchFocusedRef.current && !inFlight.current) {
+      scheduleRefresh()
+    }
+  }, [clearRefreshTimer, scheduleRefresh])
 
   const loadOlder = useCallback(async () => {
     if (inFlight.current || nextBeforeHeight === null) return
@@ -175,6 +216,8 @@ export function useBlocksPage() {
   const resetSearch = useCallback(() => {
     if (inFlight.current) return
     searchQueryRef.current = ''
+    searchDraftRef.current = ''
+    searchFocusedRef.current = false
     setSearchInput('')
     setSearchQuery('')
     setSearchNotFound(false)
@@ -217,7 +260,9 @@ export function useBlocksPage() {
     pageIndex,
     currentCursor: cursorHistory[pageIndex] ?? null,
     searchInput,
-    setSearchInput,
+    handleSearchFocus,
+    handleSearchBlur,
+    handleSearchInputChange,
     searchQuery,
     searchMode,
     searchNotFound,
