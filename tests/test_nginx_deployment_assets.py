@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BOOTSTRAP_PATH = ROOT / "deploy/nginx/exp.gno.utsa.tech.bootstrap.conf"
 FINAL_PATH = ROOT / "deploy/nginx/exp.gno.utsa.tech.conf"
 DOCS_PATH = ROOT / "docs/production-deployment.md"
+FRONTEND_DEPLOY_SCRIPT_PATH = ROOT / "scripts/deploy_frontend.sh"
 
 
 class NginxDeploymentAssetsTests(unittest.TestCase):
@@ -15,10 +16,12 @@ class NginxDeploymentAssetsTests(unittest.TestCase):
         cls.bootstrap = BOOTSTRAP_PATH.read_text(encoding="utf-8")
         cls.final = FINAL_PATH.read_text(encoding="utf-8")
         cls.docs = DOCS_PATH.read_text(encoding="utf-8")
+        cls.frontend_deploy_script = FRONTEND_DEPLOY_SCRIPT_PATH.read_text(encoding="utf-8")
 
     def test_assets_exist(self):
         self.assertTrue(BOOTSTRAP_PATH.is_file())
         self.assertTrue(FINAL_PATH.is_file())
+        self.assertTrue(FRONTEND_DEPLOY_SCRIPT_PATH.is_file())
 
     def test_server_names_are_isolated(self):
         for content in (self.bootstrap, self.final):
@@ -61,11 +64,29 @@ class NginxDeploymentAssetsTests(unittest.TestCase):
         self.assertEqual(proxy_targets, ["http://127.0.0.1:18180"])
         self.assertNotIn("http://127.0.0.1:18180/", self.final)
         self.assertNotIn("0.0.0.0:18180", self.final)
+        self.assertNotRegex(self.final, r"(?m)^\s*listen\s+(?:0\.0\.0\.0:)?18180(?:\s|;)")
         self.assertRegex(self.final, r"location /api/\s*\{")
 
-    def test_https_fallback_returns_404(self):
+    def test_final_https_serves_frontend_spa_from_public_webroot(self):
         https_server = self.final.split("listen 443 ssl http2;", 1)[1]
-        self.assertRegex(https_server, r"location /\s*\{\s*return 404;", re.DOTALL)
+        self.assertIn("root /var/www/utsa-gno-explorer;", https_server)
+        self.assertRegex(https_server, r"(?m)^\s*root\s+/var/www/utsa-gno-explorer;")
+        self.assertIn("index index.html;", https_server)
+        self.assertRegex(https_server, r"location /\s*\{\s*try_files \$uri \$uri/ /index.html;\s*\}", re.DOTALL)
+        self.assertNotRegex(https_server, r"location /\s*\{\s*return 404;", re.DOTALL)
+        self.assertNotIn("root /opt/utsa-gno-explorer", https_server)
+
+    def test_final_static_assets_have_focused_cache_policy(self):
+        self.assertRegex(
+            self.final,
+            re.compile(
+                r"location /assets/\s*\{.*try_files \$uri =404;.*expires 1y;.*Cache-Control \"public, immutable\";.*\}",
+                re.DOTALL,
+            ),
+        )
+
+    def test_final_does_not_reference_vite_preview_port(self):
+        self.assertNotIn("4174", self.final)
 
     def test_proxy_headers_and_timeouts_are_complete(self):
         directives = (
@@ -125,8 +146,25 @@ class NginxDeploymentAssetsTests(unittest.TestCase):
         self.assertNotIn("BEGIN PRIVATE KEY", self.docs)
         self.assertNotRegex(self.docs, r"postgres(?:ql)?://[^\s/:]+:[^\s/@]+@")
 
+    def test_frontend_deploy_script_is_safe_and_repeatable(self):
+        script = self.frontend_deploy_script
+        self.assertIn("set -euo pipefail", script)
+        self.assertIn("REPO_ROOT=", script)
+        self.assertIn("frontend/dist", script)
+        self.assertIn("index.html", script)
+        self.assertIn('PUBLIC_DIR="/var/www/utsa-gno-explorer"', script)
+        self.assertIn("rsync", script)
+        self.assertIn("--delete", script)
+        self.assertRegex(script, r"find \"\$\{PUBLIC_DIR\}\" -type d -exec chmod 0755")
+        self.assertRegex(script, r"find \"\$\{PUBLIC_DIR\}\" -type f -exec chmod 0644")
+        self.assertLess(script.index("nginx -t"), script.index("systemctl reload nginx"))
+        self.assertNotIn("git pull", script)
+        self.assertNotIn("npm install", script)
+        self.assertNotIn("certbot", script)
+        self.assertNotRegex(script, r"systemctl\s+(?:restart|stop|start)\s+(?:postgres|postgresql|utsa-gno-api|utsa-gno-indexer)")
+
     def test_tracked_assets_have_no_credential_bearing_urls(self):
-        for path in (BOOTSTRAP_PATH, FINAL_PATH, DOCS_PATH):
+        for path in (BOOTSTRAP_PATH, FINAL_PATH, DOCS_PATH, FRONTEND_DEPLOY_SCRIPT_PATH):
             content = path.read_text(encoding="utf-8")
             self.assertNotRegex(content, r"https?://[^\s/:]+:[^\s/@]+@")
 
