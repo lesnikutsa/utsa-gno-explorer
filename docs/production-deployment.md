@@ -15,6 +15,9 @@ This guide packages the existing foreground continuous indexer without changing 
 - External production secrets and environment: `/etc/utsa-gno-explorer/`
 - Default PostgreSQL data directory: `/var/lib/utsa-gno-explorer/postgres`
 - Default backup directory: `/var/backups/utsa-gno-explorer`
+- Frontend source: `/opt/utsa-gno-explorer/frontend`
+- Frontend build output: `/opt/utsa-gno-explorer/frontend/dist`
+- Nginx frontend webroot: `/var/www/utsa-gno-explorer`
 
 ## Production secrets
 
@@ -451,7 +454,7 @@ There is no database rollback step for an API-only release because this deployme
 
 ## Nginx HTTPS reverse proxy
 
-The Explorer uses an independent `exp.gno.utsa.tech` server block. The API continues to listen only on `127.0.0.1:18180`; Nginx exposes only the `/api/` prefix. This procedure does not require stopping PostgreSQL, the indexer, the API service, or unrelated Nginx sites. Reload Nginx rather than restarting it so existing sites remain available.
+The Explorer uses an independent `exp.gno.utsa.tech` server block. The API continues to listen only on `127.0.0.1:18180`; Nginx exposes the read-only `/api/` prefix and serves the production React/Vite frontend from `/var/www/utsa-gno-explorer`. The Vite dev server is not used in production, port `4174` is only for temporary PR previews, and port `18180` remains the localhost-only API upstream. This procedure does not require stopping PostgreSQL, the indexer, the API service, or unrelated Nginx sites. Reload Nginx rather than restarting it so existing sites remain available.
 
 ### Certificate bootstrap
 
@@ -490,22 +493,42 @@ The Explorer uses an independent `exp.gno.utsa.tech` server block. The API conti
      --deploy-hook 'nginx -t && systemctl reload nginx'
    ```
 
+### Frontend release flow
+
+Build the frontend in the repository, then publish only the static build output into the dedicated Nginx webroot. Do not serve production files directly from `/opt/utsa-gno-explorer`, do not proxy frontend requests to Vite, and do not expose the Vite preview port. The existing TLS certificate is reused; Certbot does not need to be run again for a normal frontend deployment.
+
+```bash
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+nvm use 20
+
+cd /opt/utsa-gno-explorer/frontend
+npm run build
+
+cd /opt/utsa-gno-explorer
+sudo ./scripts/deploy_frontend.sh
+```
+
+`scripts/deploy_frontend.sh` verifies that `frontend/dist/index.html` exists before changing `/var/www/utsa-gno-explorer`, synchronizes the built files with stale-file removal, normalizes root-owned static file permissions, validates Nginx with `nginx -t`, and reloads Nginx only after validation succeeds. It does not run `git pull`, `npm install`, Certbot, or any PostgreSQL, API, or indexer service command.
+
 ### Final HTTPS installation
 
-1. Replace the bootstrap configuration with the tracked HTTPS configuration:
+1. Build and deploy the frontend static files with the release flow above.
+
+2. Replace the bootstrap configuration with the tracked HTTPS configuration:
 
    ```bash
    sudo install -o root -g root -m 0644 deploy/nginx/exp.gno.utsa.tech.conf /etc/nginx/sites-available/exp.gno.utsa.tech.conf
    ```
 
-2. Validate the complete Nginx configuration before reloading it:
+3. Validate the complete Nginx configuration before reloading it:
 
    ```bash
    sudo nginx -t
    sudo systemctl reload nginx
    ```
 
-3. Confirm that Uvicorn remains localhost-only and that UFW has no rule exposing its internal port:
+4. Confirm that Uvicorn remains localhost-only and that UFW has no rule exposing its internal port:
 
    ```bash
    sudo ss -ltnp '( sport = :18180 )'
@@ -514,9 +537,10 @@ The Explorer uses an independent `exp.gno.utsa.tech` server block. The API conti
 
    The socket output must show `127.0.0.1:18180`, never a wildcard or public address. The UFW output must contain no rule allowing port `18180`; do not add one.
 
-4. Run public HTTPS smoke tests. Replace the height and validator address placeholders with known public values:
+5. Run public HTTPS smoke tests. Replace the height and validator address placeholders with known public values:
 
    ```bash
+   curl --fail --show-error https://exp.gno.utsa.tech/
    curl --fail --show-error https://exp.gno.utsa.tech/api/health
    curl --fail --show-error https://exp.gno.utsa.tech/api/network
    curl --fail --show-error 'https://exp.gno.utsa.tech/api/blocks?limit=2'
@@ -525,15 +549,15 @@ The Explorer uses an independent `exp.gno.utsa.tech` server block. The API conti
    curl --fail --show-error https://exp.gno.utsa.tech/api/validators/REPLACE_WITH_ADDRESS
    ```
 
-5. Verify the public boundary and read-only policy:
+6. Verify the public boundary, read-only policy, and SPA fallback:
 
    ```bash
    curl --output /dev/null --write-out '%{http_code}\n' --request POST https://exp.gno.utsa.tech/api/health
    curl --connect-timeout 5 --output /dev/null --show-error http://exp.gno.utsa.tech:18180/api/health
-   curl --output /dev/null --write-out '%{http_code}\n' https://exp.gno.utsa.tech/
+   curl --output /dev/null --write-out '%{http_code}\n' https://exp.gno.utsa.tech/__client_side_route_smoke_test__
    ```
 
-   The POST must be rejected, direct public access to port `18180` must be unavailable, and the request outside `/api/` must return `404` until a frontend is deployed. `OPTIONS` requests are forwarded to FastAPI; Nginx does not synthesize CORS responses.
+   The POST must be rejected, direct public access to port `18180` must be unavailable, and the client-side route request must return the SPA HTML rather than an Nginx `404`. `OPTIONS` requests are forwarded to FastAPI; Nginx does not synthesize CORS responses.
 
 ## Upgrade procedure
 
