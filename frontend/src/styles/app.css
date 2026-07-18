@@ -79,7 +79,7 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .mono { font-family: var(--font-mono); }
 .muted { color: var(--color-text-secondary); }
 .accent-value { color: #dc795e; }
-.map-placeholder { position: relative; display: grid; height: 168px; grid-template-columns: 195px minmax(0, 1fr); align-items: stretch; gap: 8px; overflow: hidden; margin: 10px 0; padding: 8px 10px; border: 1px solid var(--color-border-soft); border-radius: 7px; background: rgba(15,34,53,.62); }
+.map-placeholder { position: relative; display: grid; height: 142px; grid-template-columns: 195px minmax(0, 1fr); align-items: stretch; gap: 8px; overflow: hidden; margin: 10px 0; padding: 8px 10px; border: 1px solid var(--color-border-soft); border-radius: 7px; background: rgba(15,34,53,.62); }
 .map-placeholder h2 { margin: 4px 0 8px; font-size: 14px; line-height: 1.15; }
 .map-placeholder__summary { min-width: 0; align-self: center; }
 .map-placeholder__stats { display: grid; gap: 0; border-top: 1px solid rgba(40,64,86,.42); }
@@ -109,7 +109,7 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 @keyframes height-highlight { 0%, 30% { color: var(--color-text-bright); } 100% { color: #dc795e; } }
 @keyframes hash-highlight { 0%, 30% { color: var(--color-accent); } 100% { color: var(--color-text-secondary); } }
 
-@media (max-width: 1100px) { .status-grid { grid-template-columns: repeat(2, 1fr); } .dashboard-grid { grid-template-columns: 1fr; }.map-placeholder { height: 150px; grid-template-columns: 180px minmax(0, 1fr); } }
+@media (max-width: 1100px) { .status-grid { grid-template-columns: repeat(2, 1fr); } .dashboard-grid { grid-template-columns: 1fr; }.map-placeholder { height: 130px; grid-template-columns: 180px minmax(0, 1fr); } }
 @media (max-width: 760px) {
   .sidebar { transform: translateX(-100%); transition: transform .2s ease; }.sidebar.is-open { transform: translateX(0); }
   .sidebar-backdrop { position: fixed; inset: 0; z-index: 29; display: block; visibility: hidden; border: 0; background: rgba(2,8,14,.72); opacity: 0; transition: .2s ease; }.sidebar-backdrop.is-visible { visibility: visible; opacity: 1; }
