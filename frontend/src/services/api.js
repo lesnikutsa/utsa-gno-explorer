@@ -14,5 +14,12 @@ async function request(path) {
 
 export const getHealth = () => request('/health')
 export const getNetwork = () => request('/network')
-export const getBlocks = () => request('/blocks')
+export const getBlocks = ({ limit, beforeHeight, hash } = {}) => {
+  const query = new URLSearchParams()
+  if (limit !== undefined && limit !== null && limit !== '') query.set('limit', limit)
+  if (beforeHeight !== undefined && beforeHeight !== null && beforeHeight !== '') query.set('before_height', beforeHeight)
+  if (hash !== undefined && hash !== null && hash !== '') query.set('hash', hash)
+  const queryString = query.toString()
+  return request(`/blocks${queryString ? `?${queryString}` : ''}`)
+}
 export const getValidators = () => request('/validators')

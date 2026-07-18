@@ -5,8 +5,8 @@ import { ResourceStrip } from '../components/ResourceStrip'
 import { StatusBadge } from '../components/StatusBadge'
 import { BlocksIcon, ChainIcon, MapIcon, NetworkIcon, ValidatorsIcon } from '../components/Icons'
 import { relativeTime } from '../utils/time'
+import { shortAddress } from '../utils/address'
 
-const shortAddress = (value) => value ? `${value.slice(0, 8)}…${value.slice(-6)}` : '—'
 const missedBlocks = (uptime = {}) => (uptime.nil_blocks ?? 0) + (uptime.absent_blocks ?? 0) + (uptime.invalid_blocks ?? 0)
 const missedTitle = (uptime = {}) => `Nil: ${uptime.nil_blocks ?? 0}\nAbsent: ${uptime.absent_blocks ?? 0}\nInvalid: ${uptime.invalid_blocks ?? 0}`
 const missedSeverity = (missed) => missed >= 10 ? 'high' : missed >= 2 ? 'medium' : 'low'
