@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { DataTable } from '../components/DataTable'
 import { shortAddress } from '../utils/address'
 import { relativeTime } from '../utils/time'
@@ -7,7 +7,7 @@ const columns = [
   {
     key: 'height',
     label: 'Height',
-    render: (block) => <span className="blocks-table__height mono">#{block.height.toLocaleString()}</span>,
+    render: (block) => <span className="blocks-table__height accent-value mono">#{block.height.toLocaleString()}</span>,
   },
   { key: 'time', label: 'Time', render: (block) => relativeTime(block.time) },
   {
@@ -25,9 +25,11 @@ const columns = [
 
 export function Blocks({ blocksPage }) {
   const searchInputRef = useRef(null)
+  const previousFirstBlockHeight = useRef(null)
   const restoreFocusRef = useRef(false)
   const selectionRef = useRef({ start: null, end: null })
   const wasBackgroundRefreshingRef = useRef(false)
+  const [insertedBlockHeight, setInsertedBlockHeight] = useState(null)
   const {
     blocks,
     loading,
@@ -55,6 +57,30 @@ export function Blocks({ blocksPage }) {
       : searchMode
         ? 'Block not found.'
         : 'No blocks have been indexed yet.'
+
+  const firstBlockHeight = blocks[0]?.height ?? null
+  const latestMode = pageIndex === 0 && !searchMode
+
+  useEffect(() => {
+    if (!latestMode || loading) {
+      previousFirstBlockHeight.current = null
+      setInsertedBlockHeight(null)
+      return undefined
+    }
+
+    if (error || firstBlockHeight === null) return undefined
+
+    let animationTimer
+    if (previousFirstBlockHeight.current !== null && firstBlockHeight !== previousFirstBlockHeight.current) {
+      setInsertedBlockHeight(firstBlockHeight)
+      animationTimer = window.setTimeout(() => setInsertedBlockHeight(null), 900)
+    }
+    previousFirstBlockHeight.current = firstBlockHeight
+
+    return () => {
+      if (animationTimer !== undefined) window.clearTimeout(animationTimer)
+    }
+  }, [error, firstBlockHeight, latestMode, loading])
 
   useEffect(() => {
     const input = searchInputRef.current
@@ -121,6 +147,7 @@ export function Blocks({ blocksPage }) {
           columns={columns}
           rows={blocks}
           rowKey={(block) => block.height}
+          rowClassName={(block, index) => insertedBlockHeight === null ? '' : index === 0 && block.height === insertedBlockHeight ? 'is-new-row' : 'is-settling-row'}
           loading={loading}
           emptyMessage={emptyMessage}
         />
