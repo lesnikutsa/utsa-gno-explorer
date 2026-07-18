@@ -1,12 +1,30 @@
 const API_ROOT = import.meta.env.VITE_API_ROOT || '/api'
 
 async function request(path) {
-  const response = await fetch(`${API_ROOT}${path}`, {
-    headers: { Accept: 'application/json' },
-  })
+  let response
+  try {
+    response = await fetch(`${API_ROOT}${path}`, {
+      headers: { Accept: 'application/json' },
+    })
+  } catch (cause) {
+    const error = new Error('Unable to reach the Explorer API', { cause })
+    error.status = 0
+    error.detail = 'Network request failed'
+    throw error
+  }
 
   if (!response.ok) {
-    throw new Error(`API request failed with status ${response.status}`)
+    let detail = ''
+    try {
+      const body = await response.json()
+      detail = typeof body.detail === 'string' ? body.detail : ''
+    } catch {
+      detail = ''
+    }
+    const error = new Error(`API request failed with status ${response.status}`)
+    error.status = response.status
+    error.detail = detail
+    throw error
   }
 
   return response.json()
@@ -22,4 +40,5 @@ export const getBlocks = ({ limit, beforeHeight, hash } = {}) => {
   const queryString = query.toString()
   return request(`/blocks${queryString ? `?${queryString}` : ''}`)
 }
+export const getBlock = (height) => request(`/blocks/${encodeURIComponent(height)}`)
 export const getValidators = () => request('/validators')
