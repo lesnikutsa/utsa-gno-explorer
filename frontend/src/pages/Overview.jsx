@@ -113,7 +113,7 @@ export function Overview({ explorerData, mascotSrc = null }) {
             <div className="network-preview__metric"><span>Countries</span><strong>—</strong></div>
             <div className="network-preview__metric"><span>Decentralization</span><strong>—</strong></div>
           </div>
-          <div className="network-preview__map"><span>Future network map</span></div>
+          <div className="network-preview__map"><img className="network-preview__map-image" src="/assets/network-map.png?v=1" alt="" aria-hidden="true" /></div>
           <div className="network-preview__insight">
             <h3>Network at a glance</h3>
             <p>Peer distribution details will be added with the network map.</p>
