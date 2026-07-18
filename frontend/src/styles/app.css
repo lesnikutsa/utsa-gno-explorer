@@ -79,14 +79,21 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .mono { font-family: var(--font-mono); }
 .muted { color: var(--color-text-secondary); }
 .accent-value { color: #dc795e; }
-.map-placeholder { position: relative; display: grid; min-height: 116px; grid-template-columns: 250px minmax(180px, 1fr) 130px; align-items: stretch; gap: 12px; overflow: hidden; margin: 10px 0; padding: 11px 13px; border: 1px solid var(--color-border-soft); border-radius: 7px; background: rgba(15,34,53,.62); }
-.map-placeholder h2 { margin: 5px 0 10px; font-size: 14px; }
-.map-placeholder__stats { display: flex; gap: 18px; }
-.map-placeholder__stats span, .map-placeholder__stats strong { display: block; }
-.map-placeholder__stats span { color: var(--color-text-secondary); font-size: 8px; letter-spacing: .06em; text-transform: uppercase; }
-.map-placeholder__stats strong { margin-top: 3px; color: var(--color-text); font: 13px var(--font-mono); }
-.map-placeholder__canvas, .map-placeholder__asset { display: grid; min-width: 0; place-items: center; border: 1px dashed var(--color-border-soft); border-radius: 5px; color: #647b8e; font-size: 8px; letter-spacing: .09em; text-transform: uppercase; }
-.map-placeholder__asset img { width: 100%; height: 100%; object-fit: contain; }
+.network-preview { margin: 10px 0; padding: 11px 13px 13px; border: 1px solid var(--color-border-soft); border-radius: 7px; background: rgba(15,34,53,.62); }
+.network-preview__header { margin-bottom: 10px; }
+.network-preview__header h2 { margin-top: 5px; font-size: 14px; }
+.network-preview__content { display: grid; min-height: 155px; grid-template-columns: minmax(165px, 185px) minmax(300px, 1fr) minmax(160px, 190px) minmax(190px, 230px); gap: 12px; align-items: stretch; }
+.network-preview__metrics, .network-preview__map, .network-preview__insight, .network-preview__mascot { min-width: 0; border: 1px solid var(--color-border-soft); border-radius: 5px; background: rgba(9,24,39,.38); }
+.network-preview__metrics { display: grid; gap: 6px; padding: 9px; }
+.network-preview__metric { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 9px; border: 1px solid rgba(40,64,86,.42); border-radius: 4px; background: rgba(255,255,255,.018); }
+.network-preview__metric span { color: var(--color-text-secondary); font-size: 8px; letter-spacing: .06em; text-transform: uppercase; }
+.network-preview__metric strong { color: var(--color-text); font: 13px var(--font-mono); }
+.network-preview__map, .network-preview__mascot { display: grid; place-items: center; overflow: hidden; color: #647b8e; font-size: 8px; letter-spacing: .09em; text-transform: uppercase; }
+.network-preview__map img { width: 100%; height: 100%; object-fit: contain; object-position: center; }
+.network-preview__insight { padding: 12px; }
+.network-preview__insight h3 { margin: 0 0 7px; color: var(--color-text-bright); font-size: 12px; font-weight: 600; }
+.network-preview__insight p { color: var(--color-text-secondary); font-size: 10px; line-height: 1.45; }
+.network-preview__mascot img { width: 100%; height: 100%; object-fit: contain; object-position: right bottom; }
 .resource-strip { display: flex; min-height: 48px; align-items: center; gap: 20px; padding: 7px 13px; border: 1px solid var(--color-border-soft); border-radius: 7px; background: rgba(15,34,53,.72); }
 .resource-item { display: flex; align-items: flex-start; flex-direction: column; }
 .resource-strip small { display: block; }
@@ -107,13 +114,13 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 @keyframes height-highlight { 0%, 30% { color: var(--color-text-bright); } 100% { color: #dc795e; } }
 @keyframes hash-highlight { 0%, 30% { color: var(--color-accent); } 100% { color: var(--color-text-secondary); } }
 
-@media (max-width: 1100px) { .status-grid { grid-template-columns: repeat(2, 1fr); } .dashboard-grid { grid-template-columns: 1fr; } }
+@media (max-width: 1100px) { .status-grid { grid-template-columns: repeat(2, 1fr); } .dashboard-grid { grid-template-columns: 1fr; } .network-preview__content { grid-template-columns: minmax(160px, .65fr) minmax(240px, 1.35fr); min-height: 0; } .network-preview__map, .network-preview__mascot { min-height: 145px; } }
 @media (max-width: 760px) {
   .sidebar { transform: translateX(-100%); transition: transform .2s ease; }.sidebar.is-open { transform: translateX(0); }
   .sidebar-backdrop { position: fixed; inset: 0; z-index: 29; display: block; visibility: hidden; border: 0; background: rgba(2,8,14,.72); opacity: 0; transition: .2s ease; }.sidebar-backdrop.is-visible { visibility: visible; opacity: 1; }
   .app-frame { margin-left: 0; }.topbar { height: 52px; gap: 12px; padding: 0 14px; }.menu-button { display: block; }.search-box { width: 100%; }.search-box kbd, .network-update { display: none; }
   .main-content { padding: 12px; }.status-grid { grid-template-columns: 1fr 1fr; }.status-card__value { font-size: 16px; }
-  .resource-strip { flex-wrap: wrap; gap: 16px; }.resource-divider { display: none; }.map-placeholder { grid-template-columns: 1fr 1fr; }.map-placeholder__summary { grid-column: 1 / -1; }.map-placeholder__asset { display: none; }
+  .resource-strip { flex-wrap: wrap; gap: 16px; }.resource-divider { display: none; }.network-preview__content { grid-template-columns: 1fr; }.network-preview__map { min-height: 120px; }.network-preview__mascot { display: none; }
 }
-@media (max-width: 480px) { .status-grid { grid-template-columns: 1fr; }.map-placeholder { grid-template-columns: 1fr; }.map-placeholder__canvas { min-height: 70px; }.resource-guides > div { gap: 12px; flex-direction: column; } }
+@media (max-width: 480px) { .status-grid { grid-template-columns: 1fr; }.resource-guides > div { gap: 12px; flex-direction: column; } }
 @media (prefers-reduced-motion: reduce) { .pulse--healthy, .live-dot, .status-card.is-updating, .status-card.is-updating .status-card__value, .data-table tbody tr.is-new-row, .data-table tbody tr.is-new-row td:first-child .accent-value, .data-table tbody tr.is-new-row td:nth-child(5) .muted, .data-table tbody tr.is-settling-row { animation: none; } }
