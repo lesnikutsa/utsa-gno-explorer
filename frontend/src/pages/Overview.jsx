@@ -10,6 +10,7 @@ const shortAddress = (value) => value ? `${value.slice(0, 8)}…${value.slice(-6
 const missedBlocks = (uptime = {}) => (uptime.nil_blocks ?? 0) + (uptime.absent_blocks ?? 0) + (uptime.invalid_blocks ?? 0)
 const missedTitle = (uptime = {}) => `Nil: ${uptime.nil_blocks ?? 0}\nAbsent: ${uptime.absent_blocks ?? 0}\nInvalid: ${uptime.invalid_blocks ?? 0}`
 const missedSeverity = (missed) => missed >= 10 ? 'high' : missed >= 2 ? 'medium' : 'low'
+const OVERVIEW_ROW_LIMIT = 6
 
 const formatUptime = (value) => {
   if (value === null || value === undefined || value === '') return '—'
@@ -64,7 +65,7 @@ export function Overview({ explorerData, mascotSrc = null }) {
       const uptimeDifference = (Number.isFinite(leftUptime) ? leftUptime : Infinity) - (Number.isFinite(rightUptime) ? rightUptime : Infinity)
       return uptimeDifference || left.address.localeCompare(right.address)
     })
-    .slice(0, 5), [data.validators])
+    .slice(0, OVERVIEW_ROW_LIMIT), [data.validators])
 
   useEffect(() => {
     const timers = []
@@ -93,7 +94,7 @@ export function Overview({ explorerData, mascotSrc = null }) {
       <div className="dashboard-grid">
         <section className="panel dashboard-grid__blocks">
           <div className="panel__heading"><h2>Latest Blocks</h2><span className="panel__meta panel__meta--live"><span className="live-dot" />Live · every 5s</span></div>
-          <DataTable columns={blockColumns} rows={data.blocks.slice(0, 5)} rowKey={(row) => row.height} rowClassName={(row, index) => insertedBlockHeight === null ? '' : index === 0 && row.height === insertedBlockHeight ? 'is-new-row' : 'is-settling-row'} loading={loading} emptyMessage={errors.blocks ? 'Blocks are currently unavailable.' : 'No blocks returned.'} />
+          <DataTable columns={blockColumns} rows={data.blocks.slice(0, OVERVIEW_ROW_LIMIT)} rowKey={(row) => row.height} rowClassName={(row, index) => insertedBlockHeight === null ? '' : index === 0 && row.height === insertedBlockHeight ? 'is-new-row' : 'is-settling-row'} loading={loading} emptyMessage={errors.blocks ? 'Blocks are currently unavailable.' : 'No blocks returned.'} />
         </section>
         <section className="panel dashboard-grid__validators">
           <div className="panel__heading"><h2>Validators by Missed Blocks</h2><span className="panel__meta">Last 100 blocks</span></div>
