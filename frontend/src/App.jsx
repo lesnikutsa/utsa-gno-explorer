@@ -21,10 +21,14 @@ function OverviewPage() {
 
 function BlocksPage() {
   const blocksPage = useBlocksPage()
-  const healthState = blocksPage.error ? 'error' : blocksPage.loading ? 'loading' : 'healthy'
+  const showRefreshCountdown = !blocksPage.searchMode && blocksPage.pageIndex === 0
 
   return (
-    <ExplorerLayout healthState={healthState} showRefreshCountdown={false}>
+    <ExplorerLayout
+      healthState={blocksPage.healthState}
+      nextFastRefreshAt={blocksPage.nextRefreshAt}
+      showRefreshCountdown={showRefreshCountdown}
+    >
       <Blocks blocksPage={blocksPage} />
     </ExplorerLayout>
   )
