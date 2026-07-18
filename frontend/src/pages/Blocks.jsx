@@ -26,7 +26,8 @@ export function Blocks({ blocksPage }) {
   const {
     blocks,
     loading,
-    refreshing,
+    backgroundRefreshing,
+    manualRefreshing,
     error,
     nextBeforeHeight,
     pageIndex,
@@ -58,8 +59,8 @@ export function Blocks({ blocksPage }) {
           <p>Latest finalized blocks indexed by UTSA Explorer.</p>
         </div>
         {!searchMode && pageIndex === 0 && (
-          <button className="blocks-page__button blocks-page__button--accent" type="button" onClick={refresh} disabled={loading || refreshing}>
-            {refreshing ? 'Refreshing…' : 'Refresh'}
+          <button className="blocks-page__button blocks-page__button--accent" type="button" onClick={refresh} disabled={loading || manualRefreshing}>
+            {manualRefreshing ? 'Refreshing…' : 'Refresh'}
           </button>
         )}
       </header>
@@ -71,9 +72,9 @@ export function Blocks({ blocksPage }) {
           onChange={(event) => setSearchInput(event.target.value)}
           placeholder="Search by exact height or block hash"
           aria-label="Search blocks by exact height or block hash"
-          disabled={loading || refreshing}
+          disabled={loading}
         />
-        <button className="blocks-page__button blocks-page__button--accent" type="submit" disabled={loading || refreshing || !searchInput.trim()}>Search</button>
+        <button className="blocks-page__button blocks-page__button--accent" type="submit" disabled={loading || backgroundRefreshing || manualRefreshing || !searchInput.trim()}>Search</button>
         {searchMode && <button className="blocks-page__button" type="button" onClick={resetSearch} disabled={loading}>Reset</button>}
       </form>
 
@@ -91,9 +92,9 @@ export function Blocks({ blocksPage }) {
 
       {!searchMode && (
         <nav className="blocks-pagination" aria-label="Blocks pagination">
-          <button className="blocks-page__button" type="button" onClick={loadNewer} disabled={loading || refreshing || pageIndex === 0}>Newer blocks</button>
+          <button className="blocks-page__button" type="button" onClick={loadNewer} disabled={loading || manualRefreshing || pageIndex === 0}>Newer blocks</button>
           <span>{pageIndex === 0 ? 'Latest' : `Page ${pageIndex + 1}`}</span>
-          <button className="blocks-page__button" type="button" onClick={loadOlder} disabled={loading || refreshing || nextBeforeHeight === null}>Older blocks</button>
+          <button className="blocks-page__button" type="button" onClick={loadOlder} disabled={loading || manualRefreshing || nextBeforeHeight === null}>Older blocks</button>
         </nav>
       )}
     </section>

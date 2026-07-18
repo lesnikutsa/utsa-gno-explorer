@@ -9,7 +9,8 @@ const HEIGHT_PATTERN = /^[0-9]+$/
 export function useBlocksPage() {
   const [blocks, setBlocks] = useState([])
   const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
+  const [backgroundRefreshing, setBackgroundRefreshing] = useState(false)
+  const [manualRefreshing, setManualRefreshing] = useState(false)
   const [healthState, setHealthState] = useState('loading')
   const [error, setError] = useState(false)
   const [nextBeforeHeight, setNextBeforeHeight] = useState(null)
@@ -38,14 +39,15 @@ export function useBlocksPage() {
     setNextRefreshAt(Date.now() + BLOCKS_POLL_MS)
   }, [])
 
-  const loadPage = useCallback(async (cursor, { background = false, targetIndex = 0, history } = {}) => {
+  const loadPage = useCallback(async (cursor, { background = false, manual = false, targetIndex = 0, history } = {}) => {
     if (inFlight.current) return false
     clearRefreshTimer()
     inFlight.current = true
     const id = ++requestId.current
 
-    if (background && blocksRef.current.length) {
-      setRefreshing(true)
+    if ((background || manual) && blocksRef.current.length) {
+      if (background) setBackgroundRefreshing(true)
+      if (manual) setManualRefreshing(true)
     } else {
       setLoading(true)
       setBlocks([])
@@ -73,14 +75,15 @@ export function useBlocksPage() {
     } finally {
       if (mounted.current && id === requestId.current) {
         setLoading(false)
-        setRefreshing(false)
+        setBackgroundRefreshing(false)
+        setManualRefreshing(false)
         inFlight.current = false
         if (pageIndexRef.current === 0 && !searchQueryRef.current) scheduleRefresh()
       }
     }
   }, [clearRefreshTimer, scheduleRefresh])
 
-  const refresh = useCallback(() => loadPage(null, { background: blocksRef.current.length > 0 }), [loadPage])
+  const refresh = useCallback(() => loadPage(null, { manual: blocksRef.current.length > 0 }), [loadPage])
 
   const loadOlder = useCallback(async () => {
     if (inFlight.current || nextBeforeHeight === null) return
@@ -177,7 +180,8 @@ export function useBlocksPage() {
   return {
     blocks,
     loading,
-    refreshing,
+    backgroundRefreshing,
+    manualRefreshing,
     healthState,
     error,
     nextBeforeHeight,
