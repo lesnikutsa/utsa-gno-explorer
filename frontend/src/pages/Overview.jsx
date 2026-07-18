@@ -101,17 +101,27 @@ export function Overview({ explorerData, mascotSrc = null }) {
         </section>
       </div>
 
-      <section className="map-placeholder">
-        <div className="map-placeholder__summary">
-          <span className="eyebrow">Coming soon</span><h2>Peers & Decentralization Map</h2>
-          <div className="map-placeholder__stats" aria-label="Future peer metrics">
-            <div><span>Total Peers</span><strong>—</strong></div>
-            <div><span>Countries</span><strong>—</strong></div>
-            <div><span>Decentralization</span><strong>—</strong></div>
+      <section className="network-preview" aria-labelledby="network-preview-title">
+        <header className="network-preview__header">
+          <span className="eyebrow">Coming soon</span>
+          <h2 id="network-preview-title">Peers & Decentralization Map</h2>
+        </header>
+
+        <div className="network-preview__content">
+          <div className="network-preview__metrics" aria-label="Future peer metrics">
+            <div className="network-preview__metric"><span>Total Peers</span><strong>—</strong></div>
+            <div className="network-preview__metric"><span>Countries</span><strong>—</strong></div>
+            <div className="network-preview__metric"><span>Decentralization</span><strong>—</strong></div>
+          </div>
+          <div className="network-preview__map"><span>Future network map</span></div>
+          <div className="network-preview__insight">
+            <h3>Network at a glance</h3>
+            <p>Peer distribution details will be added with the network map.</p>
+          </div>
+          <div className="network-preview__mascot" aria-hidden="true">
+            {mascotSrc ? <img src={mascotSrc} alt="" /> : <span>Network mascot</span>}
           </div>
         </div>
-        <div className="map-placeholder__canvas"><span>Future network map</span></div>
-        <div className="map-placeholder__asset" aria-hidden="true">{mascotSrc ? <img src={mascotSrc} alt="" /> : <span>Network mascot</span>}</div>
       </section>
 
       <ResourceStrip />
