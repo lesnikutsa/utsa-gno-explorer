@@ -45,7 +45,7 @@ const validatorColumns = [
   { key: 'status', label: 'Status', render: () => <StatusBadge tone="success">Active</StatusBadge> },
 ]
 
-export function Overview({ explorerData, mascotSrc = null }) {
+export function Overview({ explorerData }) {
   const { data, errors, loading, healthState } = explorerData
   const networkLabel = { loading: '—', healthy: 'Healthy', degraded: 'Degraded', error: 'Error' }[healthState]
   const latestHeight = data.network?.latest_block.height ?? null
@@ -101,17 +101,21 @@ export function Overview({ explorerData, mascotSrc = null }) {
         </section>
       </div>
 
-      <section className="map-placeholder">
-        <div className="map-placeholder__summary">
-          <span className="eyebrow">Coming soon</span><h2>Peers & Decentralization Map</h2>
-          <div className="map-placeholder__stats" aria-label="Future peer metrics">
-            <div><span>Total Peers</span><strong>—</strong></div>
-            <div><span>Countries</span><strong>—</strong></div>
-            <div><span>Decentralization</span><strong>—</strong></div>
+      <section className="network-preview" aria-labelledby="network-preview-title">
+        <div className="network-preview__metrics">
+          <div>
+            <span className="eyebrow">Coming soon</span>
+            <h2 id="network-preview-title">Peers & Decentralization Map</h2>
+          </div>
+          <div className="network-preview__stats" aria-label="Future peer metrics">
+            <div className="network-preview__stat"><span>Total Peers</span><strong>—</strong></div>
+            <div className="network-preview__stat"><span>Countries</span><strong>—</strong></div>
+            <div className="network-preview__stat"><span>Decentralization</span><strong>—</strong></div>
           </div>
         </div>
-        <div className="map-placeholder__canvas"><span>Future network map</span></div>
-        <div className="map-placeholder__asset" aria-hidden="true">{mascotSrc ? <img src={mascotSrc} alt="" /> : <span>Network mascot</span>}</div>
+        <div className="network-preview__scene" aria-hidden="true">
+          <img src="/assets/network-scene.png" alt="" />
+        </div>
       </section>
 
       <ResourceStrip />
