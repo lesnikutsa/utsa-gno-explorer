@@ -3,7 +3,7 @@ import { Card } from '../components/Card'
 import { DataTable } from '../components/DataTable'
 import { ResourceStrip } from '../components/ResourceStrip'
 import { StatusBadge } from '../components/StatusBadge'
-import { BlocksIcon, ChainIcon, NetworkIcon, ValidatorsIcon } from '../components/Icons'
+import { BlocksIcon, ChainIcon, MapIcon, NetworkIcon, ValidatorsIcon } from '../components/Icons'
 import { relativeTime } from '../utils/time'
 
 const shortAddress = (value) => value ? `${value.slice(0, 8)}…${value.slice(-6)}` : '—'
@@ -109,14 +109,32 @@ export function Overview({ explorerData, mascotSrc = null }) {
 
         <div className="network-preview__content">
           <div className="network-preview__metrics" aria-label="Future peer metrics">
-            <div className="network-preview__metric"><span>Total Peers</span><strong>—</strong></div>
-            <div className="network-preview__metric"><span>Countries</span><strong>—</strong></div>
-            <div className="network-preview__metric"><span>Decentralization</span><strong>—</strong></div>
+            <div className="network-preview__metric">
+              <span className="network-preview__metric-label">
+                <NetworkIcon />
+                <span>Total Peers</span>
+              </span>
+              <strong>—</strong>
+            </div>
+            <div className="network-preview__metric">
+              <span className="network-preview__metric-label">
+                <MapIcon />
+                <span>Countries</span>
+              </span>
+              <strong>—</strong>
+            </div>
+            <div className="network-preview__metric">
+              <span className="network-preview__metric-label">
+                <ChainIcon />
+                <span>Decentralization</span>
+              </span>
+              <strong>—</strong>
+            </div>
           </div>
           <div className="network-preview__map"><img className="network-preview__map-image" src="/assets/network-map.png?v=1" alt="" aria-hidden="true" /></div>
           <div className="network-preview__insight">
             <h3>Network at a glance</h3>
-            <p>Peer distribution details will be added with the network map.</p>
+            <p>Peer locations, country coverage, and network distribution—all in one view.</p>
           </div>
           <div className="network-preview__mascot" aria-hidden="true">
             {mascotSrc ? <img src={mascotSrc} alt="" /> : <span>Network mascot</span>}
