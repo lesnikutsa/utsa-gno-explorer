@@ -1,10 +1,12 @@
 import { ExplorerLayout } from './layouts/ExplorerLayout'
+import { Blocks } from './pages/Blocks'
 import { Overview } from './pages/Overview'
+import { useBlocksPage } from './hooks/useBlocksPage'
 import { useExplorerData } from './hooks/useExplorerData'
 
 const NETWORK_MASCOT_SRC = '/assets/network-mascot.png?v=1'
 
-export default function App() {
+function OverviewPage() {
   const explorerData = useExplorerData()
 
   return (
@@ -15,4 +17,23 @@ export default function App() {
       />
     </ExplorerLayout>
   )
+}
+
+function BlocksPage() {
+  const blocksPage = useBlocksPage()
+  const healthState = blocksPage.error ? 'error' : blocksPage.loading ? 'loading' : 'healthy'
+
+  return (
+    <ExplorerLayout healthState={healthState} showRefreshCountdown={false}>
+      <Blocks blocksPage={blocksPage} />
+    </ExplorerLayout>
+  )
+}
+
+export default function App() {
+  if (window.location.pathname === '/blocks') {
+    return <BlocksPage />
+  }
+
+  return <OverviewPage />
 }
