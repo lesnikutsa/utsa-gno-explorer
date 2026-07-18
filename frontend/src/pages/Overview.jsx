@@ -92,19 +92,19 @@ export function Overview({ explorerData, mascotSrc = null }) {
 
       <div className="dashboard-grid">
         <section className="panel dashboard-grid__blocks">
-          <div className="panel__heading"><div><span className="eyebrow">Live feed</span><h2>Latest Blocks</h2></div><span className="panel__meta panel__meta--live"><span className="live-dot" />Live · every 5s</span></div>
+          <div className="panel__heading"><h2>Latest Blocks</h2><span className="panel__meta panel__meta--live"><span className="live-dot" />Live · every 5s</span></div>
           <DataTable columns={blockColumns} rows={data.blocks.slice(0, 5)} rowKey={(row) => row.height} rowClassName={(row, index) => insertedBlockHeight === null ? '' : index === 0 && row.height === insertedBlockHeight ? 'is-new-row' : 'is-settling-row'} loading={loading} emptyMessage={errors.blocks ? 'Blocks are currently unavailable.' : 'No blocks returned.'} />
         </section>
         <section className="panel dashboard-grid__validators">
-          <div className="panel__heading"><div><span className="eyebrow">Validator Performance</span><h2>Validators by Missed Blocks</h2></div><span className="panel__meta">Last 100 blocks</span></div>
+          <div className="panel__heading"><h2>Validators by Missed Blocks</h2><span className="panel__meta">Last 100 blocks</span></div>
           <DataTable columns={validatorColumns} rows={validatorsByMisses} rowKey={(row) => row.address} loading={loading} emptyMessage={errors.validators ? 'Validators are currently unavailable.' : 'No validator misses in the last 100 blocks.'} />
         </section>
       </div>
 
       <section className="network-preview" aria-labelledby="network-preview-title">
         <header className="network-preview__header">
-          <span className="eyebrow">Coming soon</span>
           <h2 id="network-preview-title">Peers & Decentralization Map</h2>
+          <span className="eyebrow">Coming soon</span>
         </header>
 
         <div className="network-preview__content">
