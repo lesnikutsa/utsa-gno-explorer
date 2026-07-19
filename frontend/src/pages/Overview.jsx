@@ -6,9 +6,8 @@ import { StatusBadge } from '../components/StatusBadge'
 import { BlocksIcon, ChainIcon, MapIcon, NetworkIcon, ValidatorsIcon } from '../components/Icons'
 import { relativeTime } from '../utils/time'
 import { shortAddress } from '../utils/address'
+import { getMissedBlocks, getValidatorHealth, getValidatorMissedBreakdown } from '../utils/validatorHealth'
 
-const missedBlocks = (uptime = {}) => (uptime.nil_blocks ?? 0) + (uptime.absent_blocks ?? 0) + (uptime.invalid_blocks ?? 0)
-const missedTitle = (uptime = {}) => `Nil: ${uptime.nil_blocks ?? 0}\nAbsent: ${uptime.absent_blocks ?? 0}\nInvalid: ${uptime.invalid_blocks ?? 0}`
 const missedSeverity = (missed) => missed >= 10 ? 'high' : missed >= 2 ? 'medium' : 'low'
 const OVERVIEW_ROW_LIMIT = 6
 
@@ -41,9 +40,12 @@ const blockColumns = [
 const validatorColumns = [
   // Monikers and operator addresses require future backend/indexer enrichment.
   { key: 'address', label: 'Signing Address', render: (row) => <span className="mono" title={row.address}>{shortAddress(row.address)}</span> },
-  { key: 'missed', label: 'Missed (last 100)', render: (row) => <strong className={`missed-value missed-value--${missedSeverity(row.missedTotal)}`} title={missedTitle(row.uptime_100)}>{row.missedTotal}</strong> },
+  { key: 'missed', label: 'Missed (last 100)', render: (row) => <strong className={`missed-value missed-value--${missedSeverity(row.missedTotal)}`} title={getValidatorMissedBreakdown(row.uptime_100)}>{row.missedTotal}</strong> },
   { key: 'uptime', label: 'Uptime (last 100)', render: (row) => <span className="mono" title={row.uptime_100?.uptime_percent ?? undefined}>{formatUptime(row.uptime_100?.uptime_percent)}</span> },
-  { key: 'status', label: 'Status', render: () => <StatusBadge tone="success">Active</StatusBadge> },
+  { key: 'health', label: 'Health', render: (row) => {
+    const health = getValidatorHealth(row.uptime_100)
+    return <span title={`Active set\n${getValidatorMissedBreakdown(row.uptime_100)}`}><StatusBadge tone={health.tone}>{health.label}</StatusBadge></span>
+  } },
 ]
 
 export function Overview({ explorerData, mascotSrc = null }) {
@@ -56,7 +58,7 @@ export function Overview({ explorerData, mascotSrc = null }) {
   const [updatedLatestHeight, setUpdatedLatestHeight] = useState(null)
   const [insertedBlockHeight, setInsertedBlockHeight] = useState(null)
   const validatorsByMisses = useMemo(() => data.validators
-    .map((validator) => ({ ...validator, missedTotal: missedBlocks(validator.uptime_100) }))
+    .map((validator) => ({ ...validator, missedTotal: getMissedBlocks(validator.uptime_100) }))
     .filter((validator) => validator.missedTotal > 0)
     .sort((left, right) => {
       if (right.missedTotal !== left.missedTotal) return right.missedTotal - left.missedTotal
