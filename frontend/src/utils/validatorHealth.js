@@ -41,3 +41,36 @@ export function formatIntegerString(value) {
   if (!match) return text
   return `${match[1]}${match[2].replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`
 }
+
+const normalizeIntegerString = (value) => {
+  const text = String(value ?? '')
+  const match = text.match(/^([+-]?)(\d+)$/)
+  if (!match) return null
+  const digits = match[2].replace(/^0+(?=\d)/, '')
+  const negative = match[1] === '-' && digits !== '0'
+  return { digits, negative }
+}
+
+export function compareIntegerStrings(left, right) {
+  const normalizedLeft = normalizeIntegerString(left)
+  const normalizedRight = normalizeIntegerString(right)
+  if (!normalizedLeft || !normalizedRight) return String(left ?? '').localeCompare(String(right ?? ''))
+  if (normalizedLeft.negative !== normalizedRight.negative) return normalizedLeft.negative ? -1 : 1
+
+  const direction = normalizedLeft.negative ? -1 : 1
+  if (normalizedLeft.digits.length !== normalizedRight.digits.length) {
+    return (normalizedLeft.digits.length - normalizedRight.digits.length) * direction
+  }
+  return normalizedLeft.digits.localeCompare(normalizedRight.digits) * direction
+}
+
+const HEALTH_SORT_PRIORITY = {
+  'no-signatures': 5,
+  critical: 4,
+  degraded: 3,
+  unknown: 2,
+  'no-data': 1,
+  healthy: 0,
+}
+
+export const compareValidatorHealth = (leftKey, rightKey) => (HEALTH_SORT_PRIORITY[leftKey] ?? -1) - (HEALTH_SORT_PRIORITY[rightKey] ?? -1)

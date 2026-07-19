@@ -1,7 +1,10 @@
+import { useMemo, useState } from 'react'
 import { DataTable } from '../components/DataTable'
 import { StatusBadge } from '../components/StatusBadge'
 import { shortAddress } from '../utils/address'
 import {
+  compareIntegerStrings,
+  compareValidatorHealth,
   formatIntegerString,
   getMissedBlocks,
   getValidatorHealth,
@@ -23,18 +26,16 @@ const healthBadge = (uptime) => {
 }
 
 const columns = [
-  { key: 'rank', label: 'Rank', render: (row) => <span className="mono">#{row.rank}</span> },
-  { key: 'address', label: 'Signing Address', render: (row) => <span className="mono" title={row.address}>{shortAddress(row.address)}</span> },
-  { key: 'voting_power', label: 'Voting Power', render: (row) => <span className="mono">{formatIntegerString(row.voting_power)}</span> },
-  { key: 'percent', label: 'Voting Power %', render: (row) => <span className="mono">{formatPercent(row.percent)}</span> },
-  { key: 'uptime_20', label: 'Uptime (20)', render: (row) => <span className="mono">{formatPercent(row.uptime_20?.uptime_percent)}</span> },
-  { key: 'uptime_100', label: 'Uptime (100)', render: (row) => <span className="mono">{formatPercent(row.uptime_100?.uptime_percent)}</span> },
-  { key: 'missed_100', label: 'Missed (100)', render: (row) => {
+  { key: 'powerRank', label: 'Power Rank', render: (row) => <span className="mono">#{row.powerRank}</span> },
+  { key: 'address', label: 'Signing Address', sortable: true, defaultSortDirection: 'ascending', render: (row) => <span className="mono" title={row.address}>{shortAddress(row.address)}</span> },
+  { key: 'voting_power', label: 'Voting Power', sortable: true, defaultSortDirection: 'descending', render: (row) => <span className="validator-power mono"><span>{formatIntegerString(row.voting_power)}</span><span className="validator-power__percent">{formatPercent(row.percent)}</span></span> },
+  { key: 'uptime_100', label: 'Uptime (100)', sortable: true, defaultSortDirection: 'descending', render: (row) => <span className="mono">{formatPercent(row.uptime_100?.uptime_percent)}</span> },
+  { key: 'missed_100', label: 'Missed (100)', sortable: true, defaultSortDirection: 'descending', render: (row) => {
     const missed = getMissedBlocks(row.uptime_100)
     return <strong className={`missed-value missed-value--${missedSeverity(missed)}`} title={getValidatorMissedBreakdown(row.uptime_100)}>{missed}</strong>
   } },
-  { key: 'health_100', label: 'Health (100)', render: (row) => healthBadge(row.uptime_100) },
-  { key: 'proposer_priority', label: 'Proposer Priority', render: (row) => <span className="mono">{formatIntegerString(row.proposer_priority)}</span> },
+  { key: 'health_100', label: 'Health (100)', sortable: true, defaultSortDirection: 'descending', render: (row) => healthBadge(row.uptime_100) },
+  { key: 'proposer_priority', label: 'Proposer Priority', sortable: true, defaultSortDirection: 'descending', headerTitle: 'Consensus proposer-selection priority. A higher current value generally means the validator is closer to proposing. This is not a performance or health score.', render: (row) => <span className="mono">{formatIntegerString(row.proposer_priority)}</span> },
 ]
 
 const legend = [
@@ -46,8 +47,20 @@ const legend = [
 ]
 
 export function Validators({ validatorsPage }) {
+  const [sort, setSort] = useState({ key: 'voting_power', direction: 'descending' })
   const { response, validators, loading, backgroundRefreshing, manualRefreshing, error, hasSuccessfulResponse, refresh } = validatorsPage
-  const rows = validators.map((validator, index) => ({ ...validator, rank: index + 1 }))
+  const rows = useMemo(() => validators.map((validator, index) => ({ ...validator, powerRank: index + 1 })), [validators])
+  const sortedRows = useMemo(() => [...rows].sort((left, right) => {
+    let comparison = 0
+    if (sort.key === 'address') comparison = left.address.localeCompare(right.address)
+    if (sort.key === 'voting_power') comparison = compareIntegerStrings(left.voting_power, right.voting_power)
+    if (sort.key === 'uptime_100') comparison = (left.uptime_100?.uptime_percent ?? 0) - (right.uptime_100?.uptime_percent ?? 0)
+    if (sort.key === 'missed_100') comparison = getMissedBlocks(left.uptime_100) - getMissedBlocks(right.uptime_100)
+    if (sort.key === 'health_100') comparison = compareValidatorHealth(getValidatorHealth(left.uptime_100).key, getValidatorHealth(right.uptime_100).key)
+    if (sort.key === 'proposer_priority') comparison = compareIntegerStrings(left.proposer_priority, right.proposer_priority)
+    if (comparison === 0) return left.powerRank - right.powerRank
+    return sort.direction === 'ascending' ? comparison : -comparison
+  }), [rows, sort])
   const emptyMessage = error && !hasSuccessfulResponse ? 'Validators are currently unavailable.' : 'No active validators returned.'
 
   return (
@@ -81,7 +94,7 @@ export function Validators({ validatorsPage }) {
           <h2>Active Validators</h2>
           <span className="panel__meta">{response.height === null ? 'Height —' : `Height ${formatHeight(response.height)}`} · Live every 15s</span>
         </div>
-        <DataTable columns={columns} rows={rows} rowKey={(row) => row.address} loading={loading} emptyMessage={emptyMessage} />
+        <DataTable columns={columns} rows={sortedRows} rowKey={(row) => row.address} loading={loading} emptyMessage={emptyMessage} sortKey={sort.key} sortDirection={sort.direction} onSort={(key, direction) => setSort({ key, direction })} />
       </section>
     </section>
   )
