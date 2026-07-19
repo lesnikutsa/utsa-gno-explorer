@@ -11,6 +11,10 @@ const items = [
 
 export function Sidebar({ open, onClose }) {
   const pathname = window.location.pathname
+  const isActive = (href) => {
+    if (href === '/') return pathname === '/'
+    return pathname === href || pathname.startsWith(`${href}/`)
+  }
 
   return (
     <>
@@ -22,10 +26,12 @@ export function Sidebar({ open, onClose }) {
           <button type="button">Gno.land Testnet 13 <ChevronDownIcon /></button>
         </div>
         <nav className="sidebar__nav" aria-label="Explorer navigation">
-          {items.map(({ label, Icon, href }) => (
-            href ? <a key={label} className={`nav-item ${pathname === href ? 'is-active' : ''}`} href={href} onClick={onClose}><Icon />{label}</a> :
-              <span key={label} className="nav-item is-disabled" aria-disabled="true"><Icon />{label}</span>
-          ))}
+          {items.map(({ label, Icon, href }) => {
+            if (!href) return <span key={label} className="nav-item is-disabled" aria-disabled="true"><Icon />{label}</span>
+
+            const active = isActive(href)
+            return <a key={label} className={`nav-item ${active ? 'is-active' : ''}`} href={href} onClick={onClose} aria-current={active ? 'page' : undefined}><Icon />{label}</a>
+          })}
         </nav>
       </aside>
     </>
