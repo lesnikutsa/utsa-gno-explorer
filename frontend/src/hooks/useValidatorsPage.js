@@ -42,10 +42,21 @@ export function useValidatorsPage() {
     if (mode === 'manual') setManualRefreshing(true)
 
     try {
-      const [validatorsResult, historyResult] = await Promise.allSettled([
+      const [initialValidatorsResult, initialHistoryResult] = await Promise.allSettled([
         getValidators(),
-        getValidatorSigningHistory({ limit: 100 }),
+        getValidatorSigningHistory({ limit: 50 }),
       ])
+      let validatorsResult = initialValidatorsResult
+      let historyResult = initialHistoryResult
+      if (validatorsResult.status === 'fulfilled' && historyResult.status === 'fulfilled' && validatorsResult.value.height !== historyResult.value.height) {
+        if (validatorsResult.value.height < historyResult.value.height) {
+          const reconciledValidators = await Promise.allSettled([getValidators()])
+          if (reconciledValidators[0].status === 'fulfilled') validatorsResult = reconciledValidators[0]
+        } else {
+          const reconciledHistory = await Promise.allSettled([getValidatorSigningHistory({ limit: 50 })])
+          if (reconciledHistory[0].status === 'fulfilled') historyResult = reconciledHistory[0]
+        }
+      }
       if (!mounted.current || id !== requestId.current) return false
 
       if (validatorsResult.status === 'fulfilled') {

@@ -44,11 +44,22 @@ export function useExplorerData() {
   const refreshSlow = useCallback(async () => {
     if (slowInFlight.current) return
     slowInFlight.current = true
-    const [health, validators, validatorHistory] = await Promise.allSettled([
+    const [health, initialValidators, initialValidatorHistory] = await Promise.allSettled([
       getHealth(),
       getValidators(),
-      getValidatorSigningHistory({ limit: 100 }),
+      getValidatorSigningHistory({ limit: 50 }),
     ])
+    let validators = initialValidators
+    let validatorHistory = initialValidatorHistory
+    if (validators.status === 'fulfilled' && validatorHistory.status === 'fulfilled' && validators.value.height !== validatorHistory.value.height) {
+      if (validators.value.height < validatorHistory.value.height) {
+        const reconciledValidators = await Promise.allSettled([getValidators()])
+        if (reconciledValidators[0].status === 'fulfilled') validators = reconciledValidators[0]
+      } else {
+        const reconciledHistory = await Promise.allSettled([getValidatorSigningHistory({ limit: 50 })])
+        if (reconciledHistory[0].status === 'fulfilled') validatorHistory = reconciledHistory[0]
+      }
+    }
 
     if (mounted.current) {
       const validatorsSucceeded = validators.status === 'fulfilled'

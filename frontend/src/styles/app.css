@@ -228,8 +228,8 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 @media (prefers-reduced-motion: reduce) { .pulse--healthy, .live-dot, .status-card.is-updating, .status-card.is-updating .status-card__value, .data-table tbody tr.is-new-row, .data-table tbody tr.is-new-row td:first-child .accent-value, .data-table tbody tr.is-new-row td:nth-child(5) .muted, .data-table tbody tr.is-settling-row { animation: none; } }
 
 .validator-signing-cell { display: inline-flex; align-items: flex-start; flex-direction: column; gap: 5px; }
-.signing-strip { display: inline-grid; width: 300px; height: 11px; grid-template-columns: repeat(var(--signing-count), minmax(1px, 1fr)); gap: 1px; }
-.signing-strip--compact { width: 200px; }
+.signing-strip { display: inline-grid; width: 280px; height: 11px; grid-template-columns: repeat(var(--signing-count), minmax(1px, 1fr)); gap: 1px; }
+.signing-strip--compact { width: 190px; }
 .signing-strip__segment { display: block; min-width: 1px; height: 11px; border-radius: 1px; }
 .signing-strip__segment:hover { filter: brightness(1.22); }
 .signing-strip__segment--commit { background: var(--color-success); }
