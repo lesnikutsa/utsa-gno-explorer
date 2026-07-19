@@ -77,7 +77,7 @@ export function useExplorerData() {
         ...current,
         health: health.status === 'rejected',
         validators: validators.status === 'rejected',
-        validatorHistory: validatorsSucceeded ? !historyMatched : current.validatorHistory,
+        validatorHistory: !historyMatched,
       }))
       finishInitialGroup('slow')
       slowTimer.current = window.setTimeout(refreshSlow, SLOW_POLL_MS)
