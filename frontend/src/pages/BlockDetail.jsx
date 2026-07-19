@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 
+import { CopyButton } from '../components/CopyButton'
 import { DataTable } from '../components/DataTable'
 import { StatusBadge } from '../components/StatusBadge'
 import { relativeTime } from '../utils/time'
@@ -82,7 +83,7 @@ export function BlockDetail({ blockDetail }) {
         <div className="block-detail__grid">
           <div className="block-detail__field"><span className="block-detail__label">Height</span><strong className="block-detail__value accent-value mono">#{block.height.toLocaleString()}</strong></div>
           <div className="block-detail__field"><span className="block-detail__label">Time</span><strong className="block-detail__value mono">{block.time}</strong><RelativeBlockTime value={block.time} /></div>
-          <div className="block-detail__field"><span className="block-detail__label">Proposer</span><strong className="block-detail__value mono">{block.proposer_address ?? '—'}</strong></div>
+          <div className="block-detail__field"><span className="block-detail__label">Proposer</span><div className="block-detail__copy-row"><strong className="block-detail__value mono">{block.proposer_address ?? '—'}</strong>{block.proposer_address !== null && <CopyButton value={block.proposer_address} label="proposer" />}</div></div>
           <div className="block-detail__field"><span className="block-detail__label">Transactions</span><strong className="block-detail__value mono">{block.tx_count}</strong></div>
         </div>
       </section>
@@ -90,8 +91,8 @@ export function BlockDetail({ blockDetail }) {
       <section className="panel block-detail__section" aria-labelledby="block-hashes-title">
         <div className="panel__heading"><h2 id="block-hashes-title">Block Hashes</h2></div>
         <div className="block-detail__hashes">
-          <div className="block-detail__field"><span className="block-detail__label">Block Hash</span><strong className="block-detail__value block-detail__hash mono">{block.block_hash}</strong></div>
-          <div className="block-detail__field"><span className="block-detail__label">Block Hash Base64</span><strong className="block-detail__value block-detail__hash mono">{block.block_hash_base64}</strong></div>
+          <div className="block-detail__field"><span className="block-detail__label">Block Hash</span><div className="block-detail__copy-row"><strong className="block-detail__value block-detail__hash mono">{block.block_hash}</strong><CopyButton value={block.block_hash} label="block hash" /></div></div>
+          <div className="block-detail__field"><span className="block-detail__label">Block Hash Base64</span><div className="block-detail__copy-row"><strong className="block-detail__value block-detail__hash mono">{block.block_hash_base64}</strong><CopyButton value={block.block_hash_base64} label="block hash Base64" /></div></div>
         </div>
       </section>
 
