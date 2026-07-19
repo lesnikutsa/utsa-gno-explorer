@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react'
+
 import { DataTable } from '../components/DataTable'
 import { StatusBadge } from '../components/StatusBadge'
 import { relativeTime } from '../utils/time'
@@ -32,6 +34,20 @@ const commitMetrics = [
   ['unknown', 'Unknown', ''],
 ]
 
+function RelativeBlockTime({ value }) {
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    const timerId = window.setInterval(() => {
+      setNow(Date.now())
+    }, 30_000)
+
+    return () => window.clearInterval(timerId)
+  }, [])
+
+  return <small>{relativeTime(value, now)}</small>
+}
+
 function StatePanel({ title, message, retry }) {
   return (
     <section className="panel block-detail__state">
@@ -65,7 +81,7 @@ export function BlockDetail({ blockDetail }) {
         <div className="panel__heading"><h2 id="block-information-title">Block Information</h2></div>
         <div className="block-detail__grid">
           <div className="block-detail__field"><span className="block-detail__label">Height</span><strong className="block-detail__value accent-value mono">#{block.height.toLocaleString()}</strong></div>
-          <div className="block-detail__field"><span className="block-detail__label">Time</span><strong className="block-detail__value mono">{block.time}</strong><small>{relativeTime(block.time)}</small></div>
+          <div className="block-detail__field"><span className="block-detail__label">Time</span><strong className="block-detail__value mono">{block.time}</strong><RelativeBlockTime value={block.time} /></div>
           <div className="block-detail__field"><span className="block-detail__label">Proposer</span><strong className="block-detail__value mono">{block.proposer_address ?? '—'}</strong></div>
           <div className="block-detail__field"><span className="block-detail__label">Transactions</span><strong className="block-detail__value mono">{block.tx_count}</strong></div>
         </div>
