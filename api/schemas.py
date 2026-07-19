@@ -138,6 +138,28 @@ class ValidatorSigningHistory(BaseModel):
     items: list[ValidatorSigningHistoryItem]
 
 
+ValidatorSigningStatus = Literal["commit", "nil", "absent", "invalid", "not_active", "unknown"]
+
+
+class ValidatorSigningHistoryBlock(BaseModel):
+    height: int = Field(ge=0)
+    time: str
+
+
+class ValidatorSigningHistoryBatchItem(BaseModel):
+    address: str
+    statuses: list[ValidatorSigningStatus]
+
+
+class ValidatorSigningHistoryBatchResponse(BaseModel):
+    height: int = Field(ge=0)
+    network_blocks: int = Field(ge=0)
+    start_height: int | None = Field(default=None, ge=0)
+    end_height: int | None = Field(default=None, ge=0)
+    blocks: list[ValidatorSigningHistoryBlock]
+    items: list[ValidatorSigningHistoryBatchItem]
+
+
 class ValidatorDetailResponse(BaseModel):
     address: str
     public_key_type: str | None

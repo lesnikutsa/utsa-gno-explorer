@@ -30,6 +30,9 @@ from api.schemas import (
     ValidatorCurrentStatus,
     ValidatorDetailResponse,
     ValidatorSigningHistory,
+    ValidatorSigningHistoryBatchItem,
+    ValidatorSigningHistoryBatchResponse,
+    ValidatorSigningHistoryBlock,
     ValidatorSigningHistoryItem,
     ValidatorsResponse,
     ValidatorUptime,
@@ -305,6 +308,47 @@ def _validator_detail_from_rows(result: dict) -> ValidatorDetailResponse:
     )
 
 
+def _validator_signing_history_batch_from_rows(result: dict) -> ValidatorSigningHistoryBatchResponse:
+    block_rows = result["blocks"]
+    block_heights = [row["height"] for row in block_rows]
+    if block_heights != sorted(block_heights) or len(block_heights) != len(set(block_heights)):
+        raise ValueError("Signing history block axis is invalid")
+
+    expected_addresses = list(result["checkpoint"]["validator_addresses"])
+    if len(expected_addresses) != len(set(expected_addresses)):
+        raise ValueError("Signing history validator axis contains duplicates")
+    expected_address_set = set(expected_addresses)
+
+    grouped: dict[str, list[dict]] = {}
+    for row in result["items"]:
+        if row["address"] not in expected_address_set:
+            raise ValueError("Signing history matrix contains an unexpected validator")
+        grouped.setdefault(row["address"], []).append(row)
+
+    items = []
+    for address in expected_addresses:
+        rows = grouped.get(address, [])
+        if [row["height"] for row in rows] != block_heights:
+            raise ValueError("Signing history matrix is not aligned")
+        items.append(ValidatorSigningHistoryBatchItem(
+            address=address,
+            statuses=[_history_status(row) for row in rows],
+        ))
+
+    blocks = [
+        ValidatorSigningHistoryBlock(height=row["height"], time=isoformat_utc_z(row["time_utc"]))
+        for row in block_rows
+    ]
+    return ValidatorSigningHistoryBatchResponse(
+        height=result["checkpoint"]["height"],
+        network_blocks=len(blocks),
+        start_height=block_heights[0] if block_heights else None,
+        end_height=block_heights[-1] if block_heights else None,
+        blocks=blocks,
+        items=items,
+    )
+
+
 @app.get("/api/health", response_model=HealthResponse)
 def get_health() -> HealthResponse:
     config = app.state.api_config
@@ -336,6 +380,18 @@ def get_validators() -> ValidatorsResponse:
         return _validators_response_from_rows(database.fetch_active_validators())
     except Exception:
         LOGGER.error("Explorer database validators query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+
+
+@app.get("/api/validators/signing-history", response_model=ValidatorSigningHistoryBatchResponse)
+def get_validator_signing_history(
+    limit: int = Query(default=100, ge=1, le=100),
+) -> ValidatorSigningHistoryBatchResponse:
+    try:
+        result = database.fetch_validator_signing_history(limit=limit)
+        return _validator_signing_history_batch_from_rows(result)
+    except Exception:
+        LOGGER.error("Explorer database validator signing history query failed")
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
 
 
