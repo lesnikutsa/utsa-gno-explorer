@@ -13,7 +13,7 @@ export function getValidatorHealth(uptime = {}) {
   const unknownBlocks = safeCount(uptime.unknown_blocks)
 
   if (activeBlocks <= 0) return { key: 'no-data', label: 'No data', tone: 'neutral' }
-  if (unknownBlocks === activeBlocks) return { key: 'unknown', label: 'Unknown', tone: 'neutral' }
+  if (unknownBlocks > 0) return { key: 'unknown', label: 'Unknown', tone: 'neutral' }
   if (missedBlocks === activeBlocks) return { key: 'no-signatures', label: 'No signatures', tone: 'error' }
 
   const missedRate = missedBlocks / activeBlocks
@@ -38,6 +38,6 @@ export function formatIntegerString(value) {
   if (value === null || value === undefined || value === '') return '—'
   const text = String(value)
   const match = text.match(/^(-?)(\d+)$/)
-  if (!match) return '—'
+  if (!match) return text
   return `${match[1]}${match[2].replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`
 }

@@ -42,13 +42,13 @@ const legend = [
   { label: 'Degraded', tone: 'warning', detail: '10–49% missed' },
   { label: 'Critical', tone: 'error', detail: '50–99% missed' },
   { label: 'No signatures', tone: 'error', detail: 'all active blocks missed' },
+  { label: 'Unknown / No data', tone: 'neutral', detail: 'incomplete or unavailable signing history' },
 ]
 
 export function Validators({ validatorsPage }) {
-  const { response, validators, loading, backgroundRefreshing, manualRefreshing, error, refresh } = validatorsPage
-  const loaded = !loading && (response.height !== null || !error)
+  const { response, validators, loading, backgroundRefreshing, manualRefreshing, error, hasSuccessfulResponse, refresh } = validatorsPage
   const rows = validators.map((validator, index) => ({ ...validator, rank: index + 1 }))
-  const emptyMessage = error ? 'Validators are currently unavailable.' : 'No active validators returned.'
+  const emptyMessage = error && !hasSuccessfulResponse ? 'Validators are currently unavailable.' : 'No active validators returned.'
 
   return (
     <section className="validators-page" aria-labelledby="validators-page-title">
@@ -62,15 +62,15 @@ export function Validators({ validatorsPage }) {
         </button>
       </header>
 
-      <p className="validators-page__notice">All validators shown are members of the current active set. Health reflects signing performance over the last 100 active blocks and is not a protocol slashing status.</p>
+      <p className="validators-page__notice">All validators shown are members of the current active set. Health reflects signing performance across the latest window of up to 100 network blocks, considering only blocks where the validator was active. It is not a protocol slashing status.</p>
 
       <div className="validators-page__summary" aria-label="Validator set summary">
-        <div className="validators-page__metric"><span>Active Validators</span><strong>{loaded ? response.total.toLocaleString() : '—'}</strong></div>
-        <div className="validators-page__metric"><span>Indexed Height</span><strong>{loaded ? formatHeight(response.height) : '—'}</strong></div>
-        <div className="validators-page__metric"><span>Total Voting Power</span><strong>{loaded ? formatIntegerString(response.total_voting_power) : '—'}</strong></div>
+        <div className="validators-page__metric"><span>Active Validators</span><strong>{hasSuccessfulResponse ? response.total.toLocaleString() : '—'}</strong></div>
+        <div className="validators-page__metric"><span>Indexed Height</span><strong>{hasSuccessfulResponse ? formatHeight(response.height) : '—'}</strong></div>
+        <div className="validators-page__metric"><span>Total Voting Power</span><strong>{hasSuccessfulResponse ? formatIntegerString(response.total_voting_power) : '—'}</strong></div>
       </div>
 
-      {error && validators.length > 0 && <p className="validators-page__notice validators-page__notice--warning">Showing the last loaded validator set. Refresh failed.</p>}
+      {error && hasSuccessfulResponse && <p className="validators-page__notice validators-page__notice--warning">Showing the last loaded validator set. Refresh failed.</p>}
 
       <div className="validators-page__legend" aria-label="Operational health legend">
         {legend.map((item) => <span key={item.label}><StatusBadge tone={item.tone}>{item.label}</StatusBadge><small>{item.detail}</small></span>)}

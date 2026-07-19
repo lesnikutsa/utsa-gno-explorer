@@ -11,11 +11,12 @@ export function useValidatorsPage() {
   const [manualRefreshing, setManualRefreshing] = useState(false)
   const [error, setError] = useState(false)
   const [healthState, setHealthState] = useState('loading')
+  const [hasSuccessfulResponse, setHasSuccessfulResponse] = useState(false)
   const mounted = useRef(false)
   const inFlight = useRef(false)
   const requestId = useRef(0)
   const timer = useRef(null)
-  const responseRef = useRef(INITIAL_RESPONSE)
+  const hasSuccessfulResponseRef = useRef(false)
   const requestRef = useRef(null)
 
   const clearTimer = useCallback(() => {
@@ -40,15 +41,16 @@ export function useValidatorsPage() {
     try {
       const nextResponse = await getValidators()
       if (!mounted.current || id !== requestId.current) return false
-      responseRef.current = nextResponse
+      hasSuccessfulResponseRef.current = true
       setResponse(nextResponse)
+      setHasSuccessfulResponse(true)
       setError(false)
       setHealthState('healthy')
       return true
     } catch {
       if (!mounted.current || id !== requestId.current) return false
       setError(true)
-      setHealthState(responseRef.current.items.length ? 'degraded' : 'error')
+      setHealthState(hasSuccessfulResponseRef.current ? 'degraded' : 'error')
       return false
     } finally {
       if (mounted.current && id === requestId.current) {
@@ -86,6 +88,7 @@ export function useValidatorsPage() {
     manualRefreshing,
     error,
     healthState,
+    hasSuccessfulResponse,
     refresh,
   }
 }
