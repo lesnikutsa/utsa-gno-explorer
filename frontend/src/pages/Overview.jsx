@@ -3,6 +3,7 @@ import { Card } from '../components/Card'
 import { DataTable } from '../components/DataTable'
 import { ResourceStrip } from '../components/ResourceStrip'
 import { StatusBadge } from '../components/StatusBadge'
+import { ValidatorSigningStrip } from '../components/ValidatorSigningStrip'
 import { BlocksIcon, ChainIcon, MapIcon, NetworkIcon, ValidatorsIcon } from '../components/Icons'
 import { relativeTime } from '../utils/time'
 import { shortAddress } from '../utils/address'
@@ -37,17 +38,6 @@ const blockColumns = [
   { key: 'block_hash', label: 'Block Hash', render: (row) => <span className="mono muted" title={row.block_hash}>{shortAddress(row.block_hash)}</span> },
 ]
 
-const validatorColumns = [
-  // Monikers and operator addresses require future backend/indexer enrichment.
-  { key: 'address', label: 'Signing Address', render: (row) => <span className="mono" title={row.address}>{shortAddress(row.address)}</span> },
-  { key: 'missed', label: 'Missed (last 100)', render: (row) => <strong className={`missed-value missed-value--${missedSeverity(row.missedTotal)}`} title={getValidatorMissedBreakdown(row.uptime_100)}>{row.missedTotal}</strong> },
-  { key: 'uptime', label: 'Uptime (last 100)', render: (row) => <span className="mono" title={row.uptime_100?.uptime_percent ?? undefined}>{formatUptime(row.uptime_100?.uptime_percent)}</span> },
-  { key: 'health', label: 'Health', render: (row) => {
-    const health = getValidatorHealth(row.uptime_100)
-    return <span title={`Active set\n${getValidatorMissedBreakdown(row.uptime_100)}`}><StatusBadge tone={health.tone}>{health.label}</StatusBadge></span>
-  } },
-]
-
 export function Overview({ explorerData, mascotSrc = null }) {
   const { data, errors, loading, healthState } = explorerData
   const networkLabel = { loading: '—', healthy: 'Healthy', degraded: 'Degraded', error: 'Error' }[healthState]
@@ -57,6 +47,21 @@ export function Overview({ explorerData, mascotSrc = null }) {
   const previousFirstBlockHeight = useRef(null)
   const [updatedLatestHeight, setUpdatedLatestHeight] = useState(null)
   const [insertedBlockHeight, setInsertedBlockHeight] = useState(null)
+  const historyMap = useMemo(() => new Map(
+    (data.validatorHistory?.items ?? []).filter((item) => item?.address).map((item) => [item.address, item]),
+  ), [data.validatorHistory])
+  const historyBlocks = data.validatorHistory?.blocks
+  const validatorColumns = useMemo(() => [
+    { key: 'address', label: 'Signing Address', render: (row) => <span className="mono" title={row.address}>{shortAddress(row.address)}</span> },
+    { key: 'signing', label: 'Signing (last 100)', render: (row) => {
+      const history = row.address ? historyMap.get(row.address) : null
+      return <span className="validator-signing-cell"><span title={getValidatorMissedBreakdown(row.uptime_100)}><strong className={`missed-value missed-value--${missedSeverity(row.missedTotal)}`}>{row.missedTotal} missed</strong><span className="muted"> · {formatUptime(row.uptime_100?.uptime_percent)} uptime</span></span><ValidatorSigningStrip blocks={historyBlocks} statuses={history?.statuses} compact address={row.address} /></span>
+    } },
+    { key: 'health', label: 'Health', render: (row) => {
+      const health = getValidatorHealth(row.uptime_100)
+      return <span title={`Active set\n${getValidatorMissedBreakdown(row.uptime_100)}`}><StatusBadge tone={health.tone}>{health.label}</StatusBadge></span>
+    } },
+  ], [historyBlocks, historyMap])
   const validatorsByMisses = useMemo(() => data.validators
     .map((validator) => ({ ...validator, missedTotal: getMissedBlocks(validator.uptime_100) }))
     .filter((validator) => validator.missedTotal > 0)
@@ -99,7 +104,7 @@ export function Overview({ explorerData, mascotSrc = null }) {
           <DataTable columns={blockColumns} rows={data.blocks.slice(0, OVERVIEW_ROW_LIMIT)} rowKey={(row) => row.height} rowClassName={(row, index) => insertedBlockHeight === null ? '' : index === 0 && row.height === insertedBlockHeight ? 'is-new-row' : 'is-settling-row'} loading={loading} emptyMessage={errors.blocks ? 'Blocks are currently unavailable.' : 'No blocks returned.'} />
         </section>
         <section className="panel dashboard-grid__validators">
-          <div className="panel__heading"><h2>Validators by Missed Blocks</h2><span className="panel__meta">Last 100 blocks</span></div>
+          <div className="panel__heading"><h2>Validators by Missed Blocks</h2><span className="panel__meta">Latest 100 network blocks</span></div>
           <DataTable columns={validatorColumns} rows={validatorsByMisses} rowKey={(row) => row.address} loading={loading} emptyMessage={errors.validators ? 'Validators are currently unavailable.' : 'No validator misses in the last 100 blocks.'} />
         </section>
       </div>

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getBlocks, getHealth, getNetwork, getValidators } from '../services/api'
+import { getBlocks, getHealth, getNetwork, getValidatorSigningHistory, getValidators } from '../services/api'
 
 const FAST_POLL_MS = 5_000
 const SLOW_POLL_MS = 15_000
 
 export function useExplorerData() {
-  const [data, setData] = useState({ health: null, network: null, blocks: [], validators: [] })
-  const [errors, setErrors] = useState({ health: false, network: false, blocks: false, validators: false })
+  const [data, setData] = useState({ health: null, network: null, blocks: [], validators: [], validatorHistory: null })
+  const [errors, setErrors] = useState({ health: false, network: false, blocks: false, validators: false, validatorHistory: false })
   const [loading, setLoading] = useState(true)
   const [nextFastRefreshAt, setNextFastRefreshAt] = useState(null)
   const mounted = useRef(false)
@@ -44,15 +44,20 @@ export function useExplorerData() {
   const refreshSlow = useCallback(async () => {
     if (slowInFlight.current) return
     slowInFlight.current = true
-    const [health, validators] = await Promise.allSettled([getHealth(), getValidators()])
+    const [health, validators, validatorHistory] = await Promise.allSettled([
+      getHealth(),
+      getValidators(),
+      getValidatorSigningHistory({ limit: 100 }),
+    ])
 
     if (mounted.current) {
       setData((current) => ({
         ...current,
         health: health.status === 'fulfilled' ? health.value : current.health,
         validators: validators.status === 'fulfilled' ? validators.value.items ?? [] : current.validators,
+        validatorHistory: validatorHistory.status === 'fulfilled' ? validatorHistory.value : current.validatorHistory,
       }))
-      setErrors((current) => ({ ...current, health: health.status === 'rejected', validators: validators.status === 'rejected' }))
+      setErrors((current) => ({ ...current, health: health.status === 'rejected', validators: validators.status === 'rejected', validatorHistory: validatorHistory.status === 'rejected' }))
       finishInitialGroup('slow')
       slowTimer.current = window.setTimeout(refreshSlow, SLOW_POLL_MS)
     }

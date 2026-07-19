@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getValidators } from '../services/api'
+import { getValidatorSigningHistory, getValidators } from '../services/api'
 
 export const VALIDATORS_POLL_MS = 15_000
 const INITIAL_RESPONSE = { height: null, total: 0, total_voting_power: '0', items: [] }
 
 export function useValidatorsPage() {
   const [response, setResponse] = useState(INITIAL_RESPONSE)
+  const [historyResponse, setHistoryResponse] = useState(null)
   const [loading, setLoading] = useState(true)
   const [backgroundRefreshing, setBackgroundRefreshing] = useState(false)
   const [manualRefreshing, setManualRefreshing] = useState(false)
   const [error, setError] = useState(false)
+  const [historyError, setHistoryError] = useState(false)
   const [healthState, setHealthState] = useState('loading')
   const [hasSuccessfulResponse, setHasSuccessfulResponse] = useState(false)
+  const [hasSuccessfulHistoryResponse, setHasSuccessfulHistoryResponse] = useState(false)
   const mounted = useRef(false)
   const inFlight = useRef(false)
   const requestId = useRef(0)
@@ -39,16 +42,29 @@ export function useValidatorsPage() {
     if (mode === 'manual') setManualRefreshing(true)
 
     try {
-      const nextResponse = await getValidators()
+      const [validatorsResult, historyResult] = await Promise.allSettled([
+        getValidators(),
+        getValidatorSigningHistory({ limit: 100 }),
+      ])
       if (!mounted.current || id !== requestId.current) return false
-      hasSuccessfulResponseRef.current = true
-      setResponse(nextResponse)
-      setHasSuccessfulResponse(true)
-      setError(false)
-      setHealthState('healthy')
-      return true
-    } catch {
-      if (!mounted.current || id !== requestId.current) return false
+
+      if (historyResult.status === 'fulfilled') {
+        setHistoryResponse(historyResult.value)
+        setHasSuccessfulHistoryResponse(true)
+        setHistoryError(false)
+      } else {
+        setHistoryError(true)
+      }
+
+      if (validatorsResult.status === 'fulfilled') {
+        hasSuccessfulResponseRef.current = true
+        setResponse(validatorsResult.value)
+        setHasSuccessfulResponse(true)
+        setError(false)
+        setHealthState('healthy')
+        return true
+      }
+
       setError(true)
       setHealthState(hasSuccessfulResponseRef.current ? 'degraded' : 'error')
       return false
@@ -83,12 +99,15 @@ export function useValidatorsPage() {
   return {
     response,
     validators: response.items,
+    historyResponse,
     loading,
     backgroundRefreshing,
     manualRefreshing,
     error,
+    historyError,
     healthState,
     hasSuccessfulResponse,
+    hasSuccessfulHistoryResponse,
     refresh,
   }
 }
