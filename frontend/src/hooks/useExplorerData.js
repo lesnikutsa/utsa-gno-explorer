@@ -5,7 +5,7 @@ const FAST_POLL_MS = 5_000
 const SLOW_POLL_MS = 15_000
 
 export function useExplorerData() {
-  const [data, setData] = useState({ health: null, network: null, blocks: [], validators: [], validatorHistory: null })
+  const [data, setData] = useState({ health: null, network: null, blocks: [], validators: [], validatorsHeight: null, validatorHistory: null })
   const [errors, setErrors] = useState({ health: false, network: false, blocks: false, validators: false, validatorHistory: false })
   const [loading, setLoading] = useState(true)
   const [nextFastRefreshAt, setNextFastRefreshAt] = useState(null)
@@ -51,13 +51,23 @@ export function useExplorerData() {
     ])
 
     if (mounted.current) {
+      const validatorsSucceeded = validators.status === 'fulfilled'
+      const historyMatched = validatorsSucceeded
+        && validatorHistory.status === 'fulfilled'
+        && validators.value.height === validatorHistory.value.height
       setData((current) => ({
         ...current,
         health: health.status === 'fulfilled' ? health.value : current.health,
-        validators: validators.status === 'fulfilled' ? validators.value.items ?? [] : current.validators,
-        validatorHistory: validatorHistory.status === 'fulfilled' ? validatorHistory.value : current.validatorHistory,
+        validators: validatorsSucceeded ? validators.value.items ?? [] : current.validators,
+        validatorsHeight: validatorsSucceeded ? validators.value.height : current.validatorsHeight,
+        validatorHistory: historyMatched ? validatorHistory.value : current.validatorHistory,
       }))
-      setErrors((current) => ({ ...current, health: health.status === 'rejected', validators: validators.status === 'rejected', validatorHistory: validatorHistory.status === 'rejected' }))
+      setErrors((current) => ({
+        ...current,
+        health: health.status === 'rejected',
+        validators: validators.status === 'rejected',
+        validatorHistory: validatorsSucceeded ? !historyMatched : current.validatorHistory,
+      }))
       finishInitialGroup('slow')
       slowTimer.current = window.setTimeout(refreshSlow, SLOW_POLL_MS)
     }

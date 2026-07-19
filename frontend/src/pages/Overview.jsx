@@ -104,7 +104,7 @@ export function Overview({ explorerData, mascotSrc = null }) {
           <DataTable columns={blockColumns} rows={data.blocks.slice(0, OVERVIEW_ROW_LIMIT)} rowKey={(row) => row.height} rowClassName={(row, index) => insertedBlockHeight === null ? '' : index === 0 && row.height === insertedBlockHeight ? 'is-new-row' : 'is-settling-row'} loading={loading} emptyMessage={errors.blocks ? 'Blocks are currently unavailable.' : 'No blocks returned.'} />
         </section>
         <section className="panel dashboard-grid__validators">
-          <div className="panel__heading"><h2>Validators by Missed Blocks</h2><span className="panel__meta">Latest 100 network blocks</span></div>
+          <div className="panel__heading"><h2>Validators by Missed Blocks</h2><span className="panel__meta" title={errors.validatorHistory && data.validatorHistory ? 'Showing the last successfully matched signing history.' : undefined}>{errors.validatorHistory ? (data.validatorHistory ? 'Signing history delayed' : 'Signing history unavailable') : 'Latest 100 network blocks'}</span></div>
           <DataTable columns={validatorColumns} rows={validatorsByMisses} rowKey={(row) => row.address} loading={loading} emptyMessage={errors.validators ? 'Validators are currently unavailable.' : 'No validator misses in the last 100 blocks.'} />
         </section>
       </div>

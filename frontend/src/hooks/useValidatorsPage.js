@@ -48,15 +48,17 @@ export function useValidatorsPage() {
       ])
       if (!mounted.current || id !== requestId.current) return false
 
-      if (historyResult.status === 'fulfilled') {
-        setHistoryResponse(historyResult.value)
-        setHasSuccessfulHistoryResponse(true)
-        setHistoryError(false)
-      } else {
-        setHistoryError(true)
-      }
-
       if (validatorsResult.status === 'fulfilled') {
+        const historyMatched = historyResult.status === 'fulfilled'
+          && validatorsResult.value.height === historyResult.value.height
+        if (historyMatched) {
+          setHistoryResponse(historyResult.value)
+          setHasSuccessfulHistoryResponse(true)
+          setHistoryError(false)
+        } else {
+          setHistoryError(true)
+        }
+
         hasSuccessfulResponseRef.current = true
         setResponse(validatorsResult.value)
         setHasSuccessfulResponse(true)
