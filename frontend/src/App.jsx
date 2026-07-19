@@ -1,7 +1,9 @@
 import { ExplorerLayout } from './layouts/ExplorerLayout'
 import { Blocks } from './pages/Blocks'
+import { BlockDetail } from './pages/BlockDetail'
 import { Overview } from './pages/Overview'
 import { useBlocksPage } from './hooks/useBlocksPage'
+import { useBlockDetail } from './hooks/useBlockDetail'
 import { useExplorerData } from './hooks/useExplorerData'
 
 const NETWORK_MASCOT_SRC = '/assets/network-mascot.png?v=1'
@@ -34,9 +36,26 @@ function BlocksPage() {
   )
 }
 
+function BlockDetailPage({ height }) {
+  const blockDetail = useBlockDetail(height)
+
+  return (
+    <ExplorerLayout healthState={blockDetail.healthState} showRefreshCountdown={false}>
+      <BlockDetail blockDetail={blockDetail} />
+    </ExplorerLayout>
+  )
+}
+
 export default function App() {
-  if (window.location.pathname === '/blocks') {
+  const path = window.location.pathname
+
+  if (path === '/blocks' || path === '/blocks/') {
     return <BlocksPage />
+  }
+
+  if (path.startsWith('/blocks/')) {
+    const height = path.slice('/blocks/'.length).replace(/\/$/, '')
+    return <BlockDetailPage height={height} />
   }
 
   return <OverviewPage />

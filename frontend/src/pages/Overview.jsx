@@ -31,7 +31,7 @@ function RpcStatus({ rpc }) {
 }
 
 const blockColumns = [
-  { key: 'height', label: 'Height', render: (row) => <span className="accent-value mono">#{row.height.toLocaleString()}</span> },
+  { key: 'height', label: 'Height', render: (row) => <a className="table-link" href={`/blocks/${row.height}`}><span className="accent-value mono">#{row.height.toLocaleString()}</span></a> },
   { key: 'time', label: 'Time', render: (row) => relativeTime(row.time) },
   { key: 'proposer_address', label: 'Proposer', render: (row) => <span className="mono muted" title={row.proposer_address}>{shortAddress(row.proposer_address)}</span> },
   { key: 'tx_count', label: 'Txs' },
