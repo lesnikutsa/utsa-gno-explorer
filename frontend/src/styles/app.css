@@ -226,3 +226,22 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 }
 @media (max-width: 480px) { .status-grid { grid-template-columns: 1fr; }.resource-guides > div { gap: 12px; flex-direction: column; } }
 @media (prefers-reduced-motion: reduce) { .pulse--healthy, .live-dot, .status-card.is-updating, .status-card.is-updating .status-card__value, .data-table tbody tr.is-new-row, .data-table tbody tr.is-new-row td:first-child .accent-value, .data-table tbody tr.is-new-row td:nth-child(5) .muted, .data-table tbody tr.is-settling-row { animation: none; } }
+
+.validator-signing-cell { display: inline-flex; align-items: flex-start; flex-direction: column; gap: 5px; }
+.signing-strip { display: inline-grid; width: 280px; height: 11px; grid-template-columns: repeat(var(--signing-count), minmax(1px, 1fr)); gap: 1px; }
+.signing-strip--compact { width: 190px; }
+.signing-strip__segment { display: block; min-width: 1px; height: 11px; border-radius: 1px; }
+.signing-strip__segment:hover { filter: brightness(1.22); }
+.signing-strip__segment--commit { background: var(--color-success); }
+.signing-strip__segment--nil { background: var(--color-warning); }
+.signing-strip__segment--absent { background: var(--color-error); }
+.signing-strip__segment--invalid { background: #c84b31; }
+.signing-strip__segment--unknown { background: #60798d; }
+.signing-strip__segment--not_active { background: #26394a; }
+.signing-strip__unavailable { color: var(--color-text-secondary); font-size: 9px; }
+.signing-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 7px 14px; margin: 10px 0; color: var(--color-text-secondary); font-size: 9px; }
+.signing-legend strong { color: var(--color-text); font-size: 10px; }
+.signing-legend > span { display: inline-flex; align-items: center; gap: 5px; }
+.signing-legend .signing-strip__segment { width: 3px; height: 11px; }
+.validators-page__table .data-table { min-width: 1220px; }
+.dashboard-grid__validators .data-table { min-width: 440px; }

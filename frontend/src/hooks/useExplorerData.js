@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getBlocks, getHealth, getNetwork, getValidators } from '../services/api'
+import { getBlocks, getHealth, getNetwork, getValidatorSigningHistory, getValidators } from '../services/api'
 
 const FAST_POLL_MS = 5_000
 const SLOW_POLL_MS = 15_000
 
 export function useExplorerData() {
-  const [data, setData] = useState({ health: null, network: null, blocks: [], validators: [] })
-  const [errors, setErrors] = useState({ health: false, network: false, blocks: false, validators: false })
+  const [data, setData] = useState({ health: null, network: null, blocks: [], validators: [], validatorsHeight: null, validatorHistory: null })
+  const [errors, setErrors] = useState({ health: false, network: false, blocks: false, validators: false, validatorHistory: false })
   const [loading, setLoading] = useState(true)
   const [nextFastRefreshAt, setNextFastRefreshAt] = useState(null)
   const mounted = useRef(false)
@@ -44,15 +44,41 @@ export function useExplorerData() {
   const refreshSlow = useCallback(async () => {
     if (slowInFlight.current) return
     slowInFlight.current = true
-    const [health, validators] = await Promise.allSettled([getHealth(), getValidators()])
+    const [health, initialValidators, initialValidatorHistory] = await Promise.allSettled([
+      getHealth(),
+      getValidators(),
+      getValidatorSigningHistory({ limit: 50 }),
+    ])
+    let validators = initialValidators
+    let validatorHistory = initialValidatorHistory
+    if (validators.status === 'fulfilled' && validatorHistory.status === 'fulfilled' && validators.value.height !== validatorHistory.value.height) {
+      if (validators.value.height < validatorHistory.value.height) {
+        const reconciledValidators = await Promise.allSettled([getValidators()])
+        if (reconciledValidators[0].status === 'fulfilled') validators = reconciledValidators[0]
+      } else {
+        const reconciledHistory = await Promise.allSettled([getValidatorSigningHistory({ limit: 50 })])
+        if (reconciledHistory[0].status === 'fulfilled') validatorHistory = reconciledHistory[0]
+      }
+    }
 
     if (mounted.current) {
+      const validatorsSucceeded = validators.status === 'fulfilled'
+      const historyMatched = validatorsSucceeded
+        && validatorHistory.status === 'fulfilled'
+        && validators.value.height === validatorHistory.value.height
       setData((current) => ({
         ...current,
         health: health.status === 'fulfilled' ? health.value : current.health,
-        validators: validators.status === 'fulfilled' ? validators.value.items ?? [] : current.validators,
+        validators: validatorsSucceeded ? validators.value.items ?? [] : current.validators,
+        validatorsHeight: validatorsSucceeded ? validators.value.height : current.validatorsHeight,
+        validatorHistory: historyMatched ? validatorHistory.value : current.validatorHistory,
       }))
-      setErrors((current) => ({ ...current, health: health.status === 'rejected', validators: validators.status === 'rejected' }))
+      setErrors((current) => ({
+        ...current,
+        health: health.status === 'rejected',
+        validators: validators.status === 'rejected',
+        validatorHistory: !historyMatched,
+      }))
       finishInitialGroup('slow')
       slowTimer.current = window.setTimeout(refreshSlow, SLOW_POLL_MS)
     }
