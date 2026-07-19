@@ -79,6 +79,7 @@ export function useValidatorsPage() {
       }
 
       setError(true)
+      setHistoryError(true)
       setHealthState(hasSuccessfulResponseRef.current ? 'degraded' : 'error')
       return false
     } finally {

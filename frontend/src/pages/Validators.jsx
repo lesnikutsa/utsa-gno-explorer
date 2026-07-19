@@ -88,9 +88,9 @@ export function Validators({ validatorsPage }) {
         <div className="validators-page__metric"><span>Total Voting Power</span><strong>{hasSuccessfulResponse ? formatIntegerString(response.total_voting_power) : '—'}</strong></div>
       </div>
 
-      {error && hasSuccessfulResponse && <p className="validators-page__notice validators-page__notice--warning">Showing the last loaded validator set. Refresh failed.</p>}
-      {historyError && hasSuccessfulHistoryResponse && <p className="validators-page__notice validators-page__notice--warning">Showing the last matched signing history. Refresh failed or checkpoints did not align.</p>}
-      {historyError && !hasSuccessfulHistoryResponse && <p className="validators-page__notice validators-page__notice--warning">Signing history is currently unavailable.</p>}
+      {error && hasSuccessfulResponse && <p className="validators-page__notice validators-page__notice--warning">Showing the last loaded validator set and matched signing history. Refresh failed.</p>}
+      {!error && historyError && hasSuccessfulHistoryResponse && <p className="validators-page__notice validators-page__notice--warning">Showing the last matched signing history. Refresh failed or checkpoints did not align.</p>}
+      {!error && historyError && !hasSuccessfulHistoryResponse && <p className="validators-page__notice validators-page__notice--warning">Signing history is currently unavailable.</p>}
 
       <div className="validators-page__legend" aria-label="Operational health legend">
         {legend.map((item) => <span key={item.label}><StatusBadge tone={item.tone}>{item.label}</StatusBadge><small>{item.detail}</small></span>)}
