@@ -229,6 +229,58 @@ LEFT JOIN validator_signatures signature
 ORDER BY recent.height ASC
 """
 
+VALIDATOR_SIGNING_HISTORY_BLOCKS_SQL = """
+SELECT height, time_utc
+FROM (
+    SELECT height, time_utc
+    FROM blocks
+    WHERE height <= %s
+    ORDER BY height DESC
+    LIMIT %s
+) bounded_blocks
+ORDER BY height ASC
+"""
+
+VALIDATOR_SIGNING_HISTORY_CHECKPOINT_SQL = """
+SELECT s.last_finalized_height AS height, b.height IS NOT NULL AS block_exists
+FROM indexer_state s
+LEFT JOIN blocks b ON b.height = s.last_finalized_height
+WHERE s.state_key = %s
+"""
+
+VALIDATOR_SIGNING_HISTORY_MATRIX_SQL = """
+WITH recent_blocks AS (
+    SELECT height
+    FROM (
+        SELECT height
+        FROM blocks
+        WHERE height <= %s
+        ORDER BY height DESC
+        LIMIT %s
+    ) bounded_blocks
+), current_validators AS (
+    SELECT signing_address, voting_power
+    FROM validator_set_members
+    WHERE height = %s
+)
+SELECT
+    current.signing_address AS address,
+    recent.height,
+    membership.signing_address AS membership_address,
+    signature.signing_address AS signature_address,
+    signature.signed,
+    signature.vote_status
+FROM current_validators current
+CROSS JOIN recent_blocks recent
+LEFT JOIN validator_set_members membership
+  ON membership.height = recent.height
+ AND membership.signing_address = current.signing_address
+LEFT JOIN validator_signatures signature
+  ON signature.height = membership.height
+ AND signature.signing_address = membership.signing_address
+ORDER BY current.voting_power DESC, current.signing_address ASC, recent.height ASC
+"""
+
 
 class MissingIndexerStateError(RuntimeError):
     """Raised when the singleton indexer state row is missing."""
@@ -387,6 +439,32 @@ class ApiDatabase:
             "identity": dict(identity),
             "current": current,
             "history": [dict(row) for row in history],
+        }
+
+    def fetch_validator_signing_history(self, *, limit: int) -> dict[str, Any]:
+        """Return a bounded history matrix for the current active set."""
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(VALIDATOR_SIGNING_HISTORY_CHECKPOINT_SQL, ("default",))
+                checkpoint = cursor.fetchone()
+                if checkpoint is None:
+                    raise MissingIndexerStateError("Default indexer state is missing")
+                checkpoint = dict(checkpoint)
+                if not checkpoint["block_exists"]:
+                    raise MissingIndexedBlockError("Indexed block is missing")
+                height = checkpoint["height"]
+
+                cursor.execute(VALIDATOR_SIGNING_HISTORY_BLOCKS_SQL, (height, limit))
+                blocks = cursor.fetchall()
+                cursor.execute(VALIDATOR_SIGNING_HISTORY_MATRIX_SQL, (height, limit, height))
+                items = cursor.fetchall()
+
+        return {
+            "checkpoint": checkpoint,
+            "blocks": [dict(row) for row in blocks],
+            "items": [dict(row) for row in items],
         }
 
 
