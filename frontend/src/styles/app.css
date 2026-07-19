@@ -119,6 +119,16 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .block-detail__field small { display: block; margin-top: 3px; color: var(--color-text-secondary); font-size: 9px; }
 .block-detail__hashes .block-detail__field + .block-detail__field { border-top: 1px solid var(--color-border-soft); }
 .block-detail__hash { white-space: normal; overflow-wrap: anywhere; }
+.block-detail__copy-row { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.block-detail__copy-row .block-detail__value { flex: 1 1 auto; min-width: 0; }
+.copy-button { position: relative; display: inline-flex; flex: 0 0 28px; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 1px solid var(--color-border); border-radius: 5px; background: rgba(9,24,39,.38); color: var(--color-text-secondary); cursor: pointer; }
+.copy-button:hover { border-color: var(--color-text-secondary); color: var(--color-text-bright); }
+.copy-button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-color: var(--color-text-bright); }
+.copy-button--copied { border-color: var(--color-success); color: var(--color-success); }
+.copy-button--error { border-color: var(--color-error); color: var(--color-error); }
+.copy-button .icon { width: 15px; height: 15px; }
+.copy-button__error-mark { position: absolute; top: -5px; right: -4px; display: grid; place-items: center; width: 12px; height: 12px; border-radius: 50%; background: var(--color-error); color: var(--color-background); font-size: 9px; font-weight: 800; line-height: 1; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .block-detail__commit { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; padding: 11px 13px; }
 .block-detail__metric { min-width: 0; padding: 9px; border: 1px solid rgba(40,64,86,.55); border-radius: 5px; background: rgba(9,24,39,.38); }
 .block-detail__metric span { display: block; margin-bottom: 5px; color: var(--color-text-secondary); font-size: 9px; text-transform: uppercase; }

@@ -12,3 +12,6 @@ export const SearchIcon = () => <Icon><circle cx="11" cy="11" r="6" /><path d="m
 export const MenuIcon = () => <Icon><path d="M4 7h16M4 12h16M4 17h16" /></Icon>
 export const ChevronDownIcon = () => <Icon><path d="m8 10 4 4 4-4" /></Icon>
 export const ExternalLinkIcon = () => <Icon><path d="M14 5h5v5M19 5l-8 8" /><path d="M17 13v6H5V7h6" /></Icon>
+
+export const CopyIcon = () => <Icon><rect x="9" y="9" width="11" height="11" rx="1" /><path d="M15 9V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h4" /></Icon>
+export const CheckIcon = () => <Icon><path d="m5 12 4 4L19 6" /></Icon>
