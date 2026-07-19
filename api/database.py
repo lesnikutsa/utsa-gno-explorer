@@ -242,10 +242,21 @@ ORDER BY height ASC
 """
 
 VALIDATOR_SIGNING_HISTORY_CHECKPOINT_SQL = """
-SELECT s.last_finalized_height AS height, b.height IS NOT NULL AS block_exists
+SELECT
+    s.last_finalized_height AS height,
+    b.height IS NOT NULL AS block_exists,
+    COALESCE(
+        array_agg(
+            current.signing_address
+            ORDER BY current.voting_power DESC, current.signing_address ASC
+        ) FILTER (WHERE current.signing_address IS NOT NULL),
+        ARRAY[]::text[]
+    ) AS validator_addresses
 FROM indexer_state s
 LEFT JOIN blocks b ON b.height = s.last_finalized_height
+LEFT JOIN validator_set_members current ON current.height = s.last_finalized_height
 WHERE s.state_key = %s
+GROUP BY s.last_finalized_height, b.height
 """
 
 VALIDATOR_SIGNING_HISTORY_MATRIX_SQL = """

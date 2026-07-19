@@ -314,12 +314,20 @@ def _validator_signing_history_batch_from_rows(result: dict) -> ValidatorSigning
     if block_heights != sorted(block_heights) or len(block_heights) != len(set(block_heights)):
         raise ValueError("Signing history block axis is invalid")
 
+    expected_addresses = list(result["checkpoint"]["validator_addresses"])
+    if len(expected_addresses) != len(set(expected_addresses)):
+        raise ValueError("Signing history validator axis contains duplicates")
+    expected_address_set = set(expected_addresses)
+
     grouped: dict[str, list[dict]] = {}
     for row in result["items"]:
+        if row["address"] not in expected_address_set:
+            raise ValueError("Signing history matrix contains an unexpected validator")
         grouped.setdefault(row["address"], []).append(row)
 
     items = []
-    for address, rows in grouped.items():
+    for address in expected_addresses:
+        rows = grouped.get(address, [])
         if [row["height"] for row in rows] != block_heights:
             raise ValueError("Signing history matrix is not aligned")
         items.append(ValidatorSigningHistoryBatchItem(

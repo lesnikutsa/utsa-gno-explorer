@@ -2,7 +2,6 @@ import logging
 import unittest
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from decimal import Decimal
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -13,6 +12,7 @@ from api.database import (
     MissingIndexedBlockError,
     MissingIndexerStateError,
     VALIDATOR_SIGNING_HISTORY_BLOCKS_SQL,
+    VALIDATOR_SIGNING_HISTORY_CHECKPOINT_SQL,
     VALIDATOR_SIGNING_HISTORY_MATRIX_SQL,
 )
 
@@ -40,9 +40,13 @@ def matrix_row(address, height, *, membership=True, signature=True, signed=False
     }
 
 
-def history_result(*, blocks=None, items=None):
+def history_result(*, blocks=None, items=None, expected_addresses=None):
     return {
-        "checkpoint": {"height": 926006, "block_exists": True},
+        "checkpoint": {
+            "height": 926006,
+            "block_exists": True,
+            "validator_addresses": ["g1high"] if expected_addresses is None else expected_addresses,
+        },
         "blocks": [block(925999), block(926006)] if blocks is None else blocks,
         "items": items if items is not None else [
             matrix_row("g1high", 925999, signed=True),
@@ -116,7 +120,11 @@ class ApiValidatorSigningHistoryTests(unittest.TestCase):
         ]
         rows = [matrix_row("g1power", height, **values) for height, values in zip(heights, statuses)]
         rows += [matrix_row("g1address", height, signed=True) for height in heights]
-        result = history_result(blocks=[block(height) for height in heights], items=rows)
+        result = history_result(
+            blocks=[block(height) for height in heights],
+            items=rows,
+            expected_addresses=["g1power", "g1address"],
+        )
         with self.make_client(FakeDatabase(result)) as client:
             response = client.get("/api/validators/signing-history")
         self.assertEqual(response.status_code, 200)
@@ -134,21 +142,73 @@ class ApiValidatorSigningHistoryTests(unittest.TestCase):
             self.assertNotIn(forbidden, response.text)
 
     def test_empty_active_set_keeps_blocks_and_empty_history_is_defensive(self):
-        with self.make_client(FakeDatabase(history_result(items=[]))) as client:
+        with self.make_client(FakeDatabase(history_result(items=[], expected_addresses=[]))) as client:
             data = client.get("/api/validators/signing-history").json()
         self.assertEqual(data["network_blocks"], 2)
         self.assertEqual(data["items"], [])
 
-        with self.make_client(FakeDatabase(history_result(blocks=[], items=[]))) as client:
+        with self.make_client(FakeDatabase(history_result(blocks=[], items=[], expected_addresses=[]))) as client:
             data = client.get("/api/validators/signing-history").json()
         self.assertEqual(data, {
             "height": 926006, "network_blocks": 0, "start_height": None, "end_height": None,
             "blocks": [], "items": [],
         })
 
+    def test_empty_blocks_preserve_expected_validators_in_checkpoint_order(self):
+        result = history_result(
+            blocks=[],
+            items=[],
+            expected_addresses=["g1validator-b", "g1validator-a"],
+        )
+        with self.make_client(FakeDatabase(result)) as client:
+            response = client.get("/api/validators/signing-history")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["network_blocks"], 0)
+        self.assertIsNone(data["start_height"])
+        self.assertIsNone(data["end_height"])
+        self.assertEqual(data["items"], [
+            {"address": "g1validator-b", "statuses": []},
+            {"address": "g1validator-a", "statuses": []},
+        ])
+
+    def test_checkpoint_order_wins_over_matrix_insertion_order(self):
+        result = history_result(
+            items=[
+                matrix_row("g1second", 925999, signed=True),
+                matrix_row("g1second", 926006, signed=True),
+                matrix_row("g1first", 925999, signed=True),
+                matrix_row("g1first", 926006, signed=True),
+            ],
+            expected_addresses=["g1first", "g1second"],
+        )
+        with self.make_client(FakeDatabase(result)) as client:
+            data = client.get("/api/validators/signing-history").json()
+        self.assertEqual([item["address"] for item in data["items"]], ["g1first", "g1second"])
+
     def test_alignment_mismatch_and_database_errors_are_safe(self):
         cases = [
             FakeDatabase(history_result(items=[matrix_row("g1", 925999)])),
+            FakeDatabase(history_result(
+                items=[matrix_row("g1high", 925999), matrix_row("g1high", 926006)],
+                expected_addresses=["g1high", "g1missing"],
+            )),
+            FakeDatabase(history_result(
+                items=[
+                    matrix_row("g1high", 925999), matrix_row("g1high", 926006),
+                    matrix_row("g1extra", 925999), matrix_row("g1extra", 926006),
+                ],
+                expected_addresses=["g1high"],
+            )),
+            FakeDatabase(history_result(expected_addresses=["g1high", "g1high"])),
+            FakeDatabase(history_result(items=[
+                matrix_row("g1high", 925999),
+                matrix_row("g1high", 925999),
+                matrix_row("g1high", 926006),
+            ])),
+            FakeDatabase(history_result(
+                blocks=[], items=[matrix_row("g1high", 926006)], expected_addresses=["g1high"],
+            )),
             FakeDatabase(error=MissingIndexerStateError()),
             FakeDatabase(error=MissingIndexedBlockError()),
             FakeDatabase(error=RuntimeError(SECRET_URL)),
@@ -165,6 +225,11 @@ class ApiValidatorSigningHistoryTests(unittest.TestCase):
                     self.assertNotIn(secret, combined)
 
     def test_sql_is_bounded_parameterized_and_ordered(self):
+        self.assertIn("array_agg(", VALIDATOR_SIGNING_HISTORY_CHECKPOINT_SQL)
+        self.assertIn(
+            "ORDER BY current.voting_power DESC, current.signing_address ASC",
+            VALIDATOR_SIGNING_HISTORY_CHECKPOINT_SQL,
+        )
         self.assertIn("WHERE height <= %s", VALIDATOR_SIGNING_HISTORY_BLOCKS_SQL)
         self.assertIn("LIMIT %s", VALIDATOR_SIGNING_HISTORY_BLOCKS_SQL)
         self.assertIn("ORDER BY height DESC", VALIDATOR_SIGNING_HISTORY_BLOCKS_SQL)
@@ -225,7 +290,7 @@ class FakePool:
 
 class ValidatorSigningHistoryDatabaseTests(unittest.TestCase):
     def test_one_connection_three_queries_and_parameterized_limit(self):
-        checkpoint = {"height": 42, "block_exists": True}
+        checkpoint = {"height": 42, "block_exists": True, "validator_addresses": ["g1a", "g1b"]}
         cursor = FakeCursor([[checkpoint], [block(41), block(42)], [
             matrix_row("g1a", 41), matrix_row("g1a", 42), matrix_row("g1b", 41), matrix_row("g1b", 42),
         ]])
@@ -241,9 +306,26 @@ class ValidatorSigningHistoryDatabaseTests(unittest.TestCase):
         self.assertEqual(cursor.executions[2][1], (42, 20, 42))
         self.assertEqual(len(result["items"]), 4)
 
+    def test_query_count_does_not_depend_on_validator_count(self):
+        for validator_count in (0, 93):
+            with self.subTest(validator_count=validator_count):
+                addresses = [f"g1validator-{index}" for index in range(validator_count)]
+                checkpoint = {"height": 42, "block_exists": True, "validator_addresses": addresses}
+                matrix = [matrix_row(address, 42) for address in addresses]
+                cursor = FakeCursor([[checkpoint], [block(42)], matrix])
+                pool = FakePool(cursor)
+                database = ApiDatabase()
+                database.pool = pool
+
+                database.fetch_validator_signing_history(limit=100)
+
+                self.assertEqual(pool.connection_count, 1)
+                self.assertEqual(len(cursor.executions), 3)
+
     def test_checkpoint_consistency_errors_prevent_history_queries(self):
         for checkpoint, error in ((None, MissingIndexerStateError),
-                                  ({"height": 42, "block_exists": False}, MissingIndexedBlockError)):
+                                  ({"height": 42, "block_exists": False, "validator_addresses": []},
+                                   MissingIndexedBlockError)):
             cursor = FakeCursor([[] if checkpoint is None else [checkpoint]])
             database = ApiDatabase()
             database.pool = FakePool(cursor)
