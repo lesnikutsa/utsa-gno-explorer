@@ -49,6 +49,49 @@ class PostgresDatabase:
                 write_height_cursor(cursor, parsed, chain_id, finalized_tip, self.selected_rpc_endpoint_id)
             connection.commit()
 
+    def load_validator_keys(self) -> list[tuple[str, str, str]]:
+        """Load the complete validator identity lookup in one query."""
+        with self.connect() as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT signing_address, public_key_type, public_key_value FROM validators")
+            return [(str(row[0]), str(row[1]), str(row[2])) for row in cursor.fetchall()]
+
+    def upsert_validator_profiles(self, profiles) -> int:
+        """Atomically upsert a complete fetched batch under a dedicated lock."""
+        rows = [(
+            item.operator_address, item.moniker, item.description, item.server_type,
+            item.keep_running, item.consensus_pubkey, item.normalized_public_key_type,
+            item.normalized_public_key_value, item.signing_address, item.match_status,
+            item.source_realm, item.source_profile_path, item.source_height, item.profile_hash,
+        ) for item in profiles]
+        with self.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT pg_try_advisory_xact_lock(%s)", (0x5650524F46494C45,))
+                lock_row = cursor.fetchone()
+                if not lock_row or lock_row[0] is not True:
+                    raise DatabaseError("validator profile sync advisory lock is already held")
+                cursor.executemany(
+                    """
+                    INSERT INTO validator_profiles(
+                        operator_address, moniker, description, server_type, keep_running,
+                        consensus_pubkey, normalized_public_key_type, normalized_public_key_value,
+                        signing_address, match_status, source_realm, source_profile_path,
+                        source_height, profile_hash, last_synced_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+                    ON CONFLICT (operator_address) DO UPDATE SET
+                        moniker = EXCLUDED.moniker, description = EXCLUDED.description,
+                        server_type = EXCLUDED.server_type, keep_running = EXCLUDED.keep_running,
+                        consensus_pubkey = EXCLUDED.consensus_pubkey,
+                        normalized_public_key_type = EXCLUDED.normalized_public_key_type,
+                        normalized_public_key_value = EXCLUDED.normalized_public_key_value,
+                        signing_address = EXCLUDED.signing_address, match_status = EXCLUDED.match_status,
+                        source_realm = EXCLUDED.source_realm, source_profile_path = EXCLUDED.source_profile_path,
+                        source_height = EXCLUDED.source_height, profile_hash = EXCLUDED.profile_hash,
+                        last_synced_at = EXCLUDED.last_synced_at, updated_at = now()
+                    """, rows,
+                )
+            connection.commit()
+        return len(rows)
+
 
 def get_checkpoint_cursor(cursor, chain_id: str) -> int | None:
     cursor.execute("SELECT chain_id, last_finalized_height FROM indexer_state WHERE state_key = %s", ("default",))

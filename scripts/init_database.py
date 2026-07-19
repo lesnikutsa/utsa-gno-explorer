@@ -12,7 +12,7 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = REPO_ROOT / "database" / "schema.sql"
 EXPECTED_TABLES = {
-    "blocks", "transactions", "validators", "validator_set_members", "validator_signatures", "rpc_endpoints", "rpc_endpoint_checks", "indexer_state",
+    "blocks", "transactions", "validators", "validator_profiles", "validator_set_members", "validator_signatures", "rpc_endpoints", "rpc_endpoint_checks", "indexer_state",
 }
 EXPECTED_COLUMNS = {
     "blocks": {
@@ -28,6 +28,14 @@ EXPECTED_COLUMNS = {
     "validators": {
         "signing_address": ("text", "NO", "", None), "public_key_type": ("text", "NO", "", None), "public_key_value": ("text", "NO", "", None),
         "first_seen_height": ("bigint", "NO", "", None), "last_seen_height": ("bigint", "NO", "", None), "inserted_at": ("timestamp with time zone", "NO", "", "now()"), "updated_at": ("timestamp with time zone", "NO", "", "now()"),
+    },
+    "validator_profiles": {
+        "operator_address": ("text", "NO", "", None), "moniker": ("text", "NO", "", None), "description": ("text", "NO", "", "''"),
+        "server_type": ("text", "YES", "", None), "keep_running": ("boolean", "YES", "", None), "consensus_pubkey": ("text", "NO", "", None),
+        "normalized_public_key_type": ("text", "YES", "", None), "normalized_public_key_value": ("text", "YES", "", None), "signing_address": ("text", "YES", "", None),
+        "match_status": ("text", "NO", "", None), "source_realm": ("text", "NO", "", None), "source_profile_path": ("text", "YES", "", None),
+        "source_height": ("bigint", "NO", "", None), "profile_hash": ("text", "NO", "", None), "last_synced_at": ("timestamp with time zone", "NO", "", None),
+        "inserted_at": ("timestamp with time zone", "NO", "", "now()"), "updated_at": ("timestamp with time zone", "NO", "", "now()"),
     },
     "validator_set_members": {
         "height": ("bigint", "NO", "", None), "signing_address": ("text", "NO", "", None), "voting_power": ("numeric(78,0)", "NO", "", None),
@@ -54,10 +62,11 @@ EXPECTED_COLUMNS = {
         "state_key": ("text", "NO", "", None), "chain_id": ("text", "NO", "", None), "last_finalized_height": ("bigint", "NO", "", None), "finalized_tip_height": ("bigint", "YES", "", None), "selected_rpc_endpoint_id": ("bigint", "YES", "", None), "updated_at": ("timestamp with time zone", "NO", "", "now()"),
     },
 }
-EXPECTED_PRIMARY_KEYS = {"blocks": ("height",), "transactions": ("id",), "validators": ("signing_address",), "validator_set_members": ("height", "signing_address"), "validator_signatures": ("height", "signing_address"), "rpc_endpoints": ("id",), "rpc_endpoint_checks": ("id",), "indexer_state": ("state_key",)}
+EXPECTED_PRIMARY_KEYS = {"blocks": ("height",), "transactions": ("id",), "validators": ("signing_address",), "validator_profiles": ("operator_address",), "validator_set_members": ("height", "signing_address"), "validator_signatures": ("height", "signing_address"), "rpc_endpoints": ("id",), "rpc_endpoint_checks": ("id",), "indexer_state": ("state_key",)}
 EXPECTED_UNIQUES = {("blocks", ("block_hash_base64",)), ("blocks", ("block_hash_hex",)), ("transactions", ("block_height", "tx_index")), ("validators", ("public_key_type", "public_key_value")), ("rpc_endpoints", ("url",))}
 EXPECTED_FOREIGN_KEYS = {
     ("transactions", ("block_height",), "blocks", ("height",), "c"),
+    ("validator_profiles", ("signing_address",), "validators", ("signing_address",), "n"),
     ("validator_set_members", ("height",), "blocks", ("height",), "c"),
     ("validator_set_members", ("signing_address",), "validators", ("signing_address",), "r"),
     ("validator_signatures", ("height", "signing_address"), "validator_set_members", ("height", "signing_address"), "c"),
@@ -65,6 +74,11 @@ EXPECTED_FOREIGN_KEYS = {
     ("indexer_state", ("selected_rpc_endpoint_id",), "rpc_endpoints", ("id",), "n"),
 }
 EXPECTED_CHECKS = {
+    "validator_profiles_match_status_check": "CHECK (match_status IN ('matched', 'unmatched', 'invalid_pubkey', 'ambiguous'))",
+    "validator_profiles_source_height_check": "CHECK (source_height >= 0)",
+    "validator_profiles_required_text_check": "CHECK (char_length(operator_address) BETWEEN 1 AND 128 AND char_length(moniker) BETWEEN 1 AND 256 AND char_length(consensus_pubkey) BETWEEN 1 AND 256 AND char_length(source_realm) BETWEEN 1 AND 256 AND char_length(profile_hash) = 64)",
+    "validator_profiles_bounded_text_check": "CHECK (char_length(description) <= 4096 AND (server_type IS NULL OR char_length(server_type) <= 128) AND (source_profile_path IS NULL OR char_length(source_profile_path) <= 512))",
+    "validator_profiles_match_consistency_check": "CHECK ((match_status = 'matched' AND signing_address IS NOT NULL AND normalized_public_key_type IS NOT NULL AND normalized_public_key_value IS NOT NULL) OR (match_status <> 'matched' AND signing_address IS NULL))",
     "blocks_tx_count_check": "CHECK (tx_count >= 0)",
     "blocks_block_hash_hex_uppercase": "CHECK (block_hash_hex = upper(block_hash_hex))",
     "transactions_tx_index_check": "CHECK (tx_index >= 0)",
@@ -96,6 +110,9 @@ EXPECTED_CHECKS = {
     "indexer_state_default_key": "CHECK (state_key = 'default')",
 }
 EXPECTED_INDEXES = {
+    "validator_profiles_signing_address_idx": ("validator_profiles", False, (("signing_address", "ASC"),), None),
+    "validator_profiles_consensus_pubkey_idx": ("validator_profiles", False, (("consensus_pubkey", "ASC"),), None),
+    "validator_profiles_moniker_lower_idx": ("validator_profiles", False, (("lower(moniker)", "ASC"),), None),
     "blocks_time_utc_idx": ("blocks", False, (("time_utc", "DESC"),), None),
     "validator_set_members_height_power_idx": ("validator_set_members", False, (("height", "ASC"), ("voting_power", "DESC"), ("signing_address", "ASC")), None),
     "validator_set_members_signing_height_idx": ("validator_set_members", False, (("signing_address", "ASC"), ("height", "DESC")), None),

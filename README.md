@@ -2,6 +2,21 @@
 
 Custom Gno.land explorer with blocks, validators, uptime and signing history.
 
+## Manual Valopers profile sync
+
+The one-shot command reads `gno.land/r/gnops/valopers` at one pinned committed
+height and stores bounded profile metadata. It does not alter the active set,
+perform governance actions, expose API fields, or schedule itself.
+
+```bash
+python scripts/sync_validator_profiles.py --dry-run
+python scripts/sync_validator_profiles.py
+```
+
+An Operator Address owns a profile; a Signing Address identifies a TM2 signer.
+They are not interchangeable and are linked only through the exact decoded
+consensus public-key type and base64 value.
+
 ## Design documentation
 
 - [Architecture](docs/architecture.md)

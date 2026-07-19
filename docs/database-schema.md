@@ -1,5 +1,19 @@
 # Database schema
 
+## Validator profiles
+
+`validator_profiles` uses the Valopers Operator Address as its primary key and
+stores moniker, bounded description, optional server type and `keep_running`,
+source `gpub`, normalized TM2 key tuple, optional Signing Address, match status,
+source realm/path/height, SHA-256 audit hash, and timestamps. Match status is
+`matched`, `unmatched`, `invalid_pubkey`, or `ambiguous`. Non-unique Signing
+Address and public-key indexes preserve diagnosable source ambiguity; a
+functional `lower(moniker)` index supports later internal queries.
+
+Operator Address is the profile owner and Signing Address is the TM2 consensus
+identity. They are linked only through the exact key tuple. `keep_running` is
+not active-set, signing-health, governance, or punishment state.
+
 The canonical schema is `database/schema.sql`. It is PostgreSQL-compatible SQL and uses explicit primary keys, foreign keys, uniqueness constraints, and query-driven indexes.
 
 ## Tables

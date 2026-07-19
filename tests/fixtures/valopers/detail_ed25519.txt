@@ -1,0 +1,7 @@
+# Alpha
+- **Operator Address**: g1alpha
+- **Moniker**: Alpha\_Node
+- **Description**: Public validator profile
+- **Server Type**: validator
+- **Consensus Public Key**: gpub1zcjdueqqqypqxpq9qcrsszg2pvxq6rs0zqg3yyc5z5tpwxqergd3c8g7ruuhjdzk
+- **Keep Running**: true

@@ -9,6 +9,7 @@ The schema supports:
 - latest blocks and block detail pages;
 - transactions attached to blocks;
 - validator identity and active validator sets by finalized height;
+- retained public Valopers profiles matched by consensus public key;
 - validator signing and missed-block history;
 - uptime over the latest 1,000 finalized heights;
 - recent signed/missed squares over the latest 100 finalized heights;
@@ -17,6 +18,24 @@ The schema supports:
 - resumable indexing through `indexer_state`.
 
 It does not create a PostgreSQL server, Docker Compose stack, migration framework, backend API, frontend, or continuous indexer.
+
+## Validator profiles
+
+`validator_profiles` is keyed by Operator Address and retains bounded public
+metadata, the source `gpub`, normalized TM2 key fields, an optional Signing
+Address, match/source/audit state, and timestamps. Operator and Signing
+Addresses are different identities; matching uses only the exact public-key
+tuple in `validators`. A later crawl never deletes a missing profile.
+
+```sql
+SELECT match_status, count(*) FROM validator_profiles
+GROUP BY match_status ORDER BY match_status;
+
+SELECT moniker, operator_address, signing_address, match_status
+FROM validator_profiles
+ORDER BY lower(moniker), operator_address
+LIMIT 20;
+```
 
 ## Validation
 

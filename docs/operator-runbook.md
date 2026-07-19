@@ -1,5 +1,25 @@
 # Bounded indexer operator runbook
 
+## One-shot Valopers profile synchronization
+
+```bash
+python scripts/sync_validator_profiles.py --dry-run
+python scripts/sync_validator_profiles.py
+```
+
+The command reuses configured RPC selection and chain validation, pins the
+selected endpoint's committed latest height, and sends all list, pagination,
+and detail calls through `abci_query` with `path=vm/qrender` and explicit
+`height`. Any response-height mismatch aborts the crawl. Fetching completes
+before a short, profile-specific advisory-locked batch upsert, and absent rows
+are not deleted.
+
+Chain access is read-only and writes are limited to the explorer metadata
+table. Operator Address (profile owner) and Signing Address (TM2 consensus
+identity) are linked only by exact public key. The command neither changes the
+active set nor performs governance actions. No timer, service, cron entry, or
+background mode is included.
+
 This runbook is for safe test execution of the bounded prototype only. It is not a production operations guide.
 
 ## Prepare

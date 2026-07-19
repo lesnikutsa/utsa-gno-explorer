@@ -1,0 +1,5 @@
+# Beta
+- **Operator Address**: g1beta
+- **Moniker**: Beta
+- **Description**:
+- **Consensus Public Key**: gpub1addwnpcqqypqxpq9qcrsszg2pvxq6rs0zqg3yyc5z5tpwxqergd3c8g7rusq8ed5gc
