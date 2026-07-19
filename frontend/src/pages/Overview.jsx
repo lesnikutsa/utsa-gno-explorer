@@ -31,7 +31,7 @@ function RpcStatus({ rpc }) {
 }
 
 const blockColumns = [
-  { key: 'height', label: 'Height', render: (row) => <span className="accent-value mono">#{row.height.toLocaleString()}</span> },
+  { key: 'height', label: 'Height', render: (row) => <a className="table-link" href={`/blocks/${row.height}`}><span className="accent-value mono">#{row.height.toLocaleString()}</span></a> },
   { key: 'time', label: 'Time', render: (row) => relativeTime(row.time) },
   { key: 'proposer_address', label: 'Proposer', render: (row) => <span className="mono muted" title={row.proposer_address}>{shortAddress(row.proposer_address)}</span> },
   { key: 'tx_count', label: 'Txs' },
@@ -85,7 +85,7 @@ export function Overview({ explorerData, mascotSrc = null }) {
   return (
     <>
       <section className="status-grid" aria-label="Network summary">
-        <Card eyebrow="Latest Block" icon={BlocksIcon} value={data.network ? `#${data.network.latest_block.height.toLocaleString()}` : errors.network ? 'Unavailable' : '—'} meta="Auto-refresh every 5s" updating={updatedLatestHeight === latestHeight} loading={loading} />
+        <Card eyebrow="Latest Block" icon={BlocksIcon} value={data.network ? `#${data.network.latest_block.height.toLocaleString()}` : errors.network ? 'Unavailable' : '—'} meta="Auto-refresh every 5s" updating={updatedLatestHeight === latestHeight} loading={loading} href={latestHeight === null ? undefined : `/blocks/${latestHeight}`} ariaLabel={latestHeight === null ? undefined : `View block ${latestHeight}`} />
         <Card eyebrow="Network Status" icon={NetworkIcon} value={networkLabel} tone={healthState} meta={errors.health ? 'API connection unavailable' : 'API connection status'} loading={loading} />
         <Card eyebrow="Active Validators" icon={ValidatorsIcon} value={data.network?.validators?.active_count?.toLocaleString() ?? (errors.network ? 'Unavailable' : '—')} meta="Current validator set" loading={loading} />
         <Card eyebrow="Chain ID" icon={ChainIcon} value={data.network?.chain_id ?? (errors.network ? 'Unavailable' : '—')} meta={<RpcStatus rpc={data.network?.selected_rpc} />} loading={loading} />

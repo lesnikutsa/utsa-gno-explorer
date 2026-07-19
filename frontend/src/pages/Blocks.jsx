@@ -7,7 +7,7 @@ const columns = [
   {
     key: 'height',
     label: 'Height',
-    render: (block) => <span className="blocks-table__height accent-value mono">#{block.height.toLocaleString()}</span>,
+    render: (block) => <a className="table-link" href={`/blocks/${block.height}`}><span className="blocks-table__height accent-value mono">#{block.height.toLocaleString()}</span></a>,
   },
   { key: 'time', label: 'Time', render: (block) => relativeTime(block.time) },
   {
