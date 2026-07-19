@@ -53,9 +53,9 @@ export function Overview({ explorerData, mascotSrc = null }) {
   const historyBlocks = data.validatorHistory?.blocks
   const validatorColumns = useMemo(() => [
     { key: 'address', label: 'Signing Address', render: (row) => <span className="mono" title={row.address}>{shortAddress(row.address)}</span> },
-    { key: 'signing', label: 'Signing (last 50)', render: (row) => {
+    { key: 'signing', label: 'Signing (last 100)', render: (row) => {
       const history = row.address ? historyMap.get(row.address) : null
-      return <span className="validator-signing-cell"><span title={getValidatorMissedBreakdown(row.uptime_100)}><strong className={`missed-value missed-value--${missedSeverity(row.missedTotal)}`}>{row.missedTotal} missed / 100</strong><span className="muted"> · {formatUptime(row.uptime_100?.uptime_percent)} uptime</span></span><ValidatorSigningStrip blocks={historyBlocks} statuses={history?.statuses} compact address={row.address} /></span>
+      return <span className="validator-signing-cell"><span title={getValidatorMissedBreakdown(row.uptime_100)}><strong className={`missed-value missed-value--${missedSeverity(row.missedTotal)}`}>{row.missedTotal} missed</strong><span className="muted"> · {formatUptime(row.uptime_100?.uptime_percent)} uptime</span></span><ValidatorSigningStrip blocks={historyBlocks} statuses={history?.statuses} compact address={row.address} /></span>
     } },
     { key: 'health', label: 'Health', render: (row) => {
       const health = getValidatorHealth(row.uptime_100)
