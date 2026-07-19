@@ -11,5 +11,12 @@ export function relativeTime(value, now = Date.now()) {
   if (minutes < 60) return `${minutes}m ago`
 
   const hours = Math.floor(minutes / 60)
-  return `${hours}h ago`
+  if (hours < 24) {
+    const remainingMinutes = minutes % 60
+    return `${hours}h${remainingMinutes ? ` ${remainingMinutes}m` : ''} ago`
+  }
+
+  const days = Math.floor(hours / 24)
+  const remainingHours = hours % 24
+  return `${days}d${remainingHours ? ` ${remainingHours}h` : ''} ago`
 }

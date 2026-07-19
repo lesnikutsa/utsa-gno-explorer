@@ -38,6 +38,8 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .status-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 10px; }
 .card, .panel { border: 1px solid var(--color-border-soft); border-radius: 7px; background: linear-gradient(135deg, rgba(15,34,53,.96), rgba(12,29,45,.96)); }
 .status-card { min-width: 0; padding: 11px 13px; }
+.status-card--link { cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+.status-card--link:hover, .status-card--link:focus-visible { border-color: rgba(200,75,49,.5); background: linear-gradient(135deg, rgba(20,40,58,.98), rgba(15,34,50,.98)); }
 .status-card__heading { display: flex; align-items: center; justify-content: space-between; }
 .status-card__icon { color: var(--color-accent); }
 .status-card__value { overflow: hidden; margin: 7px 0 4px; color: var(--color-text-bright); font: 600 17px var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
