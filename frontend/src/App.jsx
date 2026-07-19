@@ -2,9 +2,11 @@ import { ExplorerLayout } from './layouts/ExplorerLayout'
 import { Blocks } from './pages/Blocks'
 import { BlockDetail } from './pages/BlockDetail'
 import { Overview } from './pages/Overview'
+import { Validators } from './pages/Validators'
 import { useBlocksPage } from './hooks/useBlocksPage'
 import { useBlockDetail } from './hooks/useBlockDetail'
 import { useExplorerData } from './hooks/useExplorerData'
+import { useValidatorsPage } from './hooks/useValidatorsPage'
 
 const NETWORK_MASCOT_SRC = '/assets/network-mascot.png?v=1'
 
@@ -46,11 +48,25 @@ function BlockDetailPage({ height }) {
   )
 }
 
+function ValidatorsPage() {
+  const validatorsPage = useValidatorsPage()
+
+  return (
+    <ExplorerLayout healthState={validatorsPage.healthState} showRefreshCountdown={false}>
+      <Validators validatorsPage={validatorsPage} />
+    </ExplorerLayout>
+  )
+}
+
 export default function App() {
   const path = window.location.pathname
 
   if (path === '/blocks' || path === '/blocks/') {
     return <BlocksPage />
+  }
+
+  if (path === '/validators' || path === '/validators/') {
+    return <ValidatorsPage />
   }
 
   if (path.startsWith('/blocks/')) {

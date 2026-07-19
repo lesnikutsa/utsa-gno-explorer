@@ -4,7 +4,7 @@ import { BlocksIcon, ChevronDownIcon, HomeIcon, MapIcon, NetworkIcon, Validators
 const items = [
   { label: 'Overview', Icon: HomeIcon, href: '/' },
   { label: 'Blocks', Icon: BlocksIcon, href: '/blocks' },
-  { label: 'Validators', Icon: ValidatorsIcon },
+  { label: 'Validators', Icon: ValidatorsIcon, href: '/validators' },
   { label: 'Network', Icon: NetworkIcon },
   { label: 'Peers & Map', Icon: MapIcon },
 ]
