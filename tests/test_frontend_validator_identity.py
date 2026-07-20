@@ -47,6 +47,7 @@ class OverviewValidatorIdentitySourceContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.source = (ROOT / "frontend/src/pages/Overview.jsx").read_text()
+        cls.styles = (ROOT / "frontend/src/styles/app.css").read_text()
         cls.identity_render = cls.source.split("label: 'Validator'", 1)[1].split(
             "label: 'Signing (last 100)'", 1
         )[0]
@@ -92,8 +93,22 @@ class OverviewValidatorIdentitySourceContractTests(unittest.TestCase):
         self.assertNotIn("moniker", self.ranking)
         self.assertIn("right.missedTotal - left.missedTotal", self.ranking)
         self.assertIn("left.address.localeCompare(right.address)", self.ranking)
-        self.assertIn(".slice(0, OVERVIEW_ROW_LIMIT)", self.ranking)
-        self.assertIn("const OVERVIEW_ROW_LIMIT = 6", self.source)
+        self.assertIn(".slice(0, OVERVIEW_VALIDATOR_ROW_LIMIT)", self.ranking)
+        self.assertIn("const OVERVIEW_VALIDATOR_ROW_LIMIT = 6", self.source)
+
+    def test_latest_blocks_and_validators_use_separate_limits(self):
+        self.assertIn("const LATEST_BLOCKS_ROW_LIMIT = 8", self.source)
+        self.assertIn("const OVERVIEW_VALIDATOR_ROW_LIMIT = 6", self.source)
+        self.assertIn("data.blocks.slice(0, LATEST_BLOCKS_ROW_LIMIT)", self.source)
+        self.assertNotIn("data.blocks.sort", self.source)
+
+    def test_latest_blocks_reuses_explorer_data_without_an_api_request(self):
+        self.assertNotIn("fetch(", self.source)
+        self.assertNotIn("../services/api", self.source)
+
+    def test_compact_table_cells_are_scoped_to_latest_blocks(self):
+        self.assertIn(".dashboard-grid__blocks .data-table td", self.styles)
+        self.assertNotIn(".dashboard-grid__validators .data-table td", self.styles)
 
 
 if __name__ == "__main__":
