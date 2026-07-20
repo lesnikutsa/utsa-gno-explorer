@@ -20,6 +20,7 @@ MAX_PAGE_NUMBER = 1_000_000
 
 _PAGE_QUERY_RE = re.compile(r"\?page=([1-9][0-9]*)\Z")
 _OPERATOR_ADDRESS_RE = re.compile(r"g1[023456789ac-hj-np-z]{38}\Z")
+_RESPONSE_HEIGHT_RE = re.compile(r"(?:0|[1-9][0-9]*)\Z")
 
 
 @dataclass(frozen=True)
@@ -28,7 +29,7 @@ class ValopersRenderResult:
 
     query_kind: str
     source_height: int
-    response_height: int
+    response_height: int | None
     decoded_byte_count: int
     sha256: str
     preview: str
@@ -96,10 +97,11 @@ def decode_qrender_response(
         raise RpcError("Malformed qrender response: missing result.response")
 
     raw_height = response.get("Height")
-    if not isinstance(raw_height, int) or isinstance(raw_height, bool) or raw_height < 1:
+    if not isinstance(raw_height, str) or not _RESPONSE_HEIGHT_RE.fullmatch(raw_height):
         raise RpcError("Malformed qrender response: invalid result.response.Height")
-    response_height = raw_height
-    if response_height != source_height:
+    parsed_height = int(raw_height)
+    response_height = parsed_height or None
+    if response_height is not None and response_height != source_height:
         raise RpcError(
             f"Qrender response height mismatch: expected {source_height}, got {response_height}"
         )

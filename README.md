@@ -262,3 +262,7 @@ The probe validates and decodes bounded render data from the live TM2/Amino
 `result.response.ResponseBase.Data` contract. It is read-only and prints only bounded
 metadata, a SHA-256 digest, and a short sanitized preview; it does not persist, parse,
 or synchronize Valopers data.
+
+The explicit `abci_query` request height pins the render to that immutable state version.
+Current Testnet 13 qrender responses return `Height="0"`, meaning the response does not
+duplicate the requested height; any future non-zero reported height must match the pin.

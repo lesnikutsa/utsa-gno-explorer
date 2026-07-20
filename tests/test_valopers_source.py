@@ -28,7 +28,7 @@ OPERATOR_ADDRESS = "g1" + "x" * 38
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def response(value=b"rendered output", height=123, error=None, log=""):
+def response(value=b"rendered output", height="0", error=None, log=""):
     return {
         "result": {
             "response": {
@@ -108,20 +108,48 @@ class RenderConstructionTests(unittest.TestCase):
 
 class ResponseDecodingTests(unittest.TestCase):
     def test_valid_response_is_decoded_and_summarized(self):
-        result = decode_qrender_response(response(b"hello\nworld", 123), "root", 123)
+        result = decode_qrender_response(response(b"hello\nworld"), "root", 123)
         self.assertEqual(result.query_kind, "root")
         self.assertEqual(result.source_height, 123)
-        self.assertEqual(result.response_height, 123)
+        self.assertIsNone(result.response_height)
         self.assertEqual(result.decoded_byte_count, 11)
         self.assertEqual(
             result.sha256, "26c60a61d01db5836ca70fefd44a6a016620413c8ef5f259a6c5612d4f79d3b8"
         )
         self.assertEqual(result.preview, r"hello\nworld")
 
-    def test_response_height_must_be_exact(self):
+    def test_zero_height_is_accepted_as_unreported(self):
+        result = decode_qrender_response(response(height="0"), "root", 123)
+        self.assertIsNone(result.response_height)
+
+    def test_matching_canonical_positive_height_is_accepted(self):
+        result = decode_qrender_response(response(height="123"), "root", 123)
+        self.assertEqual(result.response_height, 123)
+
+    def test_different_canonical_positive_height_is_rejected(self):
         with self.assertRaisesRegex(RpcError, "height mismatch"):
-            decode_qrender_response(response(height=122), "root", 123)
-        for height in (None, "bad", "123", True, 0, -1):
+            decode_qrender_response(response(height="122"), "root", 123)
+
+    def test_noncanonical_or_non_string_heights_are_rejected(self):
+        invalid_heights = (
+            None,
+            0,
+            123,
+            True,
+            1.0,
+            [],
+            {},
+            "",
+            "00",
+            "0123",
+            "+123",
+            "-1",
+            " 123",
+            "123 ",
+            "1.0",
+            "abc",
+        )
+        for height in invalid_heights:
             with self.subTest(height=height), self.assertRaisesRegex(RpcError, "invalid.*Height"):
                 decode_qrender_response(response(height=height), "root", 123)
 
@@ -153,7 +181,7 @@ class ResponseDecodingTests(unittest.TestCase):
         for error in (None, ""):
             with self.subTest(error=error):
                 result = decode_qrender_response(response(error=error), "root", 123)
-                self.assertEqual(result.response_height, 123)
+                self.assertIsNone(result.response_height)
 
     def test_missing_abci_error_field_fails_closed(self):
         payload = response()
@@ -249,7 +277,7 @@ class ProbeCliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(errors, "")
         self.assertEqual(len(client.calls), 1)
-        self.assertIn("kind=root source_height=123 response_height=123", output)
+        self.assertIn("kind=root source_height=123 response_height=unreported", output)
 
     def test_cli_page_only_does_not_request_root(self):
         code, output, _, client = self.run_main(["--page-query", "?page=2"])
@@ -300,7 +328,7 @@ class ProbeCliTests(unittest.TestCase):
 
     def test_cli_failure_is_nonzero_and_does_not_dump_payload(self):
         secret = "complete-render-body-secret"
-        client = FakeClient(response(secret.encode(), height=122))
+        client = FakeClient(response(secret.encode(), height="122"))
         code, output, errors, _ = self.run_main([], client)
         self.assertEqual(code, 1)
         self.assertEqual(output, "")

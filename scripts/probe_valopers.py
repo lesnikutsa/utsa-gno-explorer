@@ -46,9 +46,10 @@ def requested_renders(args: argparse.Namespace) -> list[tuple[str, str]]:
 
 
 def format_result(result: ValopersRenderResult) -> str:
+    response_height = result.response_height if result.response_height is not None else "unreported"
     return (
         f"kind={result.query_kind} source_height={result.source_height} "
-        f"response_height={result.response_height} decoded_bytes={result.decoded_byte_count} "
+        f"response_height={response_height} decoded_bytes={result.decoded_byte_count} "
         f"sha256={result.sha256} preview={result.preview!r}"
     )
 
