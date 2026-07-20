@@ -117,6 +117,12 @@ class ResponseDecodingTests(unittest.TestCase):
             result.sha256, "26c60a61d01db5836ca70fefd44a6a016620413c8ef5f259a6c5612d4f79d3b8"
         )
         self.assertEqual(result.preview, r"hello\nworld")
+        self.assertEqual(result.decoded_text, "hello\nworld")
+
+    def test_decoded_text_is_hidden_from_repr(self):
+        secret = "complete-render-body-secret"
+        result = decode_qrender_response(response(("x" * 200 + secret).encode()), "root", 123)
+        self.assertNotIn(secret, repr(result))
 
     def test_zero_height_is_accepted_as_unreported(self):
         result = decode_qrender_response(response(height="0"), "root", 123)

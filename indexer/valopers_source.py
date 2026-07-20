@@ -7,7 +7,7 @@ import hashlib
 import json
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from scripts.inspect_rpc import GnoRpcClient, RpcError
@@ -33,6 +33,7 @@ class ValopersRenderResult:
     decoded_byte_count: int
     sha256: str
     preview: str
+    decoded_text: str = field(repr=False)
 
 
 def build_root_render_data() -> str:
@@ -139,6 +140,7 @@ def decode_qrender_response(
         decoded_byte_count=len(decoded),
         sha256=hashlib.sha256(decoded).hexdigest(),
         preview=bounded_preview(text),
+        decoded_text=text,
     )
 
 

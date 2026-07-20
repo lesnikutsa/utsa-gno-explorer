@@ -263,6 +263,14 @@ The probe validates and decodes bounded render data from the live TM2/Amino
 metadata, a SHA-256 digest, and a short sanitized preview; it does not persist, parse,
 or synchronize Valopers data.
 
+Add `--parse` to validate and print a bounded summary of either supported document:
+a paginated Valopers list or one Valoper detail render. Detail parsing exposes the
+moniker, description, operator and signing addresses, signing public key, server type,
+and profile path. The current Render output does not expose `KeepRunning`, so it is not
+inferred. Signing-public-key validation is syntax and length validation only; it does
+not verify a Bech32 checksum or Amino encoding. Parsing remains read-only and does not
+persist or synchronize data.
+
 The explicit `abci_query` request height pins the render to that immutable state version.
 Current Testnet 13 qrender responses return `Height="0"`, meaning the response does not
 duplicate the requested height; any future non-zero reported height must match the pin.
