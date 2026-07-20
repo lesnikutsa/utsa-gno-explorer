@@ -11,7 +11,7 @@ import {
   getValidatorHealth,
   getValidatorMissedBreakdown,
 } from '../utils/validatorHealth'
-import { compareValidatorIdentity, hasValidatorMoniker } from '../utils/validatorIdentity'
+import { compareValidatorIdentity, hasValidatorMoniker, matchesValidatorSearch } from '../utils/validatorIdentity'
 
 const formatPercent = (value) => {
   if (value === null || value === undefined || value === '') return '—'
@@ -37,6 +37,7 @@ const legend = [
 
 export function Validators({ validatorsPage }) {
   const [sort, setSort] = useState({ key: 'voting_power', direction: 'descending' })
+  const [searchInput, setSearchInput] = useState('')
   const { response, validators, historyResponse, loading, backgroundRefreshing, manualRefreshing, error, historyError, hasSuccessfulResponse, hasSuccessfulHistoryResponse, refresh } = validatorsPage
   const historyMap = useMemo(() => new Map(
     (historyResponse?.items ?? []).filter((item) => item?.address).map((item) => [item.address, item]),
@@ -67,7 +68,8 @@ export function Validators({ validatorsPage }) {
     { key: 'proposer_priority', label: 'Proposer Priority', sortable: true, defaultSortDirection: 'descending', headerTitle: 'Consensus proposer-selection priority. A higher current value generally means the validator is closer to proposing. This is not a performance or health score.', render: (row) => <span className="mono">{formatIntegerString(row.proposer_priority)}</span> },
   ], [historyBlocks, historyMap])
   const rows = useMemo(() => validators.map((validator, index) => ({ ...validator, powerRank: index + 1 })), [validators])
-  const sortedRows = useMemo(() => [...rows].sort((left, right) => {
+  const filteredRows = useMemo(() => rows.filter((validator) => matchesValidatorSearch(validator, searchInput)), [rows, searchInput])
+  const sortedRows = useMemo(() => [...filteredRows].sort((left, right) => {
     let comparison = 0
     if (sort.key === 'address') comparison = compareValidatorIdentity(left, right)
     if (sort.key === 'voting_power') comparison = compareIntegerStrings(left.voting_power, right.voting_power)
@@ -77,8 +79,13 @@ export function Validators({ validatorsPage }) {
     if (sort.key === 'proposer_priority') comparison = compareIntegerStrings(left.proposer_priority, right.proposer_priority)
     if (comparison === 0) return left.powerRank - right.powerRank
     return sort.direction === 'ascending' ? comparison : -comparison
-  }), [rows, sort])
-  const emptyMessage = error && !hasSuccessfulResponse ? 'Validators are currently unavailable.' : 'No active validators returned.'
+  }), [filteredRows, sort])
+  const effectiveQuery = searchInput.trim()
+  const emptyMessage = error && !hasSuccessfulResponse
+    ? 'Validators are currently unavailable.'
+    : effectiveQuery && hasSuccessfulResponse
+      ? 'No validators found.'
+      : 'No active validators returned.'
 
   return (
     <section className="validators-page" aria-labelledby="validators-page-title">
@@ -111,6 +118,18 @@ export function Validators({ validatorsPage }) {
       <div className="signing-legend" aria-label="Signing history legend">
         <strong>Signing history:</strong>
         {SIGNING_STATUSES.map((status) => <span key={status}><i className={`signing-strip__segment signing-strip__segment--${status}`} aria-hidden="true" />{getSigningStatusLabel(status)}</span>)}
+      </div>
+
+      <div className="validators-search">
+        <input
+          type="search"
+          value={searchInput}
+          onChange={(event) => setSearchInput(event.target.value)}
+          placeholder="Search by moniker or signing address"
+          aria-label="Search validators by moniker or signing address"
+        />
+        {effectiveQuery && <button className="blocks-page__button" type="button" onClick={() => setSearchInput('')} aria-label="Clear validator search">Clear</button>}
+        {hasSuccessfulResponse && <span className="validators-search__count" aria-live="polite">Showing {filteredRows.length} of {rows.length}</span>}
       </div>
 
       <section className="panel validators-page__table">

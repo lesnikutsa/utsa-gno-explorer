@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   compareValidatorIdentity,
   hasValidatorMoniker,
+  matchesValidatorSearch,
 } from '../src/utils/validatorIdentity.js'
 
 const validator = (address, moniker = null) => ({ address, moniker })
@@ -46,4 +47,36 @@ test('identity helpers do not mutate validator objects', () => {
   compareValidatorIdentity(left, right)
   hasValidatorMoniker(left)
   assert.deepEqual(left, { address: 'g1b', moniker: 'Beta' })
+})
+
+test('empty and whitespace-only searches match every validator', () => {
+  assert.equal(matchesValidatorSearch(validator('g1address', 'UTSA'), ''), true)
+  assert.equal(matchesValidatorSearch(validator('g1address', 'UTSA'), ' \t '), true)
+})
+
+test('moniker search supports exact, partial, and case-insensitive matches', () => {
+  assert.equal(matchesValidatorSearch(validator('g1address', 'UTSA'), 'UTSA'), true)
+  assert.equal(matchesValidatorSearch(validator('g1address', 'gfantom-1'), 'fantom'), true)
+  assert.equal(matchesValidatorSearch(validator('g1address', 'UTSA'), 'utsa'), true)
+})
+
+test('signing address search supports exact, prefix, and suffix matches', () => {
+  const row = validator('g15sysd4example2vwpves', 'Node')
+  assert.equal(matchesValidatorSearch(row, row.address), true)
+  assert.equal(matchesValidatorSearch(row, 'g15sysd4'), true)
+  assert.equal(matchesValidatorSearch(row, '2vwpves'), true)
+})
+
+test('unrelated searches and unusable monikers do not match', () => {
+  assert.equal(matchesValidatorSearch(validator('g1address', 'UTSA'), 'unknown'), false)
+  assert.equal(matchesValidatorSearch(validator('g1address', null), 'utsa'), false)
+  assert.equal(matchesValidatorSearch(validator('g1address', '   '), ' '), true)
+  assert.equal(matchesValidatorSearch(validator('g1address', '   '), 'utsa'), false)
+  assert.equal(matchesValidatorSearch({ moniker: null }, 'utsa'), false)
+})
+
+test('duplicate monikers can both match without mutation', () => {
+  const rows = [Object.freeze(validator('g1a', 'Node')), Object.freeze(validator('g1b', 'Node'))]
+  assert.deepEqual(rows.filter((row) => matchesValidatorSearch(row, 'node')), rows)
+  assert.deepEqual(rows, [{ address: 'g1a', moniker: 'Node' }, { address: 'g1b', moniker: 'Node' }])
 })

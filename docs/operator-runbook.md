@@ -165,3 +165,10 @@ address remains the underlying technical identity, and unmatched validators rema
 by address. Profiles still come from the manually persisted official Valopers snapshot,
 profile refresh remains manual, the frontend does not use Telegram bot data, and no
 logos or validator detail frontend route are implemented.
+
+The full active-validator table can locally filter the already loaded active set by official
+moniker or consensus signing address, using case-insensitive partial matching and no additional
+API request. Filtering preserves the original voting-power **Power Rank**, and the **Active
+Validators** metric remains the complete active-set count. Global search is not extended to
+validators, no frontend validator detail route exists, Valopers profile refresh remains manual,
+and the frontend still does not use Telegram data.
