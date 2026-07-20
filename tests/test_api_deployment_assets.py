@@ -129,20 +129,53 @@ class ApiDeploymentAssetTests(unittest.TestCase):
         grant_at = section.index(
             "GRANT SELECT ON TABLE public.valoper_profiles TO utsa_gno_api;"
         )
-        verification_at = section.index(
-            "has_table_privilege('utsa_gno_api', 'public.valoper_profiles', 'SELECT')"
-        )
+        verification_at = section.index("DO $$")
         version_at = section.index("API_VERSION=0.7.0")
         restart_at = section.index("sudo systemctl restart utsa-gno-api.service")
         self.assertLess(grant_at, verification_at)
         self.assertLess(verification_at, version_at)
         self.assertLess(version_at, restart_at)
+        normalized = " ".join(section.split())
         for privilege in ("INSERT", "UPDATE", "DELETE", "TRUNCATE"):
             self.assertIn(
-                f"has_table_privilege('utsa_gno_api', 'public.valoper_profiles', '{privilege}')",
-                section,
+                f"'public.valoper_profiles', '{privilege}'",
+                normalized,
             )
-        self.assertIn("Stop the deployment before restart", section)
+        self.assertIn("Stop the deployment before restart", normalized)
+
+    def test_api_070_upgrade_loads_schema_environment_and_fails_closed(self):
+        section = self.api_070_upgrade_section()
+        source_at = section.index(". /etc/utsa-gno-explorer/indexer.env")
+        init_at = section.index("exec .venv/bin/python scripts/init_database.py")
+        grant_at = section.index(
+            "GRANT SELECT ON TABLE public.valoper_profiles TO utsa_gno_api;"
+        )
+        self.assertLess(source_at, init_at)
+        self.assertLess(init_at, grant_at)
+        validation = section[source_at:grant_at]
+        self.assertNotIn("api.env", validation)
+        self.assertNotRegex(validation, r"DATABASE_URL\s*=")
+
+        verification_at = section.index("DO $$")
+        version_at = section.index("API_VERSION=0.7.0")
+        restart_at = section.index("sudo systemctl restart utsa-gno-api.service")
+        self.assertIn("ON_ERROR_STOP=1", section[:verification_at])
+        self.assertIn("RAISE EXCEPTION", section[verification_at:version_at])
+        self.assertLess(grant_at, verification_at)
+        self.assertLess(verification_at, version_at)
+        self.assertLess(version_at, restart_at)
+        self.assertIn(
+            "has_table_privilege(\n       'utsa_gno_api', 'public.valopers_snapshot_state', 'SELECT'",
+            section[verification_at:version_at],
+        )
+
+    def test_api_070_unmatched_smoke_check_is_conditional_and_non_mutating(self):
+        section = self.api_070_upgrade_section()
+        smoke = section[section.index("9. When at least one matched profile exists"):]
+        self.assertIn("If one currently exists", smoke)
+        self.assertIn("If every active validator currently has a profile", smoke)
+        self.assertIn("Never create or modify production rows", smoke)
+        self.assertNotRegex(smoke, r"(?i)\b(?:INSERT|UPDATE|DELETE|TRUNCATE)\b")
 
     def assert_urls_have_placeholder_passwords(self, data):
         for match in CREDENTIAL_URL.finditer(data):

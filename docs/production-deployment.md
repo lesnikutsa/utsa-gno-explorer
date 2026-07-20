@@ -468,8 +468,13 @@ automatic grant path.
 2. Validate the current ten-table schema before changing privileges:
 
    ```bash
-   sudo -u utsa-gno /opt/utsa-gno-explorer/.venv/bin/python \
-     /opt/utsa-gno-explorer/scripts/init_database.py
+   sudo -u utsa-gno sh -c '
+     set -a
+     . /etc/utsa-gno-explorer/indexer.env
+     set +a
+     cd /opt/utsa-gno-explorer
+     exec .venv/bin/python scripts/init_database.py
+   '
    ```
 
 3. Open the existing interactive PostgreSQL administrator session. No password or
@@ -478,7 +483,7 @@ automatic grant path.
    ```bash
    docker compose -f deploy/postgres/compose.yml \
      --env-file /etc/utsa-gno-explorer/postgres.env \
-     exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+     exec postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
    ```
 
    Apply only the required read privilege:
@@ -491,16 +496,39 @@ automatic grant path.
    privileges:
 
    ```sql
-   SELECT
-     has_table_privilege('utsa_gno_api', 'public.valoper_profiles', 'SELECT') AS select_allowed,
-     has_table_privilege('utsa_gno_api', 'public.valoper_profiles', 'INSERT') AS insert_allowed,
-     has_table_privilege('utsa_gno_api', 'public.valoper_profiles', 'UPDATE') AS update_allowed,
-     has_table_privilege('utsa_gno_api', 'public.valoper_profiles', 'DELETE') AS delete_allowed,
-     has_table_privilege('utsa_gno_api', 'public.valoper_profiles', 'TRUNCATE') AS truncate_allowed;
+   DO $$
+   BEGIN
+     IF NOT has_table_privilege(
+       'utsa_gno_api', 'public.valoper_profiles', 'SELECT'
+     ) THEN
+       RAISE EXCEPTION 'API role is missing SELECT on valoper_profiles';
+     END IF;
+
+     IF has_table_privilege(
+       'utsa_gno_api', 'public.valoper_profiles', 'INSERT'
+     ) OR has_table_privilege(
+       'utsa_gno_api', 'public.valoper_profiles', 'UPDATE'
+     ) OR has_table_privilege(
+       'utsa_gno_api', 'public.valoper_profiles', 'DELETE'
+     ) OR has_table_privilege(
+       'utsa_gno_api', 'public.valoper_profiles', 'TRUNCATE'
+     ) THEN
+       RAISE EXCEPTION 'API role has unexpected write privileges';
+     END IF;
+
+     IF has_table_privilege(
+       'utsa_gno_api', 'public.valopers_snapshot_state', 'SELECT'
+     ) THEN
+       RAISE EXCEPTION 'API role has unexpected snapshot-state access';
+     END IF;
+   END
+   $$;
    ```
 
-   Require exactly `t, f, f, f, f`. Stop the deployment before restart if any
-   value differs. Do not grant access to `valopers_snapshot_state`, use `GRANT
+   A successful block returns `DO`; any failed condition raises an exception and
+   `ON_ERROR_STOP` terminates the administrator session. Stop the deployment before
+   restart if the block does not succeed. Do not grant access to
+   `valopers_snapshot_state`, use `GRANT
    ALL`, change ownership, or add superuser or data-changing privileges. The API
    role remains read-only.
 
@@ -525,22 +553,29 @@ automatic grant path.
    curl --fail --silent --show-error http://127.0.0.1:18180/api/validators
    ```
 
-9. Request one known matched consensus signing address and verify its official
-   profile fields and `valoper_source_height` are non-null:
+9. When at least one matched profile exists, request one known matched consensus
+   signing address and verify its official profile fields and
+   `valoper_source_height` are non-null:
 
    ```bash
    curl --fail --silent --show-error \
      http://127.0.0.1:18180/api/validators/MATCHED_SIGNING_ADDRESS
    ```
 
-10. Confirm one known unmatched validator remains present in the list, then
-    request its detail and verify `moniker`, `operator_address`, `description`,
-    `server_type`, and `valoper_source_height` are null:
+10. Inspect the list for an unmatched validator. If one currently exists, confirm
+    it remains present, then request its detail and verify `moniker`,
+    `operator_address`, `description`, `server_type`, and
+    `valoper_source_height` are null:
 
     ```bash
     curl --fail --silent --show-error \
       http://127.0.0.1:18180/api/validators/UNMATCHED_SIGNING_ADDRESS
     ```
+
+    If every active validator currently has a profile, report that fact and rely
+    on the mandatory real PostgreSQL integration test for unmatched `LEFT JOIN`
+    semantics. Never create or modify production rows to manufacture an unmatched
+    smoke-test case.
 
 For rollback, stop the API, check out or reset only to a previously verified commit according to the repository's existing operator policy, reinstall dependencies only if required, start only the API, and verify `/api/health` locally:
 

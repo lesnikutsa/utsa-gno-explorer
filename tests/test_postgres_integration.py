@@ -477,6 +477,17 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                 (role,),
             )
             self.assertFalse(cursor.fetchone()[0])
+
+        restricted_url = (
+            f"postgresql://{role}:{role_password}@{self.host}:{self.port}/{name}"
+        )
+        with psycopg.connect(
+            restricted_url, row_factory=psycopg.rows.dict_row
+        ) as connection, connection.cursor() as cursor:
+            with self.assertRaises(psycopg.errors.InsufficientPrivilege):
+                cursor.execute(ACTIVE_VALIDATORS_SQL, (10, 10))
+
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
             cursor.execute(
                 psycopg.sql.SQL(
                     "GRANT SELECT ON TABLE public.valoper_profiles TO {}"
@@ -488,10 +499,12 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                 (role,),
             )
             self.assertEqual([row[0] for row in cursor.fetchall()], [True, False, False, False, False])
+            cursor.execute(
+                "SELECT has_table_privilege(%s, 'public.valopers_snapshot_state', 'SELECT')",
+                (role,),
+            )
+            self.assertFalse(cursor.fetchone()[0])
 
-        restricted_url = (
-            f"postgresql://{role}:{role_password}@{self.host}:{self.port}/{name}"
-        )
         with psycopg.connect(
             restricted_url, row_factory=psycopg.rows.dict_row
         ) as connection, connection.cursor() as cursor:
