@@ -4,10 +4,6 @@ export const hasValidatorMoniker = (validator) => (
   typeof validator?.moniker === 'string' && validator.moniker.trim().length > 0
 )
 
-export const getValidatorPrimaryIdentity = (validator) => (
-  hasValidatorMoniker(validator) ? validator.moniker : validator.address
-)
-
 export const compareValidatorIdentity = (left, right) => {
   const leftHasMoniker = hasValidatorMoniker(left)
   const rightHasMoniker = hasValidatorMoniker(right)

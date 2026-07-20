@@ -46,8 +46,14 @@ export function Validators({ validatorsPage }) {
     { key: 'powerRank', label: 'Power Rank', render: (row) => <span className="mono">#{row.powerRank}</span> },
     { key: 'address', label: 'Validator', sortable: true, defaultSortDirection: 'ascending', render: (row) => (
       <span className="validator-identity" title={row.address}>
-        {hasValidatorMoniker(row) && <strong className="validator-identity__moniker">{row.moniker}</strong>}
-        <span className="validator-identity__address mono">{shortAddress(row.address)}</span>
+        {hasValidatorMoniker(row) ? (
+          <>
+            <strong className="validator-identity__moniker">{row.moniker}</strong>
+            <span className="validator-identity__address mono">{shortAddress(row.address)}</span>
+          </>
+        ) : (
+          <strong className="validator-identity__fallback mono">{shortAddress(row.address)}</strong>
+        )}
       </span>
     ) },
     { key: 'voting_power', label: 'Voting Power', sortable: true, defaultSortDirection: 'descending', render: (row) => <span className="validator-power mono"><span>{formatIntegerString(row.voting_power)}</span><span className="validator-power__percent">{formatPercent(row.percent)}</span></span> },

@@ -3,21 +3,16 @@ import test from 'node:test'
 
 import {
   compareValidatorIdentity,
-  getValidatorPrimaryIdentity,
   hasValidatorMoniker,
 } from '../src/utils/validatorIdentity.js'
 
 const validator = (address, moniker = null) => ({ address, moniker })
 
-test('primary identity preserves an exact matched moniker', () => {
-  assert.equal(getValidatorPrimaryIdentity(validator('g1address', '  Alice  Node ')), '  Alice  Node ')
-})
-
-test('primary identity falls back for null, empty, and whitespace-only monikers', () => {
+test('moniker availability preserves matched content and rejects unavailable values', () => {
+  assert.equal(hasValidatorMoniker(validator('g1address', '  Alice  Node ')), true)
   for (const moniker of [null, '', ' \t ']) {
     const row = validator('g1address', moniker)
     assert.equal(hasValidatorMoniker(row), false)
-    assert.equal(getValidatorPrimaryIdentity(row), 'g1address')
   }
 })
 
@@ -49,6 +44,6 @@ test('identity helpers do not mutate validator objects', () => {
   const left = Object.freeze(validator('g1b', 'Beta'))
   const right = Object.freeze(validator('g1a', 'alpha'))
   compareValidatorIdentity(left, right)
-  getValidatorPrimaryIdentity(left)
+  hasValidatorMoniker(left)
   assert.deepEqual(left, { address: 'g1b', moniker: 'Beta' })
 })
