@@ -2,4 +2,4 @@
 
  * [secp-node](/r/gnops/valopers:g1pppppppppppppppppppppppppppppppppppppp) - [profile](/r/demo/profile:g1pppppppppppppppppppppppppppppppppppppp)
 
-Pages: [1](/r/gnops/valopers:) [2](/r/gnops/valopers:?page=2)
+Pages: [1](?page=1) [2](?page=2)

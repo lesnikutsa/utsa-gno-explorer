@@ -11,7 +11,8 @@ The command reuses configured RPC selection and chain validation, pins the
 selected endpoint's committed latest height, and sends all list, pagination,
 and detail calls through `abci_query` with JSON-literal encoded string params
 and explicit `height`. Data is `gno.land/r/gnops/valopers:` for root,
-`gno.land/r/gnops/valopers:?page=N` for a page.Picker path, and
+`gno.land/r/gnops/valopers:?page=N` after resolving a relative `?page=N`
+page.Picker link, and
 `gno.land/r/gnops/valopers:<operator>` for detail. Any response-height mismatch aborts the crawl. Fetching completes
 before a short, profile-specific advisory-locked batch upsert, and absent rows
 are not deleted.

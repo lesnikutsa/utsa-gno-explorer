@@ -1,5 +1,7 @@
 # Registered Valopers
 
+Register with [the proposal realm](/r/gnops/valopers/proposal), [the Register call](gnoland/tx/call?pkgpath=gno.land/r/gnops/valopers&func=Register), and [your public profile](/r/demo/profile:g1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq). See the [operator guide](https://docs.gno.land/validators).
+
  * [alpha-node](/r/gnops/valopers:g1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq) - [profile](/r/demo/profile:g1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq)
 
-Pages: [1](/r/gnops/valopers:) [2](/r/gnops/valopers:?page=2)
+Pages: [1](?page=1) [2](?page=2)

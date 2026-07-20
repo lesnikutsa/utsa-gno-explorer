@@ -20,6 +20,7 @@ from scripts import init_database
 FIX = Path(__file__).parent / "fixtures" / "valopers"
 ED_GPUB = "gpub1pggj7ard9eg82cjtv4u52epjx56nzwgjyg9zqqgzqvzq2ps8pqys5zcvp58q7yq3zgf3g9gkzuvpjxsmrsw3u8eqh8zc2g"
 SEC_GPUB = "gpub1pgfj7ard9eg82cjtv4u4xetrwqer2dntxyfzxz3pqypqxpq9qcrsszg2pvxq6rs0zqg3yyc5z5tpwxqergd3c8g7ruszzaywaz7"
+OFFICIAL_ED25519_GPUB = "gpub1pggj7ard9eg82cjtv4u52epjx56nzwgjyg9zqwpdwpd0f9fvqla089ndw5g9hcsufad77fml2vlu73fk8q8sh8v72cza5p"
 
 
 def response(text, height=42):
@@ -32,8 +33,22 @@ class SourceTests(unittest.TestCase):
     def test_official_list_profile_links_and_picker(self):
         operators, pages = parse_list_page(self.read("list_first_page.txt"))
         self.assertEqual(operators, ["g1" + "q" * 38])
-        self.assertEqual(pages, ("?page=2",))
+        self.assertEqual(pages, ("?page=1", "?page=2"))
         self.assertNotIn("demo/profile", repr(operators))
+
+    def test_picker_query_is_bounded_and_canonical(self):
+        row = "[A](/r/gnops/valopers:g1" + "a" * 38 + ")"
+        operators, pages = parse_list_page(row + "\n[2](?size=020&page=002&page=2)")
+        self.assertEqual(operators, ["g1" + "a" * 38])
+        self.assertEqual(pages, ("?page=2&size=20",))
+        invalid = (
+            "?page=0", "?page=-1", "?page=1#fragment", "?other=1",
+            "?size=20", "?page=1&page=2", "?page=abc",
+            "?page=" + "1" * 300,
+        )
+        for picker in invalid:
+            with self.subTest(picker=picker), self.assertRaises(ProfileSourceError):
+                parse_list_page(row + f"\n[page]({picker})")
 
     def test_duplicate_deterministic_and_external_ignored(self):
         row = " * [A](/r/gnops/valopers:g1" + "a" * 38 + ")"
@@ -42,7 +57,15 @@ class SourceTests(unittest.TestCase):
 
     def test_wrong_or_malformed_realm_link_rejected(self):
         with self.assertRaises(ProfileSourceError):
-            parse_list_page("[A](/r/gnops/valopers/not-a-render-path)")
+            parse_list_page("[A](/r/gnops/valopers:not-a-render-path)")
+
+    def test_instruction_links_are_ignored_and_never_queried(self):
+        operators, pages = parse_list_page(self.read("list_first_page.txt"))
+        self.assertEqual(operators, ["g1" + "q" * 38])
+        self.assertIn("?page=2", pages)
+        rendered = repr((operators, pages))
+        for value in ("proposal", "tx/call", "demo/profile", "https://"):
+            self.assertNotIn(value, rendered)
 
     def test_detail_uses_heading_multiline_description_and_exact_metadata(self):
         operator = "g1" + "q" * 38
@@ -98,6 +121,7 @@ class SourceTests(unittest.TestCase):
         result = collect_profiles(None, 42, query=query)
         self.assertEqual(len(result.profiles), 2)
         self.assertTrue(all(height == 42 for _, height in calls))
+        self.assertEqual({path for path, _ in calls}, {"", "?page=2", "g1"+"q"*38, "g1"+"p"*38})
         self.assertEqual([p.operator_address for p in result.profiles], sorted(p.operator_address for p in result.profiles))
 
     def test_second_page_and_detail_height_mismatch_abort(self):
@@ -118,13 +142,19 @@ class SourceTests(unittest.TestCase):
         def endless(client, path, height):
             page = int(path.split("=")[1]) if path else 1
             next_page = page + 1
-            return SourceResponse(f"[A](/r/gnops/valopers:g1{'a'*40})\n[{next_page}](/r/gnops/valopers:?page={next_page})", height)
+            return SourceResponse(f"[A](/r/gnops/valopers:g1{'a'*40})\n[{next_page}](?page={next_page})", height)
         with self.assertRaises(ProfileSourceError): collect_profiles(None, 1, query=endless)
         rows = "\n".join(f"[A](/r/gnops/valopers:g1{i:040d})" for i in range(MAX_PROFILES + 1))
         with self.assertRaises(ProfileSourceError): collect_profiles(None, 1, query=lambda *args: SourceResponse(rows, 1))
 
 
 class PublicKeyTests(unittest.TestCase):
+    def test_official_valopers_filetest_ed25519_vector(self):
+        self.assertEqual(
+            normalize_gpub(OFFICIAL_ED25519_GPUB),
+            ("/tm.PubKeyEd25519", "OC1wWvSVLAf685ZtdRBb4hxPW+8nf1M/z0U2OA8LnZ4="),
+        )
+
     def test_fixed_ed25519_and_secp256k1_vectors(self):
         self.assertEqual(normalize_gpub(ED_GPUB), ("/tm.PubKeyEd25519", base64.b64encode(bytes(range(1,33))).decode()))
         self.assertEqual(normalize_gpub(SEC_GPUB), ("/tm.PubKeySecp256k1", base64.b64encode(bytes(range(1,34))).decode()))

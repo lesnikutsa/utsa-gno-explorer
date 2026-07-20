@@ -9,6 +9,7 @@ import re
 from collections import Counter, deque
 from dataclasses import dataclass, replace
 from typing import Callable, Iterable
+from urllib.parse import parse_qsl, urlencode
 
 from scripts.inspect_rpc import result, to_int
 
@@ -21,6 +22,7 @@ MAX_DESCRIPTION = 2048
 MAX_ADDRESS = 128
 MAX_GPUB = 512
 MAX_SOURCE_PATH = 512
+MAX_PICKER_QUERY = 256
 SERVER_TYPES = frozenset({"cloud", "on-prem", "data-center"})
 SUPPORTED_KEY_LENGTHS = {"/tm.PubKeyEd25519": 32, "/tm.PubKeySecp256k1": 33}
 
@@ -160,6 +162,30 @@ def _realm_route(realm: str) -> str:
     return "/r/" + realm.split("/r/", 1)[1]
 
 
+def _normalize_picker_link(link: str) -> str:
+    """Validate and canonicalize a relative pager.Picker query link."""
+    if not link.startswith("?") or len(link.encode("utf-8")) > MAX_PICKER_QUERY or "#" in link:
+        raise ProfileSourceError("invalid Valopers picker link")
+    try:
+        pairs = parse_qsl(link[1:], keep_blank_values=True, strict_parsing=True)
+    except ValueError as exc:
+        raise ProfileSourceError("invalid Valopers picker query") from exc
+    values: dict[str, int] = {}
+    for name, raw_value in pairs:
+        if name not in {"page", "size"} or not re.fullmatch(r"[0-9]+", raw_value):
+            raise ProfileSourceError("unexpected Valopers picker parameter")
+        value = int(raw_value)
+        if value <= 0:
+            raise ProfileSourceError("Valopers picker values must be positive")
+        if name in values and values[name] != value:
+            raise ProfileSourceError("conflicting Valopers picker values")
+        values[name] = value
+    if "page" not in values:
+        raise ProfileSourceError("Valopers picker link is missing page")
+    ordered = [(name, values[name]) for name in ("page", "size") if name in values]
+    return "?" + urlencode(ordered)
+
+
 def parse_list_page(text: str, realm: str = DEFAULT_REALM) -> tuple[list[str], tuple[str, ...]]:
     """Parse current renderHome profile rows and page.Picker realm links."""
     _bounded_text(text)
@@ -168,17 +194,15 @@ def parse_list_page(text: str, realm: str = DEFAULT_REALM) -> tuple[list[str], t
     operators: list[str] = []
     pages: set[str] = set()
     for link in links:
-        if link.startswith(route + ":"):
+        if link.startswith("?"):
+            pages.add(_normalize_picker_link(link))
+        elif link.startswith(route + ":"):
             render_path = link[len(route) + 1:]
             if re.fullmatch(r"g1[0-9a-z]+", render_path):
                 if render_path not in operators:
                     operators.append(render_path)
-            elif render_path.startswith("?"):
-                pages.add(render_path)
             elif render_path:
                 raise ProfileSourceError("unexpected Valopers realm render path")
-        elif "/r/gnops/valopers" in link:
-            raise ProfileSourceError("malformed Valopers realm link")
     if not operators:
         raise ProfileSourceError("Valopers list page has no profile rows")
     return operators, tuple(sorted(pages))
@@ -266,7 +290,7 @@ def collect_profiles(client, height: int, realm: str = DEFAULT_REALM,
                 if len(operators) > MAX_PROFILES:
                     raise ProfileSourceError("Valopers profile limit exceeded")
         for page_link in page_links:
-            if page_link == page:
+            if page_link in {page, "?page=1"}:
                 continue
             if page_link in seen_pages:
                 continue
