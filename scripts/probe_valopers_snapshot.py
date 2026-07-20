@@ -6,7 +6,7 @@ import argparse
 import io
 import sys
 from collections.abc import Sequence
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -25,7 +25,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     del args
     try:
-        with redirect_stdout(io.StringIO()):
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
             client, status_payload = select_healthy_rpc(
                 configured_rpc_urls(), expected_chain_id=configured_chain_id()
             )

@@ -15,6 +15,7 @@ from scripts.inspect_rpc import GnoRpcClient, RpcError
 VALOPERS_PAGE_SIZE = 50
 MAX_VALOPERS_PAGES = 20
 MAX_VALOPERS_PROFILES = 1000
+MAX_LIST_REQUESTS = MAX_VALOPERS_PAGES + 1
 
 
 @dataclass(frozen=True)
@@ -32,7 +33,7 @@ def _collect_list(client: GnoRpcClient, source_height: int) -> tuple[list[Valope
     seen_sequences: set[tuple[str, ...]] = set()
     seen_sets: set[frozenset[str]] = set()
 
-    for page_number in range(1, MAX_VALOPERS_PAGES + 1):
+    for page_number in range(1, MAX_LIST_REQUESTS + 1):
         render_data = (
             build_root_render_data()
             if page_number == 1
@@ -44,6 +45,8 @@ def _collect_list(client: GnoRpcClient, source_height: int) -> tuple[list[Valope
             raise RpcError("Valopers page exceeds the page-size limit")
         if not page:
             return entries, 0 if page_number == 1 else page_number - 1
+        if page_number > MAX_VALOPERS_PAGES:
+            raise RpcError("Valopers registry exceeds the page limit")
 
         operators = tuple(entry.operator_address for entry in page)
         operator_set = frozenset(operators)
@@ -59,9 +62,6 @@ def _collect_list(client: GnoRpcClient, source_height: int) -> tuple[list[Valope
             raise RpcError("Valopers registry exceeds the profile limit")
         if len(page) < VALOPERS_PAGE_SIZE:
             return entries, page_number
-        if page_number == MAX_VALOPERS_PAGES:
-            raise RpcError("Valopers registry requires more than the page limit")
-
     raise RpcError("Valopers registry pagination did not terminate")  # pragma: no cover
 
 
