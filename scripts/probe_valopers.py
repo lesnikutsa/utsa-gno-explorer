@@ -47,14 +47,13 @@ def requested_renders(args: argparse.Namespace) -> list[tuple[str, str]]:
     return renders or [("root", build_root_render_data())]
 
 
-def format_result(result: ValopersRenderResult, include_preview: bool = True) -> str:
+def format_result(result: ValopersRenderResult) -> str:
     response_height = result.response_height if result.response_height is not None else "unreported"
-    summary = (
+    return (
         f"kind={result.query_kind} source_height={result.source_height} "
         f"response_height={response_height} decoded_bytes={result.decoded_byte_count} "
-        f"sha256={result.sha256}"
+        f"sha256={result.sha256} preview={result.preview!r}"
     )
-    return f"{summary} preview={result.preview!r}" if include_preview else summary
 
 
 def format_parsed_result(result: ValopersRenderResult) -> str:
@@ -100,7 +99,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             except (TypeError, ValueError):
                 print("Valopers probe failed: render did not match the parser contract", file=sys.stderr)
                 return 1
-            print(format_result(result, include_preview=False))
+            print(format_result(result))
             print(parsed_summary)
         else:
             print(format_result(result))

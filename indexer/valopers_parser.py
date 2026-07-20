@@ -6,17 +6,22 @@ from dataclasses import dataclass
 
 MAX_RENDER_CHARS = 1024 * 1024
 MAX_RENDER_BYTES = 1024 * 1024
-MAX_DESCRIPTION_CHARS = 100_000
+MAX_DESCRIPTION_BYTES = 2048
+MIN_SIGNING_PUBKEY_LENGTH = 91
+MAX_SIGNING_PUBKEY_LENGTH = 256
 
 _MONIKER_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9 _-]{0,30}[A-Za-z0-9])?\Z")
 _ADDRESS_PATTERN = r"g1[023456789ac-hj-np-z]{38}"
 _ADDRESS_RE = re.compile(_ADDRESS_PATTERN + r"\Z")
-_GPUB_RE = re.compile(r"gpub1[023456789ac-hj-np-z]{5,195}\Z")
+_GPUB_RE = re.compile(r"gpub1[023456789ac-hj-np-z]+\Z")
 _ENTRY_RE = re.compile(
     rf" \* \[(?P<moniker>[^\]\r\n]+)\]\(/r/gnops/valopers:(?P<detail>{_ADDRESS_PATTERN})\)"
     rf" - \[profile\]\(/r/demo/profile:u/(?P<profile>{_ADDRESS_PATTERN})\)\Z"
 )
-_ENTRY_CANDIDATE_RE = re.compile(r" \* \[")
+_PAGER_RE = re.compile(
+    r"\[[^\]\r\n]+\]\(/r/gnops/valopers:\?page=[1-9][0-9]*\)"
+    r"(?: \| \[[^\]\r\n]+\]\(/r/gnops/valopers:\?page=[1-9][0-9]*\))?\Z"
+)
 _DETAIL_TAIL_RE = re.compile(
     rf"\n\n- Operator Address: (?P<operator>{_ADDRESS_PATTERN})"
     rf"\n- Signing Address: (?P<signing>{_ADDRESS_PATTERN})"
@@ -55,6 +60,15 @@ def _validate_moniker(moniker: str) -> None:
         raise ValueError("Invalid Valoper moniker")
 
 
+def _looks_like_list_entry(line: str) -> bool:
+    if _PAGER_RE.fullmatch(line):
+        return False
+    if "/r/gnops/valopers:" in line or "/r/demo/profile:u/" in line:
+        return True
+    normalized = line.lstrip()
+    return normalized.startswith("* [") and " - [" in normalized
+
+
 def parse_valopers_list(rendered_text: str) -> tuple[ValoperListEntry, ...]:
     """Parse canonical entries while ignoring non-entry instructions and pager text."""
     _validate_render(rendered_text)
@@ -63,7 +77,7 @@ def parse_valopers_list(rendered_text: str) -> tuple[ValoperListEntry, ...]:
     for line in rendered_text.splitlines():
         match = _ENTRY_RE.fullmatch(line)
         if match is None:
-            if _ENTRY_CANDIDATE_RE.match(line):
+            if _looks_like_list_entry(line):
                 raise ValueError("Malformed Valopers list entry")
             continue
         moniker = match.group("moniker")
@@ -76,8 +90,10 @@ def parse_valopers_list(rendered_text: str) -> tuple[ValoperListEntry, ...]:
         seen.add(operator)
         entries.append(ValoperListEntry(moniker, operator))
 
-    if not entries and "No valopers to display." not in rendered_text.splitlines():
-        raise ValueError("Valopers list contains no canonical entries")
+    if not entries:
+        meaningful_lines = [line for line in rendered_text.splitlines() if line.strip()]
+        if not meaningful_lines or meaningful_lines[-1] != "No valopers to display.":
+            raise ValueError("Valopers list contains no canonical entries")
     return tuple(entries)
 
 
@@ -100,7 +116,7 @@ def parse_valoper_detail(rendered_text: str) -> ValoperProfile:
     description = rendered_text[heading_end + 1:tail.start()]
     if not description:
         raise ValueError("Valoper description must not be empty")
-    if len(description) > MAX_DESCRIPTION_CHARS:
+    if len(description.encode("utf-8")) > MAX_DESCRIPTION_BYTES:
         raise ValueError("Valoper description exceeds the size limit")
 
     operator = tail.group("operator")
@@ -109,7 +125,10 @@ def parse_valoper_detail(rendered_text: str) -> ValoperProfile:
     server = tail.group("server")
     if not _ADDRESS_RE.fullmatch(operator) or not _ADDRESS_RE.fullmatch(signing):
         raise ValueError("Invalid Valoper address")
-    if not _GPUB_RE.fullmatch(pubkey):
+    if not (
+        MIN_SIGNING_PUBKEY_LENGTH <= len(pubkey) <= MAX_SIGNING_PUBKEY_LENGTH
+        and _GPUB_RE.fullmatch(pubkey)
+    ):
         raise ValueError("Invalid Valoper signing public key")
     if server not in {"cloud", "on-prem", "data-center"}:
         raise ValueError("Invalid Valoper server type")
