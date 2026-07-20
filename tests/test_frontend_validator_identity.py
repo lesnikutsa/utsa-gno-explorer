@@ -64,7 +64,10 @@ class OverviewValidatorIdentitySourceContractTests(unittest.TestCase):
         self.assertIn("hasValidatorMoniker(row) ?", self.identity_render)
 
     def test_matched_identity_renders_exact_moniker_and_secondary_address(self):
-        self.assertIn('className="validator-identity"', self.identity_render)
+        self.assertIn(
+            'className="validator-identity validator-identity--link"',
+            self.identity_render,
+        )
         self.assertIn('className="validator-identity__moniker">{row.moniker}', self.identity_render)
         self.assertIn(
             'className="validator-identity__address mono">{shortAddress(row.address)}',
@@ -83,6 +86,18 @@ class OverviewValidatorIdentitySourceContractTests(unittest.TestCase):
         self.assertIn("historyMap.get(row.address)", self.source)
         self.assertIn("address={row.address}", self.source)
         self.assertIn("title={row.address}", self.identity_render)
+
+    def test_identity_links_to_the_encoded_signing_address_only(self):
+        self.assertIn(
+            'href={`/validators/${encodeURIComponent(row.address)}`}',
+            self.identity_render,
+        )
+        self.assertNotIn("encodeURIComponent(row.moniker)", self.identity_render)
+        self.assertNotIn("onClick", self.identity_render)
+        validator_table = self.source.split(
+            "<DataTable columns={validatorColumns}", 1
+        )[1].split("/>", 1)[0]
+        self.assertNotIn("onClick", validator_table)
 
     def test_no_forbidden_fallback_label_is_introduced(self):
         for label in ["Unknown", "Unnamed", "N/A", "Validator", "No profile"]:

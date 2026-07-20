@@ -55,7 +55,7 @@ export function Overview({ explorerData, mascotSrc = null }) {
   const historyBlocks = data.validatorHistory?.blocks
   const validatorColumns = useMemo(() => [
     { key: 'address', label: 'Validator', render: (row) => (
-      <span className="validator-identity" title={row.address}>
+      <a className="validator-identity validator-identity--link" href={`/validators/${encodeURIComponent(row.address)}`} title={row.address}>
         {hasValidatorMoniker(row) ? (
           <>
             <strong className="validator-identity__moniker">{row.moniker}</strong>
@@ -64,7 +64,7 @@ export function Overview({ explorerData, mascotSrc = null }) {
         ) : (
           <strong className="validator-identity__fallback mono">{shortAddress(row.address)}</strong>
         )}
-      </span>
+      </a>
     ) },
     { key: 'signing', label: 'Signing (last 100)', render: (row) => {
       const history = row.address ? historyMap.get(row.address) : null
