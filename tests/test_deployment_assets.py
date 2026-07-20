@@ -163,9 +163,37 @@ class DeploymentAssetTests(unittest.TestCase):
         self.assertNotIn("PGPASSWORD=", doc)
         self.assertNotIn("POSTGRES_PASSWORD=validation", doc)
         self.assertNotIn("-e POSTGRES_PASSWORD=", doc)
-        self.assertIn("RAISE EXCEPTION 'validation failed: expected tables", doc)
+        self.assertIn("RAISE EXCEPTION 'validation failed: expected exact legacy", doc)
         self.assertIn("RAISE EXCEPTION 'validation failed: checkpoint", doc)
         self.assertIn("secrets.token_urlsafe", doc)
+
+    def test_restore_validation_accepts_only_exact_supported_catalogs(self):
+        doc = self.text("docs/production-deployment.md")
+        section = doc.split("## Validation restore", 1)[1].split("\n## ", 1)[0]
+        legacy = "legacy_expected_tables text[] := ARRAY['blocks','indexer_state','rpc_endpoint_checks','rpc_endpoints','transactions','validator_set_members','validator_signatures','validators'];"
+        current = "current_expected_tables text[] := ARRAY['blocks','indexer_state','rpc_endpoint_checks','rpc_endpoints','transactions','validator_set_members','validator_signatures','validators','valoper_profiles','valopers_snapshot_state'];"
+        self.assertIn(legacy, section)
+        self.assertIn(current, section)
+        self.assertIn("actual_tables IS DISTINCT FROM legacy_expected_tables", section)
+        self.assertIn("actual_tables IS DISTINCT FROM current_expected_tables", section)
+        self.assertIn("AND actual_tables IS DISTINCT FROM current_expected_tables", section)
+        self.assertNotIn("<@", section)
+        self.assertNotIn("@>", section)
+        self.assertNotIn("array_length", section)
+        self.assertIn("either possible nine-table state", section)
+        self.assertIn("partial catalog", section)
+
+    def test_main_upgrade_runs_migration_before_validation_and_restart(self):
+        doc = self.text("docs/production-deployment.md")
+        section = doc.split("## Upgrade procedure", 1)[1].split("\n## ", 1)[0]
+        migration = "python scripts/migrate_valopers_schema.py"
+        validation = "python scripts/init_database.py"
+        restart = "sudo systemctl start utsa-gno-indexer.service"
+        self.assertIn(migration, section)
+        self.assertIn(validation, section)
+        self.assertIn(restart, section)
+        self.assertLess(section.index(migration), section.index(validation))
+        self.assertLess(section.index(validation), section.index(restart))
 
     def test_init_database_help_runs(self):
         result = subprocess.run([sys.executable, "scripts/init_database.py", "--help"], cwd=ROOT, text=True, capture_output=True, check=False)
