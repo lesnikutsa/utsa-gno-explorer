@@ -448,6 +448,135 @@ sudo systemctl restart utsa-gno-api.service
 
 Repeat the local curl smoke tests after restart. Neither systemd nor the application performs Git operations, dependency installation, database initialization, migrations, restore, or deployment automatically.
 
+#### API 0.7.0 Valopers identity upgrade
+
+Use this ordered, fail-closed procedure when deploying API 0.7.0. The earlier
+`GRANT SELECT ON ALL TABLES IN SCHEMA public` covered only tables that existed
+when that statement ran. The explicit Valopers migration created
+`valoper_profiles` later, so the API role does not inherit access to it. Future
+tables likewise require operator review and explicit grants; do not configure an
+automatic grant path.
+
+1. Fetch and fast-forward the production checkout to the reviewed revision:
+
+   ```bash
+   sudo git -C /opt/utsa-gno-explorer fetch origin
+   sudo git -C /opt/utsa-gno-explorer switch main
+   sudo git -C /opt/utsa-gno-explorer merge --ff-only origin/main
+   ```
+
+2. Validate the current ten-table schema before changing privileges:
+
+   ```bash
+   sudo -u utsa-gno sh -c '
+     set -a
+     . /etc/utsa-gno-explorer/indexer.env
+     set +a
+     cd /opt/utsa-gno-explorer
+     exec .venv/bin/python scripts/init_database.py
+   '
+   ```
+
+3. Open the existing interactive PostgreSQL administrator session. No password or
+   `DATABASE_URL` is placed on the command line:
+
+   ```bash
+   docker compose -f deploy/postgres/compose.yml \
+     --env-file /etc/utsa-gno-explorer/postgres.env \
+     exec postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+   ```
+
+   Apply only the required read privilege:
+
+   ```sql
+   GRANT SELECT ON TABLE public.valoper_profiles TO utsa_gno_api;
+   ```
+
+4. In the same administrator session, verify the grant and absence of write
+   privileges:
+
+   ```sql
+   DO $$
+   BEGIN
+     IF NOT has_table_privilege(
+       'utsa_gno_api', 'public.valoper_profiles', 'SELECT'
+     ) THEN
+       RAISE EXCEPTION 'API role is missing SELECT on valoper_profiles';
+     END IF;
+
+     IF has_table_privilege(
+       'utsa_gno_api', 'public.valoper_profiles', 'INSERT'
+     ) OR has_table_privilege(
+       'utsa_gno_api', 'public.valoper_profiles', 'UPDATE'
+     ) OR has_table_privilege(
+       'utsa_gno_api', 'public.valoper_profiles', 'DELETE'
+     ) OR has_table_privilege(
+       'utsa_gno_api', 'public.valoper_profiles', 'TRUNCATE'
+     ) THEN
+       RAISE EXCEPTION 'API role has unexpected write privileges';
+     END IF;
+
+     IF has_table_privilege(
+       'utsa_gno_api', 'public.valopers_snapshot_state', 'SELECT'
+     ) THEN
+       RAISE EXCEPTION 'API role has unexpected snapshot-state access';
+     END IF;
+   END
+   $$;
+   ```
+
+   A successful block returns `DO`; any failed condition raises an exception and
+   `ON_ERROR_STOP` terminates the administrator session. Stop the deployment before
+   restart if the block does not succeed. Do not grant access to
+   `valopers_snapshot_state`, use `GRANT
+   ALL`, change ownership, or add superuser or data-changing privileges. The API
+   role remains read-only.
+
+5. Edit the protected external `/etc/utsa-gno-explorer/api.env` through the
+   operator-approved secret-management process and set `API_VERSION=0.7.0`. Do
+   not copy that file into Git.
+6. Restart API 0.7.0 only after steps 1 through 5 succeed:
+
+   ```bash
+   sudo systemctl restart utsa-gno-api.service
+   ```
+
+7. Verify health:
+
+   ```bash
+   curl --fail --silent --show-error http://127.0.0.1:18180/api/health
+   ```
+
+8. Verify the active validator list:
+
+   ```bash
+   curl --fail --silent --show-error http://127.0.0.1:18180/api/validators
+   ```
+
+9. When at least one matched profile exists, request one known matched consensus
+   signing address and verify its official profile fields and
+   `valoper_source_height` are non-null:
+
+   ```bash
+   curl --fail --silent --show-error \
+     http://127.0.0.1:18180/api/validators/MATCHED_SIGNING_ADDRESS
+   ```
+
+10. Inspect the list for an unmatched validator. If one currently exists, confirm
+    it remains present, then request its detail and verify `moniker`,
+    `operator_address`, `description`, `server_type`, and
+    `valoper_source_height` are null:
+
+    ```bash
+    curl --fail --silent --show-error \
+      http://127.0.0.1:18180/api/validators/UNMATCHED_SIGNING_ADDRESS
+    ```
+
+    If every active validator currently has a profile, report that fact and rely
+    on the mandatory real PostgreSQL integration test for unmatched `LEFT JOIN`
+    semantics. Never create or modify production rows to manufacture an unmatched
+    smoke-test case.
+
 For rollback, stop the API, check out or reset only to a previously verified commit according to the repository's existing operator policy, reinstall dependencies only if required, start only the API, and verify `/api/health` locally:
 
 ```bash

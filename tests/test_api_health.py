@@ -85,7 +85,7 @@ class ApiHealthTests(unittest.TestCase):
                 "finalized_tip_height": 845840,
                 "indexer_lag": 0,
                 "rpc_last_checked_at": "2026-07-16T12:34:55Z",
-                "api_version": "0.6.0",
+                "api_version": "0.7.0",
             },
         )
 

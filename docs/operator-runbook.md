@@ -150,5 +150,13 @@ already-compatible ten-table catalog. It adds `valoper_profiles` and
 `valopers_snapshot_state` transactionally, validates the exact complete catalog
 before commit, and leaves existing indexed rows untouched. Any error rolls back.
 A successful migration can be rerun safely. It is never applied automatically;
-restart the indexer only after validation. The application does not persist a
-Valopers snapshot yet, and neither the API nor frontend uses the new tables.
+restart the indexer only after validation. Snapshot persistence and refresh remain
+manual; no automatic updater exists.
+
+The read-only validator API (version 0.7.0) enriches validator identities from the
+persisted official snapshot using exact, case-sensitive `signing_address` equality.
+The SQL `LEFT JOIN` keeps unmatched validators visible with null profile fields, and
+`valoper_source_height` identifies the pinned snapshot represented by a profile. The
+API reads PostgreSQL only: it never queries the Valopers RPC directly and does not use
+Telegram bot data. The frontend does not display these identity fields yet. Update the
+production `API_VERSION` environment value separately after merge.
