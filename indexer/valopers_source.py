@@ -92,36 +92,43 @@ def decode_qrender_response(
 ) -> ValopersRenderResult:
     result = payload.get("result") if isinstance(payload, dict) else None
     response = result.get("response") if isinstance(result, dict) else None
-    if not isinstance(response, dict) or "value" not in response:
-        raise RpcError("Malformed qrender response: missing result.response.value")
+    if not isinstance(response, dict):
+        raise RpcError("Malformed qrender response: missing result.response")
 
-    raw_height = response.get("height")
-    try:
-        response_height = int(raw_height)
-    except (TypeError, ValueError) as exc:
-        raise RpcError("Malformed qrender response: invalid result.response.height") from exc
-    if isinstance(raw_height, bool) or response_height < 1 or str(response_height) != str(raw_height):
-        raise RpcError("Malformed qrender response: invalid result.response.height")
+    raw_height = response.get("Height")
+    if not isinstance(raw_height, int) or isinstance(raw_height, bool) or raw_height < 1:
+        raise RpcError("Malformed qrender response: invalid result.response.Height")
+    response_height = raw_height
     if response_height != source_height:
         raise RpcError(
             f"Qrender response height mismatch: expected {source_height}, got {response_height}"
         )
 
-    encoded = response["value"]
+    response_base = response.get("ResponseBase")
+    if not isinstance(response_base, dict):
+        raise RpcError("Malformed qrender response: missing result.response.ResponseBase")
+    if "Error" not in response_base or response_base["Error"] not in (None, ""):
+        raise RpcError("Qrender ABCI response reported an error")
+
+    encoded = response_base.get("Data")
     if not isinstance(encoded, str) or not encoded:
-        raise RpcError("Malformed qrender response: missing result.response.value")
+        raise RpcError("Malformed qrender response: missing result.response.ResponseBase.Data")
     if len(encoded) > MAX_ENCODED_RESPONSE_CHARS:
         raise RpcError("Qrender response exceeds encoded response size limit")
     try:
         decoded = base64.b64decode(encoded, validate=True)
     except (binascii.Error, ValueError) as exc:
-        raise RpcError("Malformed qrender response: invalid base64 in result.response.value") from exc
+        raise RpcError(
+            "Malformed qrender response: invalid base64 in result.response.ResponseBase.Data"
+        ) from exc
     if len(decoded) > MAX_DECODED_RESPONSE_BYTES:
         raise RpcError("Qrender response exceeds decoded response size limit")
     try:
         text = decoded.decode("utf-8")
     except UnicodeDecodeError as exc:
-        raise RpcError("Malformed qrender response: decoded value is not UTF-8") from exc
+        raise RpcError(
+            "Malformed qrender response: decoded result.response.ResponseBase.Data is not UTF-8"
+        ) from exc
 
     return ValopersRenderResult(
         query_kind=query_kind,

@@ -28,12 +28,21 @@ OPERATOR_ADDRESS = "g1" + "x" * 38
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def response(value=b"rendered output", height=123):
+def response(value=b"rendered output", height=123, error=None, log=""):
     return {
         "result": {
             "response": {
-                "height": str(height),
-                "value": base64.b64encode(value).decode("ascii"),
+                "Height": height,
+                "Key": None,
+                "Proof": None,
+                "ResponseBase": {
+                    "Error": error,
+                    "Data": base64.b64encode(value).decode("ascii"),
+                    "Events": [],
+                    "Log": log,
+                    "Info": "",
+                },
+                "Value": None,
             }
         }
     }
@@ -112,13 +121,49 @@ class ResponseDecodingTests(unittest.TestCase):
     def test_response_height_must_be_exact(self):
         with self.assertRaisesRegex(RpcError, "height mismatch"):
             decode_qrender_response(response(height=122), "root", 123)
-        for height in (None, "bad", "0123", True, 0):
-            with self.subTest(height=height), self.assertRaisesRegex(RpcError, "invalid.*height"):
+        for height in (None, "bad", "123", True, 0, -1):
+            with self.subTest(height=height), self.assertRaisesRegex(RpcError, "invalid.*Height"):
                 decode_qrender_response(response(height=height), "root", 123)
+
+    def test_missing_height_is_rejected(self):
+        payload = response()
+        del payload["result"]["response"]["Height"]
+        with self.assertRaisesRegex(RpcError, r"result\.response\.Height"):
+            decode_qrender_response(payload, "root", 123)
+
+    def test_response_base_is_required_and_must_be_a_dictionary(self):
+        for response_base in (None, "not-a-dictionary"):
+            payload = response()
+            payload["result"]["response"]["ResponseBase"] = response_base
+            with self.subTest(response_base=response_base), self.assertRaisesRegex(
+                RpcError, r"result\.response\.ResponseBase"
+            ):
+                decode_qrender_response(payload, "root", 123)
+
+    def test_abci_error_is_rejected_without_exposing_error_or_log(self):
+        sensitive_error = {"message": "complete-sensitive-error"}
+        payload = response(error=sensitive_error, log="complete-sensitive-log")
+        with self.assertRaisesRegex(RpcError, "ABCI response reported an error") as raised:
+            decode_qrender_response(payload, "root", 123)
+        message = str(raised.exception)
+        self.assertNotIn("complete-sensitive-error", message)
+        self.assertNotIn("complete-sensitive-log", message)
+
+    def test_null_and_empty_string_abci_error_are_allowed(self):
+        for error in (None, ""):
+            with self.subTest(error=error):
+                result = decode_qrender_response(response(error=error), "root", 123)
+                self.assertEqual(result.response_height, 123)
+
+    def test_missing_abci_error_field_fails_closed(self):
+        payload = response()
+        del payload["result"]["response"]["ResponseBase"]["Error"]
+        with self.assertRaisesRegex(RpcError, "ABCI response reported an error"):
+            decode_qrender_response(payload, "root", 123)
 
     def test_invalid_response_base64_is_rejected(self):
         payload = response()
-        payload["result"]["response"]["value"] = "not base64!"
+        payload["result"]["response"]["ResponseBase"]["Data"] = "not base64!"
         with self.assertRaisesRegex(RpcError, "invalid base64"):
             decode_qrender_response(payload, "root", 123)
 
@@ -127,16 +172,37 @@ class ResponseDecodingTests(unittest.TestCase):
             decode_qrender_response(response(b"\xff"), "root", 123)
 
     def test_missing_response_fields_are_rejected(self):
-        payloads = ({}, {"result": {}}, {"result": {"response": {"height": "123"}}})
+        payloads = ({}, {"result": {}}, {"result": {"response": None}})
         for payload in payloads:
             with self.subTest(payload=payload), self.assertRaisesRegex(
-                RpcError, "missing result.response.value"
+                RpcError, "missing result.response"
             ):
                 decode_qrender_response(payload, "root", 123)
 
+    def test_response_base_data_is_required_and_non_empty(self):
+        for data in (None, ""):
+            payload = response()
+            if data is None:
+                del payload["result"]["response"]["ResponseBase"]["Data"]
+            else:
+                payload["result"]["response"]["ResponseBase"]["Data"] = data
+            with self.subTest(data=data), self.assertRaisesRegex(
+                RpcError, r"result\.response\.ResponseBase\.Data"
+            ):
+                decode_qrender_response(payload, "root", 123)
+
+    def test_value_is_not_used_as_a_fallback(self):
+        payload = response()
+        encoded = payload["result"]["response"]["ResponseBase"].pop("Data")
+        payload["result"]["response"]["Value"] = encoded
+        with self.assertRaisesRegex(RpcError, r"result\.response\.ResponseBase\.Data"):
+            decode_qrender_response(payload, "root", 123)
+
     def test_encoded_response_limit_is_enforced_before_decode(self):
         payload = response()
-        payload["result"]["response"]["value"] = "A" * (MAX_ENCODED_RESPONSE_CHARS + 1)
+        payload["result"]["response"]["ResponseBase"]["Data"] = "A" * (
+            MAX_ENCODED_RESPONSE_CHARS + 1
+        )
         with self.assertRaisesRegex(RpcError, "encoded response size limit"):
             decode_qrender_response(payload, "root", 123)
 

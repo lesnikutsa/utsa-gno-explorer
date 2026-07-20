@@ -258,5 +258,7 @@ python scripts/probe_valopers.py --page-query '?page=2'
 python scripts/probe_valopers.py --operator-address g1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-The probe is read-only and prints only bounded metadata, a SHA-256 digest, and a short
-sanitized preview; it does not persist, parse, or synchronize Valopers data.
+The probe validates and decodes bounded render data from the live TM2/Amino
+`result.response.ResponseBase.Data` contract. It is read-only and prints only bounded
+metadata, a SHA-256 digest, and a short sanitized preview; it does not persist, parse,
+or synchronize Valopers data.
