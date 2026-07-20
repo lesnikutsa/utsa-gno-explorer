@@ -161,6 +161,10 @@ SELECT
     current.public_key_type,
     current.voting_power,
     current.proposer_priority,
+    profile.moniker,
+    profile.operator_address,
+    profile.server_type,
+    profile.source_height AS valoper_source_height,
     count(membership.signing_address) FILTER (WHERE recent.position <= 20)::bigint AS active_blocks_20,
     count(signature.signing_address) FILTER (WHERE recent.position <= 20 AND signature.signed = true)::bigint AS signed_blocks_20,
     count(signature.signing_address) FILTER (WHERE recent.position <= 20 AND signature.vote_status = 'nil')::bigint AS nil_blocks_20,
@@ -179,15 +183,22 @@ LEFT JOIN validator_set_members membership
   ON membership.height = recent.height AND membership.signing_address = current.signing_address
 LEFT JOIN validator_signatures signature
   ON signature.height = membership.height AND signature.signing_address = membership.signing_address
-GROUP BY current.signing_address, current.public_key_type, current.voting_power, current.proposer_priority
+LEFT JOIN valoper_profiles profile
+  ON profile.signing_address = current.signing_address
+GROUP BY current.signing_address, current.public_key_type, current.voting_power, current.proposer_priority,
+         profile.moniker, profile.operator_address, profile.server_type, profile.source_height
 ORDER BY current.voting_power DESC, current.signing_address ASC
 """
 
 VALIDATOR_IDENTITY_SQL = """
-SELECT signing_address AS address, public_key_type, public_key_value,
-       first_seen_height, last_seen_height
-FROM validators
-WHERE signing_address = %s
+SELECT validator.signing_address AS address, validator.public_key_type, validator.public_key_value,
+       validator.first_seen_height, validator.last_seen_height,
+       profile.moniker, profile.operator_address, profile.description, profile.server_type,
+       profile.source_height AS valoper_source_height
+FROM validators validator
+LEFT JOIN valoper_profiles profile
+  ON profile.signing_address = validator.signing_address
+WHERE validator.signing_address = %s
 """
 
 VALIDATOR_CURRENT_SQL = """

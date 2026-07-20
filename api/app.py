@@ -238,6 +238,10 @@ def _validators_response_from_rows(result: dict) -> ValidatorsResponse:
             voting_power=str(row["voting_power"]),
             percent=_rounded_percent(row["voting_power"], total_voting_power),
             proposer_priority=None if row["proposer_priority"] is None else str(row["proposer_priority"]),
+            moniker=row.get("moniker"),
+            operator_address=row.get("operator_address"),
+            server_type=row.get("server_type"),
+            valoper_source_height=row.get("valoper_source_height"),
             uptime_20=uptimes[20],
             uptime_100=uptimes[100],
         ))
@@ -288,7 +292,16 @@ def _validator_detail_from_rows(result: dict) -> ValidatorDetailResponse:
     heights = [item.height for item in history_items]
     current_power = current_row["voting_power"]
     return ValidatorDetailResponse(
-        **identity,
+        address=identity["address"],
+        public_key_type=identity["public_key_type"],
+        public_key_value=identity["public_key_value"],
+        first_seen_height=identity["first_seen_height"],
+        last_seen_height=identity["last_seen_height"],
+        moniker=identity.get("moniker"),
+        operator_address=identity.get("operator_address"),
+        description=identity.get("description"),
+        server_type=identity.get("server_type"),
+        valoper_source_height=identity.get("valoper_source_height"),
         current=ValidatorCurrentStatus(
             active=active,
             height=current_row["height"],

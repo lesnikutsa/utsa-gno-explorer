@@ -32,6 +32,11 @@ def detail_result(*, power=Decimal("10"), total=Decimal("138"), history=None):
             "public_key_value": "base64 consensus public key",
             "first_seen_height": 850000,
             "last_seen_height": 870687,
+            "moniker": "Official",
+            "operator_address": "g1operator",
+            "description": "Profile",
+            "server_type": "on-prem",
+            "valoper_source_height": 947852,
         },
         "current": {
             "height": 870687,
@@ -175,7 +180,7 @@ class ApiValidatorDetailTests(unittest.TestCase):
 
     def test_forbidden_fields_are_not_exposed(self):
         result = detail_result()
-        result["identity"].update({"moniker": "secret", "inserted_at": "secret", "operator_address": "secret"})
+        result["identity"].update({"signing_pubkey": "secret", "inserted_at": "secret", "list_position": 1})
         result["history"][0].update({"signature_base64": "secret", "raw_precommit": "secret"})
         data = self.get(result).json()
 
@@ -189,7 +194,7 @@ class ApiValidatorDetailTests(unittest.TestCase):
         ]
         exposed_keys = {key for item in inspected_objects for key in item}
         forbidden_keys = {
-            "moniker", "inserted_at", "operator_address", "signature_base64",
+            "signing_pubkey", "inserted_at", "list_position", "signature_base64",
             "raw_precommit", "vote_status", "signed",
         }
         self.assertTrue(forbidden_keys.isdisjoint(exposed_keys))
@@ -201,7 +206,7 @@ class ApiValidatorDetailTests(unittest.TestCase):
     def test_sql_is_bounded_parameterized_and_chronological(self):
         from api.database import VALIDATOR_CURRENT_SQL, VALIDATOR_HISTORY_SQL, VALIDATOR_IDENTITY_SQL
 
-        self.assertIn("WHERE signing_address = %s", VALIDATOR_IDENTITY_SQL)
+        self.assertIn("WHERE validator.signing_address = %s", VALIDATOR_IDENTITY_SQL)
         self.assertIn("s.last_finalized_height", VALIDATOR_CURRENT_SQL)
         self.assertIn("LIMIT 100", VALIDATOR_HISTORY_SQL)
         self.assertIn("ORDER BY recent.height ASC", VALIDATOR_HISTORY_SQL)

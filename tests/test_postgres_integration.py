@@ -9,6 +9,7 @@ import time
 import unittest
 from pathlib import Path
 
+from api.database import ACTIVE_VALIDATORS_SQL, VALIDATOR_IDENTITY_SQL
 from indexer.database import PostgresDatabase
 from indexer.valopers_parser import ValoperProfile
 from indexer.valopers_persistence import (
@@ -390,6 +391,44 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             (high.profiles[0].operator_address, 21, 0),
             (high.profiles[1].operator_address, 21, 1),
         ])
+
+
+    def test_validator_api_valoper_identity_queries(self):
+        name = f"utsa_api_valopers_{os.getpid()}"
+        self.create_database(name)
+        database_url = self.database_url_for(name)
+        self.assertEqual(self.run_init(database_url).returncode, 0)
+        matched, unmatched, historical, orphan = ("g1" + char * 38 for char in "2345")
+        operators = ["g1" + char * 38 for char in "6789"]
+        pubkeys = ["gpub1" + char * 86 for char in "acde"]
+        with psycopg.connect(database_url, row_factory=psycopg.rows.dict_row) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("INSERT INTO blocks (height, block_hash_base64, block_hash_hex, time_utc, tx_count) VALUES (10, 'Cg==', '0A', now(), 0)")
+                cursor.execute("INSERT INTO indexer_state (state_key, chain_id, last_finalized_height) VALUES ('default', 'test-13', 10)")
+                cursor.executemany("INSERT INTO validators (signing_address, public_key_type, public_key_value, first_seen_height, last_seen_height) VALUES (%s, '/tm.PubKeyEd25519', %s, 1, 10)", [(matched, 'key1'), (unmatched, 'key2'), (historical, 'key3')])
+                cursor.executemany("INSERT INTO validator_set_members (height, signing_address, voting_power, proposer_priority) VALUES (10, %s, %s, 0)", [(matched, 20), (unmatched, 10)])
+                cursor.executemany("INSERT INTO valoper_profiles (operator_address, moniker, description, server_type, signing_address, signing_pubkey, source_height, list_position) VALUES (%s, %s, 'Profile', %s, %s, %s, %s, %s)", [
+                    (operators[0], 'Active Official', 'cloud', matched, pubkeys[0], 947852, 0),
+                    (operators[1], 'Historical Official', 'on-prem', historical, pubkeys[1], 947852, 1),
+                    (operators[2], 'Orphan Official', 'data-center', orphan, pubkeys[2], 947852, 2),
+                ])
+                cursor.execute(ACTIVE_VALIDATORS_SQL, (10, 10))
+                active = cursor.fetchall()
+                self.assertEqual([row['address'] for row in active], [matched, unmatched])
+                self.assertEqual(len({row['address'] for row in active}), 2)
+                self.assertEqual(sum(row['voting_power'] for row in active), 30)
+                self.assertEqual((active[0]['moniker'], active[0]['operator_address'], active[0]['server_type'], active[0]['valoper_source_height']), ('Active Official', operators[0], 'cloud', 947852))
+                self.assertTrue(all(active[1][key] is None for key in ('moniker', 'operator_address', 'server_type', 'valoper_source_height')))
+                identities = {}
+                for address in (matched, unmatched, historical, orphan, "g1" + "f" * 38):
+                    cursor.execute(VALIDATOR_IDENTITY_SQL, (address,))
+                    identities[address] = cursor.fetchone()
+                self.assertEqual(identities[matched]['moniker'], 'Active Official')
+                self.assertEqual(identities[matched]['valoper_source_height'], 947852)
+                self.assertTrue(all(identities[unmatched][key] is None for key in ('moniker', 'operator_address', 'description', 'server_type', 'valoper_source_height')))
+                self.assertEqual(identities[historical]['moniker'], 'Historical Official')
+                self.assertIsNone(identities[orphan])
+                self.assertIsNone(identities["g1" + "f" * 38])
 
 
 if __name__ == "__main__":

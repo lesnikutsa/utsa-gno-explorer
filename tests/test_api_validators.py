@@ -30,7 +30,10 @@ def validator(address, voting_power, priority, active_20=3, signed_20=2, **overr
         "invalid_blocks_100": 0,
         "unknown_blocks_100": 0,
         "public_key_value": "forbidden",
-        "moniker": "forbidden",
+        "moniker": None,
+        "operator_address": None,
+        "server_type": None,
+        "valoper_source_height": None,
     }
     row.update(overrides)
     return row
@@ -74,7 +77,7 @@ class ApiValidatorsTests(unittest.TestCase):
 
     def test_successful_response_serializes_values_uptime_and_safe_fields(self):
         rows = [
-            validator("g1a", "3", "-1234", active_20=3, signed_20=2),
+            validator("g1a", "3", "-1234", active_20=3, signed_20=2, moniker="Official", operator_address="g1operator", server_type="cloud", valoper_source_height=947852),
             validator("g1b", "1", None, active_20=0, signed_20=0),
         ]
         with self.make_client(FakeDatabase(self.result(rows))) as client:
@@ -95,7 +98,11 @@ class ApiValidatorsTests(unittest.TestCase):
         self.assertEqual(data["items"][0]["uptime_100"]["absent_blocks"], 1)
         self.assertEqual(data["items"][0]["uptime_20"]["unknown_blocks"], 1)
         self.assertNotIn("public_key_value", response.text)
-        self.assertNotIn("moniker", response.text)
+        self.assertEqual(data["items"][0]["moniker"], "Official")
+        self.assertEqual(data["items"][0]["operator_address"], "g1operator")
+        self.assertEqual(data["items"][0]["server_type"], "cloud")
+        self.assertEqual(data["items"][0]["valoper_source_height"], 947852)
+        self.assertIsNone(data["items"][1]["moniker"])
 
     def test_zero_power_and_empty_set(self):
         with self.make_client(FakeDatabase(self.result([validator("g1zero", "0", None)]))) as client:

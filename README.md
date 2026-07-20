@@ -90,7 +90,7 @@ python -m unittest discover -s tests
 
 ## Read-only API foundation
 
-This repository now includes the first minimal FastAPI foundation for the v0.6.0 explorer MVP. This PR adds only the API application package and `GET /api/health`; it does not add production API deployment, frontend work, Nginx, HTTPS, systemd units, Docker packaging for the API, schema migrations, or additional API endpoints.
+The read-only API contract is version 0.7.0.
 
 ### API installation
 
@@ -104,7 +104,7 @@ python -m pip install -r requirements.txt
 
 The API requires `DATABASE_URL` in the environment. Keep credentials outside the repository and do not commit secret values. The API also accepts these optional settings with conservative defaults:
 
-- `API_VERSION` (default `0.6.0`)
+- `API_VERSION` (default `0.7.0`; update the production environment separately after merge)
 - `API_INDEXER_LAG_DEGRADED_THRESHOLD` (default `10`)
 - `API_RPC_CHECK_STALE_SECONDS` (default `60`)
 
@@ -127,6 +127,13 @@ curl http://127.0.0.1:8000/api/health
 ```
 
 `GET /api/health` performs a read-only PostgreSQL check against the existing `indexer_state` and `rpc_endpoints` tables and returns the database/indexer health summary. Degraded health still returns HTTP 200. Database connection failures, failed health queries, and a missing default `indexer_state` row return HTTP 503 with a generic safe response body.
+
+Validator list and detail responses are enriched from the persisted official Valopers
+snapshot by exact, case-sensitive `signing_address` equality. A SQL `LEFT JOIN` keeps
+unmatched validators visible with null profile fields; `valoper_source_height` is the
+pinned Valopers snapshot height represented by a profile. The API reads PostgreSQL only,
+never queries the Valopers RPC directly, and does not use Telegram bot data. Snapshot
+refresh remains manual, and the frontend does not display these fields yet.
 
 ### Network and blocks API
 

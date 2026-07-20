@@ -100,12 +100,19 @@ class ValidatorUptime(BaseModel):
     uptime_percent: float
 
 
+ValoperServerType = Literal["cloud", "on-prem", "data-center"]
+
+
 class ValidatorListItem(BaseModel):
     address: str
     public_key_type: str | None
     voting_power: str
     percent: float
     proposer_priority: str | None
+    moniker: str | None = None
+    operator_address: str | None = None
+    server_type: ValoperServerType | None = None
+    valoper_source_height: int | None = Field(default=None, ge=1)
     uptime_20: ValidatorUptime
     uptime_100: ValidatorUptime
 
@@ -166,6 +173,11 @@ class ValidatorDetailResponse(BaseModel):
     public_key_value: str
     first_seen_height: int = Field(ge=0)
     last_seen_height: int = Field(ge=0)
+    moniker: str | None = None
+    operator_address: str | None = None
+    description: str | None = None
+    server_type: ValoperServerType | None = None
+    valoper_source_height: int | None = Field(default=None, ge=1)
     current: ValidatorCurrentStatus
     uptime_20: ValidatorUptime
     uptime_100: ValidatorUptime
