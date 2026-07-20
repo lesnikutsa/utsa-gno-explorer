@@ -5,6 +5,8 @@ import json
 from typing import Any
 
 from .rpc import RpcProbeResult
+from .valopers_persistence import ValopersPersistenceResult, replace_valopers_snapshot_cursor
+from .valopers_snapshot import ValopersSnapshot
 
 
 class DatabaseError(RuntimeError):
@@ -48,6 +50,16 @@ class PostgresDatabase:
             with connection.cursor() as cursor:
                 write_height_cursor(cursor, parsed, chain_id, finalized_tip, self.selected_rpc_endpoint_id)
             connection.commit()
+
+    def replace_valopers_snapshot(
+        self, snapshot: ValopersSnapshot, chain_id: str
+    ) -> ValopersPersistenceResult:
+        """Atomically replace the current complete Valopers snapshot."""
+        with self.connect() as connection:
+            with connection.cursor() as cursor:
+                result = replace_valopers_snapshot_cursor(cursor, snapshot, chain_id)
+            connection.commit()
+        return result
 
 
 def get_checkpoint_cursor(cursor, chain_id: str) -> int | None:

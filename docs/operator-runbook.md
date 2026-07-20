@@ -128,6 +128,14 @@ Backups use `pg_dump -Fc`, write archives as `.part` first, validate each archiv
 
 ## Apply the Valopers schema migration
 
+After merge and operator review, `python scripts/persist_valopers_snapshot.py` manually
+collects the complete registry from one healthy RPC at one pinned height. In one PostgreSQL
+transaction it takes a dedicated transaction advisory lock, validates current state,
+deletes profiles, inserts the ordered replacement, writes singleton state, verifies it,
+and commits. Failures roll back. Stale and divergent same-height snapshots are rejected;
+identical snapshots are unchanged. Empty registries are zero profiles plus one state row.
+No schedule, systemd service, or timer invokes it, and API and frontend ignore the rows.
+
 Fresh empty databases use `python scripts/init_database.py`. For an existing
 production database, first create and verify a backup, then stop the indexer and
 run:

@@ -4,9 +4,17 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
+
+from indexer.database import PostgresDatabase
+from indexer.valopers_parser import ValoperProfile
+from indexer.valopers_persistence import (
+    StaleValopersSnapshot, ValopersChainIdentityError, ValopersSnapshotConflict,
+)
+from indexer.valopers_snapshot import ValopersSnapshot
 
 try:
     import psycopg
@@ -224,6 +232,164 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         self.assertEqual(after_counts, before_counts)
         self.assertNotIn("valoper_profiles", after_tables)
         self.assertNotIn("valopers_snapshot_state", after_tables)
+
+    def test_atomic_valopers_snapshot_lifecycle(self):
+        name = f"utsa_valopers_persistence_{os.getpid()}"
+        self.create_database(name)
+        database_url = self.database_url_for(name)
+        self.assertEqual(self.run_init(database_url).returncode, 0)
+        database = PostgresDatabase(database_url)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO indexer_state (state_key, chain_id, last_finalized_height) "
+                "VALUES ('default', 'test-chain', 1)"
+            )
+
+        def make_profile(marker, moniker="Validator", description="Description"):
+            address = "g1" + marker * 38
+            return ValoperProfile(moniker, description, address, address,
+                                  "gpub1" + marker * 86, "cloud", "/profile")
+
+        initial = ValopersSnapshot(10, 1, (make_profile("2"), make_profile("3", "Second")))
+        self.assertEqual(database.replace_valopers_snapshot(initial, "test-chain").action, "applied")
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT operator_address, moniker, description, server_type, signing_address, signing_pubkey, source_height, list_position, inserted_at, updated_at FROM valoper_profiles ORDER BY list_position")
+            before = cursor.fetchall()
+            cursor.execute("SELECT chain_id, source_height, page_count, profile_count, updated_at FROM valopers_snapshot_state")
+            state_before = cursor.fetchone()
+            self.assertEqual(state_before[:4], ("test-chain", 10, 1, 2))
+        expected_profiles = [
+            (profile.operator_address, profile.moniker, profile.description, profile.server_type,
+             profile.signing_address, profile.signing_pubkey, 10, position)
+            for position, profile in enumerate(initial.profiles)
+        ]
+        self.assertEqual([row[:8] for row in before], expected_profiles)
+
+        self.assertEqual(database.replace_valopers_snapshot(initial, "test-chain").action, "unchanged")
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT operator_address, moniker, description, server_type, signing_address, signing_pubkey, source_height, list_position, inserted_at, updated_at FROM valoper_profiles ORDER BY list_position")
+            self.assertEqual(cursor.fetchall(), before)
+            cursor.execute("SELECT chain_id, source_height, page_count, profile_count, updated_at FROM valopers_snapshot_state")
+            self.assertEqual(cursor.fetchone(), state_before)
+
+        newer = ValopersSnapshot(11, 1, (make_profile("4", "Replacement"),))
+        self.assertEqual(database.replace_valopers_snapshot(newer, "test-chain").action, "applied")
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT * FROM valoper_profiles ORDER BY list_position")
+            stable_rows = cursor.fetchall()
+            cursor.execute("SELECT * FROM valopers_snapshot_state")
+            stable_state = cursor.fetchone()
+        self.assertEqual(stable_rows[0][0], newer.profiles[0].operator_address)
+        self.assertEqual(stable_rows[0][6:8], (11, 0))
+
+        for rejected, error, chain in (
+            (initial, StaleValopersSnapshot, "test-chain"),
+            (ValopersSnapshot(11, 1, (make_profile("5"),)), ValopersSnapshotConflict, "test-chain"),
+            (ValopersSnapshot(12, 0, ()), ValopersChainIdentityError, "other-chain"),
+        ):
+            with self.assertRaises(error):
+                database.replace_valopers_snapshot(rejected, chain)
+            with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+                cursor.execute("SELECT * FROM valoper_profiles ORDER BY list_position")
+                self.assertEqual(cursor.fetchall(), stable_rows)
+                cursor.execute("SELECT * FROM valopers_snapshot_state")
+                self.assertEqual(cursor.fetchone(), stable_state)
+
+        # Moniker punctuation is valid; use the database server-type constraint
+        # to exercise rollback after the replacement DELETE instead.
+        invalid = ValopersSnapshot(12, 1, (ValoperProfile(
+            "Valid moniker", "Description", "g1" + "5" * 38, "g1" + "5" * 38,
+            "gpub1" + "5" * 86, "invalid-server-type", "/profile"),))
+        with self.assertRaises(Exception):
+            database.replace_valopers_snapshot(invalid, "test-chain")
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT * FROM valoper_profiles ORDER BY list_position")
+            self.assertEqual(cursor.fetchall(), stable_rows)
+            cursor.execute("SELECT * FROM valopers_snapshot_state")
+            self.assertEqual(cursor.fetchone(), stable_state)
+
+        empty = ValopersSnapshot(12, 0, ())
+        self.assertEqual(database.replace_valopers_snapshot(empty, "test-chain").action, "applied")
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT count(*) FROM valoper_profiles")
+            self.assertEqual(cursor.fetchone()[0], 0)
+            cursor.execute("SELECT chain_id, source_height, page_count, profile_count FROM valopers_snapshot_state")
+            self.assertEqual(cursor.fetchone(), ("test-chain", 12, 0, 0))
+
+    def test_first_write_checks_indexer_state_chain(self):
+        name = f"utsa_valopers_chain_{os.getpid()}"
+        self.create_database(name)
+        database_url = self.database_url_for(name)
+        self.assertEqual(self.run_init(database_url).returncode, 0)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO indexer_state (state_key, chain_id, last_finalized_height) "
+                "VALUES ('default', 'test-chain', 1)"
+            )
+        database = PostgresDatabase(database_url)
+        with self.assertRaises(ValopersChainIdentityError):
+            database.replace_valopers_snapshot(ValopersSnapshot(10, 0, ()), "other-chain")
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT count(*) FROM valoper_profiles")
+            self.assertEqual(cursor.fetchone()[0], 0)
+            cursor.execute("SELECT count(*) FROM valopers_snapshot_state")
+            self.assertEqual(cursor.fetchone()[0], 0)
+        self.assertEqual(
+            database.replace_valopers_snapshot(ValopersSnapshot(10, 0, ()), "test-chain").action,
+            "applied",
+        )
+
+    def test_concurrent_first_writers_are_serialized(self):
+        name = f"utsa_valopers_concurrent_{os.getpid()}"
+        self.create_database(name)
+        database_url = self.database_url_for(name)
+        self.assertEqual(self.run_init(database_url).returncode, 0)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO indexer_state (state_key, chain_id, last_finalized_height) "
+                "VALUES ('default', 'test-chain', 1)"
+            )
+
+        def make_profile(marker):
+            address = "g1" + marker * 38
+            return ValoperProfile("Writer " + marker, "Complete writer " + marker, address,
+                                  address, "gpub1" + marker * 86, "cloud", "/profile")
+
+        low = ValopersSnapshot(20, 1, (make_profile("2"),))
+        high = ValopersSnapshot(21, 1, (make_profile("3"), make_profile("4")))
+        barrier = threading.Barrier(2, timeout=10)
+        outcomes = []
+        outcome_lock = threading.Lock()
+
+        def write(item):
+            barrier.wait()
+            try:
+                result = PostgresDatabase(database_url).replace_valopers_snapshot(item, "test-chain")
+                outcome = result.action
+            except Exception as exc:
+                outcome = exc
+            with outcome_lock:
+                outcomes.append(outcome)
+
+        threads = [threading.Thread(target=write, args=(item,), daemon=True) for item in (low, high)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=20)
+            self.assertFalse(thread.is_alive(), "concurrent writer timed out")
+        self.assertEqual(len(outcomes), 2)
+        self.assertTrue(all(outcome == "applied" or isinstance(outcome, StaleValopersSnapshot)
+                            for outcome in outcomes), outcomes)
+
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT source_height, page_count, profile_count FROM valopers_snapshot_state")
+            self.assertEqual(cursor.fetchone(), (21, 1, 2))
+            cursor.execute("SELECT operator_address, source_height, list_position FROM valoper_profiles ORDER BY list_position")
+            rows = cursor.fetchall()
+        self.assertEqual(rows, [
+            (high.profiles[0].operator_address, 21, 0),
+            (high.profiles[1].operator_address, 21, 1),
+        ])
 
 
 if __name__ == "__main__":
