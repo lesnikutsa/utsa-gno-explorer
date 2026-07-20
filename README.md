@@ -240,3 +240,29 @@ RUN_POSTGRES_INTEGRATION=1 python -m unittest tests.test_postgres_integration -v
 ```
 
 The integration test starts a temporary `postgres:16.14-bookworm` Docker container, initializes the schema with `scripts/init_database.py`, validates a second run, checks catalog objects, verifies incompatible schema rejection, and confirms failed initialization rolls back partial DDL. It is skipped unless `RUN_POSTGRES_INTEGRATION=1` is set and Docker is available.
+
+## Read-only Valopers source probe
+
+The bounded probe selects a healthy configured RPC, pins its committed latest height,
+and requests only the Valopers root render by default:
+
+```bash
+python scripts/probe_valopers.py
+```
+
+Explicit page and validator detail renders can be requested without parsing or crawling
+the root document. All requests in one run use the same pinned height:
+
+```bash
+python scripts/probe_valopers.py --page-query '?page=2'
+python scripts/probe_valopers.py --operator-address g1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+The probe validates and decodes bounded render data from the live TM2/Amino
+`result.response.ResponseBase.Data` contract. It is read-only and prints only bounded
+metadata, a SHA-256 digest, and a short sanitized preview; it does not persist, parse,
+or synchronize Valopers data.
+
+The explicit `abci_query` request height pins the render to that immutable state version.
+Current Testnet 13 qrender responses return `Height="0"`, meaning the response does not
+duplicate the requested height; any future non-zero reported height must match the pin.
