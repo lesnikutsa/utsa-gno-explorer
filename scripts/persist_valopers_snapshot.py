@@ -16,7 +16,9 @@ if str(REPO_ROOT) not in sys.path:
 
 from indexer.database import PostgresDatabase
 from indexer.valopers_snapshot import collect_valopers_snapshot
-from scripts.inspect_rpc import configured_chain_id, configured_rpc_urls, parse_status, select_healthy_rpc
+from scripts.inspect_rpc import (
+    configured_chain_id, configured_rpc_urls, load_dotenv, parse_status, select_healthy_rpc,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -26,18 +28,21 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     build_parser().parse_args(argv)
     try:
+        load_dotenv()
         database_url = os.environ.get("DATABASE_URL", "").strip()
+        chain_id = configured_chain_id()
+        rpc_urls = configured_rpc_urls()
         if not database_url:
             raise ValueError("DATABASE_URL is required")
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
             client, status_payload = select_healthy_rpc(
-                configured_rpc_urls(), expected_chain_id=configured_chain_id()
+                rpc_urls, expected_chain_id=chain_id
             )
         source_height = parse_status(status_payload)["latest_height"]
         if not isinstance(source_height, int) or isinstance(source_height, bool) or source_height < 1:
             raise ValueError("invalid latest height")
         snapshot = collect_valopers_snapshot(client, source_height)
-        result = PostgresDatabase(database_url).replace_valopers_snapshot(snapshot, configured_chain_id())
+        result = PostgresDatabase(database_url).replace_valopers_snapshot(snapshot, chain_id)
     except Exception:
         print("Valopers snapshot persistence failed", file=sys.stderr)
         return 1

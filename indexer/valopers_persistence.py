@@ -75,6 +75,13 @@ def replace_valopers_snapshot_cursor(cursor, snapshot: ValopersSnapshot, chain_i
     """Validate and replace a snapshot using the cursor's existing transaction."""
     incoming = validate_valopers_snapshot(snapshot, chain_id)
     cursor.execute("SELECT pg_advisory_xact_lock(%s)", (VALOPERS_WRITER_ADVISORY_LOCK_KEY,))
+    cursor.execute("SELECT chain_id FROM indexer_state WHERE state_key = %s", ("default",))
+    indexer_state = cursor.fetchone()
+    if indexer_state is not None:
+        indexed_chain_id = indexer_state[0]
+        if (not isinstance(indexed_chain_id, str) or not indexed_chain_id.strip()
+                or indexed_chain_id != chain_id):
+            raise ValopersChainIdentityError("indexer state belongs to another chain")
     cursor.execute(
         "SELECT state_key, chain_id, source_height, page_count, profile_count "
         "FROM valopers_snapshot_state WHERE state_key = %s FOR UPDATE", ("default",)
