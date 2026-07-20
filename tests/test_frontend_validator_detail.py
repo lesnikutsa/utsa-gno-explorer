@@ -149,8 +149,18 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
         self.assertLess(rows, filtered)
         self.assertLess(filtered, sorted_rows)
 
-    def test_overview_has_no_validator_detail_links(self):
-        self.assertNotIn("/validators/${", self.overview)
+    def test_overview_links_exact_signing_identity_without_row_navigation(self):
+        identity = self.overview.split("label: 'Validator'", 1)[1].split(
+            "label: 'Signing (last 100)'", 1
+        )[0]
+        self.assertIn(
+            'className="validator-identity validator-identity--link"', identity
+        )
+        self.assertIn(
+            'href={`/validators/${encodeURIComponent(row.address)}`}', identity
+        )
+        self.assertIn("{row.moniker}", identity)
+        self.assertNotIn("onClick", self.overview)
 
     def test_current_status_is_compact_ordered_and_responsive(self):
         current = self.page[self.page.index('aria-labelledby="validator-current-status-title"'):self.page.index("<SigningHistory validator={validator} />")]
