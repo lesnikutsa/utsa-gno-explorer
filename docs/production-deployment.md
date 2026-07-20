@@ -160,7 +160,7 @@ Never test restores against production first. Safe validation flow:
 2. Create the latest backup: `python scripts/backup_database.py --backup-dir /var/backups/utsa-gno-explorer`.
 3. Start a separate empty validation database with an isolated Compose project.
 4. Restore the archive there.
-5. Verify all eight tables.
+5. Verify all ten tables.
 6. Verify `indexer_state`.
 7. Verify counts for `blocks`, `transactions`, and `validator_signatures`.
 8. Decide whether production restore is necessary only after validation succeeds.
@@ -202,7 +202,7 @@ docker exec -i "$VALIDATION_CONTAINER" sh -c 'pg_restore -U "$POSTGRES_USER" -d 
 docker exec -i "$VALIDATION_CONTAINER" sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' <<'SQL'
 DO $$
 DECLARE
-  expected_tables text[] := ARRAY['blocks','indexer_state','rpc_endpoint_checks','rpc_endpoints','transactions','validator_set_members','validator_signatures','validators'];
+  expected_tables text[] := ARRAY['blocks','indexer_state','rpc_endpoint_checks','rpc_endpoints','transactions','validator_set_members','validator_signatures','validators','valoper_profiles','valopers_snapshot_state'];
   actual_tables text[];
   state_rows integer;
   checkpoint_height bigint;
@@ -588,3 +588,25 @@ Stop the service, return the repository to the previous verified Git tag or comm
 ## Development and test deployment
 
 For development, use `.env`, temporary PostgreSQL databases, `scripts/index_range.py`, and `scripts/run_indexer.py` directly as described in `README.md`. Do not copy production secrets into the repository.
+
+## Existing-database Valopers schema migration
+
+This migration is a separate operator action from future snapshot persistence.
+Fresh empty databases continue to use `python scripts/init_database.py`. Before
+changing an existing production database, verify a backup, stop the indexer, and
+run from the checked-out repository with `DATABASE_URL` supplied only by the
+protected environment:
+
+```console
+python scripts/migrate_valopers_schema.py
+python scripts/init_database.py
+```
+
+The first command accepts only the exact legacy eight-table schema or the exact
+already-compatible ten-table schema. It transactionally adds
+`valoper_profiles` and `valopers_snapshot_state`, performs complete catalog
+validation before commit, and rolls back on any failure. It never alters or
+deletes existing indexed rows and is safe to rerun after success. No container,
+Compose entrypoint, systemd unit, indexer, API, or import applies it
+automatically. Restart the indexer only after validation. Snapshot writes are
+not implemented, and the API and frontend do not use these tables yet.

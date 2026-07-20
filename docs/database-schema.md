@@ -149,3 +149,17 @@ The bounded prototype stores the vote BlockID hash together with the BlockID par
 ### Structural consensus signature validation
 
 The bounded prototype performs structural signature validation for `/tm.PubKeyEd25519` and `/tm.PubKeySecp256k1` consensus keys by requiring strict base64 decoding and exactly 64 decoded bytes. It does not perform cryptographic signature verification. Unsupported public-key types remain unsigned invalid votes even when their BlockID matches the enclosing commit.
+
+## Valopers snapshot schema (persistence preparation)
+
+`valoper_profiles` defines the current complete official Valopers registry,
+keyed by operator address with unique signing address and public key. It stores
+profile text, server type, pinned source height, and stable list position.
+There is intentionally no foreign key to `validators.signing_address`: official
+registration and active consensus membership have different lifecycles.
+
+`valopers_snapshot_state` is singleton metadata for the complete registry,
+including its chain, pinned height, page count, and profile count. No default row
+is installed. Future persistence work will replace profiles and state in one
+transaction. This change does not write snapshot data, and the API and frontend
+do not query these tables yet.

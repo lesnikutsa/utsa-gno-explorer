@@ -86,7 +86,7 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         self.assertEqual(second.returncode, 0, second.stderr)
         with self.connect() as connection, connection.cursor() as cursor:
             cursor.execute("SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'")
-            self.assertEqual(cursor.fetchone()[0], 8)
+            self.assertEqual(cursor.fetchone()[0], 10)
             cursor.execute("SELECT conname FROM pg_constraint WHERE conname = 'validator_signatures_height_signing_address_fkey'")
             self.assertIsNotNone(cursor.fetchone())
             cursor.execute("SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'rpc_endpoints_one_selected_per_chain_idx'")

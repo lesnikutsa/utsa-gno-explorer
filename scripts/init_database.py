@@ -12,7 +12,7 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = REPO_ROOT / "database" / "schema.sql"
 EXPECTED_TABLES = {
-    "blocks", "transactions", "validators", "validator_set_members", "validator_signatures", "rpc_endpoints", "rpc_endpoint_checks", "indexer_state",
+    "blocks", "transactions", "validators", "validator_set_members", "validator_signatures", "rpc_endpoints", "rpc_endpoint_checks", "indexer_state", "valoper_profiles", "valopers_snapshot_state",
 }
 EXPECTED_COLUMNS = {
     "blocks": {
@@ -53,9 +53,15 @@ EXPECTED_COLUMNS = {
     "indexer_state": {
         "state_key": ("text", "NO", "", None), "chain_id": ("text", "NO", "", None), "last_finalized_height": ("bigint", "NO", "", None), "finalized_tip_height": ("bigint", "YES", "", None), "selected_rpc_endpoint_id": ("bigint", "YES", "", None), "updated_at": ("timestamp with time zone", "NO", "", "now()"),
     },
+    "valoper_profiles": {
+        "operator_address": ("text", "NO", "", None), "moniker": ("text", "NO", "", None), "description": ("text", "NO", "", None), "server_type": ("text", "NO", "", None), "signing_address": ("text", "NO", "", None), "signing_pubkey": ("text", "NO", "", None), "source_height": ("bigint", "NO", "", None), "list_position": ("integer", "NO", "", None), "inserted_at": ("timestamp with time zone", "NO", "", "now()"), "updated_at": ("timestamp with time zone", "NO", "", "now()"),
+    },
+    "valopers_snapshot_state": {
+        "state_key": ("text", "NO", "", None), "chain_id": ("text", "NO", "", None), "source_height": ("bigint", "NO", "", None), "page_count": ("integer", "NO", "", None), "profile_count": ("integer", "NO", "", None), "updated_at": ("timestamp with time zone", "NO", "", "now()"),
+    },
 }
-EXPECTED_PRIMARY_KEYS = {"blocks": ("height",), "transactions": ("id",), "validators": ("signing_address",), "validator_set_members": ("height", "signing_address"), "validator_signatures": ("height", "signing_address"), "rpc_endpoints": ("id",), "rpc_endpoint_checks": ("id",), "indexer_state": ("state_key",)}
-EXPECTED_UNIQUES = {("blocks", ("block_hash_base64",)), ("blocks", ("block_hash_hex",)), ("transactions", ("block_height", "tx_index")), ("validators", ("public_key_type", "public_key_value")), ("rpc_endpoints", ("url",))}
+EXPECTED_PRIMARY_KEYS = {"blocks": ("height",), "transactions": ("id",), "validators": ("signing_address",), "validator_set_members": ("height", "signing_address"), "validator_signatures": ("height", "signing_address"), "rpc_endpoints": ("id",), "rpc_endpoint_checks": ("id",), "indexer_state": ("state_key",), "valoper_profiles": ("operator_address",), "valopers_snapshot_state": ("state_key",)}
+EXPECTED_UNIQUES = {("blocks", ("block_hash_base64",)), ("blocks", ("block_hash_hex",)), ("transactions", ("block_height", "tx_index")), ("validators", ("public_key_type", "public_key_value")), ("rpc_endpoints", ("url",)), ("valoper_profiles", ("signing_address",)), ("valoper_profiles", ("signing_pubkey",))}
 EXPECTED_FOREIGN_KEYS = {
     ("transactions", ("block_height",), "blocks", ("height",), "c"),
     ("validator_set_members", ("height",), "blocks", ("height",), "c"),
@@ -94,6 +100,19 @@ EXPECTED_CHECKS = {
     "indexer_state_last_finalized_height_check": "CHECK (last_finalized_height >= 0)",
     "indexer_state_finalized_tip_height_check": "CHECK (finalized_tip_height IS NULL OR finalized_tip_height >= last_finalized_height)",
     "indexer_state_default_key": "CHECK (state_key = 'default')",
+    "valoper_profiles_source_height_check": "CHECK (source_height >= 1)",
+    "valoper_profiles_list_position_check": "CHECK (list_position >= 0)",
+    "valoper_profiles_moniker_length_check": "CHECK (char_length(moniker) BETWEEN 1 AND 32)",
+    "valoper_profiles_description_length_check": "CHECK (octet_length(description) BETWEEN 1 AND 2048)",
+    "valoper_profiles_server_type_check": "CHECK (server_type IN ('cloud', 'on-prem', 'data-center'))",
+    "valoper_profiles_operator_address_check": "CHECK (operator_address ~ '^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$')",
+    "valoper_profiles_signing_address_check": "CHECK (signing_address ~ '^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$')",
+    "valoper_profiles_signing_pubkey_check": "CHECK (signing_pubkey ~ '^gpub1[023456789acdefghjklmnpqrstuvwxyz]+$' AND octet_length(signing_pubkey) BETWEEN 91 AND 256)",
+    "valopers_snapshot_state_default_key": "CHECK (state_key = 'default')",
+    "valopers_snapshot_state_source_height_check": "CHECK (source_height >= 1)",
+    "valopers_snapshot_state_page_count_check": "CHECK (page_count BETWEEN 0 AND 20)",
+    "valopers_snapshot_state_profile_count_check": "CHECK (profile_count BETWEEN 0 AND 1000)",
+    "valopers_snapshot_state_counts_consistent": "CHECK ((profile_count = 0 AND page_count = 0) OR (profile_count > 0 AND page_count >= 1))",
 }
 EXPECTED_INDEXES = {
     "blocks_time_utc_idx": ("blocks", False, (("time_utc", "DESC"),), None),
@@ -105,10 +124,12 @@ EXPECTED_INDEXES = {
     "rpc_endpoints_one_selected_per_chain_idx": ("rpc_endpoints", True, (("chain_id", "ASC"),), "is_selected"),
     "rpc_endpoint_checks_endpoint_time_idx": ("rpc_endpoint_checks", False, (("rpc_endpoint_id", "ASC"), ("checked_at", "DESC")), None),
     "rpc_endpoint_checks_chain_selected_time_idx": ("rpc_endpoint_checks", False, (("chain_id", "ASC"), ("selected_for_cycle", "ASC"), ("checked_at", "DESC")), None),
+    "valoper_profiles_list_position_idx": ("valoper_profiles", False, (("list_position", "ASC"), ("operator_address", "ASC")), None),
+    "valoper_profiles_moniker_idx": ("valoper_profiles", False, (("moniker", "ASC"), ("operator_address", "ASC")), None),
 }
 
 class SchemaCompatibilityError(RuntimeError):
-    """Raised when an existing schema is not compatible with the expected v0.4 schema."""
+    """Raised when an existing schema is not compatible with the expected explorer schema."""
 
 
 def _is_wrapped(value: str) -> bool:

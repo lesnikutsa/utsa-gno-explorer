@@ -54,7 +54,7 @@ SELECT height, count(*) FROM validator_signatures GROUP BY height ORDER BY heigh
 Cleanup for a disposable validation database can drop and recreate the database, or truncate explorer tables in dependency order:
 
 ```sql
-TRUNCATE rpc_endpoint_checks, indexer_state, validator_signatures, validator_set_members, transactions, blocks, validators, rpc_endpoints RESTART IDENTITY CASCADE;
+TRUNCATE valoper_profiles, valopers_snapshot_state, rpc_endpoint_checks, indexer_state, validator_signatures, validator_set_members, transactions, blocks, validators, rpc_endpoints RESTART IDENTITY CASCADE;
 ```
 
 ## Continuous indexer advisory lock
@@ -84,3 +84,26 @@ python scripts/init_database.py
 ```
 
 The initialization script applies `database/schema.sql` only to an empty database; when tables already exist, it performs explicit catalog compatibility validation and fails on missing tables, incompatible columns, constraints, foreign keys, or index definitions. The script does not drop tables, drop databases, or delete existing data. For the first empty database, configure `INDEXER_START_HEIGHT` in the external indexer environment before starting the continuous indexer. See [Production deployment](../docs/production-deployment.md) for backup, validation restore, upgrade, and rollback procedures.
+
+## Valopers persistence schema
+
+Fresh empty databases initialized with `python scripts/init_database.py` include
+`valoper_profiles`, the current official registry contract, and
+`valopers_snapshot_state`, metadata for its one complete snapshot (including an
+empty registry). The application does not write a snapshot yet, and the API and
+frontend do not use either table.
+
+Existing production databases require the explicit, additive, transactional
+operator action below. Back up production and stop the indexer first; restart it
+only after this command and `python scripts/init_database.py` both validate the
+schema:
+
+```console
+python scripts/migrate_valopers_schema.py
+python scripts/init_database.py
+```
+
+The migration never runs from application startup, services, containers, or
+Compose. It preserves all existing indexed rows, rolls back on SQL or exact
+catalog-validation failure, and may be rerun safely after success. It creates no
+snapshot row or profile data.
