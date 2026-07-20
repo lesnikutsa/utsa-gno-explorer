@@ -18,10 +18,6 @@ _ENTRY_RE = re.compile(
     rf" \* \[(?P<moniker>[^\]\r\n]+)\]\(/r/gnops/valopers:(?P<detail>{_ADDRESS_PATTERN})\)"
     rf" - \[profile\]\(/r/demo/profile:u/(?P<profile>{_ADDRESS_PATTERN})\)\Z"
 )
-_PAGER_RE = re.compile(
-    r"\[[^\]\r\n]+\]\(/r/gnops/valopers:\?page=[1-9][0-9]*\)"
-    r"(?: \| \[[^\]\r\n]+\]\(/r/gnops/valopers:\?page=[1-9][0-9]*\))?\Z"
-)
 _DETAIL_TAIL_RE = re.compile(
     rf"\n\n- Operator Address: (?P<operator>{_ADDRESS_PATTERN})"
     rf"\n- Signing Address: (?P<signing>{_ADDRESS_PATTERN})"
@@ -61,8 +57,6 @@ def _validate_moniker(moniker: str) -> None:
 
 
 def _looks_like_list_entry(line: str) -> bool:
-    if _PAGER_RE.fullmatch(line):
-        return False
     if "/r/gnops/valopers:" in line or "/r/demo/profile:u/" in line:
         return True
     normalized = line.lstrip()

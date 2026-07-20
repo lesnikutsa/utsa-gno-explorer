@@ -80,8 +80,13 @@ class ListParserTests(unittest.TestCase):
         self.assertEqual(len(parse_valopers_list(rendered)), 1)
 
     def test_realistic_later_page_and_canonical_pager_are_ignored(self):
-        rendered = entry() + "\n\n[Previous](/r/gnops/valopers:?page=1) | [Next](/r/gnops/valopers:?page=3)"
+        rendered = entry() + "\n\n[1](?page=1) | **2** | [3](?page=3)"
         self.assertEqual(len(parse_valopers_list(rendered)), 1)
+
+    def test_absolute_valopers_pager_path_is_not_exempted(self):
+        rendered = entry() + "\n[3](/r/gnops/valopers:?page=3)"
+        with self.assertRaises(ValueError):
+            parse_valopers_list(rendered)
 
     def test_canonical_empty_registry_must_be_final_meaningful_line(self):
         rendered = "# Registration\nInstructions\n\nNo valopers to display.\n\n"
