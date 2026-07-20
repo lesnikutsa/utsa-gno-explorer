@@ -11,6 +11,7 @@ import {
   getValidatorHealth,
   getValidatorMissedBreakdown,
 } from '../utils/validatorHealth'
+import { compareValidatorIdentity, hasValidatorMoniker } from '../utils/validatorIdentity'
 
 const formatPercent = (value) => {
   if (value === null || value === undefined || value === '') return '—'
@@ -43,7 +44,12 @@ export function Validators({ validatorsPage }) {
   const historyBlocks = historyResponse?.blocks
   const columns = useMemo(() => [
     { key: 'powerRank', label: 'Power Rank', render: (row) => <span className="mono">#{row.powerRank}</span> },
-    { key: 'address', label: 'Signing Address', sortable: true, defaultSortDirection: 'ascending', render: (row) => <span className="mono" title={row.address}>{shortAddress(row.address)}</span> },
+    { key: 'address', label: 'Validator', sortable: true, defaultSortDirection: 'ascending', render: (row) => (
+      <span className="validator-identity" title={row.address}>
+        {hasValidatorMoniker(row) && <strong className="validator-identity__moniker">{row.moniker}</strong>}
+        <span className="validator-identity__address mono">{shortAddress(row.address)}</span>
+      </span>
+    ) },
     { key: 'voting_power', label: 'Voting Power', sortable: true, defaultSortDirection: 'descending', render: (row) => <span className="validator-power mono"><span>{formatIntegerString(row.voting_power)}</span><span className="validator-power__percent">{formatPercent(row.percent)}</span></span> },
     { key: 'uptime_100', label: 'Uptime (100)', sortable: true, defaultSortDirection: 'descending', render: (row) => <span className="mono">{formatPercent(row.uptime_100?.uptime_percent)}</span> },
     { key: 'missed_100', label: 'Signing (100)', sortable: true, defaultSortDirection: 'descending', render: (row) => {
@@ -57,7 +63,7 @@ export function Validators({ validatorsPage }) {
   const rows = useMemo(() => validators.map((validator, index) => ({ ...validator, powerRank: index + 1 })), [validators])
   const sortedRows = useMemo(() => [...rows].sort((left, right) => {
     let comparison = 0
-    if (sort.key === 'address') comparison = left.address.localeCompare(right.address)
+    if (sort.key === 'address') comparison = compareValidatorIdentity(left, right)
     if (sort.key === 'voting_power') comparison = compareIntegerStrings(left.voting_power, right.voting_power)
     if (sort.key === 'uptime_100') comparison = (left.uptime_100?.uptime_percent ?? 0) - (right.uptime_100?.uptime_percent ?? 0)
     if (sort.key === 'missed_100') comparison = getMissedBlocks(left.uptime_100) - getMissedBlocks(right.uptime_100)

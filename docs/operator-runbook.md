@@ -158,5 +158,10 @@ persisted official snapshot using exact, case-sensitive `signing_address` equali
 The SQL `LEFT JOIN` keeps unmatched validators visible with null profile fields, and
 `valoper_source_height` identifies the pinned snapshot represented by a profile. The
 API reads PostgreSQL only: it never queries the Valopers RPC directly and does not use
-Telegram bot data. The frontend does not display these identity fields yet. Update the
-production `API_VERSION` environment value separately after merge.
+Telegram bot data. The active-validator frontend table displays an exact official moniker
+when available and the shortened consensus signing address beneath it. The exact signing
+address remains the underlying technical identity, and unmatched validators remain visible
+by address. Profiles still come from the manually persisted official Valopers snapshot,
+profile refresh remains manual, the frontend does not use Telegram bot data, and no
+validator detail frontend route exists yet. Update the production `API_VERSION` environment
+value separately after merge.
