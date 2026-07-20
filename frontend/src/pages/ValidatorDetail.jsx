@@ -75,15 +75,17 @@ export function ValidatorDetail({ validatorDetail }) {
       <header className="validator-detail__header">
         <div>
           <h1 id="validator-detail-title">{hasValidatorMoniker(validator) ? validator.moniker : 'Validator'}</h1>
-          <p>Consensus validator details indexed by UTSA Explorer.</p>
         </div>
         <StatusBadge tone={active ? 'success' : 'neutral'}>{status}</StatusBadge>
       </header>
 
-      <section className="panel validator-detail__section validator-detail__section--current-status" aria-labelledby="validator-current-status-title">
+      <section className="panel validator-detail__section" aria-labelledby="validator-current-status-title">
         <div className="panel__heading"><h2 id="validator-current-status-title">Current Status</h2></div>
         <div className="validator-detail__grid validator-detail__grid--status">
-          <Field label="Status">{status}</Field>
+          <div className="validator-detail__field">
+            <span className="validator-detail__label">Status</span>
+            <strong className={`validator-detail__value validator-detail__value--${active ? 'success' : 'danger'}`}>{status}</strong>
+          </div>
           <Field label="Indexed Height" mono>{formatHeight(validator.current.height)}</Field>
           <Field label="Voting Power" mono>{present(validator.current.voting_power) ? validator.current.voting_power : '—'}</Field>
           <Field label="Voting Power Share" mono>{formatPercent(validator.current.voting_power_percent)}</Field>

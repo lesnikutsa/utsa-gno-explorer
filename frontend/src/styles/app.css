@@ -192,12 +192,13 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .validator-detail__field { min-width: 0; padding: 11px 13px; }
 .validator-detail__grid .validator-detail__field:nth-child(odd) { border-right: 1px solid var(--color-border-soft); }
 .validator-detail__grid .validator-detail__field:nth-child(n+3) { border-top: 1px solid var(--color-border-soft); }
-.validator-detail__section--current-status { width: min(100%, 940px); }
 .validator-detail__grid--status { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .validator-detail__grid--status .validator-detail__field { border-top: 0; border-right: 0; }
 .validator-detail__grid--status .validator-detail__field + .validator-detail__field { border-left: 1px solid var(--color-border-soft); }
 .validator-detail__label { display: block; margin-bottom: 5px; color: var(--color-text-secondary); font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
 .validator-detail__value { display: block; color: var(--color-text); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.validator-detail__value--success { color: var(--color-success); }
+.validator-detail__value--danger { color: var(--color-error); }
 .validator-detail__copy-row { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
 .validator-detail__copy-row .validator-detail__value { flex: 1 1 auto; min-width: 0; }
 .validator-detail__address { user-select: text; white-space: normal; overflow-wrap: anywhere; }

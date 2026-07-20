@@ -68,6 +68,7 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
 
     def test_loaded_identity_and_status_are_present(self):
         self.assertIn("hasValidatorMoniker(validator) ? validator.moniker : 'Validator'", self.page)
+        self.assertNotIn("Consensus validator details indexed by UTSA Explorer.", self.page)
         for label in (
             "Validator Identity", "Signing Address", "Operator Address", "Public Key Type", "Public Key",
             "Current Status", "Indexed Height", "Voting Power",
@@ -149,19 +150,21 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
         self.assertNotIn("/validators/${", self.overview)
 
     def test_current_status_is_compact_ordered_and_responsive(self):
-        current = self.page[self.page.index("validator-detail__section--current-status"):self.page.index("<SigningHistory validator={validator} />")]
+        current = self.page[self.page.index('aria-labelledby="validator-current-status-title"'):self.page.index("<SigningHistory validator={validator} />")]
         labels = ["Status", "Indexed Height", "Voting Power", "Voting Power Share", "Proposer Priority"]
         self.assertEqual(sorted(labels, key=current.index), labels)
-        self.assertIn("validator-detail__section--current-status", current)
         self.assertIn("validator-detail__grid--status", current)
-        self.assertIn(".validator-detail__section--current-status { width: min(100%, 940px); }", self.styles)
+        self.assertNotIn("validator-detail__section--current-status", self.page)
+        self.assertNotIn("validator-detail__section--current-status", self.styles)
+        self.assertNotIn("width: min(100%, 940px)", self.styles)
         self.assertIn(".validator-detail__grid--status { grid-template-columns: repeat(5, minmax(0, 1fr)); }", self.styles)
         self.assertIn("@media (max-width: 900px)", self.styles)
         self.assertIn(".validator-detail__grid--status { grid-template-columns: repeat(3, minmax(0, 1fr)); }", self.styles)
         self.assertIn(".validator-detail__grid--status { grid-template-columns: 1fr; }", self.styles)
         self.assertNotIn(".validator-detail__grid--status .validator-detail__field:last-child", self.styles)
-        signing_history = self.page[self.page.index("function SigningHistory"):]
-        self.assertNotIn("validator-detail__section--current-status", signing_history)
+        self.assertIn("active ? 'success' : 'danger'", current)
+        self.assertIn("validator-detail__value--success", self.styles)
+        self.assertIn("validator-detail__value--danger", self.styles)
 
     def test_profile_description_spans_both_columns(self):
         self.assertIn(
