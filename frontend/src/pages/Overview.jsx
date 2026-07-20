@@ -8,9 +8,11 @@ import { BlocksIcon, ChainIcon, MapIcon, NetworkIcon, ValidatorsIcon } from '../
 import { relativeTime } from '../utils/time'
 import { shortAddress } from '../utils/address'
 import { getMissedBlocks, getValidatorHealth, getValidatorMissedBreakdown } from '../utils/validatorHealth'
+import { hasValidatorMoniker } from '../utils/validatorIdentity'
 
 const missedSeverity = (missed) => missed >= 10 ? 'high' : missed >= 2 ? 'medium' : 'low'
-const OVERVIEW_ROW_LIMIT = 6
+const LATEST_BLOCKS_ROW_LIMIT = 7
+const OVERVIEW_VALIDATOR_ROW_LIMIT = 6
 
 const formatUptime = (value) => {
   if (value === null || value === undefined || value === '') return '—'
@@ -52,7 +54,18 @@ export function Overview({ explorerData, mascotSrc = null }) {
   ), [data.validatorHistory])
   const historyBlocks = data.validatorHistory?.blocks
   const validatorColumns = useMemo(() => [
-    { key: 'address', label: 'Signing Address', render: (row) => <span className="mono" title={row.address}>{shortAddress(row.address)}</span> },
+    { key: 'address', label: 'Validator', render: (row) => (
+      <span className="validator-identity" title={row.address}>
+        {hasValidatorMoniker(row) ? (
+          <>
+            <strong className="validator-identity__moniker">{row.moniker}</strong>
+            <span className="validator-identity__address mono">{shortAddress(row.address)}</span>
+          </>
+        ) : (
+          <strong className="validator-identity__fallback mono">{shortAddress(row.address)}</strong>
+        )}
+      </span>
+    ) },
     { key: 'signing', label: 'Signing (last 100)', render: (row) => {
       const history = row.address ? historyMap.get(row.address) : null
       return <span className="validator-signing-cell"><span title={getValidatorMissedBreakdown(row.uptime_100)}><strong className={`missed-value missed-value--${missedSeverity(row.missedTotal)}`}>{row.missedTotal} missed</strong><span className="muted"> · {formatUptime(row.uptime_100?.uptime_percent)} uptime</span></span><ValidatorSigningStrip blocks={historyBlocks} statuses={history?.statuses} compact address={row.address} /></span>
@@ -72,7 +85,7 @@ export function Overview({ explorerData, mascotSrc = null }) {
       const uptimeDifference = (Number.isFinite(leftUptime) ? leftUptime : Infinity) - (Number.isFinite(rightUptime) ? rightUptime : Infinity)
       return uptimeDifference || left.address.localeCompare(right.address)
     })
-    .slice(0, OVERVIEW_ROW_LIMIT), [data.validators])
+    .slice(0, OVERVIEW_VALIDATOR_ROW_LIMIT), [data.validators])
 
   useEffect(() => {
     const timers = []
@@ -101,7 +114,7 @@ export function Overview({ explorerData, mascotSrc = null }) {
       <div className="dashboard-grid">
         <section className="panel dashboard-grid__blocks">
           <div className="panel__heading"><h2>Latest Blocks</h2><span className="panel__meta panel__meta--live"><span className="live-dot" />Live · every 5s</span></div>
-          <DataTable columns={blockColumns} rows={data.blocks.slice(0, OVERVIEW_ROW_LIMIT)} rowKey={(row) => row.height} rowClassName={(row, index) => insertedBlockHeight === null ? '' : index === 0 && row.height === insertedBlockHeight ? 'is-new-row' : 'is-settling-row'} loading={loading} emptyMessage={errors.blocks ? 'Blocks are currently unavailable.' : 'No blocks returned.'} />
+          <DataTable columns={blockColumns} rows={data.blocks.slice(0, LATEST_BLOCKS_ROW_LIMIT)} rowKey={(row) => row.height} rowClassName={(row, index) => insertedBlockHeight === null ? '' : index === 0 && row.height === insertedBlockHeight ? 'is-new-row' : 'is-settling-row'} loading={loading} emptyMessage={errors.blocks ? 'Blocks are currently unavailable.' : 'No blocks returned.'} />
         </section>
         <section className="panel dashboard-grid__validators">
           <div className="panel__heading"><h2>Validators by Missed Blocks</h2><span className="panel__meta" title={errors.validatorHistory && data.validatorHistory ? 'Showing the last successfully matched signing history.' : undefined}>{errors.validatorHistory ? (data.validatorHistory ? 'Signing history delayed' : 'Signing history unavailable') : 'Latest 50 signing blocks'}</span></div>

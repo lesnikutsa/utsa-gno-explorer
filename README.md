@@ -133,11 +133,12 @@ snapshot by exact, case-sensitive `signing_address` equality. A SQL `LEFT JOIN` 
 unmatched validators visible with null profile fields; `valoper_source_height` is the
 pinned Valopers snapshot height represented by a profile. The API reads PostgreSQL only,
 never queries the Valopers RPC directly, and does not use Telegram bot data. Snapshot
-refresh remains manual. The active-validator table displays an exact official moniker
-when one is available, with the shortened consensus signing address beneath it. The exact
+refresh remains manual. The full active-validator table and the Overview **Validators by
+Missed Blocks** table display an exact official moniker when one is available, with the
+shortened consensus signing address beneath it. The exact
 signing address remains the underlying technical identity, and unmatched validators remain
-visible by address. The frontend does not use Telegram bot data, and no validator detail
-frontend route exists yet.
+visible by address. The frontend does not use Telegram bot data, logos are not implemented,
+and no validator detail frontend route exists yet.
 
 ### Network and blocks API
 
@@ -165,9 +166,10 @@ and chronological signing history for up to 100 actual stored blocks:
 curl http://127.0.0.1:8000/api/validators/<consensus-signing-address>
 ```
 
-The active-validator table displays official Valopers monikers but does not display logos
-or operator addresses. It continues to use the exact consensus signing address as the
-underlying validator identity and falls back to a shortened signing address when a profile
+The full active-validator table and the Overview **Validators by Missed Blocks** table
+display official Valopers monikers but do not display logos or operator addresses. They
+continue to use the exact consensus signing address as the
+underlying validator identity and fall back to a shortened signing address when a profile
 is unmatched. Profiles come from the manually persisted official Valopers snapshot; refresh
 remains manual, the frontend does not use Telegram bot data, and no validator detail
 frontend route exists yet.
