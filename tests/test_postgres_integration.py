@@ -295,9 +295,11 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                 cursor.execute("SELECT * FROM valopers_snapshot_state")
                 self.assertEqual(cursor.fetchone(), stable_state)
 
+        # Moniker punctuation is valid; use the database server-type constraint
+        # to exercise rollback after the replacement DELETE instead.
         invalid = ValopersSnapshot(12, 1, (ValoperProfile(
-            "Bad!", "Description", "g1" + "5" * 38, "g1" + "5" * 38,
-            "gpub1" + "5" * 86, "cloud", "/profile"),))
+            "Valid moniker", "Description", "g1" + "5" * 38, "g1" + "5" * 38,
+            "gpub1" + "5" * 86, "invalid-server-type", "/profile"),))
         with self.assertRaises(Exception):
             database.replace_valopers_snapshot(invalid, "test-chain")
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
