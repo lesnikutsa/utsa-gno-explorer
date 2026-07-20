@@ -60,12 +60,16 @@ const formatCount = (value) => {
 
 function PerformanceCard({ title, uptime }) {
   const data = uptime && typeof uptime === 'object' ? uptime : {}
-  const health = getValidatorHealth(data)
+  const requiredCounters = ['active_blocks', 'signed_blocks', 'nil_blocks', 'absent_blocks', 'invalid_blocks', 'unknown_blocks']
+  const hasCompleteCounters = requiredCounters.every((counter) => present(data[counter]) && Number.isFinite(Number(data[counter])))
+  const health = hasCompleteCounters
+    ? getValidatorHealth(data)
+    : { label: 'No data', tone: 'neutral' }
   const values = [
     ['Network Blocks', data.network_blocks],
     ['Active Blocks', data.active_blocks],
     ['Signed', data.signed_blocks],
-    ['Missed', getMissedBlocks(data)],
+    ['Missed', hasCompleteCounters ? getMissedBlocks(data) : null],
     ['Nil', data.nil_blocks],
     ['Absent', data.absent_blocks],
     ['Invalid', data.invalid_blocks],
@@ -146,7 +150,6 @@ export function ValidatorDetail({ validatorDetail }) {
       <section className="panel validator-detail__section" aria-labelledby="validator-performance-title">
         <div className="panel__heading"><h2 id="validator-performance-title">Signing Performance</h2></div>
         <div className="validator-performance">
-          <PerformanceCard title="Last 20 Network Blocks" uptime={validator.uptime_20} />
           <PerformanceCard title="Last 100 Network Blocks" uptime={validator.uptime_100} />
         </div>
       </section>

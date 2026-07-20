@@ -83,15 +83,24 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
 
     def test_signing_performance_reuses_health_helpers(self):
         for label in (
-            "Signing Performance", "Last 20 Network Blocks", "Last 100 Network Blocks",
+            "Signing Performance", "Last 100 Network Blocks",
             "Uptime", "Health", "Network Blocks", "Active Blocks", "Signed", "Missed",
             "Nil", "Absent", "Invalid", "Unknown",
         ):
             self.assertIn(label, self.page)
         self.assertIn("getMissedBlocks(data)", self.page)
         self.assertIn("getValidatorHealth(data)", self.page)
-        self.assertIn("uptime={validator.uptime_20}", self.page)
         self.assertIn("uptime={validator.uptime_100}", self.page)
+        self.assertNotIn("uptime={validator.uptime_20}", self.page)
+        self.assertNotIn("Last 20 Network Blocks", self.page)
+
+    def test_incomplete_performance_data_is_not_derived(self):
+        self.assertIn("const requiredCounters =", self.page)
+        self.assertIn("requiredCounters.every", self.page)
+        self.assertIn("Number.isFinite(Number(data[counter]))", self.page)
+        self.assertIn("hasCompleteCounters ? getMissedBlocks(data) : null", self.page)
+        self.assertIn("? getValidatorHealth(data)", self.page)
+        self.assertIn("{ label: 'No data', tone: 'neutral' }", self.page)
 
     def test_signing_history_reuses_strip_statuses_and_api_order(self):
         for value in (
@@ -105,6 +114,9 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
         self.assertNotIn(".reverse()", self.page)
         self.assertIn("address={validator.address}", self.page)
         self.assertIn("items.map((item) => ({ height: item?.height, time: item?.time }))", self.page)
+        self.assertIn("const items = Array.isArray(history.items) ? history.items : []", self.page)
+        self.assertNotIn("Array(100)", self.page)
+        self.assertNotIn("fill(", self.page)
         self.assertNotIn("setInterval", self.page)
         self.assertNotIn("getValidator(", self.page)
 
@@ -134,6 +146,23 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
         )
         self.assertIn(
             ".validator-detail__grid { grid-template-columns: 1fr; }",
+            self.styles,
+        )
+
+    def test_profile_grid_has_specific_desktop_and_mobile_borders(self):
+        self.assertIn(
+            ".validator-detail__grid--profile .validator-detail__field:nth-child(n+2) "
+            "{ border-top: 1px solid var(--color-border-soft); }",
+            self.styles,
+        )
+        self.assertIn(
+            ".validator-detail__grid--profile .validator-detail__field:nth-child(2),\n"
+            ".validator-detail__grid--profile .validator-detail__field:nth-child(4) "
+            "{ border-right: 1px solid var(--color-border-soft); }",
+            self.styles,
+        )
+        self.assertIn(
+            ".validator-detail__grid--profile .validator-detail__field { border-right: 0; }",
             self.styles,
         )
 

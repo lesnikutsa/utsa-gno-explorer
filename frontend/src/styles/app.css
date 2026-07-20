@@ -201,9 +201,12 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .validator-detail__state { padding: 18px; }
 .validator-detail__state-actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
 .validator-detail__state .validator-detail__back { margin: 0; }
+.validator-detail__grid--profile .validator-detail__field { border-right: 0; }
 .validator-detail__grid--profile .validator-detail__field:first-child { grid-column: 1 / -1; border-right: 0; }
-.validator-detail__grid--profile .validator-detail__field:nth-child(2) { border-right: 1px solid var(--color-border-soft); }
-.validator-performance { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 10px; }
+.validator-detail__grid--profile .validator-detail__field:nth-child(n+2) { border-top: 1px solid var(--color-border-soft); }
+.validator-detail__grid--profile .validator-detail__field:nth-child(2),
+.validator-detail__grid--profile .validator-detail__field:nth-child(4) { border-right: 1px solid var(--color-border-soft); }
+.validator-performance { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 10px; }
 .validator-performance__card { min-width: 0; overflow: hidden; border: 1px solid var(--color-border-soft); background: rgba(10, 29, 44, .45); }
 .validator-performance__card h3 { margin: 0; padding: 10px 12px; border-bottom: 1px solid var(--color-border-soft); color: var(--color-text-bright); font-size: 12px; }
 .validator-performance__summary, .validator-performance__metrics, .signing-history__range { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -279,7 +282,7 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
   .validator-detail__grid { grid-template-columns: 1fr; }
   .validator-detail__grid .validator-detail__field:nth-child(odd) { border-right: 0; }
   .validator-detail__grid .validator-detail__field + .validator-detail__field { border-top: 1px solid var(--color-border-soft); }
-  .validator-detail__grid--profile .validator-detail__field:nth-child(2) { border-right: 0; }
+  .validator-detail__grid--profile .validator-detail__field { border-right: 0; }
   .validator-performance { grid-template-columns: 1fr; }
   .validator-performance__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .validator-performance__metrics .validator-detail__field:not(:nth-child(4n+1)) { border-left: 0; }
