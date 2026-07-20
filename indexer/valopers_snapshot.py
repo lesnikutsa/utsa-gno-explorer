@@ -9,8 +9,9 @@ from indexer.valopers_source import (
     ValopersRenderResult,
     build_detail_render_data,
     build_page_render_data,
+    build_qrender_params,
     build_root_render_data,
-    fetch_render,
+    decode_qrender_response,
 )
 from scripts.inspect_rpc import GnoRpcClient, RpcError
 
@@ -35,13 +36,16 @@ def _fetch_with_retry(
     client: GnoRpcClient, render_data: str, query_kind: str, source_height: int
 ) -> ValopersRenderResult:
     """Retry only transport fetches, preserving the client, query, and height."""
+    params = build_qrender_params(render_data, source_height)
     for attempt in range(VALOPERS_FETCH_ATTEMPTS):
         try:
-            return fetch_render(client, render_data, query_kind, source_height)
+            payload = client.get("abci_query", **params)
         except RpcError as exc:
             if attempt + 1 == VALOPERS_FETCH_ATTEMPTS:
                 raise RpcError("Valopers qrender request failed after bounded retries") from exc
             time.sleep(VALOPERS_RETRY_DELAY_SECONDS)
+            continue
+        return decode_qrender_response(payload, query_kind, source_height)
     raise AssertionError("unreachable")  # pragma: no cover
 
 

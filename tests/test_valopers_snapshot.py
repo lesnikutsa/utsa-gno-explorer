@@ -5,7 +5,7 @@ import sys
 import unittest
 from dataclasses import FrozenInstanceError
 from pathlib import Path
-from unittest.mock import call, patch
+from unittest.mock import Mock, patch
 
 from indexer.valopers_snapshot import (
     MAX_VALOPERS_PAGES,
@@ -67,6 +67,20 @@ def detail_render(number: int, *, operator=None, moniker=None, signing=None, pub
     )
 
 
+def qrender_payload(text: str, height: int = 99):
+    return {
+        "result": {
+            "response": {
+                "Height": str(height),
+                "ResponseBase": {
+                    "Error": None,
+                    "Data": base64.b64encode(text.encode()).decode(),
+                },
+            }
+        }
+    }
+
+
 class FakeClient:
     def __init__(
         self, pages, detail_overrides=None, fail_detail=None, fail_pages=None,
@@ -113,49 +127,94 @@ class FakeClient:
 
 class FetchRetryTests(unittest.TestCase):
     @patch("indexer.valopers_snapshot.time.sleep")
-    @patch("indexer.valopers_snapshot.fetch_render")
-    def test_first_attempt_succeeds_without_sleep(self, fetch, sleep):
-        expected = object()
-        fetch.return_value = expected
-        client = object()
-        self.assertIs(_fetch_with_retry(client, "render", "root", 99), expected)
-        fetch.assert_called_once_with(client, "render", "root", 99)
+    def test_first_attempt_succeeds_without_sleep(self, sleep):
+        client = Mock()
+        client.get.return_value = qrender_payload("rendered", 99)
+        result = _fetch_with_retry(client, "render", "root", 99)
+        self.assertEqual(result.decoded_text, "rendered")
+        self.assertEqual(client.get.call_count, 1)
         sleep.assert_not_called()
 
     @patch("indexer.valopers_snapshot.time.sleep")
-    @patch("indexer.valopers_snapshot.fetch_render")
-    def test_second_attempt_succeeds_with_identical_request(self, fetch, sleep):
-        expected = object()
-        fetch.side_effect = [RpcError("first"), expected]
-        client = object()
-        self.assertIs(_fetch_with_retry(client, "same-render", "page", 101), expected)
-        self.assertEqual(fetch.call_args_list, [
-            call(client, "same-render", "page", 101),
-            call(client, "same-render", "page", 101),
-        ])
+    def test_second_attempt_succeeds_with_identical_request(self, sleep):
+        client = Mock()
+        client.get.side_effect = [RpcError("first"), qrender_payload("rendered", 101)]
+        result = _fetch_with_retry(client, "same-render", "page", 101)
+        self.assertEqual(result.query_kind, "page")
+        self.assertEqual(client.get.call_count, 2)
+        first, second = client.get.call_args_list
+        self.assertEqual(first, second)
+        self.assertEqual(first.args, ("abci_query",))
+        self.assertEqual(first.kwargs["height"], 101)
+        self.assertEqual(first.kwargs["prove"], "false")
+        self.assertEqual(first.kwargs["data"], second.kwargs["data"])
         sleep.assert_called_once_with(0.25)
 
     @patch("indexer.valopers_snapshot.time.sleep")
-    @patch("indexer.valopers_snapshot.fetch_render")
-    def test_third_attempt_succeeds(self, fetch, sleep):
-        expected = object()
-        fetch.side_effect = [RpcError("first"), RpcError("second"), expected]
-        self.assertIs(_fetch_with_retry(object(), "render", "detail", 7), expected)
-        self.assertEqual(fetch.call_count, 3)
+    def test_third_attempt_succeeds(self, sleep):
+        client = Mock()
+        client.get.side_effect = [
+            RpcError("first"), RpcError("second"), qrender_payload("rendered", 7)
+        ]
+        result = _fetch_with_retry(client, "render", "detail", 7)
+        self.assertEqual(result.query_kind, "detail")
+        self.assertEqual(client.get.call_count, 3)
+        self.assertEqual(client.get.call_args_list[0], client.get.call_args_list[1])
+        self.assertEqual(client.get.call_args_list[1], client.get.call_args_list[2])
         self.assertEqual(sleep.call_count, 2)
 
     @patch("indexer.valopers_snapshot.time.sleep")
-    @patch("indexer.valopers_snapshot.fetch_render")
-    def test_final_failure_is_safe_and_preserves_cause(self, fetch, sleep):
-        underlying = RpcError("https://user:secret@example.invalid/rpc?token=private")
-        fetch.side_effect = underlying
+    def test_final_failure_is_safe_and_preserves_cause(self, sleep):
+        failures = [
+            RpcError("first"),
+            RpcError("second"),
+            RpcError("https://user:secret@example.invalid/rpc?token=private"),
+        ]
+        client = Mock()
+        client.get.side_effect = failures
         with self.assertRaises(RpcError) as raised:
-            _fetch_with_retry(object(), "render", "root", 8)
-        self.assertEqual(fetch.call_count, 3)
+            _fetch_with_retry(client, "render", "root", 8)
+        self.assertEqual(client.get.call_count, 3)
         self.assertEqual(sleep.call_count, 2)
         self.assertEqual(str(raised.exception), "Valopers qrender request failed after bounded retries")
-        self.assertIs(raised.exception.__cause__, underlying)
+        self.assertIs(raised.exception.__cause__, failures[-1])
         self.assertNotIn("https://", str(raised.exception))
+
+    @patch("indexer.valopers_snapshot.time.sleep")
+    def test_decode_validation_failures_are_not_retried(self, sleep):
+        valid_data = base64.b64encode(b"rendered").decode()
+        cases = {
+            "missing response": {"result": {}},
+            "invalid height": {"result": {"response": {
+                "Height": "invalid", "ResponseBase": {"Error": None, "Data": valid_data}
+            }}},
+            "height mismatch": {"result": {"response": {
+                "Height": "100", "ResponseBase": {"Error": None, "Data": valid_data}
+            }}},
+            "abci error": {"result": {"response": {
+                "Height": "99", "ResponseBase": {"Error": "failed", "Data": valid_data}
+            }}},
+            "missing data": {"result": {"response": {
+                "Height": "99", "ResponseBase": {"Error": None}
+            }}},
+            "invalid base64": {"result": {"response": {
+                "Height": "99", "ResponseBase": {"Error": None, "Data": "%%%"}
+            }}},
+            "invalid utf8": {"result": {"response": {
+                "Height": "99", "ResponseBase": {
+                    "Error": None, "Data": base64.b64encode(b"\xff").decode()
+                }
+            }}},
+        }
+        for name, payload in cases.items():
+            with self.subTest(name=name):
+                client = Mock()
+                client.get.return_value = payload
+                sleep.reset_mock()
+                with self.assertRaises(RpcError):
+                    _fetch_with_retry(client, "render", "root", 99)
+                client.get.assert_called_once()
+                sleep.assert_not_called()
 
 
 class SnapshotTests(unittest.TestCase):

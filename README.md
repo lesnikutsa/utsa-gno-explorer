@@ -267,8 +267,9 @@ or synchronize Valopers data.
 
 `python scripts/probe_valopers_snapshot.py` selects one healthy RPC and collects every
 Valopers list page and detail sequentially at one pinned height. Collection has fixed
-page and profile bounds. Each qrender request has a small bounded retry on the same RPC
-and pinned height; retries never fail over or repin. Exhausting retries fails the complete
+page and profile bounds. Transient RPC request failures have a small bounded retry on the
+same endpoint and pinned height; response decoding and consistency failures fail
+immediately. Retries never fail over or repin, and exhausting them fails the complete
 snapshot without a partial result. The immutable result remains in memory; database, API,
 frontend, Telegram, and validator-set integration are intentionally not included yet.
 
