@@ -448,6 +448,100 @@ sudo systemctl restart utsa-gno-api.service
 
 Repeat the local curl smoke tests after restart. Neither systemd nor the application performs Git operations, dependency installation, database initialization, migrations, restore, or deployment automatically.
 
+#### API 0.7.0 Valopers identity upgrade
+
+Use this ordered, fail-closed procedure when deploying API 0.7.0. The earlier
+`GRANT SELECT ON ALL TABLES IN SCHEMA public` covered only tables that existed
+when that statement ran. The explicit Valopers migration created
+`valoper_profiles` later, so the API role does not inherit access to it. Future
+tables likewise require operator review and explicit grants; do not configure an
+automatic grant path.
+
+1. Fetch and fast-forward the production checkout to the reviewed revision:
+
+   ```bash
+   sudo git -C /opt/utsa-gno-explorer fetch origin
+   sudo git -C /opt/utsa-gno-explorer switch main
+   sudo git -C /opt/utsa-gno-explorer merge --ff-only origin/main
+   ```
+
+2. Validate the current ten-table schema before changing privileges:
+
+   ```bash
+   sudo -u utsa-gno /opt/utsa-gno-explorer/.venv/bin/python \
+     /opt/utsa-gno-explorer/scripts/init_database.py
+   ```
+
+3. Open the existing interactive PostgreSQL administrator session. No password or
+   `DATABASE_URL` is placed on the command line:
+
+   ```bash
+   docker compose -f deploy/postgres/compose.yml \
+     --env-file /etc/utsa-gno-explorer/postgres.env \
+     exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+   ```
+
+   Apply only the required read privilege:
+
+   ```sql
+   GRANT SELECT ON TABLE public.valoper_profiles TO utsa_gno_api;
+   ```
+
+4. In the same administrator session, verify the grant and absence of write
+   privileges:
+
+   ```sql
+   SELECT
+     has_table_privilege('utsa_gno_api', 'public.valoper_profiles', 'SELECT') AS select_allowed,
+     has_table_privilege('utsa_gno_api', 'public.valoper_profiles', 'INSERT') AS insert_allowed,
+     has_table_privilege('utsa_gno_api', 'public.valoper_profiles', 'UPDATE') AS update_allowed,
+     has_table_privilege('utsa_gno_api', 'public.valoper_profiles', 'DELETE') AS delete_allowed,
+     has_table_privilege('utsa_gno_api', 'public.valoper_profiles', 'TRUNCATE') AS truncate_allowed;
+   ```
+
+   Require exactly `t, f, f, f, f`. Stop the deployment before restart if any
+   value differs. Do not grant access to `valopers_snapshot_state`, use `GRANT
+   ALL`, change ownership, or add superuser or data-changing privileges. The API
+   role remains read-only.
+
+5. Edit the protected external `/etc/utsa-gno-explorer/api.env` through the
+   operator-approved secret-management process and set `API_VERSION=0.7.0`. Do
+   not copy that file into Git.
+6. Restart API 0.7.0 only after steps 1 through 5 succeed:
+
+   ```bash
+   sudo systemctl restart utsa-gno-api.service
+   ```
+
+7. Verify health:
+
+   ```bash
+   curl --fail --silent --show-error http://127.0.0.1:18180/api/health
+   ```
+
+8. Verify the active validator list:
+
+   ```bash
+   curl --fail --silent --show-error http://127.0.0.1:18180/api/validators
+   ```
+
+9. Request one known matched consensus signing address and verify its official
+   profile fields and `valoper_source_height` are non-null:
+
+   ```bash
+   curl --fail --silent --show-error \
+     http://127.0.0.1:18180/api/validators/MATCHED_SIGNING_ADDRESS
+   ```
+
+10. Confirm one known unmatched validator remains present in the list, then
+    request its detail and verify `moniker`, `operator_address`, `description`,
+    `server_type`, and `valoper_source_height` are null:
+
+    ```bash
+    curl --fail --silent --show-error \
+      http://127.0.0.1:18180/api/validators/UNMATCHED_SIGNING_ADDRESS
+    ```
+
 For rollback, stop the API, check out or reset only to a previously verified commit according to the repository's existing operator policy, reinstall dependencies only if required, start only the API, and verify `/api/health` locally:
 
 ```bash

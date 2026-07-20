@@ -109,6 +109,41 @@ class ApiDeploymentAssetTests(unittest.TestCase):
         for command in expected_commands:
             self.assertIn(command, self.documentation)
 
+    def api_070_upgrade_section(self):
+        start = self.documentation.index("#### API 0.7.0 Valopers identity upgrade")
+        end = self.documentation.index("For rollback,", start)
+        return self.documentation[start:end]
+
+    def test_api_070_upgrade_grants_only_required_profile_select(self):
+        section = self.api_070_upgrade_section()
+        grant = "GRANT SELECT ON TABLE public.valoper_profiles TO utsa_gno_api;"
+        self.assertIn(grant, section)
+        self.assertNotIn("GRANT SELECT ON TABLE public.valopers_snapshot_state", section)
+        self.assertNotRegex(section, r"(?i)GRANT\s+ALL\s+(?:ON|;)")
+        for privilege in ("INSERT", "UPDATE", "DELETE", "TRUNCATE"):
+            self.assertNotIn(f"GRANT {privilege}", section)
+        self.assertIn("role remains read-only", section)
+
+    def test_api_070_upgrade_verifies_privileges_before_restart(self):
+        section = self.api_070_upgrade_section()
+        grant_at = section.index(
+            "GRANT SELECT ON TABLE public.valoper_profiles TO utsa_gno_api;"
+        )
+        verification_at = section.index(
+            "has_table_privilege('utsa_gno_api', 'public.valoper_profiles', 'SELECT')"
+        )
+        version_at = section.index("API_VERSION=0.7.0")
+        restart_at = section.index("sudo systemctl restart utsa-gno-api.service")
+        self.assertLess(grant_at, verification_at)
+        self.assertLess(verification_at, version_at)
+        self.assertLess(version_at, restart_at)
+        for privilege in ("INSERT", "UPDATE", "DELETE", "TRUNCATE"):
+            self.assertIn(
+                f"has_table_privilege('utsa_gno_api', 'public.valoper_profiles', '{privilege}')",
+                section,
+            )
+        self.assertIn("Stop the deployment before restart", section)
+
     def assert_urls_have_placeholder_passwords(self, data):
         for match in CREDENTIAL_URL.finditer(data):
             self.assertIn(match.group(1), PLACEHOLDER_PASSWORDS)

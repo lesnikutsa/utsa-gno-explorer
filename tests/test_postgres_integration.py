@@ -430,6 +430,83 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                 self.assertIsNone(identities[orphan])
                 self.assertIsNone(identities["g1" + "f" * 38])
 
+        role = f"utsa_api_test_{os.getpid()}"
+        role_password = secrets.token_urlsafe(24)
+        legacy_api_tables = (
+            "blocks", "indexer_state", "validators", "validator_set_members",
+            "validator_signatures",
+        )
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                psycopg.sql.SQL(
+                    "CREATE ROLE {} LOGIN PASSWORD %s NOSUPERUSER NOCREATEDB "
+                    "NOCREATEROLE NOREPLICATION NOBYPASSRLS"
+                ).format(psycopg.sql.Identifier(role)),
+                (role_password,),
+            )
+            cursor.execute(
+                psycopg.sql.SQL(
+                    "ALTER ROLE {} SET default_transaction_read_only = on"
+                ).format(psycopg.sql.Identifier(role))
+            )
+            cursor.execute(
+                psycopg.sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
+                    psycopg.sql.Identifier(name), psycopg.sql.Identifier(role)
+                )
+            )
+            cursor.execute(
+                psycopg.sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(
+                    psycopg.sql.Identifier(role)
+                )
+            )
+            cursor.execute(
+                psycopg.sql.SQL("GRANT SELECT ON TABLE {} TO {}").format(
+                    psycopg.sql.SQL(", ").join(
+                        psycopg.sql.Identifier("public", table) for table in legacy_api_tables
+                    ),
+                    psycopg.sql.Identifier(role),
+                )
+            )
+            cursor.execute(
+                "SELECT has_table_privilege(%s, 'public.valoper_profiles', 'SELECT')",
+                (role,),
+            )
+            self.assertFalse(cursor.fetchone()[0])
+            cursor.execute(
+                "SELECT has_table_privilege(%s, 'public.valopers_snapshot_state', 'SELECT')",
+                (role,),
+            )
+            self.assertFalse(cursor.fetchone()[0])
+            cursor.execute(
+                psycopg.sql.SQL(
+                    "GRANT SELECT ON TABLE public.valoper_profiles TO {}"
+                ).format(psycopg.sql.Identifier(role))
+            )
+            cursor.execute(
+                "SELECT has_table_privilege(%s, 'public.valoper_profiles', privilege) "
+                "FROM unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE']) privilege",
+                (role,),
+            )
+            self.assertEqual([row[0] for row in cursor.fetchall()], [True, False, False, False, False])
+
+        restricted_url = (
+            f"postgresql://{role}:{role_password}@{self.host}:{self.port}/{name}"
+        )
+        with psycopg.connect(
+            restricted_url, row_factory=psycopg.rows.dict_row
+        ) as connection, connection.cursor() as cursor:
+            cursor.execute(ACTIVE_VALIDATORS_SQL, (10, 10))
+            restricted_active = cursor.fetchall()
+            self.assertEqual(
+                [(row["address"], row["moniker"]) for row in restricted_active],
+                [(matched, "Active Official"), (unmatched, None)],
+            )
+            for address, expected_moniker in (
+                (matched, "Active Official"), (unmatched, None)
+            ):
+                cursor.execute(VALIDATOR_IDENTITY_SQL, (address,))
+                self.assertEqual(cursor.fetchone()["moniker"], expected_moniker)
+
 
 if __name__ == "__main__":
     unittest.main()
