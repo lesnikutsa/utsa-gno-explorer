@@ -8,6 +8,7 @@ import { BlocksIcon, ChainIcon, MapIcon, NetworkIcon, ValidatorsIcon } from '../
 import { relativeTime } from '../utils/time'
 import { shortAddress } from '../utils/address'
 import { getMissedBlocks, getValidatorHealth, getValidatorMissedBreakdown } from '../utils/validatorHealth'
+import { hasValidatorMoniker } from '../utils/validatorIdentity'
 
 const missedSeverity = (missed) => missed >= 10 ? 'high' : missed >= 2 ? 'medium' : 'low'
 const OVERVIEW_ROW_LIMIT = 6
@@ -52,7 +53,18 @@ export function Overview({ explorerData, mascotSrc = null }) {
   ), [data.validatorHistory])
   const historyBlocks = data.validatorHistory?.blocks
   const validatorColumns = useMemo(() => [
-    { key: 'address', label: 'Signing Address', render: (row) => <span className="mono" title={row.address}>{shortAddress(row.address)}</span> },
+    { key: 'address', label: 'Validator', render: (row) => (
+      <span className="validator-identity" title={row.address}>
+        {hasValidatorMoniker(row) ? (
+          <>
+            <strong className="validator-identity__moniker">{row.moniker}</strong>
+            <span className="validator-identity__address mono">{shortAddress(row.address)}</span>
+          </>
+        ) : (
+          <strong className="validator-identity__fallback mono">{shortAddress(row.address)}</strong>
+        )}
+      </span>
+    ) },
     { key: 'signing', label: 'Signing (last 100)', render: (row) => {
       const history = row.address ? historyMap.get(row.address) : null
       return <span className="validator-signing-cell"><span title={getValidatorMissedBreakdown(row.uptime_100)}><strong className={`missed-value missed-value--${missedSeverity(row.missedTotal)}`}>{row.missedTotal} missed</strong><span className="muted"> · {formatUptime(row.uptime_100?.uptime_percent)} uptime</span></span><ValidatorSigningStrip blocks={historyBlocks} statuses={history?.statuses} compact address={row.address} /></span>
