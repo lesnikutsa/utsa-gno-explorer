@@ -11,7 +11,7 @@ import { getMissedBlocks, getValidatorHealth, getValidatorMissedBreakdown } from
 import { hasValidatorMoniker } from '../utils/validatorIdentity'
 
 const missedSeverity = (missed) => missed >= 10 ? 'high' : missed >= 2 ? 'medium' : 'low'
-const LATEST_BLOCKS_ROW_LIMIT = 8
+const LATEST_BLOCKS_ROW_LIMIT = 7
 const OVERVIEW_VALIDATOR_ROW_LIMIT = 6
 
 const formatUptime = (value) => {

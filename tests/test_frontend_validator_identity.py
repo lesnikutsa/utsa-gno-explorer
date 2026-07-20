@@ -97,7 +97,7 @@ class OverviewValidatorIdentitySourceContractTests(unittest.TestCase):
         self.assertIn("const OVERVIEW_VALIDATOR_ROW_LIMIT = 6", self.source)
 
     def test_latest_blocks_and_validators_use_separate_limits(self):
-        self.assertIn("const LATEST_BLOCKS_ROW_LIMIT = 8", self.source)
+        self.assertIn("const LATEST_BLOCKS_ROW_LIMIT = 7", self.source)
         self.assertIn("const OVERVIEW_VALIDATOR_ROW_LIMIT = 6", self.source)
         self.assertIn("data.blocks.slice(0, LATEST_BLOCKS_ROW_LIMIT)", self.source)
         self.assertNotIn("data.blocks.sort", self.source)
