@@ -15,6 +15,11 @@ except ImportError:  # pragma: no cover - dependency availability is environment
 
 ROOT = Path(__file__).resolve().parents[1]
 IMAGE = "postgres:16.14-bookworm"
+BASE_SHA = "b602e8b36851243b5b556ef8e4eb292a9370b1c2"
+LEGACY_TABLES = {
+    "blocks", "transactions", "validators", "validator_set_members",
+    "validator_signatures", "rpc_endpoints", "rpc_endpoint_checks", "indexer_state",
+}
 
 
 def docker_available():
@@ -69,6 +74,13 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             command += ["--schema", str(schema_path)]
         return subprocess.run(command, cwd=ROOT, env=env, text=True, capture_output=True, check=False)
 
+    def run_migration(self, database_url, migration_path=None):
+        env = dict(os.environ, DATABASE_URL=database_url)
+        command = [sys.executable, "scripts/migrate_valopers_schema.py"]
+        if migration_path is not None:
+            command += ["--migration", str(migration_path)]
+        return subprocess.run(command, cwd=ROOT, env=env, text=True, capture_output=True, check=False)
+
     def connect(self, database="utsa_gno_explorer"):
         return psycopg.connect(f"postgresql://utsa_test:{self.password}@{self.host}:{self.port}/{database}")
 
@@ -77,6 +89,53 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             connection.autocommit = True
             with connection.cursor() as cursor:
                 cursor.execute(f"CREATE DATABASE {name}")
+
+    def database_url_for(self, name):
+        return f"postgresql://utsa_test:{self.password}@{self.host}:{self.port}/{name}"
+
+    def prepare_legacy_database(self, name):
+        self.create_database(name)
+        database_url = self.database_url_for(name)
+        schema = subprocess.check_output(
+            ["git", "show", f"{BASE_SHA}:database/schema.sql"], cwd=ROOT, text=True
+        )
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute(schema)
+            cursor.execute("""
+                INSERT INTO blocks (height, block_hash_base64, block_hash_hex, time_utc, tx_count)
+                VALUES (1, 'AQ==', '01', '2026-01-01T00:00:00Z', 1);
+                INSERT INTO transactions
+                    (block_height, tx_index, raw_base64, raw_base64_length, decode_status)
+                VALUES (1, 0, 'AQ==', 4, 'not_attempted');
+                INSERT INTO validators
+                    (signing_address, public_key_type, public_key_value, first_seen_height, last_seen_height)
+                VALUES ('g1sentinel', '/tm.PubKeyEd25519', 'sentinel-key', 1, 1);
+                INSERT INTO validator_set_members (height, signing_address, voting_power)
+                VALUES (1, 'g1sentinel', 1);
+                INSERT INTO validator_signatures
+                    (height, signing_address, vote_status, signed, vote_block_id_is_zero, block_id_matches_commit)
+                VALUES (1, 'g1sentinel', 'absent', false, false, false);
+                INSERT INTO rpc_endpoints (url, chain_id) VALUES ('https://rpc.example.invalid', 'test-chain');
+                INSERT INTO rpc_endpoint_checks (rpc_endpoint_id, chain_id, healthy)
+                VALUES (1, 'test-chain', true);
+                INSERT INTO indexer_state (state_key, chain_id, last_finalized_height)
+                VALUES ('default', 'test-chain', 1);
+            """)
+        return database_url
+
+    def table_names_and_counts(self, database_url):
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+                ORDER BY table_name
+            """)
+            tables = {row[0] for row in cursor.fetchall()}
+            counts = {}
+            for table in sorted(tables):
+                cursor.execute(f'SELECT count(*) FROM "{table}"')
+                counts[table] = cursor.fetchone()[0]
+        return tables, counts
 
     def test_empty_database_initializes_and_second_run_validates(self):
         first = self.run_init()
@@ -115,6 +174,56 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         with psycopg.connect(failed_url) as connection, connection.cursor() as cursor:
             cursor.execute("SELECT to_regclass('public.should_roll_back')")
             self.assertIsNone(cursor.fetchone()[0])
+
+    def test_legacy_schema_migrates_preserves_rows_and_reruns(self):
+        database_url = self.prepare_legacy_database(f"utsa_legacy_migration_{os.getpid()}")
+        before_tables, before_counts = self.table_names_and_counts(database_url)
+        self.assertEqual(before_tables, LEGACY_TABLES)
+        self.assertTrue(all(before_counts[table] == 1 for table in LEGACY_TABLES))
+
+        migrated = self.run_migration(database_url)
+        self.assertEqual(migrated.returncode, 0, migrated.stderr)
+        self.assertIn("Valopers schema migration applied and validated", migrated.stdout)
+        self.assertEqual(migrated.stderr, "")
+        self.assertNotIn(self.password, migrated.stdout + migrated.stderr)
+        self.assertNotIn(database_url, migrated.stdout + migrated.stderr)
+
+        validated = self.run_init(database_url)
+        self.assertEqual(validated.returncode, 0, validated.stderr)
+        rerun = self.run_migration(database_url)
+        self.assertEqual(rerun.returncode, 0, rerun.stderr)
+        self.assertIn("Valopers schema is already compatible", rerun.stdout)
+        self.assertEqual(rerun.stderr, "")
+
+        after_tables, after_counts = self.table_names_and_counts(database_url)
+        self.assertEqual(after_tables, LEGACY_TABLES | {"valoper_profiles", "valopers_snapshot_state"})
+        self.assertEqual(len(after_tables), 10)
+        for table in LEGACY_TABLES:
+            self.assertEqual(after_counts[table], before_counts[table])
+        self.assertEqual(after_counts["valoper_profiles"], 0)
+        self.assertEqual(after_counts["valopers_snapshot_state"], 0)
+
+    def test_post_ddl_incompatibility_rolls_back_migration(self):
+        database_url = self.prepare_legacy_database(f"utsa_migration_rollback_{os.getpid()}")
+        before_tables, before_counts = self.table_names_and_counts(database_url)
+        migration = (ROOT / "database/migrations/0001_add_valopers_persistence.sql").read_text()
+        incompatible = migration.replace("page_count BETWEEN 0 AND 20", "page_count BETWEEN 0 AND 19")
+        self.assertNotEqual(incompatible, migration)
+        migration_path = Path(self.temp.name) / "incompatible-valopers-migration.sql"
+        migration_path.write_text(incompatible)
+
+        result = self.run_migration(database_url, migration_path)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr, "Valopers schema migration failed\n")
+        self.assertNotIn(self.password, result.stdout + result.stderr)
+        self.assertNotIn(database_url, result.stdout + result.stderr)
+
+        after_tables, after_counts = self.table_names_and_counts(database_url)
+        self.assertEqual(after_tables, before_tables)
+        self.assertEqual(after_counts, before_counts)
+        self.assertNotIn("valoper_profiles", after_tables)
+        self.assertNotIn("valopers_snapshot_state", after_tables)
 
 
 if __name__ == "__main__":

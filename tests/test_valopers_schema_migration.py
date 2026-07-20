@@ -115,6 +115,33 @@ class CompatibilityTests(unittest.TestCase):
             with self.assertRaises(init_database.SchemaCompatibilityError):
                 init_database.validate_schema_snapshot(snapshot)
 
+    def test_postgresql_expanded_between_catalog_forms_pass(self):
+        snapshot = expected_snapshot()
+        catalog_forms = {
+            "valoper_profiles_moniker_length_check": "((char_length(moniker) >= 1) AND (char_length(moniker) <= 32))",
+            "valoper_profiles_description_length_check": "((octet_length(description) >= 1) AND (octet_length(description) <= 2048))",
+            "valoper_profiles_signing_pubkey_check": "((signing_pubkey ~ '^gpub1[023456789acdefghjklmnpqrstuvwxyz]+$'::text) AND (octet_length(signing_pubkey) >= 91) AND (octet_length(signing_pubkey) <= 256))",
+            "valopers_snapshot_state_page_count_check": "((page_count >= 0) AND (page_count <= 20))",
+            "valopers_snapshot_state_profile_count_check": "((profile_count >= 0) AND (profile_count <= 1000))",
+        }
+        snapshot["check_constraints"].update(catalog_forms)
+        init_database.validate_schema_snapshot(snapshot)
+
+    def test_changed_missing_or_additional_bound_conjunct_fails(self):
+        mutations = [
+            ("valoper_profiles_moniker_length_check", "char_length(moniker) >= 2 AND char_length(moniker) <= 32"),
+            ("valoper_profiles_description_length_check", "octet_length(description) >= 1 AND octet_length(description) <= 2047"),
+            ("valoper_profiles_signing_pubkey_check", "signing_pubkey ~ '^gpub1[023456789acdefghjklmnpqrstuvwxyz]+$' AND octet_length(signing_pubkey) >= 91"),
+            ("valopers_snapshot_state_page_count_check", "page_count >= 0 AND page_count <= 20 AND page_count <> 10"),
+            ("valopers_snapshot_state_profile_count_check", "profile_count <= 1000"),
+        ]
+        for name, expression in mutations:
+            with self.subTest(name=name):
+                snapshot = expected_snapshot()
+                snapshot["check_constraints"][name] = expression
+                with self.assertRaises(init_database.SchemaCompatibilityError):
+                    init_database.validate_schema_snapshot(snapshot)
+
 
 class MigrationScriptTests(unittest.TestCase):
     def run_migration(self, tables, snapshot=None, ddl_error=None):
