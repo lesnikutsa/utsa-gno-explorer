@@ -106,8 +106,12 @@ class OverviewValidatorIdentitySourceContractTests(unittest.TestCase):
         self.assertNotIn("fetch(", self.source)
         self.assertNotIn("../services/api", self.source)
 
-    def test_compact_table_cells_are_scoped_to_latest_blocks(self):
-        self.assertIn(".dashboard-grid__blocks .data-table td", self.styles)
+    def test_overview_tables_use_unchanged_global_cell_density(self):
+        self.assertIn(
+            ".data-table td { height: 35px; padding: 6px 12px;",
+            self.styles,
+        )
+        self.assertNotIn(".dashboard-grid__blocks .data-table td", self.styles)
         self.assertNotIn(".dashboard-grid__validators .data-table td", self.styles)
 
 
