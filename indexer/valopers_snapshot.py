@@ -84,8 +84,6 @@ def _collect_list(client: GnoRpcClient, source_height: int) -> tuple[list[Valope
         entries.extend(page)
         if len(entries) > MAX_VALOPERS_PROFILES:
             raise RpcError("Valopers registry exceeds the profile limit")
-        if len(page) < VALOPERS_PAGE_SIZE:
-            return entries, page_number
     raise RpcError("Valopers registry pagination did not terminate")  # pragma: no cover
 
 
