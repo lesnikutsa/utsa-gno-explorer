@@ -439,10 +439,12 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
             cursor.execute(
                 psycopg.sql.SQL(
-                    "CREATE ROLE {} LOGIN PASSWORD %s NOSUPERUSER NOCREATEDB "
+                    "CREATE ROLE {} LOGIN PASSWORD {} NOSUPERUSER NOCREATEDB "
                     "NOCREATEROLE NOREPLICATION NOBYPASSRLS"
-                ).format(psycopg.sql.Identifier(role)),
-                (role_password,),
+                ).format(
+                    psycopg.sql.Identifier(role),
+                    psycopg.sql.Literal(role_password),
+                )
             )
             cursor.execute(
                 psycopg.sql.SQL(
