@@ -287,3 +287,14 @@ persist or synchronize data.
 The explicit `abci_query` request height pins the render to that immutable state version.
 Current Testnet 13 qrender responses return `Height="0"`, meaning the response does not
 duplicate the requested height; any future non-zero reported height must match the pin.
+
+### Valopers database preparation
+
+The canonical empty-database schema now reserves `valoper_profiles` and
+`valopers_snapshot_state` for a future atomic Valopers snapshot writer. No
+snapshot is currently persisted, and the API and frontend do not use these
+tables. Fresh databases use `python scripts/init_database.py`; existing
+production databases require the explicit additive migration documented in
+[`database/README.md`](database/README.md). The migration is transactional,
+preserves indexed data, is safe to rerun after success, and is never run by an
+application, service, container, or Compose startup path.

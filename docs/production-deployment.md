@@ -160,7 +160,7 @@ Never test restores against production first. Safe validation flow:
 2. Create the latest backup: `python scripts/backup_database.py --backup-dir /var/backups/utsa-gno-explorer`.
 3. Start a separate empty validation database with an isolated Compose project.
 4. Restore the archive there.
-5. Verify all eight tables.
+5. Verify an exact supported schema: the legacy eight-table catalog for a pre-migration backup, or the current ten-table catalog after migration.
 6. Verify `indexer_state`.
 7. Verify counts for `blocks`, `transactions`, and `validator_signatures`.
 8. Decide whether production restore is necessary only after validation succeeds.
@@ -202,7 +202,8 @@ docker exec -i "$VALIDATION_CONTAINER" sh -c 'pg_restore -U "$POSTGRES_USER" -d 
 docker exec -i "$VALIDATION_CONTAINER" sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' <<'SQL'
 DO $$
 DECLARE
-  expected_tables text[] := ARRAY['blocks','indexer_state','rpc_endpoint_checks','rpc_endpoints','transactions','validator_set_members','validator_signatures','validators'];
+  legacy_expected_tables text[] := ARRAY['blocks','indexer_state','rpc_endpoint_checks','rpc_endpoints','transactions','validator_set_members','validator_signatures','validators'];
+  current_expected_tables text[] := ARRAY['blocks','indexer_state','rpc_endpoint_checks','rpc_endpoints','transactions','validator_set_members','validator_signatures','validators','valoper_profiles','valopers_snapshot_state'];
   actual_tables text[];
   state_rows integer;
   checkpoint_height bigint;
@@ -212,8 +213,9 @@ BEGIN
     INTO actual_tables
     FROM information_schema.tables
    WHERE table_schema = 'public' AND table_type = 'BASE TABLE';
-  IF actual_tables IS DISTINCT FROM expected_tables THEN
-    RAISE EXCEPTION 'validation failed: expected tables %, got %', expected_tables, actual_tables;
+  IF actual_tables IS DISTINCT FROM legacy_expected_tables
+     AND actual_tables IS DISTINCT FROM current_expected_tables THEN
+    RAISE EXCEPTION 'validation failed: expected exact legacy % or current %, got %', legacy_expected_tables, current_expected_tables, actual_tables;
   END IF;
 
   SELECT count(*), max(last_finalized_height), max(finalized_tip_height)
@@ -245,6 +247,13 @@ SELECT
   (SELECT count(*) FROM validator_signatures) AS signatures;
 SQL
 ```
+
+An exact eight-table restore is a valid rollback point captured before the
+Valopers migration. An exact ten-table restore is a valid backup captured after
+the migration. A partial catalog, including either possible nine-table state,
+is invalid, as is a catalog with missing legacy tables or unexpected tables.
+The structural data checks following catalog validation run for both supported
+schema versions.
 
 
 
@@ -563,14 +572,28 @@ sudo ./scripts/deploy_frontend.sh
 
 1. `sudo systemctl stop utsa-gno-indexer.service`.
 2. `systemctl is-active utsa-gno-indexer.service` and confirm it is inactive.
-3. `python scripts/backup_database.py --backup-dir /var/backups/utsa-gno-explorer`.
-4. Save the current commit or tag: `git rev-parse HEAD`.
-5. Update the repository manually; systemd never runs `git pull`.
-6. Rebuild the virtualenv: `.venv/bin/python -m pip install -r requirements.txt`.
-7. Run automated tests: `python -m unittest discover -s tests -v`.
-8. Check schema compatibility with `python scripts/init_database.py` against the target database.
-9. `sudo systemctl start utsa-gno-indexer.service`.
-10. Check journal output and checkpoint progression.
+3. Create a backup with `python scripts/backup_database.py --backup-dir /var/backups/utsa-gno-explorer` and validate it with the isolated validation-restore procedure above.
+4. Save the current commit or tag with `git rev-parse HEAD`, then manually update or check out the new verified repository revision; systemd never runs `git pull`.
+5. Rebuild the virtualenv: `.venv/bin/python -m pip install -r requirements.txt`.
+6. Run automated tests: `python -m unittest discover -s tests -v`.
+7. Load `DATABASE_URL` only from the protected external environment:
+
+   ```bash
+   set -a
+   . /etc/utsa-gno-explorer/indexer.env
+   set +a
+   ```
+
+8. For an existing database, explicitly apply or revalidate the additive migration: `python scripts/migrate_valopers_schema.py`. An exact legacy database is migrated; an already-migrated database is safely revalidated without DDL.
+9. Only after migration succeeds, validate the complete current schema with `python scripts/init_database.py`.
+10. Only after both commands succeed, run `sudo systemctl start utsa-gno-indexer.service`.
+11. Check service status, journal output, PostgreSQL health, and checkpoint progression.
+
+Fresh empty databases use only `python scripts/init_database.py`;
+`scripts/migrate_valopers_schema.py` rejects an empty public schema. Existing
+legacy production databases require migration followed by final-schema
+validation. No migration is run automatically by systemd, Docker Compose,
+container startup, the indexer, the API, or imports.
 
 ## PostgreSQL minor-version upgrade
 
@@ -588,3 +611,25 @@ Stop the service, return the repository to the previous verified Git tag or comm
 ## Development and test deployment
 
 For development, use `.env`, temporary PostgreSQL databases, `scripts/index_range.py`, and `scripts/run_indexer.py` directly as described in `README.md`. Do not copy production secrets into the repository.
+
+## Existing-database Valopers schema migration
+
+This migration is a separate operator action from future snapshot persistence.
+Fresh empty databases continue to use `python scripts/init_database.py`. Before
+changing an existing production database, verify a backup, stop the indexer, and
+run from the checked-out repository with `DATABASE_URL` supplied only by the
+protected environment:
+
+```console
+python scripts/migrate_valopers_schema.py
+python scripts/init_database.py
+```
+
+The first command accepts only the exact legacy eight-table schema or the exact
+already-compatible ten-table schema. It transactionally adds
+`valoper_profiles` and `valopers_snapshot_state`, performs complete catalog
+validation before commit, and rolls back on any failure. It never alters or
+deletes existing indexed rows and is safe to rerun after success. No container,
+Compose entrypoint, systemd unit, indexer, API, or import applies it
+automatically. Restart the indexer only after validation. Snapshot writes are
+not implemented, and the API and frontend do not use these tables yet.

@@ -125,3 +125,22 @@ find /var/backups/utsa-gno-explorer \
 ```
 
 Backups use `pg_dump -Fc`, write archives as `.part` first, validate each archive with `pg_restore --list`, then atomically rename successful backups. Retention keeps 14 successful backups. Backup files and the backup directory remain root-only. The systemd service sets `DOCKER_CONFIG=/run/utsa-gno-explorer-backup`, using its private `RuntimeDirectory=utsa-gno-explorer-backup` as Docker CLI configuration storage so the hardened `ProtectHome=true` sandbox does not depend on `/root/.docker`. The daily backup is online and does not stop the indexer. Before destructive upgrades, stop the indexer and create a separate checkpoint-aligned backup.
+
+## Apply the Valopers schema migration
+
+Fresh empty databases use `python scripts/init_database.py`. For an existing
+production database, first create and verify a backup, then stop the indexer and
+run:
+
+```console
+python scripts/migrate_valopers_schema.py
+python scripts/init_database.py
+```
+
+The explicit migration accepts only the exact legacy eight-table catalog or the
+already-compatible ten-table catalog. It adds `valoper_profiles` and
+`valopers_snapshot_state` transactionally, validates the exact complete catalog
+before commit, and leaves existing indexed rows untouched. Any error rolls back.
+A successful migration can be rerun safely. It is never applied automatically;
+restart the indexer only after validation. The application does not persist a
+Valopers snapshot yet, and neither the API nor frontend uses the new tables.
