@@ -152,6 +152,14 @@ The bounded prototype performs structural signature validation for `/tm.PubKeyEd
 
 ## Valopers snapshot schema (persistence preparation)
 
+The manual `scripts/persist_valopers_snapshot.py` command deletes profiles, inserts the
+complete ordered replacement, writes state, verifies both, and commits one transaction.
+A dedicated transaction advisory lock serializes writers. Stale and divergent same-height
+snapshots are rejected; identical ones make no data changes. Empty registries have zero
+profiles and one zero-count state row. Failures roll back. No schedule, systemd service,
+or timer invokes it; API and frontend do not query it. Production execution requires merge
+and operator review.
+
 `valoper_profiles` defines the current complete official Valopers registry,
 keyed by operator address with unique signing address and public key. It stores
 profile text, server type, pinned source height, and stable list position.

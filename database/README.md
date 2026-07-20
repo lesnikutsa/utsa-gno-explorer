@@ -87,6 +87,12 @@ The initialization script applies `database/schema.sql` only to an empty databas
 
 ## Valopers persistence schema
 
+After merge and operator review, `python scripts/persist_valopers_snapshot.py` can populate
+these tables. It replaces profiles and state in one transaction under a dedicated
+transaction advisory lock. Stale and divergent same-height writes fail; identical writes
+are idempotent. Empty snapshots retain one zero-count state row and no profiles. Failures
+roll back. No schedule, service, or timer runs it, and neither API nor frontend uses it.
+
 Fresh empty databases initialized with `python scripts/init_database.py` include
 `valoper_profiles`, the current official registry contract, and
 `valopers_snapshot_state`, metadata for its one complete snapshot (including an
