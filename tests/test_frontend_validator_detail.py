@@ -77,7 +77,7 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
         self.assertIn('copyLabel="signing address"', self.page)
         self.assertIn('copyLabel="operator address"', self.page)
         self.assertIn('copyLabel="validator public key"', self.page)
-        identity = self.page[self.page.index("Validator Identity"):self.page.index("Current Status")]
+        identity = self.page[self.page.index("Validator Identity"):self.page.index("Validator Profile")]
         self.assertIn("validator.public_key_type", identity)
         self.assertIn("validator.public_key_value", identity)
         self.assertNotIn("Server Type", self.page)
@@ -93,6 +93,7 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
         self.assertNotIn("Last Seen Height", self.page)
 
     def test_signing_history_contains_uptime_and_health_without_performance_card(self):
+        self.assertLess(self.page.index("Current Status"), self.page.index("<SigningHistory validator={validator} />"))
         self.assertLess(self.page.index("<SigningHistory validator={validator} />"), self.page.index("Validator Identity"))
         self.assertIn("const uptime = validator.uptime_100", self.page)
         self.assertIn('<Field label="Uptime" mono>{formatPercent(uptime.uptime_percent)}</Field>', self.page)
@@ -147,20 +148,20 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
     def test_overview_has_no_validator_detail_links(self):
         self.assertNotIn("/validators/${", self.overview)
 
-    def test_current_status_final_field_spans_both_desktop_columns(self):
-        self.assertIn(
-            ".validator-detail__grid--status .validator-detail__field:last-child "
-            "{ grid-column: 1 / -1; border-right: 0; }",
-            self.styles,
-        )
-        self.assertNotIn(
-            ".validator-detail__grid .validator-detail__field:last-child",
-            self.styles,
-        )
-        self.assertIn(
-            ".validator-detail__grid { grid-template-columns: 1fr; }",
-            self.styles,
-        )
+    def test_current_status_is_compact_ordered_and_responsive(self):
+        current = self.page[self.page.index("validator-detail__section--current-status"):self.page.index("<SigningHistory validator={validator} />")]
+        labels = ["Status", "Indexed Height", "Voting Power", "Voting Power Share", "Proposer Priority"]
+        self.assertEqual(sorted(labels, key=current.index), labels)
+        self.assertIn("validator-detail__section--current-status", current)
+        self.assertIn("validator-detail__grid--status", current)
+        self.assertIn(".validator-detail__section--current-status { width: min(100%, 940px); }", self.styles)
+        self.assertIn(".validator-detail__grid--status { grid-template-columns: repeat(5, minmax(0, 1fr)); }", self.styles)
+        self.assertIn("@media (max-width: 900px)", self.styles)
+        self.assertIn(".validator-detail__grid--status { grid-template-columns: repeat(3, minmax(0, 1fr)); }", self.styles)
+        self.assertIn(".validator-detail__grid--status { grid-template-columns: 1fr; }", self.styles)
+        self.assertNotIn(".validator-detail__grid--status .validator-detail__field:last-child", self.styles)
+        signing_history = self.page[self.page.index("function SigningHistory"):]
+        self.assertNotIn("validator-detail__section--current-status", signing_history)
 
     def test_profile_description_spans_both_columns(self):
         self.assertIn(
