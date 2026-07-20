@@ -22,19 +22,21 @@ It does not create a PostgreSQL server, Docker Compose stack, migration framewor
 ## Validator profiles
 
 `validator_profiles` is keyed by Operator Address and retains bounded public
-metadata, the source `gpub`, normalized TM2 key fields, an optional Signing
-Address, match/source/audit state, and timestamps. Operator and Signing
-Addresses are different identities; matching uses only the exact public-key
-tuple in `validators`. A later crawl never deletes a missing profile.
-Current qrender does not expose `KeepRunning`, so it remains `NULL`. Source
-Signing Address is only a consistency cross-check and never substitutes for
-exact public-key matching.
+metadata, the source `gpub`, the always-retained Valopers
+`source_signing_address`, normalized TM2 key fields, an optional matched
+`signing_address` foreign key, match/source/audit state, and timestamps.
+Operator and Signing Addresses are different identities; matching uses only the
+exact public-key tuple in `validators`. The source address is not a foreign key,
+is not unique, and never substitutes for key matching. For `matched`, both
+addresses must agree; for every other status, only `source_signing_address` is
+populated. A later crawl never deletes a missing profile. Current qrender does
+not expose `KeepRunning`, so it remains `NULL`.
 
 ```sql
 SELECT match_status, count(*) FROM validator_profiles
 GROUP BY match_status ORDER BY match_status;
 
-SELECT moniker, operator_address, signing_address, match_status
+SELECT moniker, operator_address, source_signing_address, signing_address, match_status
 FROM validator_profiles
 ORDER BY lower(moniker), operator_address
 LIMIT 20;

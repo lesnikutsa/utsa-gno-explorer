@@ -59,7 +59,7 @@ class PostgresDatabase:
         """Atomically upsert a complete fetched batch under a dedicated lock."""
         rows = [(
             item.operator_address, item.moniker, item.description, item.server_type,
-            item.keep_running, item.consensus_pubkey, item.normalized_public_key_type,
+            item.keep_running, item.consensus_pubkey, item.source_signing_address, item.normalized_public_key_type,
             item.normalized_public_key_value, item.signing_address, item.match_status,
             item.source_realm, item.source_profile_path, item.source_height, item.profile_hash,
         ) for item in profiles]
@@ -75,14 +75,15 @@ class PostgresDatabase:
                     """
                     INSERT INTO validator_profiles(
                         operator_address, moniker, description, server_type, keep_running,
-                        consensus_pubkey, normalized_public_key_type, normalized_public_key_value,
+                        consensus_pubkey, source_signing_address, normalized_public_key_type, normalized_public_key_value,
                         signing_address, match_status, source_realm, source_profile_path,
                         source_height, profile_hash, last_synced_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
                     ON CONFLICT (operator_address) DO UPDATE SET
                         moniker = EXCLUDED.moniker, description = EXCLUDED.description,
                         server_type = EXCLUDED.server_type, keep_running = EXCLUDED.keep_running,
                         consensus_pubkey = EXCLUDED.consensus_pubkey,
+                        source_signing_address = EXCLUDED.source_signing_address,
                         normalized_public_key_type = EXCLUDED.normalized_public_key_type,
                         normalized_public_key_value = EXCLUDED.normalized_public_key_value,
                         signing_address = EXCLUDED.signing_address, match_status = EXCLUDED.match_status,

@@ -4,14 +4,18 @@
 
 `validator_profiles` uses the Valopers Operator Address as its primary key and
 stores moniker, bounded description, optional server type and `keep_running`,
-source `gpub`, normalized TM2 key tuple, optional Signing Address, match status,
+source `gpub`, required published `source_signing_address`, normalized TM2 key
+tuple, optional matched `signing_address` foreign key, match status,
 source realm/path/height, SHA-256 audit hash, and timestamps. Match status is
 `matched`, `unmatched`, `invalid_pubkey`, or `ambiguous`. Non-unique Signing
 Address and public-key indexes preserve diagnosable source ambiguity; a
 functional `lower(moniker)` index supports later internal queries.
 
 Operator Address is the profile owner and Signing Address is the TM2 consensus
-identity. They are linked only through the exact key tuple. `keep_running` is
+identity. The source Signing Address is retained for every status but is not a
+foreign key and is never used to match. The nullable matched Signing Address is
+set only by the exact key tuple and must equal the source address when matched.
+`keep_running` is
 not active-set, signing-health, governance, or punishment state.
 Current qrender does not expose it, so sync stores `NULL` rather than inferring
 true or false.

@@ -32,7 +32,7 @@ EXPECTED_COLUMNS = {
     },
     "validator_profiles": {
         "operator_address": ("text", "NO", "", None), "moniker": ("text", "NO", "", None), "description": ("text", "NO", "", "''"),
-        "server_type": ("text", "YES", "", None), "keep_running": ("boolean", "YES", "", None), "consensus_pubkey": ("text", "NO", "", None),
+        "server_type": ("text", "YES", "", None), "keep_running": ("boolean", "YES", "", None), "consensus_pubkey": ("text", "NO", "", None), "source_signing_address": ("text", "NO", "", None),
         "normalized_public_key_type": ("text", "YES", "", None), "normalized_public_key_value": ("text", "YES", "", None), "signing_address": ("text", "YES", "", None),
         "match_status": ("text", "NO", "", None), "source_realm": ("text", "NO", "", None), "source_profile_path": ("text", "YES", "", None),
         "source_height": ("bigint", "NO", "", None), "profile_hash": ("text", "NO", "", None), "last_synced_at": ("timestamp with time zone", "NO", "", None),
@@ -77,9 +77,9 @@ EXPECTED_FOREIGN_KEYS = {
 EXPECTED_CHECKS = {
     "validator_profiles_match_status_check": "CHECK (match_status IN ('matched', 'unmatched', 'invalid_pubkey', 'ambiguous'))",
     "validator_profiles_source_height_check": "CHECK (source_height >= 0)",
-    "validator_profiles_required_text_check": "CHECK (char_length(operator_address) BETWEEN 1 AND 128 AND char_length(moniker) BETWEEN 1 AND 256 AND char_length(consensus_pubkey) BETWEEN 1 AND 256 AND char_length(source_realm) BETWEEN 1 AND 256 AND profile_hash ~ '^[0-9a-f]{64}$')",
+    "validator_profiles_required_text_check": "CHECK (char_length(operator_address) BETWEEN 1 AND 128 AND char_length(moniker) BETWEEN 1 AND 256 AND char_length(consensus_pubkey) BETWEEN 1 AND 256 AND char_length(source_signing_address) BETWEEN 1 AND 128 AND char_length(source_realm) BETWEEN 1 AND 256 AND profile_hash ~ '^[0-9a-f]{64}$')",
     "validator_profiles_bounded_text_check": "CHECK (char_length(description) <= 2048 AND char_length(moniker) <= 32 AND server_type IN ('cloud', 'on-prem', 'data-center') AND (source_profile_path IS NULL OR char_length(source_profile_path) <= 512))",
-    "validator_profiles_match_consistency_check": "CHECK ((normalized_public_key_type IS NULL) = (normalized_public_key_value IS NULL) AND ((match_status = 'matched' AND signing_address IS NOT NULL AND normalized_public_key_type IS NOT NULL) OR (match_status IN ('unmatched', 'ambiguous') AND signing_address IS NULL AND normalized_public_key_type IS NOT NULL) OR (match_status = 'invalid_pubkey' AND signing_address IS NULL AND normalized_public_key_type IS NULL)))",
+    "validator_profiles_match_consistency_check": "CHECK ((normalized_public_key_type IS NULL) = (normalized_public_key_value IS NULL) AND ((match_status = 'matched' AND signing_address IS NOT NULL AND signing_address = source_signing_address AND normalized_public_key_type IS NOT NULL) OR (match_status IN ('unmatched', 'ambiguous') AND signing_address IS NULL AND normalized_public_key_type IS NOT NULL) OR (match_status = 'invalid_pubkey' AND signing_address IS NULL AND normalized_public_key_type IS NULL)))",
     "blocks_tx_count_check": "CHECK (tx_count >= 0)",
     "blocks_block_hash_hex_uppercase": "CHECK (block_hash_hex = upper(block_hash_hex))",
     "transactions_tx_index_check": "CHECK (tx_index >= 0)",
@@ -112,6 +112,7 @@ EXPECTED_CHECKS = {
 }
 EXPECTED_INDEXES = {
     "validator_profiles_signing_address_idx": ("validator_profiles", False, (("signing_address", "ASC"),), None),
+    "validator_profiles_source_signing_address_idx": ("validator_profiles", False, (("source_signing_address", "ASC"),), None),
     "validator_profiles_consensus_pubkey_idx": ("validator_profiles", False, (("consensus_pubkey", "ASC"),), None),
     "validator_profiles_moniker_lower_idx": ("validator_profiles", False, (("lower(moniker)", "ASC"),), None),
     "blocks_time_utc_idx": ("blocks", False, (("time_utc", "DESC"),), None),

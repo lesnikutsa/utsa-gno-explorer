@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from indexer.database import DatabaseError, PostgresDatabase
 from indexer.validator_profiles import (
-    MAX_PAGES, MAX_PROFILES, MAX_RESPONSE_BYTES, ProfileSourceError,
+    MAX_GPUB, MAX_PAGES, MAX_PROFILES, MAX_RESPONSE_BYTES, ProfileSourceError,
     SourceResponse, collect_profiles, decode_vm_response, match_profiles,
     normalize_gpub, parse_detail, parse_list_page, query_render,
 )
@@ -86,6 +86,15 @@ class SourceTests(unittest.TestCase):
         with self.assertRaises(ProfileSourceError): parse_detail(text, "g1" + "x" * 38, 1)
         with self.assertRaises(ProfileSourceError): parse_detail(text.replace("data-center", "garage"), operator, 1)
         with self.assertRaises(ProfileSourceError): parse_detail(text.replace("alpha-node", "x" * 33), operator, 1)
+        with self.assertRaises(ProfileSourceError): parse_detail(text.replace(ED_GPUB, ""), operator, 1)
+
+    def test_signing_pubkey_bound_matches_database(self):
+        text = self.read("detail_ed25519.txt")
+        operator = "g1" + "q" * 38
+        accepted = parse_detail(text.replace(ED_GPUB, "x" * MAX_GPUB), operator, 1)
+        self.assertEqual(len(accepted.consensus_pubkey), 256)
+        with self.assertRaises(ProfileSourceError):
+            parse_detail(text.replace(ED_GPUB, "x" * (MAX_GPUB + 1)), operator, 1)
 
     def test_unknown_metadata_does_not_break_detail(self):
         text = self.read("detail_ed25519.txt").replace("- Server Type:", "- Region: earth\n- Server Type:")
@@ -182,6 +191,9 @@ class MatchingTests(unittest.TestCase):
         invalid = replace(alpha, operator_address="g1"+"i"*38, consensus_pubkey="bad")
         got = match_profiles([beta, invalid, alpha], [(alpha.source_signing_address, typ, val)])
         self.assertEqual([p.match_status for p in got], ["invalid_pubkey", "unmatched", "matched"])
+        self.assertTrue(all(p.source_signing_address for p in got))
+        self.assertIsNone(got[1].signing_address)
+        self.assertEqual(got[2].signing_address, got[2].source_signing_address)
         duplicate = replace(alpha, operator_address="g1"+"z"*38)
         self.assertEqual({p.match_status for p in match_profiles([alpha, duplicate], [])}, {"ambiguous"})
 
@@ -225,6 +237,9 @@ class DatabaseTests(unittest.TestCase):
         sql=cursor.batches[0][0]
         self.assertIn("pg_try_advisory_xact_lock", cursor.executed[0][0])
         self.assertIn("updated_at = now()", sql); self.assertNotIn("inserted_at =", sql)
+        self.assertIn("source_signing_address", sql)
+        self.assertIn("source_signing_address = EXCLUDED.source_signing_address", sql)
+        self.assertEqual(cursor.batches[0][1][0][6], self.profile().source_signing_address)
         self.assertNotIn("DELETE", sql.upper()); self.assertNotIn("TRUNCATE", sql.upper())
 
     def test_lock_contention_no_batch_or_commit(self):
@@ -265,6 +280,16 @@ class CliTests(unittest.TestCase):
         self.assertNotIn("password", err.getvalue()); self.assertNotIn("secret", err.getvalue())
         db.upsert_validator_profiles.assert_not_called()
 
+    def test_oversized_source_failure_precedes_all_database_access(self):
+        config = type("C", (), {"rpc_urls":["safe"], "chain_id":"test-13", "max_height_lag":1, "database_url":"safe"})()
+        with patch("scripts.sync_validator_profiles.load_config", return_value=config), \
+             patch("scripts.sync_validator_profiles.select_rpc", return_value=self.selected()), \
+             patch("scripts.sync_validator_profiles.collect_profiles", side_effect=ProfileSourceError("oversized")), \
+             patch("scripts.sync_validator_profiles.PostgresDatabase") as database, \
+             contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(sync_validator_profiles.main([]), 1)
+        database.assert_not_called()
+
 
 class SchemaTests(unittest.TestCase):
     def snapshot(self):
@@ -291,6 +316,12 @@ class SchemaTests(unittest.TestCase):
         upgrade=(Path(__file__).parents[1]/"database/upgrades/001_validator_profiles.sql").read_text()
         self.assertIn("profile_hash ~ '^[0-9a-f]{64}$'", schema)
         self.assertIn("normalized_public_key_type IS NULL", schema)
+        self.assertIn("source_signing_address TEXT NOT NULL", schema)
+        self.assertIn("validator_profiles_source_signing_address_idx", schema)
+        self.assertIn("source_signing_address TEXT NOT NULL", upgrade)
+        self.assertIn("validator_profiles_source_signing_address_idx", upgrade)
+        self.assertIn("source_signing_address", init_database.EXPECTED_COLUMNS["validator_profiles"])
+        self.assertIn("validator_profiles_source_signing_address_idx", init_database.EXPECTED_INDEXES)
         self.assertIn("lower(moniker)", upgrade)
         self.assertNotIn("CREATE TABLE blocks", upgrade)
 

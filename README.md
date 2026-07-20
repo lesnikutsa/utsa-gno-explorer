@@ -14,9 +14,10 @@ python scripts/sync_validator_profiles.py --dry-run
 python scripts/sync_validator_profiles.py
 ```
 
-An Operator Address owns a profile; a Signing Address identifies a TM2 signer.
-They are not interchangeable and are linked only through the exact decoded
-consensus public-key type and base64 value.
+An Operator Address owns a profile. `source_signing_address` retains the TM2
+address published by Valopers for every profile; nullable `signing_address` is
+the explorer foreign key populated only by an exact decoded consensus-key
+match. The addresses are not interchangeable, and a matched pair must agree.
 
 ## Design documentation
 
