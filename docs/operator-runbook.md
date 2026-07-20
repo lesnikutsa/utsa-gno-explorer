@@ -163,12 +163,16 @@ by Missed Blocks** table display an exact official moniker when available and th
 consensus signing address beneath it. The exact signing
 address remains the underlying technical identity, and unmatched validators remain visible
 by address. Profiles still come from the manually persisted official Valopers snapshot,
-profile refresh remains manual, the frontend does not use Telegram bot data, and no
-logos or validator detail frontend route are implemented.
+profile refresh remains manual, and no logos or Telegram data are used. The full Validators
+table links each identity to `/validators/<signing-address>`, preserving the exact consensus
+signing address as route identity. The initial page shows identity and current status, and
+inactive indexed validators can still have detail pages. Full profile, performance, and
+signing-history presentation is still being completed. Overview validator links and global
+validator search are not implemented.
 
 The full active-validator table can locally filter the already loaded active set by official
 moniker or consensus signing address, using case-insensitive partial matching and no additional
 API request. Filtering preserves the original voting-power **Power Rank**, and the **Active
 Validators** metric remains the complete active-set count. Global search is not extended to
-validators, no frontend validator detail route exists, Valopers profile refresh remains manual,
-and the frontend still does not use Telegram data.
+validators. Valopers profile refresh remains manual, and the frontend still does not use
+Telegram data.

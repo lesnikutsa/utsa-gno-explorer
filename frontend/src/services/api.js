@@ -42,6 +42,7 @@ export const getBlocks = ({ limit, beforeHeight, hash } = {}) => {
 }
 export const getBlock = (height) => request(`/blocks/${encodeURIComponent(height)}`)
 export const getValidators = () => request('/validators')
+export const getValidator = (address) => request(`/validators/${encodeURIComponent(address)}`)
 
 export const getValidatorSigningHistory = ({ limit = 100 } = {}) => {
   const query = new URLSearchParams()
