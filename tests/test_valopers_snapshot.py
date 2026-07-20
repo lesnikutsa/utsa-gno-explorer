@@ -12,8 +12,10 @@ from indexer.valopers_snapshot import (
     VALOPERS_PAGE_SIZE,
     ValopersSnapshot,
     _fetch_with_retry,
+    _parse_pager_state,
     collect_valopers_snapshot,
 )
+from indexer.valopers_parser import parse_valopers_list
 from scripts.inspect_rpc import RpcError
 
 
@@ -53,6 +55,24 @@ def list_render_numbers(numbers) -> str:
         f"[profile](/r/demo/profile:u/{address(number)})"
         for number in numbers
     )
+
+
+def with_pager(rendered: str, picker: str) -> str:
+    return f"{rendered}\n\n{picker}"
+
+
+def picker(page: int, total_pages: int, *, force_next: bool = False) -> str:
+    tokens = []
+    if page > 1:
+        tokens.append(f"[{page - 1}](?page={page - 1})")
+    tokens.append(f"**{page}**")
+    if page < total_pages or force_next:
+        tokens.append(f"[{page + 1}](?page={page + 1})")
+    return " | ".join(tokens)
+
+
+def paged_render(start: int, count: int, page: int, total_pages: int, *, force_next=False):
+    return with_pager(list_render(start, count), picker(page, total_pages, force_next=force_next))
 
 
 def detail_render(number: int, *, operator=None, moniker=None, signing=None, pubkey=None) -> str:
@@ -217,6 +237,39 @@ class FetchRetryTests(unittest.TestCase):
                 sleep.assert_not_called()
 
 
+class PagerTests(unittest.TestCase):
+    def parse(self, picker_text, requested_page=1):
+        rendered = with_pager(list_render(0, 1), picker_text)
+        return _parse_pager_state(rendered, requested_page, parse_valopers_list(rendered))
+
+    def test_valid_picker_and_ellipsis(self):
+        self.assertTrue(self.parse("**1** | [2](?page=2) | … | [9](?page=9)"))
+        self.assertFalse(self.parse("[1](?page=1) | **2**", requested_page=2))
+
+    def test_current_marker_must_match_requested_page(self):
+        with self.assertRaises(RpcError):
+            self.parse("**2** | [3](?page=3)", requested_page=1)
+
+    def test_link_label_must_match_target(self):
+        with self.assertRaises(RpcError):
+            self.parse("**1** | [2](?page=3)")
+
+    def test_duplicate_link_is_rejected(self):
+        with self.assertRaises(RpcError):
+            self.parse("**1** | [2](?page=2) | [2](?page=2)")
+
+    def test_malformed_unexpected_and_italic_pickers_are_rejected(self):
+        for picker_text in ("**1*", "**1** trailing", "_1_"):
+            with self.subTest(picker_text=picker_text):
+                with self.assertRaises(RpcError):
+                    self.parse(picker_text)
+
+    def test_later_page_without_picker_is_rejected(self):
+        rendered = list_render(0, 1)
+        with self.assertRaises(RpcError):
+            _parse_pager_state(rendered, 2, parse_valopers_list(rendered))
+
+
 class SnapshotTests(unittest.TestCase):
     def test_empty_root(self):
         client = FakeClient([list_render(0, 0)])
@@ -224,40 +277,43 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(snapshot, ValopersSnapshot(123, 0, ()))
         self.assertEqual(len(client.calls), 1)
 
-    def test_short_root_requires_empty_terminal_before_details(self):
-        client = FakeClient([list_render(0, 3), list_render(0, 0)])
+    def test_one_page_root_without_picker_fetches_details(self):
+        client = FakeClient([list_render(0, 3)])
         snapshot = collect_valopers_snapshot(client, 123)
         self.assertEqual(snapshot.page_count, 1)
         self.assertEqual([p.operator_address for p in snapshot.profiles], [address(i) for i in range(3)])
-        self.assertEqual([height for _, height in client.calls], [123] * 5)
-        self.assertEqual(client.calls[1][0], "gno.land/r/gnops/valopers:?page=2")
-        self.assertTrue(client.calls[2][0].endswith(address(0)))
+        self.assertEqual([height for _, height in client.calls], [123] * 4)
+        self.assertTrue(client.calls[1][0].endswith(address(0)))
 
     def test_full_then_short_page(self):
-        client = FakeClient([list_render(0, 50), list_render(50, 2), list_render(0, 0)])
+        client = FakeClient([
+            with_pager(list_render(0, 50), "**1** | [2](?page=2)"),
+            with_pager(list_render(50, 2), "[1](?page=1) | **2**"),
+        ])
         snapshot = collect_valopers_snapshot(client, 9)
         self.assertEqual((snapshot.page_count, len(snapshot.profiles)), (2, 52))
         self.assertEqual(client.calls[1][0].split(":", 1)[1], "?page=2")
-        self.assertEqual(client.calls[2][0].split(":", 1)[1], "?page=3")
-        self.assertTrue(client.calls[3][0].endswith(address(0)))
+        self.assertTrue(client.calls[2][0].endswith(address(0)))
 
-    def test_short_pages_continue_until_canonical_empty_page(self):
+    def test_short_pages_continue_until_picker_has_no_next(self):
         client = FakeClient([
-            list_render(0, 1), list_render(1, 1), list_render(0, 0)
+            with_pager(list_render(0, 1), "**1** | [2](?page=2)"),
+            with_pager(list_render(1, 1), "[1](?page=1) | **2**"),
         ])
         snapshot = collect_valopers_snapshot(client, 17)
         self.assertEqual((snapshot.page_count, len(snapshot.profiles)), (2, 2))
         self.assertEqual(
-            [data for data, _ in client.calls[:3]],
+            [data for data, _ in client.calls[:2]],
             ["gno.land/r/gnops/valopers:",
-             "gno.land/r/gnops/valopers:?page=2",
-             "gno.land/r/gnops/valopers:?page=3"],
+             "gno.land/r/gnops/valopers:?page=2"],
         )
 
-    def test_short_page_terminal_failure_occurs_before_details(self):
+    def test_later_page_pager_failure_occurs_before_details(self):
         cases = (
-            FakeClient([list_render(0, 1), "malformed"]),
-            FakeClient([list_render(0, 1), list_render(0, 0)], fail_pages={2}),
+            FakeClient([with_pager(list_render(0, 1), "**1** | [2](?page=2)"), "malformed"]),
+            FakeClient([
+                with_pager(list_render(0, 1), "**1** | [2](?page=2)"), list_render(1, 1)
+            ]),
         )
         for client in cases:
             with self.subTest(client=client):
@@ -267,28 +323,35 @@ class SnapshotTests(unittest.TestCase):
                 self.assertTrue(all(not data.endswith(address(0)) for data, _ in client.calls))
 
     def test_full_root_requests_page_two_at_same_height(self):
-        client = FakeClient([list_render(0, 50), list_render(50, 1), list_render(0, 0)])
+        client = FakeClient([
+            with_pager(list_render(0, 50), "**1** | [2](?page=2)"),
+            with_pager(list_render(50, 1), "[1](?page=1) | **2**"),
+        ])
         collect_valopers_snapshot(client, 456)
         self.assertEqual(client.calls[1], ("gno.land/r/gnops/valopers:?page=2", 456))
 
     def test_page_numbers_are_sequential_and_list_height_is_pinned(self):
         client = FakeClient([
-            list_render(0, 50), list_render(50, 50), list_render(100, 17), list_render(0, 0)
+            with_pager(list_render(0, 50), "**1** | [2](?page=2) | [3](?page=3)"),
+            with_pager(list_render(50, 50), "[1](?page=1) | **2** | [3](?page=3)"),
+            with_pager(list_render(100, 17), "[1](?page=1) | [2](?page=2) | **3**"),
         ])
         collect_valopers_snapshot(client, 789)
         self.assertEqual(
-            client.calls[:4],
+            client.calls[:3],
             [("gno.land/r/gnops/valopers:", 789),
              ("gno.land/r/gnops/valopers:?page=2", 789),
-             ("gno.land/r/gnops/valopers:?page=3", 789),
-             ("gno.land/r/gnops/valopers:?page=4", 789)],
+             ("gno.land/r/gnops/valopers:?page=3", 789)],
         )
 
-    def test_exact_multiple_requires_empty_terminal_page(self):
-        client = FakeClient([list_render(0, 50), list_render(50, 50), list_render(0, 0)])
+    def test_exact_multiple_completes_when_final_picker_has_no_next(self):
+        client = FakeClient([
+            with_pager(list_render(0, 50), "**1** | [2](?page=2)"),
+            with_pager(list_render(50, 50), "[1](?page=1) | **2**"),
+        ])
         snapshot = collect_valopers_snapshot(client, 9)
         self.assertEqual((snapshot.page_count, len(snapshot.profiles)), (2, 100))
-        self.assertEqual([call[0].split(":", 1)[1] for call in client.calls[:3]], ["", "?page=2", "?page=3"])
+        self.assertEqual([call[0].split(":", 1)[1] for call in client.calls[:2]], ["", "?page=2"])
 
     def test_oversized_page_fails_before_details(self):
         client = FakeClient([list_render(0, VALOPERS_PAGE_SIZE + 1)])
@@ -298,7 +361,10 @@ class SnapshotTests(unittest.TestCase):
 
     def test_repeated_page_fails_before_details(self):
         page = list_render(0, 50)
-        client = FakeClient([page, page])
+        client = FakeClient([
+            with_pager(page, "**1** | [2](?page=2)"),
+            with_pager(page, "[1](?page=1) | **2**"),
+        ])
         with patch("indexer.valopers_snapshot.time.sleep") as sleep:
             with self.assertRaises(RpcError):
                 collect_valopers_snapshot(client, 1)
@@ -306,47 +372,46 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(len(client.calls), 2)
 
     def test_duplicate_operator_across_pages_fails(self):
-        client = FakeClient([list_render(0, 50), list_render(49, 2)])
+        client = FakeClient([
+            paged_render(0, 50, 1, 2), paged_render(49, 2, 2, 2)
+        ])
         with self.assertRaises(RpcError):
             collect_valopers_snapshot(client, 1)
 
-    def test_twenty_full_pages_and_empty_terminal_page_succeed(self):
-        pages = [list_render(page * 50, 50) for page in range(MAX_VALOPERS_PAGES)]
-        pages.append(list_render(0, 0))
+    def test_twenty_full_pages_without_next_link_succeed(self):
+        pages = [
+            paged_render((page - 1) * 50, 50, page, MAX_VALOPERS_PAGES)
+            for page in range(1, MAX_VALOPERS_PAGES + 1)
+        ]
         client = FakeClient(pages)
         snapshot = collect_valopers_snapshot(client, 1)
         self.assertEqual(snapshot.page_count, 20)
         self.assertEqual(len(snapshot.profiles), 1000)
-        self.assertEqual(client.calls[20][0], "gno.land/r/gnops/valopers:?page=21")
-        self.assertTrue(all(data.startswith("gno.land/r/gnops/valopers:g1") for data, _ in client.calls[21:]))
-        self.assertNotIn("gno.land/r/gnops/valopers:?page=22", [data for data, _ in client.calls])
+        self.assertTrue(all(data.startswith("gno.land/r/gnops/valopers:g1") for data, _ in client.calls[20:]))
+        self.assertNotIn("gno.land/r/gnops/valopers:?page=21", [data for data, _ in client.calls])
 
-    def test_nonempty_terminal_page_fails_before_details(self):
-        pages = [list_render(page * 50, 50) for page in range(MAX_VALOPERS_PAGES)]
-        client = FakeClient(pages + [list_render(1000, 1)])
+    def test_page_twenty_with_next_link_fails_before_details(self):
+        pages = [
+            paged_render((page - 1) * 50, 50, page, MAX_VALOPERS_PAGES,
+                         force_next=page == MAX_VALOPERS_PAGES)
+            for page in range(1, MAX_VALOPERS_PAGES + 1)
+        ]
+        client = FakeClient(pages)
         with self.assertRaises(RpcError):
             collect_valopers_snapshot(client, 1)
-        self.assertEqual(len(client.calls), 21)
-        self.assertNotIn("?page=22", [data for data, _ in client.calls])
+        self.assertEqual(len(client.calls), 20)
+        self.assertNotIn("?page=21", [data for data, _ in client.calls])
 
-    def test_malformed_terminal_page_fails_before_details(self):
-        pages = [list_render(page * 50, 50) for page in range(MAX_VALOPERS_PAGES)]
-        client = FakeClient(pages + ["malformed"])
-        with self.assertRaises(ValueError):
-            collect_valopers_snapshot(client, 1)
-        self.assertEqual(len(client.calls), 21)
-
-    def test_terminal_page_transport_failure_fails_before_details(self):
-        pages = [list_render(page * 50, 50) for page in range(MAX_VALOPERS_PAGES)]
-        client = FakeClient(pages + [list_render(0, 0)], fail_pages={21})
+    def test_later_page_transport_failure_fails_before_details(self):
+        client = FakeClient([paged_render(0, 50, 1, 2), paged_render(50, 1, 2, 2)], fail_pages={2})
         with patch("indexer.valopers_snapshot.time.sleep") as sleep:
             with self.assertRaises(RpcError):
                 collect_valopers_snapshot(client, 1)
-        self.assertEqual(len(client.calls), 23)
+        self.assertEqual(len(client.calls), 4)
         self.assertEqual(sleep.call_count, 2)
 
     def test_explicit_profile_guard_fails_closed(self):
-        client = FakeClient([list_render(0, 50), list_render(50, 1)])
+        client = FakeClient([paged_render(0, 50, 1, 2), paged_render(50, 1, 2, 2)])
         with patch("indexer.valopers_snapshot.MAX_VALOPERS_PROFILES", 50):
             with self.assertRaises(RpcError):
                 collect_valopers_snapshot(client, 1)
@@ -354,8 +419,8 @@ class SnapshotTests(unittest.TestCase):
 
     def test_malformed_or_failed_page_two_returns_no_partial_snapshot(self):
         for client, error, calls in (
-            (FakeClient([list_render(0, 50), "malformed"]), ValueError, 2),
-            (FakeClient([list_render(0, 50), list_render(50, 1)], fail_pages={2}), RpcError, 4),
+            (FakeClient([paged_render(0, 50, 1, 2), "malformed"]), ValueError, 2),
+            (FakeClient([paged_render(0, 50, 1, 2), paged_render(50, 1, 2, 2)], fail_pages={2}), RpcError, 4),
         ):
             with self.subTest(error=error):
                 with patch("indexer.valopers_snapshot.time.sleep"):
@@ -365,32 +430,37 @@ class SnapshotTests(unittest.TestCase):
 
     def test_root_later_page_and_detail_fetches_can_retry(self):
         client = FakeClient(
-            [list_render(0, 50), list_render(50, 1), list_render(0, 0)],
+            [paged_render(0, 50, 1, 2), paged_render(50, 1, 2, 2)],
             transient_failures={
-                ("root", 1): 1, ("page", 2): 2, ("page", 3): 1, ("detail", 50): 1
+                ("root", 1): 1, ("page", 2): 2, ("detail", 50): 1
             },
         )
         with patch("indexer.valopers_snapshot.time.sleep") as sleep:
             snapshot = collect_valopers_snapshot(client, 88)
         self.assertEqual(len(snapshot.profiles), 51)
-        self.assertEqual(sleep.call_count, 5)
+        self.assertEqual(sleep.call_count, 4)
         self.assertEqual({height for _, height in client.calls}, {88})
 
-    def test_terminal_page_can_retry_without_page_twenty_two(self):
-        pages = [list_render(page * 50, 50) for page in range(MAX_VALOPERS_PAGES)]
-        client = FakeClient(pages + [list_render(0, 0)], transient_failures={("page", 21): 2})
+    def test_final_data_page_can_retry_without_extra_request(self):
+        client = FakeClient(
+            [paged_render(0, 50, 1, 2), paged_render(50, 1, 2, 2)],
+            transient_failures={("page", 2): 2},
+        )
         with patch("indexer.valopers_snapshot.time.sleep") as sleep:
             snapshot = collect_valopers_snapshot(client, 33)
-        self.assertEqual((snapshot.page_count, len(snapshot.profiles)), (20, 1000))
+        self.assertEqual((snapshot.page_count, len(snapshot.profiles)), (2, 51))
         self.assertEqual(sleep.call_count, 2)
         self.assertEqual(
-            [data for data, _ in client.calls].count("gno.land/r/gnops/valopers:?page=21"), 3
+            [data for data, _ in client.calls].count("gno.land/r/gnops/valopers:?page=2"), 3
         )
-        self.assertNotIn("gno.land/r/gnops/valopers:?page=22", [data for data, _ in client.calls])
+        self.assertNotIn("gno.land/r/gnops/valopers:?page=3", [data for data, _ in client.calls])
 
     def test_same_operator_set_in_different_order_fails(self):
         first = list(range(50))
-        client = FakeClient([list_render_numbers(first), list_render_numbers(reversed(first))])
+        client = FakeClient([
+            with_pager(list_render_numbers(first), "**1** | [2](?page=2)"),
+            with_pager(list_render_numbers(reversed(first)), "[1](?page=1) | **2**"),
+        ])
         with self.assertRaises(RpcError):
             collect_valopers_snapshot(client, 1)
         self.assertEqual(len(client.calls), 2)
@@ -401,12 +471,12 @@ class SnapshotTests(unittest.TestCase):
             detail_render(0, moniker="Wrong Node"),
         ):
             with self.subTest(override=override):
-                client = FakeClient([list_render(0, 1), list_render(0, 0)], {0: override})
+                client = FakeClient([list_render(0, 1)], {0: override})
                 with patch("indexer.valopers_snapshot.time.sleep") as sleep:
                     with self.assertRaises(RpcError):
                         collect_valopers_snapshot(client, 1)
                 sleep.assert_not_called()
-                self.assertEqual(len(client.calls), 3)
+                self.assertEqual(len(client.calls), 2)
 
     def test_duplicate_signing_identity_fails(self):
         common_signing = address(15_000)
@@ -417,25 +487,25 @@ class SnapshotTests(unittest.TestCase):
         )
         for overrides in cases:
             with self.subTest(overrides=overrides):
-                client = FakeClient([list_render(0, 2), list_render(0, 0)], overrides)
+                client = FakeClient([list_render(0, 2)], overrides)
                 with patch("indexer.valopers_snapshot.time.sleep") as sleep:
                     with self.assertRaises(RpcError):
                         collect_valopers_snapshot(client, 1)
                 sleep.assert_not_called()
-                self.assertEqual(len(client.calls), 4)
+                self.assertEqual(len(client.calls), 3)
 
     def test_final_detail_transport_failure_returns_no_snapshot(self):
-        client = FakeClient([list_render(0, 2), list_render(0, 0)], fail_detail=1)
+        client = FakeClient([list_render(0, 2)], fail_detail=1)
         with patch("indexer.valopers_snapshot.time.sleep") as sleep:
             with self.assertRaises(RpcError):
                 collect_valopers_snapshot(client, 1)
-        self.assertEqual(len(client.calls), 6)
+        self.assertEqual(len(client.calls), 5)
         self.assertEqual(sleep.call_count, 2)
 
     def test_details_start_after_pagination_and_match_list_order_and_height(self):
-        client = FakeClient([list_render(0, 50), list_render(50, 2), list_render(0, 0)])
+        client = FakeClient([paged_render(0, 50, 1, 2), paged_render(50, 2, 2, 2)])
         snapshot = collect_valopers_snapshot(client, 222)
-        detail_calls = client.calls[3:]
+        detail_calls = client.calls[2:]
         self.assertEqual(len(detail_calls), 52)
         self.assertEqual(
             [data for data, _ in detail_calls],
@@ -445,14 +515,14 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(len(snapshot.profiles), 52)
 
     def test_malformed_detail_stops_later_detail_fetches(self):
-        client = FakeClient([list_render(0, 3), list_render(0, 0)], {1: "malformed detail"})
+        client = FakeClient([list_render(0, 3)], {1: "malformed detail"})
         with self.assertRaises(ValueError):
             collect_valopers_snapshot(client, 1)
-        self.assertEqual(len(client.calls), 4)
+        self.assertEqual(len(client.calls), 3)
 
     def test_immutable_and_safe_bounded_repr(self):
         snapshot = collect_valopers_snapshot(
-            FakeClient([list_render(0, 10), list_render(0, 0)]), 1
+            FakeClient([list_render(0, 10)]), 1
         )
         self.assertIsInstance(snapshot.profiles, tuple)
         with self.assertRaises(FrozenInstanceError):
@@ -498,7 +568,7 @@ class SnapshotCliTests(unittest.TestCase):
 
         select.side_effect = noisy_selection
         profile = collect_valopers_snapshot(
-            FakeClient([list_render(0, 1), list_render(0, 0)]), 44
+            FakeClient([list_render(0, 1)]), 44
         ).profiles[0]
         collect.return_value = ValopersSnapshot(44, 1, (profile,))
         stdout, stderr = StringIO(), StringIO()

@@ -270,9 +270,10 @@ Valopers list page and detail sequentially at one pinned height. Collection has 
 page and profile bounds. Transient RPC request failures have a small bounded retry on the
 same endpoint and pinned height; response decoding and consistency failures fail
 immediately. Retries never fail over or repin, and exhausting them fails the complete
-snapshot without a partial result. Pagination completes only after a canonical empty
-terminal page on that same RPC and height; a short non-empty page does not terminate it.
-The immutable result remains in memory; database, API,
+snapshot without a partial result. Pagination completion comes from the validated official
+picker, not page length, and no artificial empty terminal page is requested. Under the
+official contract a one-page registry has no picker. The immutable result remains in memory;
+database, API,
 frontend, Telegram, and validator-set integration are intentionally not included yet.
 
 Add `--parse` to validate and print a bounded summary of either supported document:

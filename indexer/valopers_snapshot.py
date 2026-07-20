@@ -1,6 +1,7 @@
 """Bounded collection of a complete, in-memory Valopers registry snapshot."""
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field
 
@@ -18,9 +19,11 @@ from scripts.inspect_rpc import GnoRpcClient, RpcError
 VALOPERS_PAGE_SIZE = 50
 MAX_VALOPERS_PAGES = 20
 MAX_VALOPERS_PROFILES = 1000
-MAX_LIST_REQUESTS = MAX_VALOPERS_PAGES + 1
 VALOPERS_FETCH_ATTEMPTS = 3
 VALOPERS_RETRY_DELAY_SECONDS = 0.25
+
+_PAGER_CURRENT_RE = re.compile(r"\*\*([1-9][0-9]*)\*\*\Z")
+_PAGER_LINK_RE = re.compile(r"\[([1-9][0-9]*)\]\(\?page=([1-9][0-9]*)\)\Z")
 
 
 @dataclass(frozen=True)
@@ -49,13 +52,54 @@ def _fetch_with_retry(
     raise AssertionError("unreachable")  # pragma: no cover
 
 
+def _parse_pager_state(
+    rendered_text: str,
+    requested_page: int,
+    entries: tuple[ValoperListEntry, ...],
+) -> bool:
+    """Validate the official final-line page picker and report a next page."""
+    final_line = next(line for line in reversed(rendered_text.splitlines()) if line.strip())
+    if entries:
+        last = entries[-1]
+        last_entry_line = (
+            f" * [{last.moniker}](/r/gnops/valopers:{last.operator_address}) - "
+            f"[profile](/r/demo/profile:u/{last.operator_address})"
+        )
+        if final_line == last_entry_line:
+            if requested_page == 1:
+                return False
+            raise RpcError("Later Valopers page is missing its pager")
+
+    current_pages: list[int] = []
+    linked_pages: set[int] = set()
+    for token in final_line.split(" | "):
+        current = _PAGER_CURRENT_RE.fullmatch(token)
+        if current:
+            current_pages.append(int(current.group(1)))
+            continue
+        link = _PAGER_LINK_RE.fullmatch(token)
+        if link:
+            label, target = map(int, link.groups())
+            if label != target or target in linked_pages:
+                raise RpcError("Invalid Valopers pager link")
+            linked_pages.add(target)
+            continue
+        if token == "…":
+            continue
+        raise RpcError("Malformed Valopers pager")
+
+    if current_pages != [requested_page]:
+        raise RpcError("Valopers pager current page does not match the request")
+    return any(page > requested_page for page in linked_pages)
+
+
 def _collect_list(client: GnoRpcClient, source_height: int) -> tuple[list[ValoperListEntry], int]:
     entries: list[ValoperListEntry] = []
     seen_operators: set[str] = set()
     seen_sequences: set[tuple[str, ...]] = set()
     seen_sets: set[frozenset[str]] = set()
 
-    for page_number in range(1, MAX_LIST_REQUESTS + 1):
+    for page_number in range(1, MAX_VALOPERS_PAGES + 1):
         render_data = (
             build_root_render_data()
             if page_number == 1
@@ -65,12 +109,13 @@ def _collect_list(client: GnoRpcClient, source_height: int) -> tuple[list[Valope
             client, render_data, "root" if page_number == 1 else "page", source_height
         )
         page = parse_valopers_list(rendered.decoded_text)
+        if not page:
+            if page_number == 1:
+                return entries, 0
+            raise RpcError("Canonical empty Valopers registry is valid only at the root")
+        has_next = _parse_pager_state(rendered.decoded_text, page_number, page)
         if len(page) > VALOPERS_PAGE_SIZE:
             raise RpcError("Valopers page exceeds the page-size limit")
-        if not page:
-            return entries, 0 if page_number == 1 else page_number - 1
-        if page_number > MAX_VALOPERS_PAGES:
-            raise RpcError("Valopers registry exceeds the page limit")
 
         operators = tuple(entry.operator_address for entry in page)
         operator_set = frozenset(operators)
@@ -84,6 +129,10 @@ def _collect_list(client: GnoRpcClient, source_height: int) -> tuple[list[Valope
         entries.extend(page)
         if len(entries) > MAX_VALOPERS_PROFILES:
             raise RpcError("Valopers registry exceeds the profile limit")
+        if not has_next:
+            return entries, page_number
+        if page_number == MAX_VALOPERS_PAGES:
+            raise RpcError("Valopers registry exceeds the page limit")
     raise RpcError("Valopers registry pagination did not terminate")  # pragma: no cover
 
 
