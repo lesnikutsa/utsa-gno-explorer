@@ -2,10 +2,12 @@ import { ExplorerLayout } from './layouts/ExplorerLayout'
 import { Blocks } from './pages/Blocks'
 import { BlockDetail } from './pages/BlockDetail'
 import { Overview } from './pages/Overview'
+import { ValidatorDetail } from './pages/ValidatorDetail'
 import { Validators } from './pages/Validators'
 import { useBlocksPage } from './hooks/useBlocksPage'
 import { useBlockDetail } from './hooks/useBlockDetail'
 import { useExplorerData } from './hooks/useExplorerData'
+import { useValidatorDetail } from './hooks/useValidatorDetail'
 import { useValidatorsPage } from './hooks/useValidatorsPage'
 
 const NETWORK_MASCOT_SRC = '/assets/network-mascot.png?v=1'
@@ -58,6 +60,16 @@ function ValidatorsPage() {
   )
 }
 
+function ValidatorDetailPage({ address }) {
+  const validatorDetail = useValidatorDetail(address)
+
+  return (
+    <ExplorerLayout healthState={validatorDetail.healthState} showRefreshCountdown={false}>
+      <ValidatorDetail validatorDetail={validatorDetail} />
+    </ExplorerLayout>
+  )
+}
+
 export default function App() {
   const path = window.location.pathname
 
@@ -67,6 +79,11 @@ export default function App() {
 
   if (path === '/validators' || path === '/validators/') {
     return <ValidatorsPage />
+  }
+
+  const validatorDetailMatch = path.match(/^\/validators\/([^/]+)\/?$/)
+  if (validatorDetailMatch) {
+    return <ValidatorDetailPage address={validatorDetailMatch[1]} />
   }
 
   if (path.startsWith('/blocks/')) {

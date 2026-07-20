@@ -137,16 +137,21 @@ refresh remains manual. The full active-validator table and the Overview **Valid
 Missed Blocks** table display an exact official moniker when one is available, with the
 shortened consensus signing address beneath it. The exact
 signing address remains the underlying technical identity, and unmatched validators remain
-visible by address. The frontend does not use Telegram bot data, logos are not implemented,
-and no validator detail frontend route exists yet.
+visible by address. Each identity in the full Validators table links to
+`/validators/<signing-address>`, using the exact consensus signing address as the route
+identity. The initial detail page presents validator identity and current status; inactive
+validators can still have detail pages. Full profile, performance, and signing-history
+presentation is still being completed. Overview validator links and global validator search
+are not implemented. Profile refresh remains manual, and the frontend uses neither logos nor
+Telegram data.
 
 The full active-validator table supports immediate, case-insensitive partial filtering by
 official moniker or consensus signing address. Filtering operates only on the already loaded
 active set and makes no additional API request. **Power Rank** retains the validator's
 original voting-power position, while **Active Validators** continues to show the complete
 active-set count. The selected table sort is applied after filtering. Global search is not
-extended to validators; Valopers profile refresh remains manual, no frontend validator detail
-route exists, and the frontend still does not use Telegram data.
+extended to validators; Valopers profile refresh remains manual, and the frontend still does
+not use Telegram data.
 
 ### Network and blocks API
 
@@ -179,8 +184,11 @@ display official Valopers monikers but do not display logos or operator addresse
 continue to use the exact consensus signing address as the
 underlying validator identity and fall back to a shortened signing address when a profile
 is unmatched. Profiles come from the manually persisted official Valopers snapshot; refresh
-remains manual, the frontend does not use Telegram bot data, and no validator detail
-frontend route exists yet.
+remains manual. The frontend detail route is `/validators/<signing-address>` and shows the
+initial identity and current-status panels. It is not yet the complete validator profile,
+performance, or signing-history presentation. Inactive indexed validators remain valid detail
+pages. The full Validators table links to this route, while Overview validator links and
+global validator search are not implemented. The frontend uses neither logos nor Telegram data.
 
 The list response contains the active validator set at the completed checkpoint, current voting power, and 20-block and 100-block active-membership uptime. Addresses are consensus signing addresses.
 

@@ -46,7 +46,7 @@ export function Validators({ validatorsPage }) {
   const columns = useMemo(() => [
     { key: 'powerRank', label: 'Power Rank', render: (row) => <span className="mono">#{row.powerRank}</span> },
     { key: 'address', label: 'Validator', sortable: true, defaultSortDirection: 'ascending', render: (row) => (
-      <span className="validator-identity" title={row.address}>
+      <a className="validator-identity validator-identity--link" href={`/validators/${encodeURIComponent(row.address)}`} title={row.address}>
         {hasValidatorMoniker(row) ? (
           <>
             <strong className="validator-identity__moniker">{row.moniker}</strong>
@@ -55,7 +55,7 @@ export function Validators({ validatorsPage }) {
         ) : (
           <strong className="validator-identity__fallback mono">{shortAddress(row.address)}</strong>
         )}
-      </span>
+      </a>
     ) },
     { key: 'voting_power', label: 'Voting Power', sortable: true, defaultSortDirection: 'descending', render: (row) => <span className="validator-power mono"><span>{formatIntegerString(row.voting_power)}</span><span className="validator-power__percent">{formatPercent(row.percent)}</span></span> },
     { key: 'uptime_100', label: 'Uptime (100)', sortable: true, defaultSortDirection: 'descending', render: (row) => <span className="mono">{formatPercent(row.uptime_100?.uptime_percent)}</span> },
