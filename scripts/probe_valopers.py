@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import io
 import sys
 from collections.abc import Sequence
+from contextlib import redirect_stdout
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from indexer.valopers_source import (
     ValopersRenderResult,
@@ -30,12 +37,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def requested_renders(args: argparse.Namespace) -> list[tuple[str, str]]:
-    renders = [("root", build_root_render_data())]
+    renders = []
     if args.page_query is not None:
         renders.append(("page", build_page_render_data(args.page_query)))
     if args.operator_address is not None:
         renders.append(("detail", build_detail_render_data(args.operator_address)))
-    return renders
+    return renders or [("root", build_root_render_data())]
 
 
 def format_result(result: ValopersRenderResult) -> str:
@@ -51,9 +58,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         args = parser.parse_args(argv)
         renders = requested_renders(args)
-        client, status_payload = select_healthy_rpc(
-            configured_rpc_urls(), expected_chain_id=configured_chain_id()
-        )
+        # inspect_rpc intentionally reports endpoint URLs; suppress that diagnostic
+        # output here because configured URLs may contain credentials or tokens.
+        with redirect_stdout(io.StringIO()):
+            client, status_payload = select_healthy_rpc(
+                configured_rpc_urls(), expected_chain_id=configured_chain_id()
+            )
         source_height = parse_status(status_payload)["latest_height"]
         if not isinstance(source_height, int) or source_height < 1:
             raise RpcError("Selected RPC status has no valid committed latest height")

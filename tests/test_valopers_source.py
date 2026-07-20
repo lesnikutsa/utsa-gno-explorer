@@ -1,8 +1,11 @@
 import base64
 import json
+import subprocess
+import sys
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
+from pathlib import Path
 from unittest.mock import patch
 
 from indexer.valopers_source import (
@@ -22,6 +25,7 @@ from scripts import probe_valopers
 from scripts.inspect_rpc import RpcError
 
 OPERATOR_ADDRESS = "g1" + "x" * 38
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def response(value=b"rendered output", height=123):
@@ -181,16 +185,52 @@ class ProbeCliTests(unittest.TestCase):
         self.assertEqual(len(client.calls), 1)
         self.assertIn("kind=root source_height=123 response_height=123", output)
 
-    def test_cli_supports_explicit_page_and_detail_at_one_height(self):
+    def test_cli_page_only_does_not_request_root(self):
+        code, output, _, client = self.run_main(["--page-query", "?page=2"])
+        self.assertEqual(code, 0)
+        self.assertEqual(len(client.calls), 1)
+        self.assertNotIn("kind=root", output)
+        self.assertIn("kind=page", output)
+
+    def test_cli_detail_only_does_not_request_root(self):
+        code, output, _, client = self.run_main(["--operator-address", OPERATOR_ADDRESS])
+        self.assertEqual(code, 0)
+        self.assertEqual(len(client.calls), 1)
+        self.assertNotIn("kind=root", output)
+        self.assertIn("kind=detail", output)
+
+    def test_cli_page_and_detail_request_exactly_two_renders_at_one_height(self):
         code, output, _, client = self.run_main(
             ["--page-query", "?page=2", "--operator-address", OPERATOR_ADDRESS]
         )
         self.assertEqual(code, 0)
-        self.assertEqual(len(client.calls), 3)
-        self.assertIn("kind=root", output)
+        self.assertEqual(len(client.calls), 2)
+        self.assertNotIn("kind=root", output)
         self.assertIn("kind=page", output)
         self.assertIn("kind=detail", output)
         self.assertTrue(all(call[1]["height"] == 123 for call in client.calls))
+
+    def test_cli_suppresses_credential_bearing_rpc_selection_output(self):
+        raw_url = "https://user:secret@example.invalid/rpc?token=private"
+        client = FakeClient()
+
+        def noisy_selection(urls, **_kwargs):
+            print(f"Selected RPC: {urls[0]}")
+            return client, self.status_payload
+
+        stdout = StringIO()
+        stderr = StringIO()
+        with patch("scripts.probe_valopers.configured_rpc_urls", return_value=[raw_url]), patch(
+            "scripts.probe_valopers.configured_chain_id", return_value="test-13"
+        ), patch(
+            "scripts.probe_valopers.select_healthy_rpc", side_effect=noisy_selection
+        ), redirect_stdout(stdout), redirect_stderr(stderr):
+            code = probe_valopers.main([])
+
+        self.assertEqual(code, 0)
+        combined_output = stdout.getvalue() + stderr.getvalue()
+        for sensitive_value in ("user", "secret", "token=private", raw_url):
+            self.assertNotIn(sensitive_value, combined_output)
 
     def test_cli_failure_is_nonzero_and_does_not_dump_payload(self):
         secret = "complete-render-body-secret"
@@ -207,6 +247,17 @@ class ProbeCliTests(unittest.TestCase):
         self.assertEqual(output, "")
         self.assertIn("Page query must have the form", errors)
         self.assertEqual(client.calls, [])
+
+    def test_documented_script_path_help_runs_from_repository_root(self):
+        completed = subprocess.run(
+            [sys.executable, "scripts/probe_valopers.py", "--help"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("--page-query", completed.stdout)
 
 
 if __name__ == "__main__":
