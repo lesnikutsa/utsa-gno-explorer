@@ -107,7 +107,7 @@ EXPECTED_CHECKS = {
     "valoper_profiles_server_type_check": "CHECK (server_type IN ('cloud', 'on-prem', 'data-center'))",
     "valoper_profiles_operator_address_check": "CHECK (operator_address ~ '^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$')",
     "valoper_profiles_signing_address_check": "CHECK (signing_address ~ '^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$')",
-    "valoper_profiles_signing_pubkey_check": "CHECK (signing_pubkey ~ '^gpub1[023456789acdefghjklmnpqrstuvwxyz]+$' AND octet_length(signing_pubkey) >= 91 AND octet_length(signing_pubkey) <= 256)",
+    "valoper_profiles_signing_pubkey_check": "CHECK (signing_pubkey ~ '^gpub1[023456789acdefghjklmnpqrstuvwxyz]+$' AND (octet_length(signing_pubkey) >= 91 AND octet_length(signing_pubkey) <= 256))",
     "valopers_snapshot_state_default_key": "CHECK (state_key = 'default')",
     "valopers_snapshot_state_source_height_check": "CHECK (source_height >= 1)",
     "valopers_snapshot_state_page_count_check": "CHECK (page_count >= 0 AND page_count <= 20)",

@@ -120,7 +120,7 @@ class CompatibilityTests(unittest.TestCase):
         catalog_forms = {
             "valoper_profiles_moniker_length_check": "((char_length(moniker) >= 1) AND (char_length(moniker) <= 32))",
             "valoper_profiles_description_length_check": "((octet_length(description) >= 1) AND (octet_length(description) <= 2048))",
-            "valoper_profiles_signing_pubkey_check": "((signing_pubkey ~ '^gpub1[023456789acdefghjklmnpqrstuvwxyz]+$'::text) AND (octet_length(signing_pubkey) >= 91) AND (octet_length(signing_pubkey) <= 256))",
+            "valoper_profiles_signing_pubkey_check": "((signing_pubkey ~ '^gpub1[023456789acdefghjklmnpqrstuvwxyz]+$'::text) AND ((octet_length(signing_pubkey) >= 91) AND (octet_length(signing_pubkey) <= 256)))",
             "valopers_snapshot_state_page_count_check": "((page_count >= 0) AND (page_count <= 20))",
             "valopers_snapshot_state_profile_count_check": "((profile_count >= 0) AND (profile_count <= 1000))",
         }
@@ -131,7 +131,6 @@ class CompatibilityTests(unittest.TestCase):
         mutations = [
             ("valoper_profiles_moniker_length_check", "char_length(moniker) >= 2 AND char_length(moniker) <= 32"),
             ("valoper_profiles_description_length_check", "octet_length(description) >= 1 AND octet_length(description) <= 2047"),
-            ("valoper_profiles_signing_pubkey_check", "signing_pubkey ~ '^gpub1[023456789acdefghjklmnpqrstuvwxyz]+$' AND octet_length(signing_pubkey) >= 91"),
             ("valopers_snapshot_state_page_count_check", "page_count >= 0 AND page_count <= 20 AND page_count <> 10"),
             ("valopers_snapshot_state_profile_count_check", "profile_count <= 1000"),
         ]
@@ -139,6 +138,26 @@ class CompatibilityTests(unittest.TestCase):
             with self.subTest(name=name):
                 snapshot = expected_snapshot()
                 snapshot["check_constraints"][name] = expression
+                with self.assertRaises(init_database.SchemaCompatibilityError):
+                    init_database.validate_schema_snapshot(snapshot)
+
+    def test_signing_pubkey_check_rejects_structural_changes(self):
+        regex = "signing_pubkey ~ '^gpub1[023456789acdefghjklmnpqrstuvwxyz]+$'"
+        lower = "octet_length(signing_pubkey) >= 91"
+        upper = "octet_length(signing_pubkey) <= 256"
+        incompatible = [
+            f"{lower} AND {upper}",
+            f"{regex} AND ({upper})",
+            f"{regex} AND ({lower})",
+            f"{regex} AND (octet_length(signing_pubkey) >= 90 AND {upper})",
+            f"{regex} AND ({lower} AND octet_length(signing_pubkey) <= 255)",
+            f"{regex} AND ({lower} AND {upper} AND signing_pubkey <> '')",
+            f"{regex} OR ({lower} AND {upper})",
+        ]
+        for expression in incompatible:
+            with self.subTest(expression=expression):
+                snapshot = expected_snapshot()
+                snapshot["check_constraints"]["valoper_profiles_signing_pubkey_check"] = expression
                 with self.assertRaises(init_database.SchemaCompatibilityError):
                     init_database.validate_schema_snapshot(snapshot)
 
