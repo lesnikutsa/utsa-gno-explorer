@@ -1,10 +1,12 @@
 """Bounded collection of a complete, in-memory Valopers registry snapshot."""
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 
 from indexer.valopers_parser import ValoperListEntry, ValoperProfile, parse_valoper_detail, parse_valopers_list
 from indexer.valopers_source import (
+    ValopersRenderResult,
     build_detail_render_data,
     build_page_render_data,
     build_root_render_data,
@@ -16,6 +18,8 @@ VALOPERS_PAGE_SIZE = 50
 MAX_VALOPERS_PAGES = 20
 MAX_VALOPERS_PROFILES = 1000
 MAX_LIST_REQUESTS = MAX_VALOPERS_PAGES + 1
+VALOPERS_FETCH_ATTEMPTS = 3
+VALOPERS_RETRY_DELAY_SECONDS = 0.25
 
 
 @dataclass(frozen=True)
@@ -25,6 +29,20 @@ class ValopersSnapshot:
     source_height: int
     page_count: int
     profiles: tuple[ValoperProfile, ...] = field(repr=False)
+
+
+def _fetch_with_retry(
+    client: GnoRpcClient, render_data: str, query_kind: str, source_height: int
+) -> ValopersRenderResult:
+    """Retry only transport fetches, preserving the client, query, and height."""
+    for attempt in range(VALOPERS_FETCH_ATTEMPTS):
+        try:
+            return fetch_render(client, render_data, query_kind, source_height)
+        except RpcError as exc:
+            if attempt + 1 == VALOPERS_FETCH_ATTEMPTS:
+                raise RpcError("Valopers qrender request failed after bounded retries") from exc
+            time.sleep(VALOPERS_RETRY_DELAY_SECONDS)
+    raise AssertionError("unreachable")  # pragma: no cover
 
 
 def _collect_list(client: GnoRpcClient, source_height: int) -> tuple[list[ValoperListEntry], int]:
@@ -39,7 +57,9 @@ def _collect_list(client: GnoRpcClient, source_height: int) -> tuple[list[Valope
             if page_number == 1
             else build_page_render_data(f"?page={page_number}")
         )
-        rendered = fetch_render(client, render_data, "root" if page_number == 1 else "page", source_height)
+        rendered = _fetch_with_retry(
+            client, render_data, "root" if page_number == 1 else "page", source_height
+        )
         page = parse_valopers_list(rendered.decoded_text)
         if len(page) > VALOPERS_PAGE_SIZE:
             raise RpcError("Valopers page exceeds the page-size limit")
@@ -75,7 +95,7 @@ def collect_valopers_snapshot(client: GnoRpcClient, source_height: int) -> Valop
     signing_addresses: set[str] = set()
     signing_pubkeys: set[str] = set()
     for entry in entries:
-        rendered = fetch_render(
+        rendered = _fetch_with_retry(
             client,
             build_detail_render_data(entry.operator_address),
             "detail",

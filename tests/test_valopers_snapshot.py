@@ -5,12 +5,13 @@ import sys
 import unittest
 from dataclasses import FrozenInstanceError
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 from indexer.valopers_snapshot import (
     MAX_VALOPERS_PAGES,
     VALOPERS_PAGE_SIZE,
     ValopersSnapshot,
+    _fetch_with_retry,
     collect_valopers_snapshot,
 )
 from scripts.inspect_rpc import RpcError
@@ -67,11 +68,15 @@ def detail_render(number: int, *, operator=None, moniker=None, signing=None, pub
 
 
 class FakeClient:
-    def __init__(self, pages, detail_overrides=None, fail_detail=None, fail_pages=None):
+    def __init__(
+        self, pages, detail_overrides=None, fail_detail=None, fail_pages=None,
+        transient_failures=None,
+    ):
         self.pages = pages
         self.detail_overrides = detail_overrides or {}
         self.fail_detail = fail_detail
         self.fail_pages = set(fail_pages or ())
+        self.transient_failures = dict(transient_failures or {})
         self.calls = []
 
     def get(self, method, **params):
@@ -80,18 +85,77 @@ class FakeClient:
         suffix = raw.split(":", 1)[1]
         if suffix.startswith("g1"):
             number = address_number(suffix)
+            key = ("detail", number)
+            if self.transient_failures.get(key, 0):
+                self.transient_failures[key] -= 1
+                raise RpcError("transient detail failure")
             if number == self.fail_detail:
                 raise RpcError("transport failed at https://secret.example/token")
             text = self.detail_overrides.get(number, detail_render(number))
         elif suffix.startswith("?page="):
             page_number = int(suffix.removeprefix("?page="))
+            key = ("page", page_number)
+            if self.transient_failures.get(key, 0):
+                self.transient_failures[key] -= 1
+                raise RpcError("transient page failure")
             if page_number in self.fail_pages:
                 raise RpcError("list transport failed")
             text = self.pages[page_number - 1]
         else:
+            key = ("root", 1)
+            if self.transient_failures.get(key, 0):
+                self.transient_failures[key] -= 1
+                raise RpcError("transient root failure")
             text = self.pages[0]
         encoded = base64.b64encode(text.encode()).decode()
         return {"result": {"response": {"Height": str(params["height"]), "ResponseBase": {"Error": None, "Data": encoded}}}}
+
+
+class FetchRetryTests(unittest.TestCase):
+    @patch("indexer.valopers_snapshot.time.sleep")
+    @patch("indexer.valopers_snapshot.fetch_render")
+    def test_first_attempt_succeeds_without_sleep(self, fetch, sleep):
+        expected = object()
+        fetch.return_value = expected
+        client = object()
+        self.assertIs(_fetch_with_retry(client, "render", "root", 99), expected)
+        fetch.assert_called_once_with(client, "render", "root", 99)
+        sleep.assert_not_called()
+
+    @patch("indexer.valopers_snapshot.time.sleep")
+    @patch("indexer.valopers_snapshot.fetch_render")
+    def test_second_attempt_succeeds_with_identical_request(self, fetch, sleep):
+        expected = object()
+        fetch.side_effect = [RpcError("first"), expected]
+        client = object()
+        self.assertIs(_fetch_with_retry(client, "same-render", "page", 101), expected)
+        self.assertEqual(fetch.call_args_list, [
+            call(client, "same-render", "page", 101),
+            call(client, "same-render", "page", 101),
+        ])
+        sleep.assert_called_once_with(0.25)
+
+    @patch("indexer.valopers_snapshot.time.sleep")
+    @patch("indexer.valopers_snapshot.fetch_render")
+    def test_third_attempt_succeeds(self, fetch, sleep):
+        expected = object()
+        fetch.side_effect = [RpcError("first"), RpcError("second"), expected]
+        self.assertIs(_fetch_with_retry(object(), "render", "detail", 7), expected)
+        self.assertEqual(fetch.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)
+
+    @patch("indexer.valopers_snapshot.time.sleep")
+    @patch("indexer.valopers_snapshot.fetch_render")
+    def test_final_failure_is_safe_and_preserves_cause(self, fetch, sleep):
+        underlying = RpcError("https://user:secret@example.invalid/rpc?token=private")
+        fetch.side_effect = underlying
+        with self.assertRaises(RpcError) as raised:
+            _fetch_with_retry(object(), "render", "root", 8)
+        self.assertEqual(fetch.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)
+        self.assertEqual(str(raised.exception), "Valopers qrender request failed after bounded retries")
+        self.assertIs(raised.exception.__cause__, underlying)
+        self.assertNotIn("https://", str(raised.exception))
 
 
 class SnapshotTests(unittest.TestCase):
@@ -147,8 +211,10 @@ class SnapshotTests(unittest.TestCase):
     def test_repeated_page_fails_before_details(self):
         page = list_render(0, 50)
         client = FakeClient([page, page])
-        with self.assertRaises(RpcError):
-            collect_valopers_snapshot(client, 1)
+        with patch("indexer.valopers_snapshot.time.sleep") as sleep:
+            with self.assertRaises(RpcError):
+                collect_valopers_snapshot(client, 1)
+        sleep.assert_not_called()
         self.assertEqual(len(client.calls), 2)
 
     def test_duplicate_operator_across_pages_fails(self):
@@ -185,9 +251,11 @@ class SnapshotTests(unittest.TestCase):
     def test_terminal_page_transport_failure_fails_before_details(self):
         pages = [list_render(page * 50, 50) for page in range(MAX_VALOPERS_PAGES)]
         client = FakeClient(pages + [list_render(0, 0)], fail_pages={21})
-        with self.assertRaises(RpcError):
-            collect_valopers_snapshot(client, 1)
-        self.assertEqual(len(client.calls), 21)
+        with patch("indexer.valopers_snapshot.time.sleep") as sleep:
+            with self.assertRaises(RpcError):
+                collect_valopers_snapshot(client, 1)
+        self.assertEqual(len(client.calls), 23)
+        self.assertEqual(sleep.call_count, 2)
 
     def test_explicit_profile_guard_fails_closed(self):
         client = FakeClient([list_render(0, 50), list_render(50, 1)])
@@ -197,14 +265,38 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(len(client.calls), 2)
 
     def test_malformed_or_failed_page_two_returns_no_partial_snapshot(self):
-        for client, error in (
-            (FakeClient([list_render(0, 50), "malformed"]), ValueError),
-            (FakeClient([list_render(0, 50), list_render(50, 1)], fail_pages={2}), RpcError),
+        for client, error, calls in (
+            (FakeClient([list_render(0, 50), "malformed"]), ValueError, 2),
+            (FakeClient([list_render(0, 50), list_render(50, 1)], fail_pages={2}), RpcError, 4),
         ):
             with self.subTest(error=error):
-                with self.assertRaises(error):
-                    collect_valopers_snapshot(client, 8)
-                self.assertEqual(len(client.calls), 2)
+                with patch("indexer.valopers_snapshot.time.sleep"):
+                    with self.assertRaises(error):
+                        collect_valopers_snapshot(client, 8)
+                self.assertEqual(len(client.calls), calls)
+
+    def test_root_later_page_and_detail_fetches_can_retry(self):
+        client = FakeClient(
+            [list_render(0, 50), list_render(50, 1)],
+            transient_failures={("root", 1): 1, ("page", 2): 2, ("detail", 50): 1},
+        )
+        with patch("indexer.valopers_snapshot.time.sleep") as sleep:
+            snapshot = collect_valopers_snapshot(client, 88)
+        self.assertEqual(len(snapshot.profiles), 51)
+        self.assertEqual(sleep.call_count, 4)
+        self.assertEqual({height for _, height in client.calls}, {88})
+
+    def test_terminal_page_can_retry_without_page_twenty_two(self):
+        pages = [list_render(page * 50, 50) for page in range(MAX_VALOPERS_PAGES)]
+        client = FakeClient(pages + [list_render(0, 0)], transient_failures={("page", 21): 2})
+        with patch("indexer.valopers_snapshot.time.sleep") as sleep:
+            snapshot = collect_valopers_snapshot(client, 33)
+        self.assertEqual((snapshot.page_count, len(snapshot.profiles)), (20, 1000))
+        self.assertEqual(sleep.call_count, 2)
+        self.assertEqual(
+            [data for data, _ in client.calls].count("gno.land/r/gnops/valopers:?page=21"), 3
+        )
+        self.assertNotIn("gno.land/r/gnops/valopers:?page=22", [data for data, _ in client.calls])
 
     def test_same_operator_set_in_different_order_fails(self):
         first = list(range(50))
@@ -219,8 +311,12 @@ class SnapshotTests(unittest.TestCase):
             detail_render(0, moniker="Wrong Node"),
         ):
             with self.subTest(override=override):
-                with self.assertRaises(RpcError):
-                    collect_valopers_snapshot(FakeClient([list_render(0, 1)], {0: override}), 1)
+                client = FakeClient([list_render(0, 1)], {0: override})
+                with patch("indexer.valopers_snapshot.time.sleep") as sleep:
+                    with self.assertRaises(RpcError):
+                        collect_valopers_snapshot(client, 1)
+                sleep.assert_not_called()
+                self.assertEqual(len(client.calls), 2)
 
     def test_duplicate_signing_identity_fails(self):
         common_signing = address(15_000)
@@ -231,12 +327,20 @@ class SnapshotTests(unittest.TestCase):
         )
         for overrides in cases:
             with self.subTest(overrides=overrides):
-                with self.assertRaises(RpcError):
-                    collect_valopers_snapshot(FakeClient([list_render(0, 2)], overrides), 1)
+                client = FakeClient([list_render(0, 2)], overrides)
+                with patch("indexer.valopers_snapshot.time.sleep") as sleep:
+                    with self.assertRaises(RpcError):
+                        collect_valopers_snapshot(client, 1)
+                sleep.assert_not_called()
+                self.assertEqual(len(client.calls), 3)
 
     def test_final_detail_transport_failure_returns_no_snapshot(self):
-        with self.assertRaises(RpcError):
-            collect_valopers_snapshot(FakeClient([list_render(0, 2)], fail_detail=1), 1)
+        client = FakeClient([list_render(0, 2)], fail_detail=1)
+        with patch("indexer.valopers_snapshot.time.sleep") as sleep:
+            with self.assertRaises(RpcError):
+                collect_valopers_snapshot(client, 1)
+        self.assertEqual(len(client.calls), 5)
+        self.assertEqual(sleep.call_count, 2)
 
     def test_details_start_after_pagination_and_match_list_order_and_height(self):
         client = FakeClient([list_render(0, 50), list_render(50, 2)])
