@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { getValidator } from '../services/api'
 
 const CONSENSUS_ADDRESS_PATTERN = /^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$/
+const VALIDATOR_DETAIL_REFRESH_MS = 2000
 
 const decodeAddress = (routeAddress) => {
   if (typeof routeAddress !== 'string' || routeAddress.length === 0 || routeAddress.length > 128) return null
@@ -32,6 +33,8 @@ export function useValidatorDetail(routeAddress) {
   useEffect(() => {
     const requestId = ++requestIdRef.current
     let mounted = true
+    let refreshTimer = null
+    let hasSuccessfulResponse = false
     const update = (nextState) => {
       if (mounted && requestId === requestIdRef.current) setState(nextState)
     }
@@ -43,17 +46,31 @@ export function useValidatorDetail(routeAddress) {
     }
 
     update({ validator: null, loading: true, notFound: false, invalidAddress: false, error: false, healthState: 'loading' })
-    getValidator(address)
-      .then((validator) => update({ validator, loading: false, notFound: false, invalidAddress: false, error: false, healthState: 'healthy' }))
-      .catch((requestError) => {
-        if (requestError.status === 404) {
-          update({ validator: null, loading: false, notFound: true, invalidAddress: false, error: false, healthState: 'healthy' })
-        } else {
-          update({ validator: null, loading: false, notFound: false, invalidAddress: false, error: true, healthState: 'error' })
+    const requestValidator = async () => {
+      try {
+        const validator = await getValidator(address)
+        hasSuccessfulResponse = true
+        update({ validator, loading: false, notFound: false, invalidAddress: false, error: false, healthState: 'healthy' })
+      } catch (requestError) {
+        if (!hasSuccessfulResponse) {
+          if (requestError.status === 404) {
+            update({ validator: null, loading: false, notFound: true, invalidAddress: false, error: false, healthState: 'healthy' })
+          } else {
+            update({ validator: null, loading: false, notFound: false, invalidAddress: false, error: true, healthState: 'error' })
+          }
         }
-      })
+      } finally {
+        if (mounted && requestId === requestIdRef.current && hasSuccessfulResponse) {
+          refreshTimer = window.setTimeout(requestValidator, VALIDATOR_DETAIL_REFRESH_MS)
+        }
+      }
+    }
+    requestValidator()
 
-    return () => { mounted = false }
+    return () => {
+      mounted = false
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer)
+    }
   }, [routeAddress, retryCount])
 
   return { ...state, retry }

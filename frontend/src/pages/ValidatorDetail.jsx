@@ -6,7 +6,7 @@ import {
   getSigningStatusLabel,
   normalizeSigningStatus,
 } from '../components/ValidatorSigningStrip'
-import { formatIntegerString, getMissedBlocks, getValidatorHealth } from '../utils/validatorHealth'
+import { formatIntegerString, getValidatorHealth } from '../utils/validatorHealth'
 import { hasValidatorMoniker } from '../utils/validatorIdentity'
 
 const present = (value) => value !== null && value !== undefined && value !== ''
@@ -58,41 +58,6 @@ const formatCount = (value) => {
   return Number.isFinite(number) ? formatIntegerString(value) : '—'
 }
 
-function PerformanceCard({ title, uptime }) {
-  const data = uptime && typeof uptime === 'object' ? uptime : {}
-  const requiredCounters = ['active_blocks', 'signed_blocks', 'nil_blocks', 'absent_blocks', 'invalid_blocks', 'unknown_blocks']
-  const hasCompleteCounters = requiredCounters.every((counter) => present(data[counter]) && Number.isFinite(Number(data[counter])))
-  const health = hasCompleteCounters
-    ? getValidatorHealth(data)
-    : { label: 'No data', tone: 'neutral' }
-  const values = [
-    ['Network Blocks', data.network_blocks],
-    ['Active Blocks', data.active_blocks],
-    ['Signed', data.signed_blocks],
-    ['Missed', hasCompleteCounters ? getMissedBlocks(data) : null],
-    ['Nil', data.nil_blocks],
-    ['Absent', data.absent_blocks],
-    ['Invalid', data.invalid_blocks],
-    ['Unknown', data.unknown_blocks],
-  ]
-
-  return (
-    <section className="validator-performance__card">
-      <h3>{title}</h3>
-      <div className="validator-performance__summary">
-        <Field label="Uptime" mono>{formatPercent(data.uptime_percent)}</Field>
-        <div className="validator-detail__field">
-          <span className="validator-detail__label">Health</span>
-          <StatusBadge tone={health.tone}>{health.label}</StatusBadge>
-        </div>
-      </div>
-      <div className="validator-performance__metrics">
-        {values.map(([label, value]) => <Field label={label} mono key={label}>{formatCount(value)}</Field>)}
-      </div>
-    </section>
-  )
-}
-
 export function ValidatorDetail({ validatorDetail }) {
   const { validator, loading, notFound, invalidAddress, error, retry } = validatorDetail
 
@@ -114,6 +79,8 @@ export function ValidatorDetail({ validatorDetail }) {
         </div>
         <StatusBadge tone={active ? 'success' : 'neutral'}>{status}</StatusBadge>
       </header>
+
+      <SigningHistory validator={validator} />
 
       <section className="panel validator-detail__section" aria-labelledby="validator-identity-title">
         <div className="panel__heading"><h2 id="validator-identity-title">Validator Identity</h2></div>
@@ -147,20 +114,18 @@ export function ValidatorDetail({ validatorDetail }) {
         </div>
       </section>
 
-      <section className="panel validator-detail__section" aria-labelledby="validator-performance-title">
-        <div className="panel__heading"><h2 id="validator-performance-title">Signing Performance</h2></div>
-        <div className="validator-performance">
-          <PerformanceCard title="Last 100 Network Blocks" uptime={validator.uptime_100} />
-        </div>
-      </section>
-
-      <SigningHistory validator={validator} />
     </article>
   )
 }
 
 function SigningHistory({ validator }) {
   const history = validator.signing_history && typeof validator.signing_history === 'object' ? validator.signing_history : {}
+  const uptime = validator.uptime_100 && typeof validator.uptime_100 === 'object' ? validator.uptime_100 : {}
+  const requiredCounters = ['active_blocks', 'signed_blocks', 'nil_blocks', 'absent_blocks', 'invalid_blocks', 'unknown_blocks']
+  const hasCompleteCounters = requiredCounters.every((counter) => present(uptime[counter]) && Number.isFinite(Number(uptime[counter])))
+  const health = hasCompleteCounters
+    ? getValidatorHealth(uptime)
+    : { label: 'No data', tone: 'neutral' }
   // The detail API already returns items in chronological (oldest-to-newest) order.
   const items = Array.isArray(history.items) ? history.items : []
   const counts = Object.fromEntries(SIGNING_STATUSES.map((status) => [status, 0]))
@@ -171,6 +136,13 @@ function SigningHistory({ validator }) {
   return (
     <section className="panel validator-detail__section" aria-labelledby="validator-signing-history-title">
       <div className="panel__heading"><h2 id="validator-signing-history-title">Signing History</h2></div>
+      <div className="signing-history__summary">
+        <Field label="Uptime" mono>{formatPercent(uptime.uptime_percent)}</Field>
+        <div className="validator-detail__field">
+          <span className="validator-detail__label">Health</span>
+          <StatusBadge tone={health.tone}>{health.label}</StatusBadge>
+        </div>
+      </div>
       <div className="signing-history__range">
         <HeightField label="From Block" value={history.start_height} />
         <HeightField label="To Block" value={history.end_height} />

@@ -36,8 +36,16 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
         self.assertIn("const retry = useCallback", self.hook)
         self.assertIn("requestId === requestIdRef.current", self.hook)
         self.assertIn("if (mounted &&", self.hook)
-        self.assertIn("return () => { mounted = false }", self.hook)
+        self.assertIn("if (mounted && requestId === requestIdRef.current && hasSuccessfulResponse)", self.hook)
         self.assertNotIn("setInterval", self.hook)
+
+    def test_hook_refreshes_serially_and_preserves_background_data(self):
+        self.assertIn("const VALIDATOR_DETAIL_REFRESH_MS = 2000", self.hook)
+        self.assertIn("await getValidator(address)", self.hook)
+        self.assertIn("window.setTimeout(requestValidator, VALIDATOR_DETAIL_REFRESH_MS)", self.hook)
+        self.assertIn("if (!hasSuccessfulResponse)", self.hook)
+        self.assertIn("if (refreshTimer !== null) window.clearTimeout(refreshTimer)", self.hook)
+        self.assertLess(self.hook.index("if (address === null)"), self.hook.index("requestValidator()"))
 
     def test_app_preserves_list_and_block_routes_and_adds_detail(self):
         self.assertIn("path === '/validators' || path === '/validators/'", self.app)
@@ -81,25 +89,24 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
         self.assertIn('href={`/blocks/${value}`}', self.page)
         self.assertIn("present(value) ?", self.page)
 
-    def test_signing_performance_reuses_health_helpers(self):
-        for label in (
-            "Signing Performance", "Last 100 Network Blocks",
-            "Uptime", "Health", "Network Blocks", "Active Blocks", "Signed", "Missed",
-            "Nil", "Absent", "Invalid", "Unknown",
-        ):
-            self.assertIn(label, self.page)
-        self.assertIn("getMissedBlocks(data)", self.page)
-        self.assertIn("getValidatorHealth(data)", self.page)
-        self.assertIn("uptime={validator.uptime_100}", self.page)
+    def test_signing_history_contains_uptime_and_health_without_performance_card(self):
+        self.assertLess(self.page.index("<SigningHistory validator={validator} />"), self.page.index("Validator Identity"))
+        self.assertIn("const uptime = validator.uptime_100", self.page)
+        self.assertIn('<Field label="Uptime" mono>{formatPercent(uptime.uptime_percent)}</Field>', self.page)
+        self.assertIn("getValidatorHealth(uptime)", self.page)
+        self.assertIn("<StatusBadge tone={health.tone}>{health.label}</StatusBadge>", self.page)
+        self.assertNotIn("Signing Performance", self.page)
+        self.assertNotIn("PerformanceCard", self.page)
         self.assertNotIn("uptime={validator.uptime_20}", self.page)
-        self.assertNotIn("Last 20 Network Blocks", self.page)
+        self.assertNotIn("getMissedBlocks", self.page)
+        for metric in ('label="Active Blocks"', 'label="Signed"', 'label="Missed"'):
+            self.assertNotIn(metric, self.page)
 
-    def test_incomplete_performance_data_is_not_derived(self):
+    def test_incomplete_uptime_data_has_neutral_health(self):
         self.assertIn("const requiredCounters =", self.page)
         self.assertIn("requiredCounters.every", self.page)
-        self.assertIn("Number.isFinite(Number(data[counter]))", self.page)
-        self.assertIn("hasCompleteCounters ? getMissedBlocks(data) : null", self.page)
-        self.assertIn("? getValidatorHealth(data)", self.page)
+        self.assertIn("Number.isFinite(Number(uptime[counter]))", self.page)
+        self.assertIn("? getValidatorHealth(uptime)", self.page)
         self.assertIn("{ label: 'No data', tone: 'neutral' }", self.page)
 
     def test_signing_history_reuses_strip_statuses_and_api_order(self):
@@ -117,7 +124,6 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
         self.assertIn("const items = Array.isArray(history.items) ? history.items : []", self.page)
         self.assertNotIn("Array(100)", self.page)
         self.assertNotIn("fill(", self.page)
-        self.assertNotIn("setInterval", self.page)
         self.assertNotIn("getValidator(", self.page)
 
     def test_validator_table_links_exact_identity_without_changing_processing(self):
