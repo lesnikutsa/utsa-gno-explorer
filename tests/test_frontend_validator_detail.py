@@ -14,6 +14,7 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
         cls.page = (ROOT / "frontend/src/pages/ValidatorDetail.jsx").read_text()
         cls.validators = (ROOT / "frontend/src/pages/Validators.jsx").read_text()
         cls.overview = (ROOT / "frontend/src/pages/Overview.jsx").read_text()
+        cls.styles = (ROOT / "frontend/src/styles/app.css").read_text()
 
     def test_api_client_encodes_address_with_existing_request(self):
         self.assertIn("export const getValidator = (address)", self.api)
@@ -82,6 +83,21 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
 
     def test_overview_has_no_validator_detail_links(self):
         self.assertNotIn("/validators/${", self.overview)
+
+    def test_current_status_final_field_spans_both_desktop_columns(self):
+        self.assertIn(
+            ".validator-detail__grid--status .validator-detail__field:last-child "
+            "{ grid-column: 1 / -1; border-right: 0; }",
+            self.styles,
+        )
+        self.assertNotIn(
+            ".validator-detail__grid .validator-detail__field:last-child",
+            self.styles,
+        )
+        self.assertIn(
+            ".validator-detail__grid { grid-template-columns: 1fr; }",
+            self.styles,
+        )
 
 
 if __name__ == "__main__":
