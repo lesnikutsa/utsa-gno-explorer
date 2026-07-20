@@ -69,25 +69,28 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
     def test_loaded_identity_and_status_are_present(self):
         self.assertIn("hasValidatorMoniker(validator) ? validator.moniker : 'Validator'", self.page)
         for label in (
-            "Validator Identity", "Signing Address", "Operator Address", "Server Type",
-            "Profile Source Height", "Current Status", "Indexed Height", "Voting Power",
+            "Validator Identity", "Signing Address", "Operator Address", "Public Key Type", "Public Key",
+            "Current Status", "Indexed Height", "Voting Power",
             "Voting Power Share", "Proposer Priority", "Active", "Inactive",
         ):
             self.assertIn(label, self.page)
         self.assertIn('copyLabel="signing address"', self.page)
         self.assertIn('copyLabel="operator address"', self.page)
+        self.assertIn('copyLabel="validator public key"', self.page)
+        identity = self.page[self.page.index("Validator Identity"):self.page.index("Current Status")]
+        self.assertIn("validator.public_key_type", identity)
+        self.assertIn("validator.public_key_value", identity)
+        self.assertNotIn("Server Type", self.page)
+        self.assertNotIn("Profile Source Height", self.page)
         self.assertIn("validator.address", self.page)
 
-    def test_profile_uses_existing_fields_copy_and_safe_block_links(self):
-        for label in (
-            "Validator Profile", "Description", "Public Key Type", "Public Key",
-            "First Seen Height", "Last Seen Height",
-        ):
-            self.assertIn(label, self.page)
-        self.assertIn('copyLabel="validator public key"', self.page)
-        self.assertIn("validator.public_key_value", self.page)
-        self.assertIn('href={`/blocks/${value}`}', self.page)
-        self.assertIn("present(value) ?", self.page)
+    def test_profile_contains_only_description(self):
+        profile = self.page[self.page.index("Validator Profile"):self.page.index("</section>", self.page.index("Validator Profile"))]
+        self.assertIn("Description", profile)
+        self.assertNotIn("Public Key Type", profile)
+        self.assertNotIn("Public Key", profile)
+        self.assertNotIn("First Seen Height", self.page)
+        self.assertNotIn("Last Seen Height", self.page)
 
     def test_signing_history_contains_uptime_and_health_without_performance_card(self):
         self.assertLess(self.page.index("<SigningHistory validator={validator} />"), self.page.index("Validator Identity"))
@@ -95,6 +98,10 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
         self.assertIn('<Field label="Uptime" mono>{formatPercent(uptime.uptime_percent)}</Field>', self.page)
         self.assertIn("getValidatorHealth(uptime)", self.page)
         self.assertIn("<StatusBadge tone={health.tone}>{health.label}</StatusBadge>", self.page)
+        self.assertNotIn('className="signing-history__summary"', self.page)
+        metadata = self.page[self.page.index('className="signing-history__range"'):self.page.index('className="signing-history__strip"')]
+        labels = ["From Block", "To Block", "Network Blocks", "Uptime", "Health"]
+        self.assertEqual(sorted(labels, key=metadata.index), labels)
         self.assertNotIn("Signing Performance", self.page)
         self.assertNotIn("PerformanceCard", self.page)
         self.assertNotIn("uptime={validator.uptime_20}", self.page)
@@ -155,22 +162,13 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
             self.styles,
         )
 
-    def test_profile_grid_has_specific_desktop_and_mobile_borders(self):
+    def test_profile_description_spans_both_columns(self):
         self.assertIn(
-            ".validator-detail__grid--profile .validator-detail__field:nth-child(n+2) "
-            "{ border-top: 1px solid var(--color-border-soft); }",
+            ".validator-detail__grid--profile .validator-detail__field:first-child "
+            "{ grid-column: 1 / -1; border-right: 0; }",
             self.styles,
         )
-        self.assertIn(
-            ".validator-detail__grid--profile .validator-detail__field:nth-child(2),\n"
-            ".validator-detail__grid--profile .validator-detail__field:nth-child(4) "
-            "{ border-right: 1px solid var(--color-border-soft); }",
-            self.styles,
-        )
-        self.assertIn(
-            ".validator-detail__grid--profile .validator-detail__field { border-right: 0; }",
-            self.styles,
-        )
+        self.assertNotIn("signing-history__summary", self.styles)
 
 
 if __name__ == "__main__":

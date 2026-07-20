@@ -87,8 +87,8 @@ export function ValidatorDetail({ validatorDetail }) {
         <div className="validator-detail__grid">
           <AddressField label="Signing Address" value={validator.address} copyLabel="signing address" />
           <AddressField label="Operator Address" value={validator.operator_address} copyLabel="operator address" />
-          <Field label="Server Type">{present(validator.server_type) ? validator.server_type : '—'}</Field>
-          <Field label="Profile Source Height" mono>{formatHeight(validator.valoper_source_height)}</Field>
+          <Field label="Public Key Type" mono>{present(validator.public_key_type) ? validator.public_key_type : '—'}</Field>
+          <AddressField label="Public Key" value={validator.public_key_value} copyLabel="validator public key" />
         </div>
       </section>
 
@@ -107,10 +107,6 @@ export function ValidatorDetail({ validatorDetail }) {
         <div className="panel__heading"><h2 id="validator-profile-title">Validator Profile</h2></div>
         <div className="validator-detail__grid validator-detail__grid--profile">
           <Field label="Description">{present(validator.description) ? validator.description : '—'}</Field>
-          <Field label="Public Key Type" mono>{present(validator.public_key_type) ? validator.public_key_type : '—'}</Field>
-          <AddressField label="Public Key" value={validator.public_key_value} copyLabel="validator public key" />
-          <HeightField label="First Seen Height" value={validator.first_seen_height} />
-          <HeightField label="Last Seen Height" value={validator.last_seen_height} />
         </div>
       </section>
 
@@ -136,17 +132,15 @@ function SigningHistory({ validator }) {
   return (
     <section className="panel validator-detail__section" aria-labelledby="validator-signing-history-title">
       <div className="panel__heading"><h2 id="validator-signing-history-title">Signing History</h2></div>
-      <div className="signing-history__summary">
+      <div className="signing-history__range">
+        <HeightField label="From Block" value={history.start_height} />
+        <HeightField label="To Block" value={history.end_height} />
+        <Field label="Network Blocks" mono>{formatCount(history.network_blocks)}</Field>
         <Field label="Uptime" mono>{formatPercent(uptime.uptime_percent)}</Field>
         <div className="validator-detail__field">
           <span className="validator-detail__label">Health</span>
           <StatusBadge tone={health.tone}>{health.label}</StatusBadge>
         </div>
-      </div>
-      <div className="signing-history__range">
-        <HeightField label="From Block" value={history.start_height} />
-        <HeightField label="To Block" value={history.end_height} />
-        <Field label="Network Blocks" mono>{formatCount(history.network_blocks)}</Field>
       </div>
       <div className="signing-history__strip">
         <ValidatorSigningStrip blocks={blocks} statuses={statuses} address={validator.address} />
