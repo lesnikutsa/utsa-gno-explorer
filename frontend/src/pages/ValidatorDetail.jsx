@@ -76,7 +76,6 @@ export function ValidatorDetail({ validatorDetail }) {
         <div>
           <h1 id="validator-detail-title">{hasValidatorMoniker(validator) ? validator.moniker : 'Validator'}</h1>
         </div>
-        <StatusBadge tone={active ? 'success' : 'neutral'}>{status}</StatusBadge>
       </header>
 
       <section className="panel validator-detail__section" aria-labelledby="validator-current-status-title">

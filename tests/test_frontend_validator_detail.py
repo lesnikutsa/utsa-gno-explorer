@@ -69,6 +69,8 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
     def test_loaded_identity_and_status_are_present(self):
         self.assertIn("hasValidatorMoniker(validator) ? validator.moniker : 'Validator'", self.page)
         self.assertNotIn("Consensus validator details indexed by UTSA Explorer.", self.page)
+        header = self.page[self.page.index('<header className="validator-detail__header">'):self.page.index("</header>")]
+        self.assertNotIn("StatusBadge", header)
         for label in (
             "Validator Identity", "Signing Address", "Operator Address", "Public Key Type", "Public Key",
             "Current Status", "Indexed Height", "Voting Power",
@@ -100,6 +102,7 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
         self.assertIn('<Field label="Uptime" mono>{formatPercent(uptime.uptime_percent)}</Field>', self.page)
         self.assertIn("getValidatorHealth(uptime)", self.page)
         self.assertIn("<StatusBadge tone={health.tone}>{health.label}</StatusBadge>", self.page)
+        self.assertEqual(self.page.count("<StatusBadge"), 1)
         self.assertNotIn('className="signing-history__summary"', self.page)
         metadata = self.page[self.page.index('className="signing-history__range"'):self.page.index('className="signing-history__strip"')]
         labels = ["From Block", "To Block", "Network Blocks", "Uptime", "Health"]
