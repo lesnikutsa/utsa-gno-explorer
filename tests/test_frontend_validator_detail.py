@@ -70,6 +70,44 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
         self.assertIn('copyLabel="operator address"', self.page)
         self.assertIn("validator.address", self.page)
 
+    def test_profile_uses_existing_fields_copy_and_safe_block_links(self):
+        for label in (
+            "Validator Profile", "Description", "Public Key Type", "Public Key",
+            "First Seen Height", "Last Seen Height",
+        ):
+            self.assertIn(label, self.page)
+        self.assertIn('copyLabel="validator public key"', self.page)
+        self.assertIn("validator.public_key_value", self.page)
+        self.assertIn('href={`/blocks/${value}`}', self.page)
+        self.assertIn("present(value) ?", self.page)
+
+    def test_signing_performance_reuses_health_helpers(self):
+        for label in (
+            "Signing Performance", "Last 20 Network Blocks", "Last 100 Network Blocks",
+            "Uptime", "Health", "Network Blocks", "Active Blocks", "Signed", "Missed",
+            "Nil", "Absent", "Invalid", "Unknown",
+        ):
+            self.assertIn(label, self.page)
+        self.assertIn("getMissedBlocks(data)", self.page)
+        self.assertIn("getValidatorHealth(data)", self.page)
+        self.assertIn("uptime={validator.uptime_20}", self.page)
+        self.assertIn("uptime={validator.uptime_100}", self.page)
+
+    def test_signing_history_reuses_strip_statuses_and_api_order(self):
+        for value in (
+            "Signing History", "ValidatorSigningStrip", "SIGNING_STATUSES",
+            "getSigningStatusLabel", "normalizeSigningStatus", "Commit", "Not active",
+            "From Block", "To Block",
+        ):
+            sources = self.page + (ROOT / "frontend/src/components/ValidatorSigningStrip.jsx").read_text()
+            self.assertIn(value, sources)
+        self.assertIn("oldest-to-newest", self.page)
+        self.assertNotIn(".reverse()", self.page)
+        self.assertIn("address={validator.address}", self.page)
+        self.assertIn("items.map((item) => ({ height: item?.height, time: item?.time }))", self.page)
+        self.assertNotIn("setInterval", self.page)
+        self.assertNotIn("getValidator(", self.page)
+
     def test_validator_table_links_exact_identity_without_changing_processing(self):
         self.assertIn("encodeURIComponent(row.address)", self.validators)
         self.assertIn("rowKey={(row) => row.address}", self.validators)

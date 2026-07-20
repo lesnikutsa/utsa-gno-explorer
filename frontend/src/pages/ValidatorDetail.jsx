@@ -1,6 +1,12 @@
 import { CopyButton } from '../components/CopyButton'
 import { StatusBadge } from '../components/StatusBadge'
-import { formatIntegerString } from '../utils/validatorHealth'
+import {
+  SIGNING_STATUSES,
+  ValidatorSigningStrip,
+  getSigningStatusLabel,
+  normalizeSigningStatus,
+} from '../components/ValidatorSigningStrip'
+import { formatIntegerString, getMissedBlocks, getValidatorHealth } from '../utils/validatorHealth'
 import { hasValidatorMoniker } from '../utils/validatorIdentity'
 
 const present = (value) => value !== null && value !== undefined && value !== ''
@@ -40,6 +46,47 @@ function AddressField({ label, value, copyLabel }) {
 
 function Field({ label, children, mono = false }) {
   return <div className="validator-detail__field"><span className="validator-detail__label">{label}</span><strong className={`validator-detail__value${mono ? ' mono' : ''}`}>{children}</strong></div>
+}
+
+function HeightField({ label, value }) {
+  return <Field label={label} mono>{present(value) ? <a href={`/blocks/${value}`}>{formatHeight(value)}</a> : '—'}</Field>
+}
+
+const formatCount = (value) => {
+  if (!present(value)) return '—'
+  const number = Number(value)
+  return Number.isFinite(number) ? formatIntegerString(value) : '—'
+}
+
+function PerformanceCard({ title, uptime }) {
+  const data = uptime && typeof uptime === 'object' ? uptime : {}
+  const health = getValidatorHealth(data)
+  const values = [
+    ['Network Blocks', data.network_blocks],
+    ['Active Blocks', data.active_blocks],
+    ['Signed', data.signed_blocks],
+    ['Missed', getMissedBlocks(data)],
+    ['Nil', data.nil_blocks],
+    ['Absent', data.absent_blocks],
+    ['Invalid', data.invalid_blocks],
+    ['Unknown', data.unknown_blocks],
+  ]
+
+  return (
+    <section className="validator-performance__card">
+      <h3>{title}</h3>
+      <div className="validator-performance__summary">
+        <Field label="Uptime" mono>{formatPercent(data.uptime_percent)}</Field>
+        <div className="validator-detail__field">
+          <span className="validator-detail__label">Health</span>
+          <StatusBadge tone={health.tone}>{health.label}</StatusBadge>
+        </div>
+      </div>
+      <div className="validator-performance__metrics">
+        {values.map(([label, value]) => <Field label={label} mono key={label}>{formatCount(value)}</Field>)}
+      </div>
+    </section>
+  )
 }
 
 export function ValidatorDetail({ validatorDetail }) {
@@ -84,6 +131,60 @@ export function ValidatorDetail({ validatorDetail }) {
           <Field label="Proposer Priority" mono>{present(validator.current.proposer_priority) ? validator.current.proposer_priority : '—'}</Field>
         </div>
       </section>
+
+      <section className="panel validator-detail__section" aria-labelledby="validator-profile-title">
+        <div className="panel__heading"><h2 id="validator-profile-title">Validator Profile</h2></div>
+        <div className="validator-detail__grid validator-detail__grid--profile">
+          <Field label="Description">{present(validator.description) ? validator.description : '—'}</Field>
+          <Field label="Public Key Type" mono>{present(validator.public_key_type) ? validator.public_key_type : '—'}</Field>
+          <AddressField label="Public Key" value={validator.public_key_value} copyLabel="validator public key" />
+          <HeightField label="First Seen Height" value={validator.first_seen_height} />
+          <HeightField label="Last Seen Height" value={validator.last_seen_height} />
+        </div>
+      </section>
+
+      <section className="panel validator-detail__section" aria-labelledby="validator-performance-title">
+        <div className="panel__heading"><h2 id="validator-performance-title">Signing Performance</h2></div>
+        <div className="validator-performance">
+          <PerformanceCard title="Last 20 Network Blocks" uptime={validator.uptime_20} />
+          <PerformanceCard title="Last 100 Network Blocks" uptime={validator.uptime_100} />
+        </div>
+      </section>
+
+      <SigningHistory validator={validator} />
     </article>
+  )
+}
+
+function SigningHistory({ validator }) {
+  const history = validator.signing_history && typeof validator.signing_history === 'object' ? validator.signing_history : {}
+  // The detail API already returns items in chronological (oldest-to-newest) order.
+  const items = Array.isArray(history.items) ? history.items : []
+  const counts = Object.fromEntries(SIGNING_STATUSES.map((status) => [status, 0]))
+  items.forEach((item) => { counts[normalizeSigningStatus(item?.status)] += 1 })
+  const blocks = items.map((item) => ({ height: item?.height, time: item?.time }))
+  const statuses = items.map((item) => item?.status)
+
+  return (
+    <section className="panel validator-detail__section" aria-labelledby="validator-signing-history-title">
+      <div className="panel__heading"><h2 id="validator-signing-history-title">Signing History</h2></div>
+      <div className="signing-history__range">
+        <HeightField label="From Block" value={history.start_height} />
+        <HeightField label="To Block" value={history.end_height} />
+        <Field label="Network Blocks" mono>{formatCount(history.network_blocks)}</Field>
+      </div>
+      <div className="signing-history__strip">
+        <ValidatorSigningStrip blocks={blocks} statuses={statuses} address={validator.address} />
+      </div>
+      <div className="signing-history__legend" aria-label="Signing status legend and counts">
+        {SIGNING_STATUSES.map((status) => (
+          <div className="signing-history__legend-item" key={status}>
+            <span className={`signing-strip__segment signing-strip__segment--${status}`} aria-hidden="true" />
+            <span>{getSigningStatusLabel(status)}</span>
+            <strong className="mono">{formatIntegerString(counts[status])}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }

@@ -201,6 +201,25 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .validator-detail__state { padding: 18px; }
 .validator-detail__state-actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
 .validator-detail__state .validator-detail__back { margin: 0; }
+.validator-detail__grid--profile .validator-detail__field:first-child { grid-column: 1 / -1; border-right: 0; }
+.validator-detail__grid--profile .validator-detail__field:nth-child(2) { border-right: 1px solid var(--color-border-soft); }
+.validator-performance { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 10px; }
+.validator-performance__card { min-width: 0; overflow: hidden; border: 1px solid var(--color-border-soft); background: rgba(10, 29, 44, .45); }
+.validator-performance__card h3 { margin: 0; padding: 10px 12px; border-bottom: 1px solid var(--color-border-soft); color: var(--color-text-bright); font-size: 12px; }
+.validator-performance__summary, .validator-performance__metrics, .signing-history__range { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.validator-performance__metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--color-border-soft); }
+.validator-performance__summary .validator-detail__field + .validator-detail__field,
+.validator-performance__metrics .validator-detail__field:not(:nth-child(4n+1)),
+.signing-history__range .validator-detail__field + .validator-detail__field { border-left: 1px solid var(--color-border-soft); }
+.validator-performance__metrics .validator-detail__field:nth-child(n+5) { border-top: 1px solid var(--color-border-soft); }
+.signing-history__range { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.signing-history__strip { min-width: 0; overflow-x: auto; padding: 13px; border-top: 1px solid var(--color-border-soft); }
+.signing-history__strip .signing-strip { width: max(100%, 280px); }
+.signing-history__legend { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); border-top: 1px solid var(--color-border-soft); }
+.signing-history__legend-item { display: grid; grid-template-columns: 6px 1fr auto; align-items: center; gap: 6px; min-width: 0; padding: 9px; color: var(--color-text-secondary); font-size: 9px; }
+.signing-history__legend-item + .signing-history__legend-item { border-left: 1px solid var(--color-border-soft); }
+.signing-history__legend-item .signing-strip__segment { width: 6px; }
+.signing-history__legend-item strong { color: var(--color-text); }
 .network-preview { margin: 10px 0; padding: 11px 13px 13px; border: 1px solid var(--color-border-soft); border-radius: 7px; background: rgba(15,34,53,.62); }
 .network-preview__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .network-preview__header h2 { min-width: 0; margin: 0; font-size: 14px; }
@@ -260,6 +279,18 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
   .validator-detail__grid { grid-template-columns: 1fr; }
   .validator-detail__grid .validator-detail__field:nth-child(odd) { border-right: 0; }
   .validator-detail__grid .validator-detail__field + .validator-detail__field { border-top: 1px solid var(--color-border-soft); }
+  .validator-detail__grid--profile .validator-detail__field:nth-child(2) { border-right: 0; }
+  .validator-performance { grid-template-columns: 1fr; }
+  .validator-performance__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .validator-performance__metrics .validator-detail__field:not(:nth-child(4n+1)) { border-left: 0; }
+  .validator-performance__metrics .validator-detail__field:nth-child(even) { border-left: 1px solid var(--color-border-soft); }
+  .validator-performance__metrics .validator-detail__field:nth-child(n+3) { border-top: 1px solid var(--color-border-soft); }
+  .signing-history__range { grid-template-columns: 1fr; }
+  .signing-history__range .validator-detail__field + .validator-detail__field { border-top: 1px solid var(--color-border-soft); border-left: 0; }
+  .signing-history__legend { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .signing-history__legend-item + .signing-history__legend-item { border-left: 0; }
+  .signing-history__legend-item:nth-child(even) { border-left: 1px solid var(--color-border-soft); }
+  .signing-history__legend-item:nth-child(n+3) { border-top: 1px solid var(--color-border-soft); }
   .resource-strip { flex-wrap: wrap; gap: 16px; }.resource-divider { display: none; }.network-preview__content { grid-template-columns: 1fr; }.network-preview__map { min-height: 120px; }.network-preview__mascot { display: none; }
 }
 @media (max-width: 480px) { .status-grid { grid-template-columns: 1fr; }.resource-guides > div { gap: 12px; flex-direction: column; } }
