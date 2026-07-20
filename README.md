@@ -5,7 +5,8 @@ Custom Gno.land explorer with blocks, validators, uptime and signing history.
 ## Manual Valopers profile sync
 
 The one-shot command reads `gno.land/r/gnops/valopers` at one pinned committed
-height and stores bounded profile metadata. It does not alter the active set,
+height and stores bounded profile metadata. Dry-run reads validator identities
+from PostgreSQL for meaningful matching but performs no writes. It does not alter the active set,
 perform governance actions, expose API fields, or schedule itself.
 
 ```bash

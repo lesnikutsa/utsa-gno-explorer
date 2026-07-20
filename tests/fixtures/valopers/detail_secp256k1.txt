@@ -1,5 +1,10 @@
-# Beta
-- **Operator Address**: g1beta
-- **Moniker**: Beta
-- **Description**:
-- **Consensus Public Key**: gpub1addwnpcqqypqxpq9qcrsszg2pvxq6rs0zqg3yyc5z5tpwxqergd3c8g7rusq8ed5gc
+Valoper's details:
+## secp-node
+Authoritative-format Secp256k1 decoder vector.
+
+- Operator Address: g1pppppppppppppppppppppppppppppppppppppp
+- Signing Address: g1tttttttttttttttttttttttttttttttttttttt
+- Signing PubKey: gpub1pgfj7ard9eg82cjtv4u4xetrwqer2dntxyfzxz3pqypqxpq9qcrsszg2pvxq6rs0zqg3yyc5z5tpwxqergd3c8g7ruszzaywaz7
+- Server Type: cloud
+
+[Profile link](/r/demo/profile:g1pppppppppppppppppppppppppppppppppppppp)

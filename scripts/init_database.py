@@ -11,6 +11,7 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = REPO_ROOT / "database" / "schema.sql"
+VALIDATOR_PROFILES_UPGRADE = REPO_ROOT / "database" / "upgrades" / "001_validator_profiles.sql"
 EXPECTED_TABLES = {
     "blocks", "transactions", "validators", "validator_profiles", "validator_set_members", "validator_signatures", "rpc_endpoints", "rpc_endpoint_checks", "indexer_state",
 }
@@ -76,9 +77,9 @@ EXPECTED_FOREIGN_KEYS = {
 EXPECTED_CHECKS = {
     "validator_profiles_match_status_check": "CHECK (match_status IN ('matched', 'unmatched', 'invalid_pubkey', 'ambiguous'))",
     "validator_profiles_source_height_check": "CHECK (source_height >= 0)",
-    "validator_profiles_required_text_check": "CHECK (char_length(operator_address) BETWEEN 1 AND 128 AND char_length(moniker) BETWEEN 1 AND 256 AND char_length(consensus_pubkey) BETWEEN 1 AND 256 AND char_length(source_realm) BETWEEN 1 AND 256 AND char_length(profile_hash) = 64)",
-    "validator_profiles_bounded_text_check": "CHECK (char_length(description) <= 4096 AND (server_type IS NULL OR char_length(server_type) <= 128) AND (source_profile_path IS NULL OR char_length(source_profile_path) <= 512))",
-    "validator_profiles_match_consistency_check": "CHECK ((match_status = 'matched' AND signing_address IS NOT NULL AND normalized_public_key_type IS NOT NULL AND normalized_public_key_value IS NOT NULL) OR (match_status <> 'matched' AND signing_address IS NULL))",
+    "validator_profiles_required_text_check": "CHECK (char_length(operator_address) BETWEEN 1 AND 128 AND char_length(moniker) BETWEEN 1 AND 256 AND char_length(consensus_pubkey) BETWEEN 1 AND 256 AND char_length(source_realm) BETWEEN 1 AND 256 AND profile_hash ~ '^[0-9a-f]{64}$')",
+    "validator_profiles_bounded_text_check": "CHECK (char_length(description) <= 2048 AND char_length(moniker) <= 32 AND server_type IN ('cloud', 'on-prem', 'data-center') AND (source_profile_path IS NULL OR char_length(source_profile_path) <= 512))",
+    "validator_profiles_match_consistency_check": "CHECK ((normalized_public_key_type IS NULL) = (normalized_public_key_value IS NULL) AND ((match_status = 'matched' AND signing_address IS NOT NULL AND normalized_public_key_type IS NOT NULL) OR (match_status IN ('unmatched', 'ambiguous') AND signing_address IS NULL AND normalized_public_key_type IS NOT NULL) OR (match_status = 'invalid_pubkey' AND signing_address IS NULL AND normalized_public_key_type IS NULL)))",
     "blocks_tx_count_check": "CHECK (tx_count >= 0)",
     "blocks_block_hash_hex_uppercase": "CHECK (block_hash_hex = upper(block_hash_hex))",
     "transactions_tx_index_check": "CHECK (tx_index >= 0)",
@@ -404,15 +405,14 @@ def fetch_schema_snapshot(cursor) -> dict[str, Any]:
 
     cursor.execute("""
         SELECT idx.relname, tbl.relname, i.indisunique,
-               array_agg(att.attname ORDER BY keys.ord),
+               array_agg(pg_catalog.pg_get_indexdef(i.indexrelid, keys.ord::integer, true) ORDER BY keys.ord),
                array_agg(CASE WHEN (i.indoption[keys.ord - 1] & 1) = 1 THEN 'DESC' ELSE 'ASC' END ORDER BY keys.ord),
                pg_catalog.pg_get_expr(i.indpred, i.indrelid)
         FROM pg_catalog.pg_index i
         JOIN pg_catalog.pg_class idx ON idx.oid = i.indexrelid
         JOIN pg_catalog.pg_class tbl ON tbl.oid = i.indrelid
         JOIN pg_catalog.pg_namespace n ON n.oid = tbl.relnamespace
-        JOIN unnest(i.indkey) WITH ORDINALITY AS keys(attnum, ord) ON keys.attnum <> 0
-        JOIN pg_catalog.pg_attribute att ON att.attrelid = tbl.oid AND att.attnum = keys.attnum
+        JOIN unnest(i.indkey) WITH ORDINALITY AS keys(attnum, ord) ON true
         WHERE n.nspname = 'public' AND NOT i.indisprimary AND NOT EXISTS (
             SELECT 1 FROM pg_catalog.pg_constraint con WHERE con.conindid = i.indexrelid AND con.contype IN ('u', 'p')
         )
@@ -421,11 +421,32 @@ def fetch_schema_snapshot(cursor) -> dict[str, Any]:
     """)
     indexes = {}
     for name, table, unique, cols, directions, predicate in cursor.fetchall():
-        indexes[name] = (table, bool(unique), tuple(zip(cols, directions)), predicate)
+        expressions = tuple(re.sub(r"\s+(?:ASC|DESC)(?:\s+NULLS\s+(?:FIRST|LAST))?$", "", column, flags=re.I) for column in cols)
+        indexes[name] = (table, bool(unique), tuple(zip(expressions, directions)), predicate)
     return {"tables": tables, "columns": columns, "primary_keys": primary, "unique_constraints": uniques, "foreign_keys": foreign_keys, "check_constraints": checks, "indexes": indexes}
 
 
-def initialize_or_validate(database_url: str, schema_path: Path = SCHEMA, connect=None) -> None:
+def validate_legacy_schema_snapshot(snapshot: dict[str, Any]) -> None:
+    """Accept only the exact pre-validator_profiles production schema."""
+    import copy
+    if set(snapshot.get("tables", set())) != EXPECTED_TABLES - {"validator_profiles"}:
+        raise SchemaCompatibilityError("database is neither current nor the exact supported legacy schema")
+    augmented = copy.deepcopy(snapshot)
+    augmented["tables"].add("validator_profiles")
+    augmented.setdefault("columns", {})["validator_profiles"] = EXPECTED_COLUMNS["validator_profiles"]
+    augmented.setdefault("primary_keys", {})["validator_profiles"] = EXPECTED_PRIMARY_KEYS["validator_profiles"]
+    augmented.setdefault("foreign_keys", set()).add(("validator_profiles", ("signing_address",), "validators", ("signing_address",), "n"))
+    for name, definition in EXPECTED_CHECKS.items():
+        if name.startswith("validator_profiles_"):
+            augmented.setdefault("check_constraints", {})[name] = definition
+    for name, definition in EXPECTED_INDEXES.items():
+        if name.startswith("validator_profiles_"):
+            augmented.setdefault("indexes", {})[name] = definition
+    validate_schema_snapshot(augmented)
+
+
+def initialize_or_validate(database_url: str, schema_path: Path = SCHEMA, connect=None,
+                           upgrade_path: Path = VALIDATOR_PROFILES_UPGRADE) -> None:
     if not database_url:
         raise ValueError("DATABASE_URL is required; value is intentionally not printed")
     if connect is None:
@@ -444,7 +465,13 @@ def initialize_or_validate(database_url: str, schema_path: Path = SCHEMA, connec
                 cursor.execute(schema_sql)
                 validate_schema_snapshot(fetch_schema_snapshot(cursor))
             else:
-                validate_schema_snapshot(fetch_schema_snapshot(cursor))
+                snapshot = fetch_schema_snapshot(cursor)
+                if "validator_profiles" in set(snapshot.get("tables", set())):
+                    validate_schema_snapshot(snapshot)
+                else:
+                    validate_legacy_schema_snapshot(snapshot)
+                    cursor.execute(upgrade_path.read_text())
+                    validate_schema_snapshot(fetch_schema_snapshot(cursor))
         connection.commit()
 
 

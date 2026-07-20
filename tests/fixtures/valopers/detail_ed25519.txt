@@ -1,7 +1,12 @@
-# Alpha
-- **Operator Address**: g1alpha
-- **Moniker**: Alpha\_Node
-- **Description**: Public validator profile
-- **Server Type**: validator
-- **Consensus Public Key**: gpub1zcjdueqqqypqxpq9qcrsszg2pvxq6rs0zqg3yyc5z5tpwxqergd3c8g7ruuhjdzk
-- **Keep Running**: true
+Valoper's details:
+## alpha-node
+Runs public infrastructure.
+
+Second description paragraph.
+
+- Operator Address: g1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq
+- Signing Address: g1ssssssssssssssssssssssssssssssssssssss
+- Signing PubKey: gpub1pggj7ard9eg82cjtv4u52epjx56nzwgjyg9zqqgzqvzq2ps8pqys5zcvp58q7yq3zgf3g9gkzuvpjxsmrsw3u8eqh8zc2g
+- Server Type: data-center
+
+[Profile link](/r/demo/profile:g1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq)

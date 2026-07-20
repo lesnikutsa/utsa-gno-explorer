@@ -63,6 +63,8 @@ class PostgresDatabase:
             item.normalized_public_key_value, item.signing_address, item.match_status,
             item.source_realm, item.source_profile_path, item.source_height, item.profile_hash,
         ) for item in profiles]
+        if not rows:
+            return 0
         with self.connect() as connection:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT pg_try_advisory_xact_lock(%s)", (0x5650524F46494C45,))

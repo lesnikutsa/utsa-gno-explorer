@@ -92,16 +92,21 @@ CREATE TABLE validator_profiles (
         AND char_length(moniker) BETWEEN 1 AND 256
         AND char_length(consensus_pubkey) BETWEEN 1 AND 256
         AND char_length(source_realm) BETWEEN 1 AND 256
-        AND char_length(profile_hash) = 64
+        AND profile_hash ~ '^[0-9a-f]{64}$'
     ),
     CONSTRAINT validator_profiles_bounded_text_check CHECK (
-        char_length(description) <= 4096
-        AND (server_type IS NULL OR char_length(server_type) <= 128)
+        char_length(description) <= 2048
+        AND char_length(moniker) <= 32
+        AND server_type IN ('cloud', 'on-prem', 'data-center')
         AND (source_profile_path IS NULL OR char_length(source_profile_path) <= 512)
     ),
     CONSTRAINT validator_profiles_match_consistency_check CHECK (
-        (match_status = 'matched' AND signing_address IS NOT NULL AND normalized_public_key_type IS NOT NULL AND normalized_public_key_value IS NOT NULL)
-        OR (match_status <> 'matched' AND signing_address IS NULL)
+        (normalized_public_key_type IS NULL) = (normalized_public_key_value IS NULL)
+        AND (
+            (match_status = 'matched' AND signing_address IS NOT NULL AND normalized_public_key_type IS NOT NULL)
+            OR (match_status IN ('unmatched', 'ambiguous') AND signing_address IS NULL AND normalized_public_key_type IS NOT NULL)
+            OR (match_status = 'invalid_pubkey' AND signing_address IS NULL AND normalized_public_key_type IS NULL)
+        )
     )
 );
 

@@ -26,6 +26,9 @@ metadata, the source `gpub`, normalized TM2 key fields, an optional Signing
 Address, match/source/audit state, and timestamps. Operator and Signing
 Addresses are different identities; matching uses only the exact public-key
 tuple in `validators`. A later crawl never deletes a missing profile.
+Current qrender does not expose `KeepRunning`, so it remains `NULL`. Source
+Signing Address is only a consistency cross-check and never substitutes for
+exact public-key matching.
 
 ```sql
 SELECT match_status, count(*) FROM validator_profiles

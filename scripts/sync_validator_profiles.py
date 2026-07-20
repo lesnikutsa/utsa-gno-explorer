@@ -20,8 +20,19 @@ from indexer.validator_profiles import DEFAULT_REALM, collect_profiles, match_pr
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dry-run", action="store_true", help="fetch, validate, and summarize without database access")
+    parser.add_argument("--dry-run", action="store_true", help="fetch, read validator identities, and match without database writes")
     return parser
+
+
+def safe_error_message(exc: Exception, database_url: str, rpc_urls: list[str]) -> str:
+    """Return a bounded category without echoing endpoints, payloads, or secrets."""
+    categories = {
+        "ProfileSourceError": "Valopers source validation failed",
+        "RpcError": "RPC selection or query failed",
+        "DatabaseError": "database operation failed",
+        "ValueError": "configuration validation failed",
+    }
+    return categories.get(exc.__class__.__name__, "validator profile synchronization failed")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -35,11 +46,12 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError(f"VALOPERS_REALM_PATH must be {DEFAULT_REALM}")
         fetched = collect_profiles(selected.client, source_height, realm)
         database = PostgresDatabase(config.database_url)
-        validator_keys = [] if args.dry_run else database.load_validator_keys()
+        validator_keys = database.load_validator_keys()
         profiles = match_profiles(fetched.profiles, validator_keys)
         writes = 0 if args.dry_run else database.upsert_validator_profiles(profiles)
     except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        config_value = locals().get("config")
+        print(f"Error: {safe_error_message(exc, getattr(config_value, 'database_url', ''), getattr(config_value, 'rpc_urls', []))}", file=sys.stderr)
         return 1
 
     counts = Counter(profile.match_status for profile in profiles)

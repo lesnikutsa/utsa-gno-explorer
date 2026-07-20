@@ -9,8 +9,10 @@ python scripts/sync_validator_profiles.py
 
 The command reuses configured RPC selection and chain validation, pins the
 selected endpoint's committed latest height, and sends all list, pagination,
-and detail calls through `abci_query` with `path=vm/qrender` and explicit
-`height`. Any response-height mismatch aborts the crawl. Fetching completes
+and detail calls through `abci_query` with JSON-literal encoded string params
+and explicit `height`. Data is `gno.land/r/gnops/valopers:` for root,
+`gno.land/r/gnops/valopers:?page=N` for a page.Picker path, and
+`gno.land/r/gnops/valopers:<operator>` for detail. Any response-height mismatch aborts the crawl. Fetching completes
 before a short, profile-specific advisory-locked batch upsert, and absent rows
 are not deleted.
 
@@ -19,6 +21,13 @@ table. Operator Address (profile owner) and Signing Address (TM2 consensus
 identity) are linked only by exact public key. The command neither changes the
 active set nor performs governance actions. No timer, service, cron entry, or
 background mode is included.
+
+Current `Valoper.Render` does not expose `KeepRunning`, so synchronization
+stores SQL `NULL` and never invents a boolean. For a production database made
+before the profile table existed, run `python scripts/init_database.py`. The
+initializer proves the exact legacy schema first, applies only
+`database/upgrades/001_validator_profiles.sql` transactionally, and validates
+the complete result before commit. An arbitrary schema is rejected before DDL.
 
 This runbook is for safe test execution of the bounded prototype only. It is not a production operations guide.
 

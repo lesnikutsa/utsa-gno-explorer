@@ -13,6 +13,8 @@ functional `lower(moniker)` index supports later internal queries.
 Operator Address is the profile owner and Signing Address is the TM2 consensus
 identity. They are linked only through the exact key tuple. `keep_running` is
 not active-set, signing-health, governance, or punishment state.
+Current qrender does not expose it, so sync stores `NULL` rather than inferring
+true or false.
 
 The canonical schema is `database/schema.sql`. It is PostgreSQL-compatible SQL and uses explicit primary keys, foreign keys, uniqueness constraints, and query-driven indexes.
 
