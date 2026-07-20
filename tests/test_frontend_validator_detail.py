@@ -160,7 +160,11 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
             'href={`/validators/${encodeURIComponent(row.address)}`}', identity
         )
         self.assertIn("{row.moniker}", identity)
-        self.assertNotIn("onClick", self.overview)
+        self.assertNotIn("onClick", identity)
+        validator_table = self.overview.split(
+            "<DataTable columns={validatorColumns}", 1
+        )[1].split("/>", 1)[0]
+        self.assertNotIn("onClick", validator_table)
 
     def test_current_status_is_compact_ordered_and_responsive(self):
         current = self.page[self.page.index('aria-labelledby="validator-current-status-title"'):self.page.index("<SigningHistory validator={validator} />")]
