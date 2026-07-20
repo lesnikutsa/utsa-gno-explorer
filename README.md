@@ -140,6 +140,14 @@ signing address remains the underlying technical identity, and unmatched validat
 visible by address. The frontend does not use Telegram bot data, logos are not implemented,
 and no validator detail frontend route exists yet.
 
+The full active-validator table supports immediate, case-insensitive partial filtering by
+official moniker or consensus signing address. Filtering operates only on the already loaded
+active set and makes no additional API request. **Power Rank** retains the validator's
+original voting-power position, while **Active Validators** continues to show the complete
+active-set count. The selected table sort is applied after filtering. Global search is not
+extended to validators; Valopers profile refresh remains manual, no frontend validator detail
+route exists, and the frontend still does not use Telegram data.
+
 ### Network and blocks API
 
 ```bash
