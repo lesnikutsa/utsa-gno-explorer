@@ -448,9 +448,11 @@ sudo systemctl restart utsa-gno-api.service
 
 Repeat the local curl smoke tests after restart. Neither systemd nor the application performs Git operations, dependency installation, database initialization, migrations, restore, or deployment automatically.
 
-#### API 0.7.0 Valopers identity upgrade
+#### API 0.8.0 validator profiles release
 
-Use this ordered, fail-closed procedure when deploying API 0.7.0. The earlier
+This release changes API version metadata and documentation only. The PostgreSQL schema and indexer data model are unchanged, so no database migration or indexer restart is required. Frontend deployment remains operator-controlled.
+
+Use this ordered, fail-closed procedure when deploying API 0.8.0. The earlier
 `GRANT SELECT ON ALL TABLES IN SCHEMA public` covered only tables that existed
 when that statement ran. The explicit Valopers migration created
 `valoper_profiles` later, so the API role does not inherit access to it. Future
@@ -533,9 +535,9 @@ automatic grant path.
    role remains read-only.
 
 5. Edit the protected external `/etc/utsa-gno-explorer/api.env` through the
-   operator-approved secret-management process and set `API_VERSION=0.7.0`. Do
+   operator-approved secret-management process and set `API_VERSION=0.8.0`. Do
    not copy that file into Git.
-6. Restart API 0.7.0 only after steps 1 through 5 succeed:
+6. Restart only `utsa-gno-api.service` after steps 1 through 5 succeed:
 
    ```bash
    sudo systemctl restart utsa-gno-api.service
@@ -760,5 +762,5 @@ already-compatible ten-table schema. It transactionally adds
 validation before commit, and rolls back on any failure. It never alters or
 deletes existing indexed rows and is safe to rerun after success. No container,
 Compose entrypoint, systemd unit, indexer, API, or import applies it
-automatically. Restart the indexer only after validation. Snapshot writes are
-not implemented, and the API and frontend do not use these tables yet.
+automatically. Restart the indexer only after validation. Snapshot persistence remains a manual operator action. The API and frontend read the
+persisted profiles; no automatic refresh is performed.

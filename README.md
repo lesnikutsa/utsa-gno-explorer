@@ -88,9 +88,19 @@ python -m unittest discover -s tests
 ```
 
 
+## v0.8.0 Validator Profiles
+
+This release completes the validator detail page with a responsive profile layout, live
+100-block signing history, official Valopers monikers and profiles, local validator search,
+Overview-to-profile navigation, the official `gpub1...` signing public key, and a
+network-specific Telegram monitoring deep link.
+
+The PostgreSQL schema and indexer data model are unchanged by this release. The Telegram bot
+remains a separate service.
+
 ## Read-only API foundation
 
-The read-only API contract is version 0.7.0.
+The read-only API contract is version 0.8.0.
 
 ### API installation
 
@@ -104,7 +114,7 @@ python -m pip install -r requirements.txt
 
 The API requires `DATABASE_URL` in the environment. Keep credentials outside the repository and do not commit secret values. The API also accepts these optional settings with conservative defaults:
 
-- `API_VERSION` (default `0.7.0`; update the production environment separately after merge)
+- `API_VERSION` (default `0.8.0`; update the production environment separately after merge)
 - `API_INDEXER_LAG_DEGRADED_THRESHOLD` (default `10`)
 - `API_RPC_CHECK_STALE_SECONDS` (default `60`)
 
@@ -131,27 +141,28 @@ curl http://127.0.0.1:8000/api/health
 Validator list and detail responses are enriched from the persisted official Valopers
 snapshot by exact, case-sensitive `signing_address` equality. A SQL `LEFT JOIN` keeps
 unmatched validators visible with null profile fields; `valoper_source_height` is the
-pinned Valopers snapshot height represented by a profile. The API reads PostgreSQL only,
-never queries the Valopers RPC directly, and does not use Telegram bot data. Snapshot
-refresh remains manual. The full active-validator table and the Overview **Validators by
-Missed Blocks** table display an exact official moniker when one is available, with the
-shortened consensus signing address beneath it. The exact
-signing address remains the underlying technical identity, and unmatched validators remain
-visible by address. Each identity in the full Validators table links to
-`/validators/<signing-address>`, using the exact consensus signing address as the route
-identity. The initial detail page presents validator identity and current status; inactive
-validators can still have detail pages. Full profile, performance, and signing-history
-presentation is still being completed. Overview validator links and global validator search
-are not implemented. Profile refresh remains manual, and the frontend uses neither logos nor
-Telegram data.
+pinned Valopers snapshot height represented by a profile. The API reads PostgreSQL only
+and never queries the Valopers RPC directly. Valopers profiles continue to be refreshed
+by the existing manual, operator-controlled persistence process.
 
-The full active-validator table supports immediate, case-insensitive partial filtering by
-official moniker or consensus signing address. Filtering operates only on the already loaded
-active set and makes no additional API request. **Power Rank** retains the validator's
-original voting-power position, while **Active Validators** continues to show the complete
-active-set count. The selected table sort is applied after filtering. Global search is not
-extended to validators; Valopers profile refresh remains manual, and the frontend still does
-not use Telegram data.
+The full Validators table and the Overview **Validators by Missed Blocks** identities link
+to `/validators/<signing-address>`, preserving the exact consensus signing address as the
+route identity. The full table supports immediate, case-insensitive partial filtering by
+official moniker or signing address over the already loaded active set, without another API
+request. Filtering preserves the original voting-power **Power Rank**, while **Active
+Validators** remains the complete active-set count.
+
+Validator detail pages refresh every 2 seconds and show **Current Status** plus 100 actual
+indexed signing blocks. Signing history distinguishes commit, nil, absent, invalid, unknown,
+and not-active states. The profile presents the signing address, operator address, official
+Valopers signing public key (`gpub1...`), RPC consensus public-key type and value, and the
+Valopers description.
+
+On Testnet 13, the validator detail page provides a deep link to `@UTSAGNOTest13Bot` with
+the exact signing address as its payload. The link only opens the separate Telegram bot;
+the Explorer does not read Telegram databases, bot storage, or Telegram user data.
+
+**Peers & Decentralization Map** remains a coming-soon presentation area.
 
 ### Network and blocks API
 
@@ -180,16 +191,11 @@ curl http://127.0.0.1:8000/api/validators/<consensus-signing-address>
 ```
 
 The full active-validator table and the Overview **Validators by Missed Blocks** table
-display official Valopers monikers but do not display logos or operator addresses. They
-continue to use the exact consensus signing address as the
-underlying validator identity and fall back to a shortened signing address when a profile
-is unmatched. Profiles come from the manually persisted official Valopers snapshot; refresh
-remains manual. The frontend detail route is `/validators/<signing-address>` and shows the
-initial identity and current-status panels. It is not yet the complete validator profile,
-performance, or signing-history presentation. Inactive indexed validators remain valid detail
-pages. The full Validators table links to this route, while Overview validator links and
-global validator search are not implemented. The frontend uses neither logos nor Telegram data.
-
+show official Valopers monikers when available, fall back to the shortened signing address,
+and link identities to the detail route. Inactive indexed validators remain valid detail
+pages. Profiles come from the manually persisted official Valopers snapshot, and refresh
+remains operator-controlled. The Explorer does not read Telegram data; its validator detail
+page only opens `@UTSAGNOTest13Bot` with the exact signing-address payload.
 The list response contains the active validator set at the completed checkpoint, current voting power, and 20-block and 100-block active-membership uptime. Addresses are consensus signing addresses.
 
 ## Bounded indexer prototype
@@ -307,8 +313,8 @@ immediately. Retries never fail over or repin, and exhausting them fails the com
 snapshot without a partial result. Pagination completion comes from the validated official
 picker, not page length, and no artificial empty terminal page is requested. Under the
 official contract a one-page registry has no picker. The immutable result remains in memory;
-database, API,
-frontend, Telegram, and validator-set integration are intentionally not included yet.
+database persistence and application integration are intentionally outside this in-memory
+probe; the separate persistence process and Explorer consume Valopers profiles.
 
 Add `--parse` to validate and print a bounded summary of either supported document:
 a paginated Valopers list or one Valoper detail render. Detail parsing exposes the
@@ -329,8 +335,9 @@ collect at one pinned height and populate the two Valopers tables. The complete 
 uses one PostgreSQL transaction and a dedicated transaction-scoped advisory lock. Stale
 and divergent same-height snapshots are rejected; identical same-height snapshots are
 unchanged. Empty registries use zero profile rows and one state row. Failures roll back.
-No schedule, systemd service, or timer invokes the writer, and the API and frontend still
-do not use stored profiles. This does not claim production contains populated rows.
+No schedule, systemd service, or timer invokes the writer. The API and frontend read the
+stored profiles after an operator persists them. This does not claim production contains
+populated rows.
 
 Fresh databases use `python scripts/init_database.py`; existing
 production databases require the explicit additive migration documented in

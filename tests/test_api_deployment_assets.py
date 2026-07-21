@@ -109,13 +109,13 @@ class ApiDeploymentAssetTests(unittest.TestCase):
         for command in expected_commands:
             self.assertIn(command, self.documentation)
 
-    def api_070_upgrade_section(self):
-        start = self.documentation.index("#### API 0.7.0 Valopers identity upgrade")
+    def api_080_upgrade_section(self):
+        start = self.documentation.index("#### API 0.8.0 validator profiles release")
         end = self.documentation.index("For rollback,", start)
         return self.documentation[start:end]
 
-    def test_api_070_upgrade_grants_only_required_profile_select(self):
-        section = self.api_070_upgrade_section()
+    def test_api_080_upgrade_grants_only_required_profile_select(self):
+        section = self.api_080_upgrade_section()
         grant = "GRANT SELECT ON TABLE public.valoper_profiles TO utsa_gno_api;"
         self.assertIn(grant, section)
         self.assertNotIn("GRANT SELECT ON TABLE public.valopers_snapshot_state", section)
@@ -124,13 +124,13 @@ class ApiDeploymentAssetTests(unittest.TestCase):
             self.assertNotIn(f"GRANT {privilege}", section)
         self.assertIn("role remains read-only", section)
 
-    def test_api_070_upgrade_verifies_privileges_before_restart(self):
-        section = self.api_070_upgrade_section()
+    def test_api_080_upgrade_verifies_privileges_before_restart(self):
+        section = self.api_080_upgrade_section()
         grant_at = section.index(
             "GRANT SELECT ON TABLE public.valoper_profiles TO utsa_gno_api;"
         )
         verification_at = section.index("DO $$")
-        version_at = section.index("API_VERSION=0.7.0")
+        version_at = section.index("API_VERSION=0.8.0")
         restart_at = section.index("sudo systemctl restart utsa-gno-api.service")
         self.assertLess(grant_at, verification_at)
         self.assertLess(verification_at, version_at)
@@ -143,8 +143,8 @@ class ApiDeploymentAssetTests(unittest.TestCase):
             )
         self.assertIn("Stop the deployment before restart", normalized)
 
-    def test_api_070_upgrade_loads_schema_environment_and_fails_closed(self):
-        section = self.api_070_upgrade_section()
+    def test_api_080_upgrade_loads_schema_environment_and_fails_closed(self):
+        section = self.api_080_upgrade_section()
         source_at = section.index(". /etc/utsa-gno-explorer/indexer.env")
         init_at = section.index("exec .venv/bin/python scripts/init_database.py")
         grant_at = section.index(
@@ -157,7 +157,7 @@ class ApiDeploymentAssetTests(unittest.TestCase):
         self.assertNotRegex(validation, r"DATABASE_URL\s*=")
 
         verification_at = section.index("DO $$")
-        version_at = section.index("API_VERSION=0.7.0")
+        version_at = section.index("API_VERSION=0.8.0")
         restart_at = section.index("sudo systemctl restart utsa-gno-api.service")
         self.assertIn("ON_ERROR_STOP=1", section[:verification_at])
         self.assertIn("RAISE EXCEPTION", section[verification_at:version_at])
@@ -169,8 +169,8 @@ class ApiDeploymentAssetTests(unittest.TestCase):
             section[verification_at:version_at],
         )
 
-    def test_api_070_unmatched_smoke_check_is_conditional_and_non_mutating(self):
-        section = self.api_070_upgrade_section()
+    def test_api_080_unmatched_smoke_check_is_conditional_and_non_mutating(self):
+        section = self.api_080_upgrade_section()
         smoke = section[section.index("9. When at least one matched profile exists"):]
         self.assertIn("If one currently exists", smoke)
         self.assertIn("If every active validator currently has a profile", smoke)
