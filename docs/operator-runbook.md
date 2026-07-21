@@ -166,7 +166,14 @@ signing blocks with all supported signing states, official profile and public-ke
 a Testnet 13 deep link that opens `@UTSAGNOTest13Bot` with the exact signing-address payload.
 Peers & Decentralization Map remains a coming-soon presentation area.
 
-For the production version update, edit `/etc/utsa-gno-explorer/api.env` through the approved
-operator process and set `API_VERSION=0.8.0`, then restart only
-`utsa-gno-api.service`. No database migration or indexer restart is required. Frontend
-deployment remains operator-controlled.
+Production already running the compatible pre-release state, including commit
+`818cee6a5d0dc8c8817e8ef3fc03af97d35aeeab`, needs only the metadata update: edit
+`/etc/utsa-gno-explorer/api.env` through the approved operator process, set
+`API_VERSION=0.8.0`, and restart only `utsa-gno-api.service`. After schema compatibility is
+established, this metadata-only step requires no database migration or indexer restart.
+Frontend deployment remains operator-controlled.
+
+A deployment upgrading from `v0.5.0-production-runtime`, or any deployment without the
+compatible Valopers tables and API-role privilege, must first follow the existing
+operator-controlled Valopers schema migration and API-role grant procedure in the production
+deployment guide. No migration or profile refresh is automatic.

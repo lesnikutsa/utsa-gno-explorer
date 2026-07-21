@@ -109,14 +109,20 @@ class ApiDeploymentAssetTests(unittest.TestCase):
         for command in expected_commands:
             self.assertIn(command, self.documentation)
 
-    def api_080_upgrade_section(self):
-        start = self.documentation.index("#### API 0.8.0 validator profiles release")
+    def valopers_schema_prerequisite_section(self):
+        start = self.documentation.index("#### Valopers schema and API access prerequisite")
+        end = self.documentation.index("#### API 0.8.0 metadata update", start)
+        return self.documentation[start:end]
+
+    def api_080_metadata_update_section(self):
+        start = self.documentation.index("#### API 0.8.0 metadata update")
         end = self.documentation.index("For rollback,", start)
         return self.documentation[start:end]
 
-    def test_api_080_upgrade_grants_only_required_profile_select(self):
-        section = self.api_080_upgrade_section()
+    def test_valopers_prerequisite_grants_only_required_profile_select(self):
+        section = self.valopers_schema_prerequisite_section()
         grant = "GRANT SELECT ON TABLE public.valoper_profiles TO utsa_gno_api;"
+        self.assertIn("v0.5.0-production-runtime", section)
         self.assertIn(grant, section)
         self.assertNotIn("GRANT SELECT ON TABLE public.valopers_snapshot_state", section)
         self.assertNotRegex(section, r"(?i)GRANT\s+ALL\s+(?:ON|;)")
@@ -124,17 +130,15 @@ class ApiDeploymentAssetTests(unittest.TestCase):
             self.assertNotIn(f"GRANT {privilege}", section)
         self.assertIn("role remains read-only", section)
 
-    def test_api_080_upgrade_verifies_privileges_before_restart(self):
-        section = self.api_080_upgrade_section()
+    def test_valopers_prerequisite_verifies_privileges_before_restart(self):
+        section = self.valopers_schema_prerequisite_section()
         grant_at = section.index(
             "GRANT SELECT ON TABLE public.valoper_profiles TO utsa_gno_api;"
         )
         verification_at = section.index("DO $$")
-        version_at = section.index("API_VERSION=0.8.0")
         restart_at = section.index("sudo systemctl restart utsa-gno-api.service")
         self.assertLess(grant_at, verification_at)
-        self.assertLess(verification_at, version_at)
-        self.assertLess(version_at, restart_at)
+        self.assertLess(verification_at, restart_at)
         normalized = " ".join(section.split())
         for privilege in ("INSERT", "UPDATE", "DELETE", "TRUNCATE"):
             self.assertIn(
@@ -143,39 +147,55 @@ class ApiDeploymentAssetTests(unittest.TestCase):
             )
         self.assertIn("Stop the deployment before restart", normalized)
 
-    def test_api_080_upgrade_loads_schema_environment_and_fails_closed(self):
-        section = self.api_080_upgrade_section()
+    def test_valopers_prerequisite_migrates_validates_and_fails_closed(self):
+        section = self.valopers_schema_prerequisite_section()
         source_at = section.index(". /etc/utsa-gno-explorer/indexer.env")
+        migrate_at = section.index(".venv/bin/python scripts/migrate_valopers_schema.py")
         init_at = section.index("exec .venv/bin/python scripts/init_database.py")
         grant_at = section.index(
             "GRANT SELECT ON TABLE public.valoper_profiles TO utsa_gno_api;"
         )
-        self.assertLess(source_at, init_at)
+        self.assertLess(source_at, migrate_at)
+        self.assertLess(migrate_at, init_at)
         self.assertLess(init_at, grant_at)
         validation = section[source_at:grant_at]
         self.assertNotIn("api.env", validation)
         self.assertNotRegex(validation, r"DATABASE_URL\s*=")
 
         verification_at = section.index("DO $$")
-        version_at = section.index("API_VERSION=0.8.0")
         restart_at = section.index("sudo systemctl restart utsa-gno-api.service")
         self.assertIn("ON_ERROR_STOP=1", section[:verification_at])
-        self.assertIn("RAISE EXCEPTION", section[verification_at:version_at])
+        self.assertIn("RAISE EXCEPTION", section[verification_at:restart_at])
         self.assertLess(grant_at, verification_at)
-        self.assertLess(verification_at, version_at)
-        self.assertLess(version_at, restart_at)
+        self.assertLess(verification_at, restart_at)
         self.assertIn(
             "has_table_privilege(\n       'utsa_gno_api', 'public.valopers_snapshot_state', 'SELECT'",
-            section[verification_at:version_at],
+            section[verification_at:restart_at],
         )
 
-    def test_api_080_unmatched_smoke_check_is_conditional_and_non_mutating(self):
-        section = self.api_080_upgrade_section()
-        smoke = section[section.index("9. When at least one matched profile exists"):]
+    def test_valopers_prerequisite_unmatched_smoke_check_is_conditional_and_non_mutating(self):
+        section = self.valopers_schema_prerequisite_section()
+        smoke = section[section.index("8. When at least one matched profile exists"):]
         self.assertIn("If one currently exists", smoke)
         self.assertIn("If every active validator currently has a profile", smoke)
         self.assertIn("Never create or modify production rows", smoke)
         self.assertNotRegex(smoke, r"(?i)\b(?:INSERT|UPDATE|DELETE|TRUNCATE)\b")
+
+    def test_api_080_metadata_update_is_api_only(self):
+        section = self.api_080_metadata_update_section()
+        self.assertIn("API_VERSION=0.8.0", section)
+        self.assertIn("sudo systemctl restart utsa-gno-api.service", section)
+        self.assertIn("/api/health", section)
+        self.assertIn("`api_version` as `0.8.0`", section)
+        for forbidden in (
+            "migrate_valopers_schema.py",
+            "init_database.py",
+            "restart utsa-gno-indexer.service",
+            "restart postgresql",
+            "restart postgres",
+        ):
+            self.assertNotIn(forbidden, section.lower())
+        self.assertNotRegex(section, r"(?i)\bGRANT\s+(?:SELECT|ALL|INSERT|UPDATE|DELETE|TRUNCATE)\b")
 
     def assert_urls_have_placeholder_passwords(self, data):
         for match in CREDENTIAL_URL.finditer(data):

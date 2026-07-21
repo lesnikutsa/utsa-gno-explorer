@@ -448,11 +448,15 @@ sudo systemctl restart utsa-gno-api.service
 
 Repeat the local curl smoke tests after restart. Neither systemd nor the application performs Git operations, dependency installation, database initialization, migrations, restore, or deployment automatically.
 
-#### API 0.8.0 validator profiles release
+#### Valopers schema and API access prerequisite
 
-This release changes API version metadata and documentation only. The PostgreSQL schema and indexer data model are unchanged, so no database migration or indexer restart is required. Frontend deployment remains operator-controlled.
+Use this ordered, fail-closed prerequisite when upgrading from
+`v0.5.0-production-runtime`, or when any deployment does not already have the compatible
+Valopers tables and API-role privilege. It detects and migrates the legacy eight-table schema
+when required, while safely revalidating an already-compatible ten-table schema. No migration
+is automatic.
 
-Use this ordered, fail-closed procedure when deploying API 0.8.0. The earlier
+The earlier
 `GRANT SELECT ON ALL TABLES IN SCHEMA public` covered only tables that existed
 when that statement ran. The explicit Valopers migration created
 `valoper_profiles` later, so the API role does not inherit access to it. Future
@@ -467,7 +471,10 @@ automatic grant path.
    sudo git -C /opt/utsa-gno-explorer merge --ff-only origin/main
    ```
 
-2. Validate the current ten-table schema before changing privileges:
+2. Load the protected indexer environment, apply the existing migration when the exact
+   legacy eight-table schema is detected, and validate the resulting ten-table schema before
+   changing privileges. The migration command safely revalidates an already-compatible
+   ten-table schema without applying DDL:
 
    ```bash
    sudo -u utsa-gno sh -c '
@@ -475,6 +482,7 @@ automatic grant path.
      . /etc/utsa-gno-explorer/indexer.env
      set +a
      cd /opt/utsa-gno-explorer
+     .venv/bin/python scripts/migrate_valopers_schema.py
      exec .venv/bin/python scripts/init_database.py
    '
    ```
@@ -534,28 +542,25 @@ automatic grant path.
    ALL`, change ownership, or add superuser or data-changing privileges. The API
    role remains read-only.
 
-5. Edit the protected external `/etc/utsa-gno-explorer/api.env` through the
-   operator-approved secret-management process and set `API_VERSION=0.8.0`. Do
-   not copy that file into Git.
-6. Restart only `utsa-gno-api.service` after steps 1 through 5 succeed:
+5. Restart only `utsa-gno-api.service` after the schema and privileges have been verified:
 
    ```bash
    sudo systemctl restart utsa-gno-api.service
    ```
 
-7. Verify health:
+6. Verify health:
 
    ```bash
    curl --fail --silent --show-error http://127.0.0.1:18180/api/health
    ```
 
-8. Verify the active validator list:
+7. Verify the active validator list:
 
    ```bash
    curl --fail --silent --show-error http://127.0.0.1:18180/api/validators
    ```
 
-9. When at least one matched profile exists, request one known matched consensus
+8. When at least one matched profile exists, request one known matched consensus
    signing address and verify its official profile fields and
    `valoper_source_height` are non-null:
 
@@ -564,7 +569,7 @@ automatic grant path.
      http://127.0.0.1:18180/api/validators/MATCHED_SIGNING_ADDRESS
    ```
 
-10. Inspect the list for an unmatched validator. If one currently exists, confirm
+9. Inspect the list for an unmatched validator. If one currently exists, confirm
     it remains present, then request its detail and verify `moniker`,
     `operator_address`, `description`, `server_type`, and
     `valoper_source_height` are null:
@@ -578,6 +583,29 @@ automatic grant path.
     on the mandatory real PostgreSQL integration test for unmatched `LEFT JOIN`
     semantics. Never create or modify production rows to manufacture an unmatched
     smoke-test case.
+
+#### API 0.8.0 metadata update
+
+For an already-compatible deployment, including production at commit
+`818cee6a5d0dc8c8817e8ef3fc03af97d35aeeab`, perform only this metadata update:
+
+1. Edit the protected `/etc/utsa-gno-explorer/api.env` through the approved operator process.
+2. Set `API_VERSION=0.8.0`.
+3. Restart only `utsa-gno-api.service`:
+
+   ```bash
+   sudo systemctl restart utsa-gno-api.service
+   ```
+
+4. Verify that `/api/health` reports `api_version` as `0.8.0`:
+
+   ```bash
+   curl --fail --silent --show-error http://127.0.0.1:18180/api/health
+   ```
+
+This already-compatible path requires no database migration, indexer restart, or PostgreSQL
+restart. Frontend deployment remains operator-controlled. Migration and API-role grant
+commands belong only to the prerequisite procedure above.
 
 For rollback, stop the API, check out or reset only to a previously verified commit according to the repository's existing operator policy, reinstall dependencies only if required, start only the API, and verify `/api/health` locally:
 

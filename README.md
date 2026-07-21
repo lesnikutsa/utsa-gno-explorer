@@ -95,8 +95,14 @@ This release completes the validator detail page with a responsive profile layou
 Overview-to-profile navigation, the official `gpub1...` signing public key, and a
 network-specific Telegram monitoring deep link.
 
-The PostgreSQL schema and indexer data model are unchanged by this release. The Telegram bot
-remains a separate service.
+This release-preparation PR introduces no new database schema, migration, or indexer
+changes. Deployments already running the compatible pre-release `main`, including production
+at commit `818cee6a5d0dc8c8817e8ef3fc03af97d35aeeab`, need no database migration or indexer
+restart for the 0.8.0 metadata update. Deployments upgrading from the last published tag,
+`v0.5.0-production-runtime`, must first follow the existing operator-controlled Valopers
+schema migration and API-role grant procedure; a v0.5.0 database must not be assumed to be
+compatible. No migration or profile updater runs automatically. The Telegram bot remains a
+separate service.
 
 ## Read-only API foundation
 
