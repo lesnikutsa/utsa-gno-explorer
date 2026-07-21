@@ -134,7 +134,8 @@ transaction it takes a dedicated transaction advisory lock, validates current st
 deletes profiles, inserts the ordered replacement, writes singleton state, verifies it,
 and commits. Failures roll back. Stale and divergent same-height snapshots are rejected;
 identical snapshots are unchanged. Empty registries are zero profiles plus one state row.
-No schedule, systemd service, or timer invokes it, and API and frontend ignore the rows.
+No schedule, systemd service, or timer invokes it. The API and frontend read the persisted
+profiles after the operator-controlled refresh.
 
 Fresh empty databases use `python scripts/init_database.py`. For an existing
 production database, first create and verify a backup, then stop the indexer and
@@ -153,26 +154,26 @@ A successful migration can be rerun safely. It is never applied automatically;
 restart the indexer only after validation. Snapshot persistence and refresh remain
 manual; no automatic updater exists.
 
-The read-only validator API (version 0.7.0) enriches validator identities from the
-persisted official snapshot using exact, case-sensitive `signing_address` equality.
-The SQL `LEFT JOIN` keeps unmatched validators visible with null profile fields, and
-`valoper_source_height` identifies the pinned snapshot represented by a profile. The
-API reads PostgreSQL only: it never queries the Valopers RPC directly and does not use
-Telegram bot data. The full active-validator frontend table and the Overview **Validators
-by Missed Blocks** table display an exact official moniker when available and the shortened
-consensus signing address beneath it. The exact signing
-address remains the underlying technical identity, and unmatched validators remain visible
-by address. Profiles still come from the manually persisted official Valopers snapshot,
-profile refresh remains manual, and no logos or Telegram data are used. The full Validators
-table links each identity to `/validators/<signing-address>`, preserving the exact consensus
-signing address as route identity. The initial page shows identity and current status, and
-inactive indexed validators can still have detail pages. Full profile, performance, and
-signing-history presentation is still being completed. Overview validator links and global
-validator search are not implemented.
+The read-only validator API (version 0.8.0) enriches validator identities from the
+persisted official Valopers snapshot using exact, case-sensitive `signing_address` equality.
+The API reads PostgreSQL only and never reads Telegram bot storage or Telegram user data.
+Valopers profile refresh remains the existing manual, operator-controlled persistence process.
 
-The full active-validator table can locally filter the already loaded active set by official
-moniker or consensus signing address, using case-insensitive partial matching and no additional
-API request. Filtering preserves the original voting-power **Power Rank**, and the **Active
-Validators** metric remains the complete active-set count. Global search is not extended to
-validators. Valopers profile refresh remains manual, and the frontend still does not use
-Telegram data.
+The full Validators table and Overview validator identities link to validator detail pages.
+The full table locally filters its loaded active set by official moniker or consensus signing
+address. Detail pages refresh every 2 seconds and present Current Status, 100 actual indexed
+signing blocks with all supported signing states, official profile and public-key fields, and
+a Testnet 13 deep link that opens `@UTSAGNOTest13Bot` with the exact signing-address payload.
+Peers & Decentralization Map remains a coming-soon presentation area.
+
+Production already running the compatible pre-release state, including commit
+`818cee6a5d0dc8c8817e8ef3fc03af97d35aeeab`, needs only the metadata update: edit
+`/etc/utsa-gno-explorer/api.env` through the approved operator process, set
+`API_VERSION=0.8.0`, and restart only `utsa-gno-api.service`. After schema compatibility is
+established, this metadata-only step requires no database migration or indexer restart.
+Frontend deployment remains operator-controlled.
+
+A deployment upgrading from `v0.5.0-production-runtime`, or any deployment without the
+compatible Valopers tables and API-role privilege, must first follow the existing
+operator-controlled Valopers schema migration and API-role grant procedure in the production
+deployment guide. No migration or profile refresh is automatic.
