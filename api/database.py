@@ -193,7 +193,7 @@ ORDER BY current.voting_power DESC, current.signing_address ASC
 VALIDATOR_IDENTITY_SQL = """
 SELECT validator.signing_address AS address, validator.public_key_type, validator.public_key_value,
        validator.first_seen_height, validator.last_seen_height,
-       profile.moniker, profile.operator_address, profile.description, profile.server_type,
+       profile.moniker, profile.operator_address, profile.signing_pubkey, profile.description, profile.server_type,
        profile.source_height AS valoper_source_height
 FROM validators validator
 LEFT JOIN valoper_profiles profile

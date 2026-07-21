@@ -8,6 +8,7 @@ from api.schemas import ValidatorDetailResponse, ValidatorListItem
 
 ADDRESS = "g1" + "2" * 38
 OPERATOR = "g1" + "3" * 38
+SIGNING_PUBKEY = "gpub1pgfj7ard9eg4da6pv7dy4r3v9g3h8j4qj6c8uw"
 
 
 def active_row(address=ADDRESS, **profile):
@@ -70,16 +71,18 @@ class ValoperIdentityTests(unittest.TestCase):
     def test_detail_matched_and_unmatched_preserve_consensus_state(self):
         matched = detail({"moniker": "Official", "operator_address": OPERATOR,
                           "description": "Profile", "server_type": "data-center",
-                          "valoper_source_height": 947852, "signing_pubkey": "hidden",
+                          "valoper_source_height": 947852, "signing_pubkey": SIGNING_PUBKEY,
                           "list_position": 1, "updated_at": "hidden"}).model_dump()
         self.assertEqual([matched[k] for k in ("moniker", "operator_address", "description", "server_type", "valoper_source_height")],
                          ["Official", OPERATOR, "Profile", "data-center", 947852])
         self.assertTrue(matched["current"]["active"])
+        self.assertEqual(matched["signing_pubkey"], SIGNING_PUBKEY)
         self.assertEqual(matched["uptime_100"]["uptime_percent"], 100.0)
         self.assertEqual(matched["signing_history"]["items"][0]["status"], "commit")
-        self.assertTrue({"signing_pubkey", "list_position", "inserted_at", "updated_at"}.isdisjoint(matched))
+        self.assertTrue({"list_position", "inserted_at", "updated_at"}.isdisjoint(matched))
         unmatched = detail({})
         self.assertIsInstance(unmatched, ValidatorDetailResponse)
+        self.assertIsNone(unmatched.signing_pubkey)
         for key in ("moniker", "operator_address", "description", "server_type", "valoper_source_height"):
             self.assertIsNone(getattr(unmatched, key))
 
@@ -92,6 +95,8 @@ class ValoperIdentityTests(unittest.TestCase):
         self.assertIn("from validators validator left join valoper_profiles profile", identity)
         self.assertIn("profile.signing_address = validator.signing_address", identity)
         self.assertIn("where validator.signing_address = %s", identity)
+        self.assertIn("profile.signing_pubkey", identity)
+        self.assertNotIn("profile.signing_pubkey", active)
         for sql in (active, identity):
             self.assertNotIn("valopers_snapshot_state", sql)
             self.assertNotIn("profile.moniker =", sql)

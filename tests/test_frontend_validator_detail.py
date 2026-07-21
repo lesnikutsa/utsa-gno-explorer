@@ -72,17 +72,26 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
         header = self.page[self.page.index('<header className="validator-detail__header">'):self.page.index("</header>")]
         self.assertNotIn("StatusBadge", header)
         for label in (
-            "Validator Identity", "Signing Address", "Operator Address", "Public Key Type", "Public Key",
+            "Validator Identity", "Signing Address", "Operator Address", "Signing PubKey (gpub)",
+            "Consensus Key Type (RPC)", "Consensus Public Key (RPC)",
             "Current Status", "Indexed Height", "Voting Power",
             "Voting Power Share", "Proposer Priority", "Active", "Inactive",
         ):
             self.assertIn(label, self.page)
         self.assertIn('copyLabel="signing address"', self.page)
         self.assertIn('copyLabel="operator address"', self.page)
+        self.assertIn('copyLabel="signing public key"', self.page)
         self.assertIn('copyLabel="validator public key"', self.page)
         identity = self.page[self.page.index("Validator Identity"):self.page.index("Validator Profile")]
+        labels = ["Signing Address", "Operator Address", "Signing PubKey (gpub)",
+                  "Consensus Key Type (RPC)", "Consensus Public Key (RPC)"]
+        self.assertEqual(sorted(labels, key=identity.index), labels)
+        self.assertIn("validator-detail__grid--identity", identity)
+        self.assertIn("validator.signing_pubkey", identity)
         self.assertIn("validator.public_key_type", identity)
         self.assertIn("validator.public_key_value", identity)
+        signing_field = identity[identity.index('label="Signing PubKey (gpub)"'):identity.index('label="Consensus Key Type (RPC)"')]
+        self.assertNotIn("validator.public_key_value", signing_field)
         self.assertNotIn("Server Type", self.page)
         self.assertNotIn("Profile Source Height", self.page)
         self.assertIn("validator.address", self.page)
@@ -224,6 +233,20 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
             self.styles,
         )
         self.assertNotIn("signing-history__summary", self.styles)
+
+    def test_identity_grid_spans_signing_key_and_stacks_on_mobile(self):
+        self.assertIn(
+            ".validator-detail__grid--identity .validator-detail__field:nth-child(3) "
+            "{ grid-column: 1 / -1; border-right: 0; }",
+            self.styles,
+        )
+        mobile = self.styles[self.styles.index("@media (max-width: 760px)"):]
+        self.assertIn(".validator-detail__grid { grid-template-columns: 1fr; }", mobile)
+        self.assertIn(
+            ".validator-detail__grid--identity .validator-detail__field:nth-child(3) { grid-column: auto; }",
+            mobile,
+        )
+        self.assertIn("overflow-wrap: anywhere", self.styles)
 
 
 if __name__ == "__main__":
