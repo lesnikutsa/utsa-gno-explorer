@@ -11,6 +11,7 @@ from api.database import MissingIndexedBlockError, MissingIndexerStateError
 
 SECRET_URL = "postgresql://api_user:super-secret-password@db.internal:5432/explorer"
 ADDRESS = "g15sysd4jcpsw7t0n4ffe2hn8ndfup2ae2vwpves"
+SIGNING_PUBKEY = "gpub1pgfj7ard9eg4da6pv7dy4r3v9g3h8j4qj6c8uw"
 
 
 def history_row(height, membership=True, signature=True, signed=False, vote_status="absent"):
@@ -34,6 +35,7 @@ def detail_result(*, power=Decimal("10"), total=Decimal("138"), history=None):
             "last_seen_height": 870687,
             "moniker": "Official",
             "operator_address": "g1operator",
+            "signing_pubkey": SIGNING_PUBKEY,
             "description": "Profile",
             "server_type": "on-prem",
             "valoper_source_height": 947852,
@@ -90,6 +92,8 @@ class ApiValidatorDetailTests(unittest.TestCase):
         self.assertEqual(data["address"], ADDRESS)
         self.assertEqual(data["public_key_type"], "tendermint/PubKeyEd25519")
         self.assertEqual(data["public_key_value"], "base64 consensus public key")
+        self.assertEqual(data["signing_pubkey"], SIGNING_PUBKEY)
+        self.assertNotEqual(data["signing_pubkey"], data["public_key_value"])
         self.assertEqual((data["first_seen_height"], data["last_seen_height"]), (850000, 870687))
         self.assertEqual(data["current"], {
             "active": True, "height": 870687, "voting_power": "10",
@@ -178,9 +182,14 @@ class ApiValidatorDetailTests(unittest.TestCase):
                 for secret in (SECRET_URL, "super-secret-password", "db.internal"):
                     self.assertNotIn(secret, combined)
 
-    def test_forbidden_fields_are_not_exposed(self):
+    def test_null_signing_pubkey_is_preserved(self):
         result = detail_result()
-        result["identity"].update({"signing_pubkey": "secret", "inserted_at": "secret", "list_position": 1})
+        result["identity"]["signing_pubkey"] = None
+        self.assertIsNone(self.get(result).json()["signing_pubkey"])
+
+    def test_internal_fields_are_not_exposed(self):
+        result = detail_result()
+        result["identity"].update({"inserted_at": "secret", "updated_at": "secret", "list_position": 1})
         result["history"][0].update({"signature_base64": "secret", "raw_precommit": "secret"})
         data = self.get(result).json()
 
@@ -194,7 +203,7 @@ class ApiValidatorDetailTests(unittest.TestCase):
         ]
         exposed_keys = {key for item in inspected_objects for key in item}
         forbidden_keys = {
-            "signing_pubkey", "inserted_at", "list_position", "signature_base64",
+            "inserted_at", "updated_at", "list_position", "signature_base64",
             "raw_precommit", "vote_status", "signed",
         }
         self.assertTrue(forbidden_keys.isdisjoint(exposed_keys))

@@ -114,11 +114,12 @@ export function ValidatorDetail({ validatorDetail }) {
 
       <section className="panel validator-detail__section" aria-labelledby="validator-identity-title">
         <div className="panel__heading"><h2 id="validator-identity-title">Validator Identity</h2></div>
-        <div className="validator-detail__grid">
+        <div className="validator-detail__grid validator-detail__grid--identity">
           <AddressField label="Signing Address" value={validator.address} copyLabel="signing address" />
           <AddressField label="Operator Address" value={validator.operator_address} copyLabel="operator address" />
-          <Field label="Public Key Type" mono>{present(validator.public_key_type) ? validator.public_key_type : '—'}</Field>
-          <AddressField label="Public Key" value={validator.public_key_value} copyLabel="validator public key" />
+          <AddressField label="Signing PubKey (gpub)" value={validator.signing_pubkey} copyLabel="signing public key" />
+          <Field label="Consensus Key Type (RPC)" mono>{present(validator.public_key_type) ? validator.public_key_type : '—'}</Field>
+          <AddressField label="Consensus Public Key (RPC)" value={validator.public_key_value} copyLabel="validator public key" />
         </div>
       </section>
 

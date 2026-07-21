@@ -299,6 +299,7 @@ def _validator_detail_from_rows(result: dict) -> ValidatorDetailResponse:
         last_seen_height=identity["last_seen_height"],
         moniker=identity.get("moniker"),
         operator_address=identity.get("operator_address"),
+        signing_pubkey=identity.get("signing_pubkey"),
         description=identity.get("description"),
         server_type=identity.get("server_type"),
         valoper_source_height=identity.get("valoper_source_height"),

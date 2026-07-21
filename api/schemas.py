@@ -175,6 +175,7 @@ class ValidatorDetailResponse(BaseModel):
     last_seen_height: int = Field(ge=0)
     moniker: str | None = None
     operator_address: str | None = None
+    signing_pubkey: str | None = None
     description: str | None = None
     server_type: ValoperServerType | None = None
     valoper_source_height: int | None = Field(default=None, ge=1)
