@@ -1,11 +1,13 @@
 import { ExplorerLayout } from './layouts/ExplorerLayout'
 import { Blocks } from './pages/Blocks'
 import { BlockDetail } from './pages/BlockDetail'
+import { TransactionDetail } from './pages/TransactionDetail'
 import { Overview } from './pages/Overview'
 import { ValidatorDetail } from './pages/ValidatorDetail'
 import { Validators } from './pages/Validators'
 import { useBlocksPage } from './hooks/useBlocksPage'
 import { useBlockDetail } from './hooks/useBlockDetail'
+import { useTransactionDetail } from './hooks/useTransactionDetail'
 import { useExplorerData } from './hooks/useExplorerData'
 import { useValidatorDetail } from './hooks/useValidatorDetail'
 import { useValidatorsPage } from './hooks/useValidatorsPage'
@@ -50,6 +52,16 @@ function BlockDetailPage({ height }) {
   )
 }
 
+function TransactionDetailPage({ height, index }) {
+  const transactionDetail = useTransactionDetail(height, index)
+
+  return (
+    <ExplorerLayout healthState={transactionDetail.healthState} showRefreshCountdown={false}>
+      <TransactionDetail transactionDetail={transactionDetail} routeHeight={height} />
+    </ExplorerLayout>
+  )
+}
+
 function ValidatorsPage() {
   const validatorsPage = useValidatorsPage()
 
@@ -84,6 +96,11 @@ export default function App() {
   const validatorDetailMatch = path.match(/^\/validators\/([^/]+)\/?$/)
   if (validatorDetailMatch) {
     return <ValidatorDetailPage address={validatorDetailMatch[1]} />
+  }
+
+  const transactionDetailMatch = path.match(/^\/blocks\/([^/]+)\/transactions\/([^/]+)\/?$/)
+  if (transactionDetailMatch) {
+    return <TransactionDetailPage height={transactionDetailMatch[1]} index={transactionDetailMatch[2]} />
   }
 
   if (path.startsWith('/blocks/')) {
