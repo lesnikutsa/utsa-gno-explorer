@@ -61,6 +61,7 @@ export function TopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefres
   const secondsUntilRefresh = nextFastRefreshAt
     ? Math.min(5, Math.max(0, Math.ceil((nextFastRefreshAt - clock) / 1_000)))
     : 0
+  const hasOpenResults = dropdownOpen && validatorResults.length > 0
 
   return (
     <header className="topbar">
@@ -84,7 +85,7 @@ export function TopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefres
           />
           <kbd>/</kbd>
         </label>
-        {dropdownOpen && validatorResults.length > 0 && (
+        {hasOpenResults && (
           <div id="global-search-results" className="global-search__results" role="listbox" aria-label="Validator results">
             {validatorResults.map((validator, index) => (
               <a
@@ -107,7 +108,10 @@ export function TopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefres
             ))}
           </div>
         )}
-        {message && (
+        {message && hasOpenResults && (
+          <div className="global-search__announcement" aria-live="polite">{message}</div>
+        )}
+        {message && !hasOpenResults && (
           <div className={`global-search__feedback global-search__feedback--${status}`} aria-live="polite">
             {message}
           </div>
