@@ -126,6 +126,16 @@ class ValidatorsResponse(BaseModel):
     items: list[ValidatorListItem]
 
 
+class ValidatorSearchItem(BaseModel):
+    address: str
+    moniker: str | None = None
+    operator_address: str | None = None
+
+
+class ValidatorSearchResponse(BaseModel):
+    items: list[ValidatorSearchItem]
+
+
 class ValidatorCurrentStatus(BaseModel):
     active: bool
     height: int = Field(ge=0)

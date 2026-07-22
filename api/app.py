@@ -27,6 +27,8 @@ from api.schemas import (
     NetworkValidators,
     SelectedRpc,
     ValidatorListItem,
+    ValidatorSearchItem,
+    ValidatorSearchResponse,
     ValidatorCurrentStatus,
     ValidatorDetailResponse,
     ValidatorSigningHistory,
@@ -398,6 +400,24 @@ def get_validators() -> ValidatorsResponse:
     except Exception:
         LOGGER.error("Explorer database validators query failed")
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+
+
+@app.get("/api/search/validators", response_model=ValidatorSearchResponse)
+def search_validators(
+    q: str = Query(min_length=1),
+    limit: int = Query(default=6, ge=1, le=10),
+) -> ValidatorSearchResponse:
+    query = q.strip()
+    if len(query) < 2:
+        raise HTTPException(status_code=422, detail="q must contain at least 2 non-whitespace characters")
+    if len(query) > 128:
+        raise HTTPException(status_code=422, detail="q must contain at most 128 characters")
+    try:
+        rows = database.fetch_validator_search(query, limit)
+    except Exception:
+        LOGGER.error("Explorer database validator search query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+    return ValidatorSearchResponse(items=[ValidatorSearchItem(**row) for row in rows])
 
 
 @app.get("/api/validators/signing-history", response_model=ValidatorSigningHistoryBatchResponse)
