@@ -31,14 +31,30 @@ class BlockProposerFrontendContractTests(unittest.TestCase):
         cls.overview = (ROOT / "frontend/src/pages/Overview.jsx").read_text()
         cls.blocks = (ROOT / "frontend/src/pages/Blocks.jsx").read_text()
         cls.detail = (ROOT / "frontend/src/pages/BlockDetail.jsx").read_text()
+        cls.styles = (ROOT / "frontend/src/styles/app.css").read_text()
 
-    def test_shared_component_has_link_fallback_and_full_address_modes(self):
+    def test_shared_component_has_separate_moniker_link_and_plain_address(self):
         self.assertIn("if (!address) return", self.component)
         self.assertIn("encodeURIComponent(address)", self.component)
         self.assertIn("shortAddress(address)", self.component)
         self.assertIn("title={address}", self.component)
+        self.assertIn('<div className={`proposer-identity', self.component)
+        self.assertIn('className="proposer-identity__moniker-link"', self.component)
+        self.assertIn('className="proposer-identity__address mono"', self.component)
+        self.assertIn('className="proposer-identity__fallback-link mono"', self.component)
+        self.assertNotIn('<a\n      className={`proposer-identity', self.component)
+        self.assertNotIn('proposer-identity__address mono" href=', self.component)
+        self.assertNotIn('role="link"', self.component)
+        self.assertNotIn('onClick=', self.component)
         self.assertNotIn("img", self.component)
         self.assertNotIn("fetch(", self.component)
+
+    def test_hover_and_focus_styles_target_only_the_interactive_line(self):
+        self.assertIn(".proposer-identity__moniker-link:hover .proposer-identity__moniker", self.styles)
+        self.assertIn(".proposer-identity__moniker-link:focus-visible", self.styles)
+        self.assertIn(".proposer-identity__fallback-link:hover", self.styles)
+        self.assertIn(".proposer-identity__fallback-link:focus-visible", self.styles)
+        self.assertNotIn(".proposer-identity--link:hover", self.styles)
 
     def test_all_block_views_use_api_moniker_with_shared_component(self):
         for source in (self.overview, self.blocks, self.detail):

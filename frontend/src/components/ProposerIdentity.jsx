@@ -5,15 +5,20 @@ export function ProposerIdentity({ address, moniker, compact = false, showFullAd
 
   const displayMoniker = typeof moniker === 'string' ? moniker.trim() : ''
   const displayAddress = showFullAddress || !compact ? address : shortAddress(address)
+  const profilePath = `/validators/${encodeURIComponent(address)}`
 
   return (
-    <a
-      className={`proposer-identity proposer-identity--link${compact ? ' proposer-identity--compact' : ''}${showFullAddress ? ' proposer-identity--full' : ''}`}
-      href={`/validators/${encodeURIComponent(address)}`}
-      title={address}
-    >
-      {displayMoniker && <strong className="proposer-identity__moniker">{displayMoniker}</strong>}
-      <span className={`proposer-identity__address mono${displayMoniker ? '' : ' proposer-identity__address--fallback'}`}>{displayAddress}</span>
-    </a>
+    <div className={`proposer-identity${compact ? ' proposer-identity--compact' : ''}${showFullAddress ? ' proposer-identity--full' : ''}`}>
+      {displayMoniker ? (
+        <>
+          <a className="proposer-identity__moniker-link" href={profilePath} title={address}>
+            <strong className="proposer-identity__moniker">{displayMoniker}</strong>
+          </a>
+          <span className="proposer-identity__address mono" title={address}>{displayAddress}</span>
+        </>
+      ) : (
+        <a className="proposer-identity__fallback-link mono" href={profilePath} title={address}>{displayAddress}</a>
+      )}
+    </div>
   )
 }
