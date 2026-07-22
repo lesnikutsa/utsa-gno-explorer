@@ -4,6 +4,7 @@ import { DataTable } from '../components/DataTable'
 import { ResourceStrip } from '../components/ResourceStrip'
 import { StatusBadge } from '../components/StatusBadge'
 import { ValidatorSigningStrip } from '../components/ValidatorSigningStrip'
+import { ProposerIdentity } from '../components/ProposerIdentity'
 import { BlocksIcon, ChainIcon, MapIcon, NetworkIcon, ValidatorsIcon } from '../components/Icons'
 import { relativeTime } from '../utils/time'
 import { shortAddress } from '../utils/address'
@@ -35,7 +36,7 @@ function RpcStatus({ rpc }) {
 const blockColumns = [
   { key: 'height', label: 'Height', render: (row) => <a className="table-link" href={`/blocks/${row.height}`}><span className="accent-value mono">#{row.height.toLocaleString()}</span></a> },
   { key: 'time', label: 'Time', render: (row) => relativeTime(row.time) },
-  { key: 'proposer_address', label: 'Proposer', render: (row) => <span className="mono muted" title={row.proposer_address}>{shortAddress(row.proposer_address)}</span> },
+  { key: 'proposer_address', label: 'Proposer', render: (row) => <ProposerIdentity address={row.proposer_address} moniker={row.proposer_moniker} compact /> },
   { key: 'tx_count', label: 'Txs' },
   { key: 'block_hash', label: 'Block Hash', render: (row) => <span className="mono muted" title={row.block_hash}>{shortAddress(row.block_hash)}</span> },
 ]

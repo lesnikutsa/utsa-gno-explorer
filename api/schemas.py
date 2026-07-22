@@ -21,6 +21,7 @@ class BlockSummary(BaseModel):
     block_hash: str
     time: str
     proposer_address: str | None
+    proposer_moniker: str | None = None
     tx_count: int
 
 
@@ -74,6 +75,7 @@ class BlockDetailResponse(BaseModel):
     block_hash_base64: str
     time: str
     proposer_address: str | None
+    proposer_moniker: str | None = None
     tx_count: int
     commit: BlockCommitSummary
     transactions: list[BlockTransactionSummary]

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { DataTable } from '../components/DataTable'
+import { ProposerIdentity } from '../components/ProposerIdentity'
 import { shortAddress } from '../utils/address'
 import { relativeTime } from '../utils/time'
 
@@ -13,7 +14,7 @@ const columns = [
   {
     key: 'proposer_address',
     label: 'Proposer',
-    render: (block) => <span className="mono muted" title={block.proposer_address}>{shortAddress(block.proposer_address)}</span>,
+    render: (block) => <ProposerIdentity address={block.proposer_address} moniker={block.proposer_moniker} compact />,
   },
   { key: 'tx_count', label: 'Txs' },
   {

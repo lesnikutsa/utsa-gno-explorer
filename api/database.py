@@ -39,6 +39,7 @@ SELECT
     b.block_hash_hex,
     b.time_utc,
     b.proposer_address,
+    profile.moniker AS proposer_moniker,
     b.tx_count,
     COALESCE(v.active_count, 0) AS validator_active_count,
     COALESCE(v.total_voting_power, 0)::text AS validator_total_voting_power,
@@ -50,6 +51,8 @@ SELECT
     r.last_checked_at AS rpc_last_checked_at
 FROM indexer_state s
 JOIN blocks b ON b.height = s.last_finalized_height
+LEFT JOIN valoper_profiles profile
+  ON profile.signing_address = b.proposer_address
 LEFT JOIN LATERAL (
     SELECT count(*)::bigint AS active_count, COALESCE(sum(vsm.voting_power), 0) AS total_voting_power
     FROM validator_set_members vsm
@@ -60,46 +63,56 @@ WHERE s.state_key = %s
 """
 
 BLOCK_COLUMNS = """
-    height,
-    block_hash_hex,
-    time_utc,
-    proposer_address,
-    tx_count
+    block.height,
+    block.block_hash_hex,
+    block.time_utc,
+    block.proposer_address,
+    profile.moniker AS proposer_moniker,
+    block.tx_count
 """
 
 BLOCK_DETAIL_COLUMNS = """
-    height,
-    block_hash_hex,
-    block_hash_base64,
-    time_utc,
-    proposer_address,
-    tx_count
+    block.height,
+    block.block_hash_hex,
+    block.block_hash_base64,
+    block.time_utc,
+    block.proposer_address,
+    profile.moniker AS proposer_moniker,
+    block.tx_count
 """
 
 BLOCKS_SQL = f"""
 SELECT {BLOCK_COLUMNS}
-FROM blocks
-WHERE (%s::bigint IS NULL OR height < %s::bigint)
-ORDER BY height DESC
+FROM blocks block
+LEFT JOIN valoper_profiles profile
+  ON profile.signing_address = block.proposer_address
+WHERE (%s::bigint IS NULL OR block.height < %s::bigint)
+ORDER BY block.height DESC
 LIMIT %s
 """
 
 BLOCK_BY_HEX_SQL = f"""
 SELECT {BLOCK_COLUMNS}
-FROM blocks
-WHERE block_hash_hex = %s
+FROM blocks block
+LEFT JOIN valoper_profiles profile
+  ON profile.signing_address = block.proposer_address
+WHERE block.block_hash_hex = %s
 """
 
 BLOCK_BY_BASE64_SQL = f"""
 SELECT {BLOCK_COLUMNS}
-FROM blocks
-WHERE block_hash_base64 = %s
+FROM blocks block
+LEFT JOIN valoper_profiles profile
+  ON profile.signing_address = block.proposer_address
+WHERE block.block_hash_base64 = %s
 """
 
 BLOCK_DETAIL_SQL = f"""
 SELECT {BLOCK_DETAIL_COLUMNS}
-FROM blocks
-WHERE height = %s
+FROM blocks block
+LEFT JOIN valoper_profiles profile
+  ON profile.signing_address = block.proposer_address
+WHERE block.height = %s
 """
 
 BLOCK_COMMIT_SQL = """
