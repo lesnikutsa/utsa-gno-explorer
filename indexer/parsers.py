@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import hashlib
 from dataclasses import dataclass
 from typing import Any
 
@@ -44,6 +45,7 @@ def parse_tx(index: int, tx: Any) -> dict[str, Any]:
             "decoded_bytes": None,
             "decoded_byte_length": None,
             "decode_status": "invalid_base64",
+            "tx_hash_hex": None,
         }
     return {
         "index": index,
@@ -52,6 +54,7 @@ def parse_tx(index: int, tx: Any) -> dict[str, Any]:
         "decoded_bytes": decoded,
         "decoded_byte_length": len(decoded),
         "decode_status": "decoded",
+        "tx_hash_hex": hashlib.sha256(decoded).hexdigest().upper(),
     }
 
 

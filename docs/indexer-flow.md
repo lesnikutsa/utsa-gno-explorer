@@ -1,5 +1,10 @@
 # Indexer flow
 
+## Transaction hashes
+
+Successfully decoded transaction bytes are preserved exactly and hashed with SHA-256. The canonical Tendermint2 hash is uppercase 64-character hexadecimal without `0x`. Invalid Base64 is not hashed and remains nullable; decoding does not indicate execution success.
+
+
 This is a design checkpoint for the future continuous indexer. It is not an implementation plan for running a service in this issue.
 
 ## Per-cycle flow

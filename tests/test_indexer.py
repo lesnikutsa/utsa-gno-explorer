@@ -194,6 +194,17 @@ class RangeTests(unittest.TestCase):
 
 
 class ParserTests(unittest.TestCase):
+    def test_canonical_transaction_hash_known_vectors(self):
+        from indexer.parsers import parse_tx
+
+        empty = parse_tx(0, "")
+        self.assertEqual(empty["decoded_bytes"], b"")
+        self.assertEqual(empty["tx_hash_hex"], "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855")
+        non_empty = parse_tx(1, "YWJj")
+        self.assertEqual(non_empty["decoded_bytes"], b"abc")
+        self.assertEqual(non_empty["tx_hash_hex"], "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD")
+        self.assertIsNone(parse_tx(2, "not base64!")["tx_hash_hex"])
+
     def statuses(self, commit_payload=None):
         block, base_commit, validators = payloads()
         commit = commit_payload or base_commit

@@ -23,7 +23,7 @@ EXPECTED_COLUMNS = {
     "transactions": {
         "id": ("bigint", "NO", "a", None), "block_height": ("bigint", "NO", "", None), "tx_index": ("integer", "NO", "", None), "raw_base64": ("text", "NO", "", None),
         "raw_base64_length": ("integer", "NO", "", None), "decoded_bytes": ("bytea", "YES", "", None), "decoded_byte_length": ("integer", "YES", "", None),
-        "decode_status": ("text", "NO", "", None), "payload_summary": ("jsonb", "YES", "", None), "inserted_at": ("timestamp with time zone", "NO", "", "now()"),
+        "decode_status": ("text", "NO", "", None), "tx_hash_hex": ("text", "YES", "", None), "payload_summary": ("jsonb", "YES", "", None), "inserted_at": ("timestamp with time zone", "NO", "", "now()"),
     },
     "validators": {
         "signing_address": ("text", "NO", "", None), "public_key_type": ("text", "NO", "", None), "public_key_value": ("text", "NO", "", None),
@@ -79,6 +79,8 @@ EXPECTED_CHECKS = {
     "transactions_decode_status_check": "CHECK (decode_status IN ('decoded', 'invalid_base64', 'not_attempted'))",
     "transactions_raw_base64_length_matches": "CHECK (raw_base64_length = char_length(raw_base64))",
     "transactions_decode_status_consistent": "CHECK ((decode_status = 'decoded' AND decoded_bytes IS NOT NULL AND decoded_byte_length = octet_length(decoded_bytes)) OR (decode_status IN ('invalid_base64', 'not_attempted') AND decoded_bytes IS NULL AND decoded_byte_length IS NULL))",
+    "transactions_tx_hash_hex_format": "CHECK (tx_hash_hex IS NULL OR tx_hash_hex ~ '^[0-9A-F]{64}$')",
+    "transactions_tx_hash_consistent": "CHECK ((decode_status = 'decoded' AND tx_hash_hex IS NOT NULL) OR (decode_status IN ('invalid_base64', 'not_attempted') AND tx_hash_hex IS NULL))",
     "validators_first_seen_height_check": "CHECK (first_seen_height >= 0)",
     "validators_last_seen_height_check": "CHECK (last_seen_height >= first_seen_height)",
     "validator_set_members_voting_power_check": "CHECK (voting_power >= 0)",
@@ -115,6 +117,7 @@ EXPECTED_CHECKS = {
     "valopers_snapshot_state_counts_consistent": "CHECK ((profile_count = 0 AND page_count = 0) OR (profile_count > 0 AND page_count >= 1))",
 }
 EXPECTED_INDEXES = {
+    "transactions_tx_hash_hex_unique": ("transactions", True, (("tx_hash_hex", "ASC"),), "tx_hash_hex IS NOT NULL"),
     "blocks_time_utc_idx": ("blocks", False, (("time_utc", "DESC"),), None),
     "validator_set_members_height_power_idx": ("validator_set_members", False, (("height", "ASC"), ("voting_power", "DESC"), ("signing_address", "ASC")), None),
     "validator_set_members_signing_height_idx": ("validator_set_members", False, (("signing_address", "ASC"), ("height", "DESC")), None),

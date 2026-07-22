@@ -21,9 +21,18 @@ const transactionColumns = (blockHeight) => [
     ),
   },
   {
-    key: 'raw_base64',
-    label: 'Raw Base64',
-    render: (transaction) => <span className="transaction-raw mono" title={transaction.raw_base64}>{transaction.raw_base64}</span>,
+    key: 'tx_hash',
+    label: 'Tx Hash',
+    render: (transaction) => transaction.tx_hash ? (
+      <a
+        className="transaction-hash transaction-link mono"
+        href={`/blocks/${encodeURIComponent(blockHeight)}/transactions/${encodeURIComponent(transaction.index)}`}
+        title={transaction.tx_hash}
+        aria-label={`Open transaction ${transaction.tx_hash} at index #${transaction.index} in block #${blockHeight}`}
+      >
+        {`${transaction.tx_hash.slice(0, 12)}…${transaction.tx_hash.slice(-9)}`}
+      </a>
+    ) : '—',
   },
   { key: 'raw_base64_length', label: 'Base64 Length' },
   { key: 'decoded_byte_length', label: 'Decoded Bytes', render: (transaction) => transaction.decoded_byte_length ?? '—' },

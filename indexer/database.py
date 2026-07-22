@@ -235,11 +235,11 @@ def _fetch_single_column_set(cursor, sql: str, params: tuple[Any, ...]) -> set[A
 def _verify_transaction_conflicts(cursor, parsed) -> None:
     for transaction in parsed.transactions:
         cursor.execute(
-            "SELECT raw_base64, raw_base64_length, decoded_byte_length, decode_status FROM transactions WHERE block_height = %s AND tx_index = %s",
+            "SELECT raw_base64, raw_base64_length, decoded_byte_length, decode_status, tx_hash_hex FROM transactions WHERE block_height = %s AND tx_index = %s",
             (parsed.height, transaction["index"]),
         )
         row = cursor.fetchone()
-        expected = (transaction["raw_base64"], transaction["raw_base64_length"], transaction["decoded_byte_length"], transaction["decode_status"])
+        expected = (transaction["raw_base64"], transaction["raw_base64_length"], transaction["decoded_byte_length"], transaction["decode_status"], transaction["tx_hash_hex"])
         if row and tuple(row) != expected:
             raise FinalizedDataConflict(f"Conflicting transaction at height {parsed.height} index {transaction['index']}")
 
@@ -304,11 +304,11 @@ def _upsert_transactions(cursor, parsed) -> None:
     for transaction in parsed.transactions:
         cursor.execute(
             """
-            INSERT INTO transactions(block_height, tx_index, raw_base64, raw_base64_length, decoded_bytes, decoded_byte_length, decode_status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO transactions(block_height, tx_index, raw_base64, raw_base64_length, decoded_bytes, decoded_byte_length, decode_status, tx_hash_hex)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (block_height, tx_index) DO NOTHING
             """,
-            (parsed.height, transaction["index"], transaction["raw_base64"], transaction["raw_base64_length"], transaction["decoded_bytes"], transaction["decoded_byte_length"], transaction["decode_status"]),
+            (parsed.height, transaction["index"], transaction["raw_base64"], transaction["raw_base64_length"], transaction["decoded_bytes"], transaction["decoded_byte_length"], transaction["decode_status"], transaction["tx_hash_hex"]),
         )
 
 

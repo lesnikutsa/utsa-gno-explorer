@@ -133,6 +133,7 @@ WHERE vsm.height = %s
 BLOCK_TRANSACTIONS_SQL = """
 SELECT
     tx_index,
+    tx_hash_hex,
     raw_base64,
     raw_base64_length,
     decoded_byte_length,
@@ -146,6 +147,7 @@ TRANSACTION_DETAIL_SQL = """
 SELECT
     transaction.block_height,
     transaction.tx_index,
+    transaction.tx_hash_hex,
     transaction.raw_base64,
     transaction.raw_base64_length,
     transaction.decoded_byte_length,

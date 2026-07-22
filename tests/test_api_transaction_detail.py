@@ -34,6 +34,7 @@ def transaction_row(**overrides):
         "id": 17,
         "block_height": 984383,
         "tx_index": 0,
+        "tx_hash_hex": "0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         "raw_base64": " exact+Base64== ",
         "raw_base64_length": 17,
         "decoded_byte_length": 10,
@@ -76,6 +77,7 @@ class ApiTransactionDetailTests(unittest.TestCase):
             "proposer_address": "g1proposer",
             "proposer_moniker": "UTSA",
             "index": 0,
+            "tx_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
             "raw_base64": " exact+Base64== ",
             "raw_base64_length": 17,
             "decoded_byte_length": 10,
@@ -84,12 +86,13 @@ class ApiTransactionDetailTests(unittest.TestCase):
 
     def test_nullable_fields_are_preserved(self):
         fake = FakeDatabase()
-        fake.details[(984383, 0)] = transaction_row(proposer_address=None, proposer_moniker=None, decoded_byte_length=None)
+        fake.details[(984383, 0)] = transaction_row(proposer_address=None, proposer_moniker=None, decoded_byte_length=None, tx_hash_hex=None)
         with self.make_client(fake) as client:
             data = client.get("/api/blocks/984383/transactions/0").json()
         self.assertIsNone(data["proposer_address"])
         self.assertIsNone(data["proposer_moniker"])
         self.assertIsNone(data["decoded_byte_length"])
+        self.assertIsNone(data["tx_hash"])
 
     def test_invalid_location_returns_422(self):
         with self.make_client(FakeDatabase()) as client:
@@ -119,7 +122,7 @@ class ApiTransactionDetailTests(unittest.TestCase):
         fake.details[(984383, 0)] = transaction_row()
         with self.make_client(fake) as client:
             text = client.get("/api/blocks/984383/transactions/0").text
-        for field in ("decoded_bytes", "payload_summary", '"id"', "inserted_at", "updated_at"):
+        for field in ("decoded_bytes", "payload_summary", "tx_hash_hex", '"id"', "inserted_at", "updated_at"):
             self.assertNotIn(field, text)
         self.assertNotIn(SECRET_URL, text)
 

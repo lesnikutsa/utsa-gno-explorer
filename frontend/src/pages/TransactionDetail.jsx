@@ -44,8 +44,14 @@ export function TransactionDetail({ transactionDetail, routeHeight }) {
     <article className="transaction-detail" aria-labelledby="transaction-detail-title">
       <a className="transaction-detail__back" href={canonicalBlockHref}>← Back to Block #{transaction.block_height}</a>
       <header className="transaction-detail__header">
-        <h1 id="transaction-detail-title">Transaction #{transaction.index}</h1>
-        <p>Transaction at index {transaction.index} in finalized block #{transaction.block_height}.</p>
+        {transaction.tx_hash ? <>
+          <span className="transaction-detail__eyebrow">Transaction</span>
+          <div className="transaction-detail__copy-row">
+            <h1 className="transaction-detail__heading-hash mono" id="transaction-detail-title">{transaction.tx_hash}</h1>
+            <CopyButton value={transaction.tx_hash} label="transaction hash" />
+          </div>
+        </> : <h1 id="transaction-detail-title">Transaction #{transaction.index}</h1>}
+        <p>Included at index #{transaction.index} in finalized block #{transaction.block_height}.</p>
       </header>
 
       <section className="panel transaction-detail__section" aria-labelledby="transaction-information-title">
@@ -73,7 +79,7 @@ export function TransactionDetail({ transactionDetail, routeHeight }) {
         <pre className="transaction-detail__raw-value mono">{transaction.raw_base64}</pre>
       </section>
 
-      <p className="transaction-detail__notice">Transaction type, sender, execution result, gas, fee, human-readable message details, and a canonical transaction hash are not indexed by this Explorer yet.</p>
+      <p className="transaction-detail__notice">Transaction type, sender, execution result, gas, fee, and human-readable message details are not indexed by this Explorer yet.</p>
     </article>
   )
 }
