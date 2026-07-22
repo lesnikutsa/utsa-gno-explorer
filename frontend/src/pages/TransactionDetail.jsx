@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { CopyButton } from '../components/CopyButton'
 import { ProposerIdentity } from '../components/ProposerIdentity'
-import { StatusBadge } from '../components/StatusBadge'
+import { TransactionDecodeBadge } from '../components/TransactionDecodeBadge'
 import { relativeTime } from '../utils/time'
 
 const isValidHeight = (height) => /^[1-9]\d*$/.test(height)
@@ -14,13 +14,6 @@ function RelativeTransactionTime({ value }) {
     return () => window.clearInterval(timerId)
   }, [])
   return <small>{relativeTime(value, now)}</small>
-}
-
-function DecodeStatus({ status }) {
-  if (status === 'decoded') return <StatusBadge tone="success">Decoded</StatusBadge>
-  if (status === 'invalid_base64') return <StatusBadge tone="error">Invalid Base64</StatusBadge>
-  if (status === 'not_attempted') return <StatusBadge>Not Attempted</StatusBadge>
-  return <StatusBadge>{status}</StatusBadge>
 }
 
 function StatePanel({ title, message, retry, blockHref }) {
@@ -62,7 +55,8 @@ export function TransactionDetail({ transactionDetail, routeHeight }) {
           <div className="transaction-detail__field"><span className="transaction-detail__label">Transaction Index</span><strong className="transaction-detail__value mono">#{transaction.index}</strong></div>
           <div className="transaction-detail__field"><span className="transaction-detail__label">Block Time</span><strong className="transaction-detail__value mono">{transaction.block_time}</strong><RelativeTransactionTime value={transaction.block_time} /></div>
           <div className="transaction-detail__field"><span className="transaction-detail__label">Proposer</span><ProposerIdentity address={transaction.proposer_address} moniker={transaction.proposer_moniker} showFullAddress /></div>
-          <div className="transaction-detail__field"><span className="transaction-detail__label">Decode Status</span><DecodeStatus status={transaction.decode_status} /></div>
+          <div className="transaction-detail__field"><span className="transaction-detail__label">Block Hash</span><div className="transaction-detail__copy-row"><strong className="transaction-detail__value transaction-detail__hash mono">{transaction.block_hash}</strong><CopyButton value={transaction.block_hash} label="block hash" /></div></div>
+          <div className="transaction-detail__field"><span className="transaction-detail__label">Base64 Decode</span><TransactionDecodeBadge status={transaction.decode_status} /></div>
         </div>
       </section>
 
@@ -79,7 +73,7 @@ export function TransactionDetail({ transactionDetail, routeHeight }) {
         <pre className="transaction-detail__raw-value mono">{transaction.raw_base64}</pre>
       </section>
 
-      <p className="transaction-detail__notice">Human-readable Gno transaction details and a canonical transaction hash are not indexed yet.</p>
+      <p className="transaction-detail__notice">Transaction type, sender, execution result, gas, fee, human-readable message details, and a canonical transaction hash are not indexed by this Explorer yet.</p>
     </article>
   )
 }

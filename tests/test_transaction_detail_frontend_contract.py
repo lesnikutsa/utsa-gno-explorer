@@ -28,6 +28,7 @@ class TransactionDetailFrontendContractTests(unittest.TestCase):
         block = self.read("frontend/src/pages/BlockDetail.jsx")
         self.assertIn("label: 'Index'", block)
         self.assertIn('label: \'Raw Base64\'', block)
+        self.assertIn("label: 'Base64 Decode'", block)
         detail = self.read("frontend/src/pages/TransactionDetail.jsx")
         self.assertIn('className="transaction-link mono"', block)
         self.assertIn("/blocks/${encodeURIComponent(blockHeight)}/transactions/${encodeURIComponent(transaction.index)}", block)
@@ -37,7 +38,7 @@ class TransactionDetailFrontendContractTests(unittest.TestCase):
         self.assertIn("href={canonicalBlockHref}", detail)
         self.assertIn("<CopyButton value={transaction.raw_base64}", detail)
         self.assertIn("Transaction #{transaction.index}", detail)
-        self.assertIn("canonical transaction hash are not indexed yet", detail)
+        self.assertIn("canonical transaction hash are not indexed by this Explorer yet", detail)
         self.assertNotIn("avatar", detail.lower())
         self.assertNotIn("logo", detail.lower())
 
@@ -57,6 +58,42 @@ class TransactionDetailFrontendContractTests(unittest.TestCase):
             self.assertIn(declaration, rule)
         self.assertIn(".block-detail__transactions .data-table th:nth-child(1) { width: 80px; }", styles)
         self.assertNotIn("\n.data-table { table-layout: fixed", styles)
+
+    def test_block_hash_and_balanced_information_grid(self):
+        detail = self.read("frontend/src/pages/TransactionDetail.jsx")
+        information = detail[detail.index('className="transaction-detail__grid"'):detail.index("</section>", detail.index('className="transaction-detail__grid"'))]
+        self.assertEqual(information.count('className="transaction-detail__field"'), 6)
+        for label in ("Block", "Transaction Index", "Block Time", "Proposer", "Block Hash", "Base64 Decode"):
+            self.assertIn(f">{label}</span>", information)
+        self.assertIn("{transaction.block_hash}", information)
+        self.assertIn('<CopyButton value={transaction.block_hash} label="block hash" />', information)
+
+    def test_decode_badge_is_shared_and_never_implies_execution_success(self):
+        block = self.read("frontend/src/pages/BlockDetail.jsx")
+        detail = self.read("frontend/src/pages/TransactionDetail.jsx")
+        badge = self.read("frontend/src/components/TransactionDecodeBadge.jsx")
+        self.assertIn("TransactionDecodeBadge", block)
+        self.assertIn("TransactionDecodeBadge", detail)
+        self.assertIn("status === 'decoded'", badge)
+        self.assertIn("{ label: 'Decoded', tone: 'neutral' }", badge)
+        self.assertNotIn("tone: 'success'", badge)
+        self.assertIn("{ label: 'Invalid Base64', tone: 'error' }", badge)
+        self.assertIn("This is not transaction execution status", badge)
+
+    def test_future_fields_are_notice_only(self):
+        block = self.read("frontend/src/pages/BlockDetail.jsx")
+        detail = self.read("frontend/src/pages/TransactionDetail.jsx")
+        self.assertIn("Transaction type, sender, execution result, gas, fee", detail)
+        self.assertNotIn("label: 'Type'", block)
+        self.assertNotIn("Transaction Hash</span>", detail)
+
+    def test_transaction_spacing_remains_scoped(self):
+        styles = self.read("frontend/src/styles/app.css")
+        self.assertIn(".transaction-detail__header { margin-bottom: 14px; }", styles)
+        self.assertIn(".transaction-detail__section { margin-bottom: 10px; }", styles)
+        self.assertIn(".transaction-detail__field { min-width: 0; padding: 11px 13px; }", styles)
+        transaction_rule = styles[styles.index(".transaction-detail {"):styles.index("}", styles.index(".transaction-detail {"))]
+        self.assertNotIn("padding", transaction_rule)
 
     def test_navigation_and_search_are_unchanged(self):
         sidebar = self.read("frontend/src/components/Sidebar.jsx")

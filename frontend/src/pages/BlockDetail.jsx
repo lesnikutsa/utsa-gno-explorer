@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { CopyButton } from '../components/CopyButton'
 import { ProposerIdentity } from '../components/ProposerIdentity'
 import { DataTable } from '../components/DataTable'
-import { StatusBadge } from '../components/StatusBadge'
+import { TransactionDecodeBadge } from '../components/TransactionDecodeBadge'
 import { relativeTime } from '../utils/time'
 
 const transactionColumns = (blockHeight) => [
@@ -29,12 +29,8 @@ const transactionColumns = (blockHeight) => [
   { key: 'decoded_byte_length', label: 'Decoded Bytes', render: (transaction) => transaction.decoded_byte_length ?? '—' },
   {
     key: 'decode_status',
-    label: 'Decode Status',
-    render: (transaction) => {
-      if (transaction.decode_status === 'decoded') return <StatusBadge tone="success">Decoded</StatusBadge>
-      if (transaction.decode_status === 'invalid_base64') return <StatusBadge tone="error">Invalid Base64</StatusBadge>
-      return <StatusBadge>{transaction.decode_status}</StatusBadge>
-    },
+    label: 'Base64 Decode',
+    render: (transaction) => <TransactionDecodeBadge status={transaction.decode_status} />,
   },
 ]
 

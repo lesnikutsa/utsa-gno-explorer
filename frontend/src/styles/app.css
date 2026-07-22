@@ -224,6 +224,8 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .transaction-detail__value, .transaction-detail__block-link { display: block; color: var(--color-text); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 .transaction-detail__block-link { color: #dc795e; font-weight: 600; }
 .transaction-detail__field small { display: block; margin-top: 3px; color: var(--color-text-secondary); font-size: 9px; }
+.transaction-detail__copy-row { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.transaction-detail__hash { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; user-select: text; }
 .transaction-detail__raw .panel__heading { align-items: center; }
 .transaction-detail__raw-value { max-width: 100%; margin: 0; padding: 13px; overflow: visible; color: var(--color-text); font-size: 11px; line-height: 1.65; overflow-wrap: anywhere; user-select: text; white-space: pre-wrap; word-break: break-word; }
 .transaction-detail__notice { margin: 0; padding: 10px 12px; border: 1px solid var(--color-border-soft); border-radius: 5px; background: rgba(9,24,39,.45); color: var(--color-text-secondary); font-size: 10px; line-height: 1.5; }
