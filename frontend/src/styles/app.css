@@ -195,10 +195,13 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .block-detail__metric--success strong { color: var(--color-success); }
 .block-detail__metric--warning strong { color: var(--color-warning); }
 .block-detail__metric--error strong { color: var(--color-error); }
-.block-detail__transactions .data-table { min-width: 680px; table-layout: fixed; }
-.block-detail__transactions .data-table th:nth-child(1) { width: 70px; }
-.block-detail__transactions .data-table th:nth-child(2) { width: 45%; }
-.transaction-raw { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.block-detail__transactions .data-table { min-width: 720px; table-layout: fixed; }
+.block-detail__transactions .data-table th:nth-child(1) { width: 80px; }
+.block-detail__transactions .data-table th:nth-child(2) { width: auto; }
+.block-detail__transactions .data-table th:nth-child(3) { width: 140px; }
+.block-detail__transactions .data-table th:nth-child(4) { width: 140px; }
+.block-detail__transactions .data-table th:nth-child(5) { width: 155px; }
+.block-detail__transactions .transaction-raw { display: block; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .block-detail__state { padding: 18px; }
 .block-detail__state-actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
 .block-detail__state .block-detail__back { margin: 0; }

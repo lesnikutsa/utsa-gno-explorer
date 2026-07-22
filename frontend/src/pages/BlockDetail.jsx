@@ -9,8 +9,16 @@ import { relativeTime } from '../utils/time'
 const transactionColumns = (blockHeight) => [
   {
     key: 'index',
-    label: 'Transaction',
-    render: (transaction) => <a className="transaction-link mono" href={`/blocks/${encodeURIComponent(blockHeight)}/transactions/${encodeURIComponent(transaction.index)}`}>Transaction #{transaction.index}</a>,
+    label: 'Index',
+    render: (transaction) => (
+      <a
+        className="transaction-link mono"
+        href={`/blocks/${encodeURIComponent(blockHeight)}/transactions/${encodeURIComponent(transaction.index)}`}
+        aria-label={`Open transaction #${transaction.index} in block #${blockHeight}`}
+      >
+        #{transaction.index}
+      </a>
+    ),
   },
   {
     key: 'raw_base64',
