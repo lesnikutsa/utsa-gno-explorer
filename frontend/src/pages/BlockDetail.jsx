@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { CopyButton } from '../components/CopyButton'
+import { ProposerIdentity } from '../components/ProposerIdentity'
 import { DataTable } from '../components/DataTable'
 import { StatusBadge } from '../components/StatusBadge'
 import { relativeTime } from '../utils/time'
@@ -83,7 +84,7 @@ export function BlockDetail({ blockDetail }) {
         <div className="block-detail__grid">
           <div className="block-detail__field"><span className="block-detail__label">Height</span><strong className="block-detail__value accent-value mono">#{block.height.toLocaleString()}</strong></div>
           <div className="block-detail__field"><span className="block-detail__label">Time</span><strong className="block-detail__value mono">{block.time}</strong><RelativeBlockTime value={block.time} /></div>
-          <div className="block-detail__field"><span className="block-detail__label">Proposer</span><div className="block-detail__copy-row"><strong className="block-detail__value mono">{block.proposer_address ?? '—'}</strong>{block.proposer_address !== null && <CopyButton value={block.proposer_address} label="proposer" />}</div></div>
+          <div className="block-detail__field"><span className="block-detail__label">Proposer</span><div className="block-detail__copy-row block-detail__proposer-row"><ProposerIdentity address={block.proposer_address} moniker={block.proposer_moniker} showFullAddress />{block.proposer_address && <CopyButton value={block.proposer_address} label="proposer" />}</div></div>
           <div className="block-detail__field"><span className="block-detail__label">Transactions</span><strong className="block-detail__value mono">{block.tx_count}</strong></div>
         </div>
       </section>

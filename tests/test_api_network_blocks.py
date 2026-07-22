@@ -67,6 +67,7 @@ def block_row(height=869383, block_hash_hex=BLOCK_HASH, **overrides):
         "block_hash_base64": BASE64_HASH,
         "time_utc": BLOCK_TIME,
         "proposer_address": "g1proposer",
+        "proposer_moniker": "UTSA",
         "tx_count": 0,
         "raw_block_response": {"secret": SECRET_URL},
         "inserted_at": BLOCK_TIME,
@@ -85,6 +86,7 @@ def network_row(**overrides):
         "block_hash_hex": BLOCK_HASH,
         "time_utc": BLOCK_TIME,
         "proposer_address": "g1proposer",
+        "proposer_moniker": "UTSA",
         "tx_count": 0,
         "validator_active_count": 20,
         "validator_total_voting_power": "123456789",
@@ -131,6 +133,7 @@ class ApiNetworkBlocksTests(unittest.TestCase):
                     "block_hash": BLOCK_HASH,
                     "time": "2026-07-16T13:59:50Z",
                     "proposer_address": "g1proposer",
+                    "proposer_moniker": "UTSA",
                     "tx_count": 0,
                 },
                 "validators": {
@@ -328,6 +331,21 @@ class ApiNetworkBlocksTests(unittest.TestCase):
             response = client.get("/api/blocks")
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.json(), {"detail": "Explorer database is unavailable"})
+
+    def test_block_proposer_moniker_preserves_match_and_fallbacks(self):
+        fake_database = FakeDatabase()
+        fake_database.blocks_rows = [
+            block_row(height=3, proposer_moniker="UTSA"),
+            block_row(height=2, proposer_moniker=None),
+            block_row(height=1, proposer_address=None, proposer_moniker=None),
+        ]
+        with self.make_client(fake_database) as client:
+            items = client.get("/api/blocks").json()["items"]
+        self.assertEqual(items[0]["proposer_moniker"], "UTSA")
+        self.assertEqual(items[0]["proposer_address"], "g1proposer")
+        self.assertIsNone(items[1]["proposer_moniker"])
+        self.assertIsNone(items[2]["proposer_moniker"])
+        self.assertIsNone(items[2]["proposer_address"])
 
     def test_blocks_raw_database_fields_are_not_included(self):
         fake_database = FakeDatabase()

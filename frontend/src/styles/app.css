@@ -116,6 +116,16 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .validator-identity--link { border-radius: 3px; text-decoration: none; }
 .validator-identity--link:hover .validator-identity__moniker, .validator-identity--link:hover .validator-identity__fallback { color: var(--color-accent); }
 .validator-identity--link:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
+.proposer-identity { display: grid; min-width: 0; max-width: 220px; gap: 2px; border-radius: 3px; text-decoration: none; }
+.proposer-identity__moniker { overflow: hidden; color: var(--color-text-bright); font-size: 11px; font-weight: 600; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.proposer-identity__address { overflow: hidden; color: var(--color-text-secondary); font-size: 9px; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.proposer-identity__address--fallback { color: var(--color-text); font-size: 11px; font-weight: 600; }
+.proposer-identity--link:hover .proposer-identity__moniker, .proposer-identity--link:hover .proposer-identity__address { color: var(--color-accent); }
+.proposer-identity--link:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
+.proposer-identity--full { max-width: none; }
+.proposer-identity--full .proposer-identity__moniker { font-size: 13px; }
+.proposer-identity--full .proposer-identity__address { overflow-wrap: anywhere; font-size: 11px; text-overflow: clip; white-space: normal; }
+.block-detail__proposer-row .proposer-identity { flex: 1 1 auto; }
 .validator-power { display: inline-flex; align-items: flex-start; flex-direction: column; gap: 2px; }
 .validator-power__percent { color: var(--color-text-secondary); font-size: 9px; }
 .blocks-page__button { flex: 0 0 auto; padding: 7px 12px; border: 1px solid rgba(103,129,150,.5); border-radius: 5px; background: rgba(12,29,43,.8); color: var(--color-text-bright); cursor: pointer; font-size: 11px; font-weight: 600; }

@@ -41,6 +41,7 @@ def block_detail(**overrides):
             "block_hash_base64": BASE64_HASH,
             "time_utc": BLOCK_TIME,
             "proposer_address": None,
+            "proposer_moniker": None,
             "tx_count": 2,
             "raw_block_response": {"secret": SECRET_URL},
             "inserted_at": BLOCK_TIME,
@@ -112,6 +113,7 @@ class ApiBlockDetailTests(unittest.TestCase):
                 "block_hash_base64": BASE64_HASH,
                 "time": "2026-07-16T15:00:02.313877Z",
                 "proposer_address": None,
+                "proposer_moniker": None,
                 "tx_count": 2,
                 "commit": {
                     "validators": 4,
@@ -150,6 +152,7 @@ class ApiBlockDetailTests(unittest.TestCase):
                 "block_hash_base64": BASE64_HASH,
                 "time_utc": BLOCK_TIME,
                 "proposer_address": "g1proposer",
+                "proposer_moniker": "UTSA",
                 "tx_count": 0,
             },
             commit={
@@ -165,6 +168,8 @@ class ApiBlockDetailTests(unittest.TestCase):
         )
         with self.make_client(fake_database) as client:
             data = client.get("/api/blocks/870118").json()
+        self.assertEqual(data["proposer_moniker"], "UTSA")
+        self.assertEqual(data["proposer_address"], "g1proposer")
         self.assertEqual(data["transactions"], [])
         self.assertEqual(data["commit"], {"validators": 0, "signed": 0, "missed": 0, "nil": 0, "absent": 0, "invalid": 0, "unknown": 0})
 

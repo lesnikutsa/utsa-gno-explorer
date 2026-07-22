@@ -80,6 +80,7 @@ def _block_summary_from_row(row: dict) -> BlockSummary:
         block_hash=_normalize_block_hash(row["block_hash_hex"]),
         time=isoformat_utc_z(row["time_utc"]),
         proposer_address=row["proposer_address"],
+        proposer_moniker=row.get("proposer_moniker"),
         tx_count=row["tx_count"],
     )
 
@@ -93,6 +94,7 @@ def _block_detail_from_row(detail: dict) -> BlockDetailResponse:
         block_hash_base64=block["block_hash_base64"],
         time=isoformat_utc_z(block["time_utc"]),
         proposer_address=block["proposer_address"],
+        proposer_moniker=block.get("proposer_moniker"),
         tx_count=block["tx_count"],
         commit=BlockCommitSummary(
             validators=commit["validators"],
@@ -181,6 +183,7 @@ def _network_response_from_row(row: dict) -> NetworkResponse:
                 "block_hash_hex": row["block_hash_hex"],
                 "time_utc": row["time_utc"],
                 "proposer_address": row["proposer_address"],
+                "proposer_moniker": row.get("proposer_moniker"),
                 "tx_count": row["tx_count"],
             }
         ),
