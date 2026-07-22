@@ -214,6 +214,36 @@ LEFT JOIN valoper_profiles profile
 WHERE validator.signing_address = %s
 """
 
+VALIDATOR_SEARCH_SQL = """
+WITH ranked AS (
+    SELECT DISTINCT ON (validator.signing_address)
+        validator.signing_address AS address,
+        profile.moniker,
+        profile.operator_address,
+        CASE
+            WHEN lower(validator.signing_address) = lower(%s) THEN 0
+            WHEN lower(profile.operator_address) = lower(%s) THEN 1
+            WHEN lower(profile.moniker) = lower(%s) THEN 2
+            WHEN profile.moniker ILIKE %s ESCAPE E'\\\\' THEN 3
+            ELSE 4
+        END AS match_rank
+    FROM validators validator
+    LEFT JOIN valoper_profiles profile
+      ON profile.signing_address = validator.signing_address
+    WHERE validator.signing_address ILIKE %s ESCAPE E'\\\\'
+       OR profile.operator_address ILIKE %s ESCAPE E'\\\\'
+       OR profile.moniker ILIKE %s ESCAPE E'\\\\'
+    ORDER BY validator.signing_address
+)
+SELECT address, moniker, operator_address
+FROM ranked
+ORDER BY match_rank,
+         CASE WHEN moniker IS NULL THEN 1 ELSE 0 END,
+         lower(moniker) NULLS LAST,
+         address
+LIMIT %s
+"""
+
 VALIDATOR_CURRENT_SQL = """
 SELECT
     s.last_finalized_height AS height,
@@ -475,6 +505,21 @@ class ApiDatabase:
             "current": current,
             "history": [dict(row) for row in history],
         }
+
+    def fetch_validator_search(self, query: str, limit: int) -> list[dict[str, Any]]:
+        """Return compact validator identities matching literal search text."""
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        normalized = query.strip()
+        escaped = normalized.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        prefix = f"{escaped}%"
+        contains = f"%{escaped}%"
+        parameters = (normalized, normalized, normalized, prefix, contains, contains, contains, limit)
+        with self.pool.connection(timeout=2.0) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(VALIDATOR_SEARCH_SQL, parameters)
+                rows = cursor.fetchall()
+        return [dict(row) for row in rows]
 
     def fetch_validator_signing_history(self, *, limit: int) -> dict[str, Any]:
         """Return a bounded history matrix for the current active set."""
