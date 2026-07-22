@@ -102,6 +102,38 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
     def database_url_for(self, name):
         return f"postgresql://utsa_test:{self.password}@{self.host}:{self.port}/{name}"
 
+    def test_transaction_hash_constraints_allow_repeated_occurrences(self):
+        name = f"utsa_tx_hash_{os.getpid()}"
+        self.create_database(name)
+        database_url = self.database_url_for(name)
+        self.assertEqual(self.run_init(database_url).returncode, 0)
+        tx_hash = "A" * 64
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.executemany(
+                "INSERT INTO blocks (height, block_hash_base64, block_hash_hex, time_utc, tx_count) VALUES (%s, %s, %s, now(), 1)",
+                [(100, "ZA==", "64"), (200, "yA==", "C8")],
+            )
+            cursor.executemany(
+                "INSERT INTO transactions (block_height, tx_index, raw_base64, raw_base64_length, decoded_bytes, decoded_byte_length, decode_status, tx_hash_hex) VALUES (%s, %s, 'c2FtZQ==', 8, %s, 4, 'decoded', %s)",
+                [(100, 0, b"same", tx_hash), (200, 2, b"same", tx_hash)],
+            )
+            cursor.execute("SELECT block_height, tx_index FROM transactions WHERE tx_hash_hex = %s ORDER BY block_height", (tx_hash,))
+            self.assertEqual(cursor.fetchall(), [(100, 0), (200, 2)])
+            cursor.execute("SELECT indisunique, pg_get_expr(indpred, indrelid) FROM pg_index WHERE indexrelid = 'transactions_tx_hash_hex_idx'::regclass")
+            unique, predicate = cursor.fetchone()
+            self.assertFalse(unique)
+            self.assertEqual(predicate.strip("()"), "tx_hash_hex IS NOT NULL")
+
+            invalid_rows = [
+                ("INSERT INTO transactions (block_height, tx_index, raw_base64, raw_base64_length, decoded_bytes, decoded_byte_length, decode_status, tx_hash_hex) VALUES (100, 3, 'YQ==', 4, %s, 1, 'decoded', 'bad')", (b"a",)),
+                ("INSERT INTO transactions (block_height, tx_index, raw_base64, raw_base64_length, decoded_bytes, decoded_byte_length, decode_status) VALUES (100, 4, 'YQ==', 4, %s, 1, 'decoded')", (b"a",)),
+                ("INSERT INTO transactions (block_height, tx_index, raw_base64, raw_base64_length, decode_status, tx_hash_hex) VALUES (100, 5, 'bad', 3, 'invalid_base64', %s)", (tx_hash,)),
+                ("INSERT INTO transactions (block_height, tx_index, raw_base64, raw_base64_length, decoded_bytes, decoded_byte_length, decode_status, tx_hash_hex) VALUES (100, 0, 'c2FtZQ==', 8, %s, 4, 'decoded', %s)", (b"same", tx_hash)),
+            ]
+            for sql, params in invalid_rows:
+                with self.assertRaises(Exception), connection.transaction():
+                    cursor.execute(sql, params)
+
     def prepare_legacy_database(self, name):
         self.create_database(name)
         database_url = self.database_url_for(name)

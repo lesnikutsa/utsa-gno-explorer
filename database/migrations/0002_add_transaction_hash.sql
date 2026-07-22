@@ -1,6 +1,7 @@
 -- Add canonical Tendermint2 transaction hashes. The indexer must be stopped.
 -- Backfill and validation are performed transactionally by
--- scripts/migrate_transaction_hashes.py before the unique index is created.
+-- scripts/migrate_transaction_hashes.py before the non-unique partial lookup
+-- index is created. Repeated hashes at distinct block/index positions remain.
 ALTER TABLE transactions ADD COLUMN tx_hash_hex TEXT;
 
 COMMENT ON COLUMN transactions.tx_hash_hex IS

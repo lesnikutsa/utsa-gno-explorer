@@ -117,7 +117,7 @@ EXPECTED_CHECKS = {
     "valopers_snapshot_state_counts_consistent": "CHECK ((profile_count = 0 AND page_count = 0) OR (profile_count > 0 AND page_count >= 1))",
 }
 EXPECTED_INDEXES = {
-    "transactions_tx_hash_hex_unique": ("transactions", True, (("tx_hash_hex", "ASC"),), "tx_hash_hex IS NOT NULL"),
+    "transactions_tx_hash_hex_idx": ("transactions", False, (("tx_hash_hex", "ASC"),), "tx_hash_hex IS NOT NULL"),
     "blocks_time_utc_idx": ("blocks", False, (("time_utc", "DESC"),), None),
     "validator_set_members_height_power_idx": ("validator_set_members", False, (("height", "ASC"), ("voting_power", "DESC"), ("signing_address", "ASC")), None),
     "validator_set_members_signing_height_idx": ("validator_set_members", False, (("signing_address", "ASC"), ("height", "DESC")), None),

@@ -129,6 +129,7 @@ class ApiBlockDetailTests(unittest.TestCase):
                 "transactions": [
                     {
                         "index": 0,
+                        "tx_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
                         "raw_base64": "first",
                         "raw_base64_length": 5,
                         "decoded_byte_length": 3,
@@ -136,6 +137,7 @@ class ApiBlockDetailTests(unittest.TestCase):
                     },
                     {
                         "index": 1,
+                        "tx_hash": None,
                         "raw_base64": "second",
                         "raw_base64_length": 6,
                         "decoded_byte_length": None,

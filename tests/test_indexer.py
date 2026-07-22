@@ -5,10 +5,10 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
-from indexer.database import ChainIdentityError, DatabaseError, FinalizedDataConflict
-from indexer.parsers import parse_height
+from indexer.database import ChainIdentityError, DatabaseError, FinalizedDataConflict, _upsert_transactions, _verify_transaction_conflicts
+from indexer.parsers import parse_height, parse_tx
 from indexer.rpc import RpcProbeResult, select_rpc
 from indexer.service import IndexerService, plan_range
 from scripts.inspect_rpc import RpcError
@@ -87,7 +87,10 @@ class SqlLikeDb:
         self._check_conflicts(parsed)
         self.blocks[parsed.height] = (parsed.block["hash_base64"], parsed.block["hash_hex"])
         for tx in parsed.transactions:
-            self.transactions[(parsed.height, tx["index"])] = (tx["raw_base64"], tx["decode_status"])
+            self.transactions[(parsed.height, tx["index"])] = (
+                tx["raw_base64"], tx["raw_base64_length"], tx["decoded_byte_length"],
+                tx["decode_status"], tx["tx_hash_hex"],
+            )
         for validator in parsed.validators:
             self.validators[validator["address"]] = (validator.get("pub_key_type") or "unknown", validator.get("pub_key_value") or "")
             self.members[(parsed.height, validator["address"])] = (validator.get("voting_power") or 0, validator.get("proposer_priority"), parsed.validators.index(validator))
@@ -125,7 +128,8 @@ class SqlLikeDb:
                 raise FinalizedDataConflict("signature set")
         for tx in parsed.transactions:
             key = (parsed.height, tx["index"])
-            if key in self.transactions and self.transactions[key] != (tx["raw_base64"], tx["decode_status"]):
+            expected = (tx["raw_base64"], tx["raw_base64_length"], tx["decoded_byte_length"], tx["decode_status"], tx["tx_hash_hex"])
+            if key in self.transactions and self.transactions[key] != expected:
                 raise FinalizedDataConflict("transaction")
         for validator in parsed.validators:
             key = validator["address"]
@@ -292,6 +296,43 @@ class ParserTests(unittest.TestCase):
 
 
 class ServiceAndDatabaseSemanticsTests(unittest.TestCase):
+    def test_real_transaction_helpers_persist_and_compare_hash(self):
+        parsed = type("Parsed", (), {
+            "height": 7,
+            "transactions": [parse_tx(0, "YWJj"), parse_tx(1, "not base64!")],
+        })()
+        cursor = MagicMock()
+        _upsert_transactions(cursor, parsed)
+        self.assertEqual(cursor.execute.call_count, 2)
+        decoded_sql, decoded_params = cursor.execute.call_args_list[0].args
+        invalid_sql, invalid_params = cursor.execute.call_args_list[1].args
+        self.assertIn("tx_hash_hex", decoded_sql)
+        self.assertEqual(decoded_params[-1], "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD")
+        self.assertIsNone(invalid_params[-1])
+
+        cursor.reset_mock()
+        cursor.fetchone.side_effect = [
+            ("YWJj", 4, 3, "decoded", decoded_params[-1]),
+            ("not base64!", 11, None, "invalid_base64", None),
+        ]
+        _verify_transaction_conflicts(cursor, parsed)
+
+        cursor.reset_mock()
+        cursor.fetchone.side_effect = None
+        cursor.fetchone.return_value = ("YWJj", 4, 3, "decoded", "F" * 64)
+        with self.assertRaises(FinalizedDataConflict):
+            _verify_transaction_conflicts(cursor, type("Parsed", (), {"height": 7, "transactions": [parsed.transactions[0]]})())
+
+    def test_equal_hashes_at_different_positions_advance_checkpoint(self):
+        block, commit, validators = payloads(122)
+        block["result"]["block"]["data"]["txs"] = ["YWJj", "YWJj"]
+        block["result"]["block"]["header"]["num_txs"] = "2"
+        parsed = parse_height(122, block, commit, validators)
+        db = SqlLikeDb(checkpoint=121)
+        db.write_height(parsed, "test-13", 122)
+        self.assertEqual(db.checkpoint, 122)
+        self.assertEqual(db.transactions[(122, 0)][-1], db.transactions[(122, 1)][-1])
+
     def service(self, db, heights):
         by_height = {height: dict(zip(["block", "commit", "validators"], payloads(height))) for height in heights}
         probes = [RpcProbeResult(url="http://rpc", healthy=True, selected=True, chain_id="test-13", latest_height=130, observed_lag=0)]

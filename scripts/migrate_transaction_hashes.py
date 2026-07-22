@@ -18,7 +18,7 @@ from scripts.init_database import EXPECTED_CHECKS, EXPECTED_COLUMNS, EXPECTED_IN
 MIGRATION = REPO_ROOT / "database" / "migrations" / "0002_add_transaction_hash.sql"
 HASH_COLUMN = "tx_hash_hex"
 HASH_CONSTRAINTS = {"transactions_tx_hash_hex_format", "transactions_tx_hash_consistent"}
-HASH_INDEX = "transactions_tx_hash_hex_unique"
+HASH_INDEX = "transactions_tx_hash_hex_idx"
 
 
 class MigrationPreconditionError(RuntimeError):
@@ -66,18 +66,30 @@ def _catalog_state(cursor) -> str:
           AND conname IN ('transactions_tx_hash_hex_format', 'transactions_tx_hash_consistent')
     """)
     constraints = {name: validated for name, validated in cursor.fetchall()}
-    cursor.execute("SELECT to_regclass('public.transactions_tx_hash_hex_unique')")
-    has_index = cursor.fetchone()[0] is not None
-    if not has_column and not constraints and not has_index:
+    cursor.execute("""
+        SELECT idx.relname, i.indisunique, pg_catalog.pg_get_expr(i.indpred, i.indrelid)
+        FROM pg_catalog.pg_index i
+        JOIN pg_catalog.pg_class idx ON idx.oid = i.indexrelid
+        JOIN pg_catalog.pg_namespace n ON n.oid = idx.relnamespace
+        WHERE n.nspname = 'public'
+          AND idx.relname IN ('transactions_tx_hash_hex_idx', 'transactions_tx_hash_hex_unique')
+    """)
+    hash_indexes = cursor.fetchall()
+    has_correct_index = (
+        len(hash_indexes) == 1
+        and hash_indexes[0][0] == HASH_INDEX
+        and hash_indexes[0][1] is False
+        and str(hash_indexes[0][2]).strip().strip("()") == "tx_hash_hex IS NOT NULL"
+    )
+    if not has_column and not constraints and not hash_indexes:
         return "legacy"
-    if has_column and constraints == {name: True for name in HASH_CONSTRAINTS} and has_index:
+    if has_column and constraints == {name: True for name in HASH_CONSTRAINTS} and has_correct_index:
         return "compatible"
     return "unknown"
 
 
 def _backfill(cursor, batch_size: int) -> None:
     last_id = 0
-    seen: set[str] = set()
     while True:
         cursor.execute("""
             SELECT id, decoded_bytes FROM transactions
@@ -90,9 +102,6 @@ def _backfill(cursor, batch_size: int) -> None:
         updates = []
         for row_id, decoded_bytes in rows:
             tx_hash = hashlib.sha256(bytes(decoded_bytes)).hexdigest().upper()
-            if tx_hash in seen:
-                raise MigrationPreconditionError("duplicate canonical transaction hashes detected")
-            seen.add(tx_hash)
             updates.append((tx_hash, row_id))
             last_id = row_id
         cursor.executemany("UPDATE transactions SET tx_hash_hex = %s WHERE id = %s", updates)
@@ -108,14 +117,6 @@ def _verify(cursor) -> None:
         cursor.execute(f"SELECT EXISTS (SELECT 1 FROM transactions WHERE {condition})")
         if cursor.fetchone()[0]:
             raise MigrationPreconditionError("transaction hash backfill verification failed")
-    cursor.execute("""
-        SELECT EXISTS (
-            SELECT 1 FROM transactions WHERE tx_hash_hex IS NOT NULL
-            GROUP BY tx_hash_hex HAVING count(*) > 1
-        )
-    """)
-    if cursor.fetchone()[0]:
-        raise MigrationPreconditionError("duplicate canonical transaction hashes detected")
 
 
 def migrate_transaction_hashes(database_url: str, migration_path: Path = MIGRATION,
@@ -143,7 +144,7 @@ def migrate_transaction_hashes(database_url: str, migration_path: Path = MIGRATI
             _verify(cursor)
             cursor.execute("ALTER TABLE transactions VALIDATE CONSTRAINT transactions_tx_hash_hex_format")
             cursor.execute("ALTER TABLE transactions VALIDATE CONSTRAINT transactions_tx_hash_consistent")
-            cursor.execute("CREATE UNIQUE INDEX transactions_tx_hash_hex_unique ON transactions(tx_hash_hex) WHERE tx_hash_hex IS NOT NULL")
+            cursor.execute("CREATE INDEX transactions_tx_hash_hex_idx ON transactions(tx_hash_hex) WHERE tx_hash_hex IS NOT NULL")
             validate_schema_snapshot(fetch_schema_snapshot(cursor))
         connection.commit()
     return "applied"

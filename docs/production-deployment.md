@@ -2,7 +2,7 @@
 
 ## Transaction-hash migration
 
-Stop the production indexer before running `python scripts/migrate_transaction_hashes.py`. The additive, transactional migration backfills historical decoded rows from `transactions.decoded_bytes`, checks format and duplicates, validates constraints, and creates the partial unique index. Do not run it concurrently with ingestion. The safe order is: stop indexer, migrate/backfill, update application code, restart API, restart indexer, and verify historical and new hashes. No PostgreSQL extension or destructive table recreation is used.
+Stop the production indexer before running `python scripts/migrate_transaction_hashes.py`. The additive, transactional migration backfills historical decoded rows from `transactions.decoded_bytes`, checks format, validates constraints, and creates a non-unique partial lookup index. Repeated hashes are preserved because `(block_height, tx_index)`, not the hash, identifies an occurrence; future hash lookup may return multiple locations. Do not run it concurrently with ingestion. The safe order is: stop indexer, migrate/backfill, update application code, restart API, restart indexer, and verify historical and new hashes. No PostgreSQL extension or destructive table recreation is used, and Base64 decoding does not indicate execution success. Structured Type/message parsing remains deferred.
 
 
 This guide packages the existing foreground continuous indexer without changing indexing semantics. Production uses PostgreSQL 16 in Docker Compose and runs the Python indexer on the host through systemd. Production deployment is operator-controlled: no container entrypoint or systemd unit runs `git pull`, schema updates, or destructive restore automatically.

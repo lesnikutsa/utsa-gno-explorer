@@ -94,6 +94,15 @@ class ApiTransactionDetailTests(unittest.TestCase):
         self.assertIsNone(data["decoded_byte_length"])
         self.assertIsNone(data["tx_hash"])
 
+    def test_hash_normalization_and_malformed_fixture_safety(self):
+        from api.app import _transaction_detail_from_row
+
+        lowercase = "a" * 64
+        self.assertEqual(_transaction_detail_from_row(transaction_row(tx_hash_hex=lowercase)).tx_hash, "A" * 64)
+        self.assertEqual(_transaction_detail_from_row(transaction_row(tx_hash_hex="0x" + lowercase)).tx_hash, "A" * 64)
+        self.assertIsNone(_transaction_detail_from_row(transaction_row(tx_hash_hex="malformed")).tx_hash)
+        self.assertIsNone(_transaction_detail_from_row(transaction_row(tx_hash_hex=None)).tx_hash)
+
     def test_invalid_location_returns_422(self):
         with self.make_client(FakeDatabase()) as client:
             for path in ("/api/blocks/0/transactions/0", "/api/blocks/-1/transactions/0", "/api/blocks/1/transactions/-1"):

@@ -56,7 +56,7 @@ COMMENT ON COLUMN transactions.raw_base64 IS 'Raw transaction string exactly as 
 COMMENT ON COLUMN transactions.decoded_bytes IS 'Decoded bytes when base64 decoding succeeds; full Gno transaction parsing is deferred.';
 COMMENT ON COLUMN transactions.tx_hash_hex IS 'SHA-256 of the exact decoded Tendermint2 transaction bytes, in the Explorer canonical uppercase hexadecimal display/search form.';
 COMMENT ON COLUMN transactions.payload_summary IS 'Limited JSONB for future decoded payload summaries, not raw unbounded application data.';
-CREATE UNIQUE INDEX transactions_tx_hash_hex_unique ON transactions(tx_hash_hex) WHERE tx_hash_hex IS NOT NULL;
+CREATE INDEX transactions_tx_hash_hex_idx ON transactions(tx_hash_hex) WHERE tx_hash_hex IS NOT NULL;
 
 -- Block detail pages use the unique constraint index on (block_height, tx_index).
 
