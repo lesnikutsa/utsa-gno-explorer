@@ -41,6 +41,10 @@ class TransactionDetailFrontendContractTests(unittest.TestCase):
         self.assertIn("Transaction #{transaction.index}", detail)
         self.assertIn('<CopyButton value={transaction.tx_hash} label="transaction hash" />', detail)
         self.assertIn("title={transaction.tx_hash}", block)
+        self.assertIn('className="transaction-hash__full" aria-hidden="true">{transaction.tx_hash}', block)
+        self.assertIn('className="transaction-hash__short" aria-hidden="true"', block)
+        self.assertIn("transaction.tx_hash.slice(0, 12)", block)
+        self.assertIn("transaction.tx_hash.slice(-9)", block)
         self.assertIn(": '—'", block)
         self.assertNotIn("canonical transaction hash are not indexed", detail)
         self.assertNotIn("avatar", detail.lower())
@@ -61,6 +65,12 @@ class TransactionDetailFrontendContractTests(unittest.TestCase):
         ):
             self.assertIn(declaration, rule)
         self.assertIn(".block-detail__transactions .data-table th:nth-child(1) { width: 80px; }", styles)
+        self.assertIn("@media (min-width: 1200px)", styles)
+        self.assertIn(".block-detail__transactions .transaction-hash__full { display: none; }", styles)
+        self.assertIn(".block-detail__transactions .transaction-hash__short { display: block; }", styles)
+        responsive = styles[styles.index("@media (min-width: 1200px)"):]
+        self.assertIn(".block-detail__transactions .transaction-hash__full { display: block; }", responsive)
+        self.assertIn(".block-detail__transactions .transaction-hash__short { display: none; }", responsive)
         self.assertNotIn("\n.data-table { table-layout: fixed", styles)
 
     def test_block_hash_and_balanced_information_grid(self):

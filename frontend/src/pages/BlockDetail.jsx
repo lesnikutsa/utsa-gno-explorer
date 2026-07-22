@@ -30,7 +30,10 @@ const transactionColumns = (blockHeight) => [
         title={transaction.tx_hash}
         aria-label={`Open transaction ${transaction.tx_hash} at index #${transaction.index} in block #${blockHeight}`}
       >
-        {`${transaction.tx_hash.slice(0, 12)}…${transaction.tx_hash.slice(-9)}`}
+        <span className="transaction-hash__full" aria-hidden="true">{transaction.tx_hash}</span>
+        <span className="transaction-hash__short" aria-hidden="true">
+          {`${transaction.tx_hash.slice(0, 12)}…${transaction.tx_hash.slice(-9)}`}
+        </span>
       </a>
     ) : '—',
   },
