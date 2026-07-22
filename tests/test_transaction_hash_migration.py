@@ -5,7 +5,7 @@ from contextlib import redirect_stderr
 from unittest.mock import MagicMock, patch
 
 from scripts.init_database import EXPECTED_INDEXES, EXPECTED_UNIQUES
-from scripts.migrate_transaction_hashes import HASH_INDEX, MigrationPreconditionError, _backfill, _catalog_state, main, migrate_transaction_hashes
+from scripts.migrate_transaction_hashes import HASH_INDEX, MigrationPreconditionError, _backfill, _catalog_state, _verify_hash_contents, main, migrate_transaction_hashes
 
 EMPTY_HASH = "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
 ABC_HASH = "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD"
@@ -52,6 +52,23 @@ class CatalogCursor:
         return self.current
 
 
+class VerificationCursor:
+    def __init__(self, rows):
+        self.rows = sorted(rows)
+        self.pending = []
+        self.checked_ids = []
+
+    def execute(self, sql, params):
+        self.assert_query = sql
+        last_id, limit = params
+        self.pending = [row for row in self.rows if row[0] > last_id][:limit]
+
+    def fetchall(self):
+        result, self.pending = self.pending, []
+        self.checked_ids.extend(row[0] for row in result)
+        return result
+
+
 class FakeConnection:
     def __init__(self):
         self.committed = False
@@ -77,6 +94,25 @@ def decoded(row_id, value, raw_base64="deliberately-not-the-source"):
 
 
 class TransactionHashMigrationTests(unittest.TestCase):
+    def test_exact_content_verification_accepts_valid_hash(self):
+        cursor = VerificationCursor([(1, b"abc", ABC_HASH)])
+        _verify_hash_contents(cursor, 500)
+        self.assertEqual(cursor.checked_ids, [1])
+        self.assertIn("ORDER BY id LIMIT %s", cursor.assert_query)
+
+    def test_exact_content_verification_rejects_format_valid_mismatch(self):
+        cursor = VerificationCursor([(1, b"abc", "F" * 64)])
+        with self.assertRaisesRegex(MigrationPreconditionError, "stored transaction hash verification failed"):
+            _verify_hash_contents(cursor, 500)
+
+    def test_exact_content_verification_batches_in_id_order_and_allows_duplicates(self):
+        same_hash = hashlib.sha256(b"same").hexdigest().upper()
+        rows = [(3, b"third", hashlib.sha256(b"third").hexdigest().upper()),
+                (1, b"same", same_hash), (2, b"same", same_hash)]
+        cursor = VerificationCursor(rows)
+        _verify_hash_contents(cursor, 1)
+        self.assertEqual(cursor.checked_ids, [1, 2, 3])
+
     def test_known_vectors_and_hash_source(self):
         cursor = BackfillCursor([decoded(1, b""), decoded(2, b"abc", "YWJj-is-not-hashed")])
         _backfill(cursor, 10)
@@ -157,9 +193,22 @@ class TransactionHashMigrationTests(unittest.TestCase):
         compatible = FakeConnection()
         with patch("scripts.migrate_transaction_hashes._catalog_state", return_value="compatible"), \
              patch("scripts.migrate_transaction_hashes.fetch_schema_snapshot", return_value={}), \
-             patch("scripts.migrate_transaction_hashes.validate_schema_snapshot"):
+             patch("scripts.migrate_transaction_hashes.validate_schema_snapshot"), \
+             patch("scripts.migrate_transaction_hashes._verify_hash_contents") as verify_contents:
             self.assertEqual(migrate_transaction_hashes("safe-url", connect=lambda _url: compatible), "already-compatible")
+        verify_contents.assert_called_once_with(compatible.cursor_value.__enter__(), 500)
         self.assertFalse(compatible.committed)
+
+        mismatched = FakeConnection()
+        with patch("scripts.migrate_transaction_hashes._catalog_state", return_value="compatible"), \
+             patch("scripts.migrate_transaction_hashes.fetch_schema_snapshot", return_value={}), \
+             patch("scripts.migrate_transaction_hashes.validate_schema_snapshot"), \
+             patch("scripts.migrate_transaction_hashes._verify_hash_contents",
+                   side_effect=MigrationPreconditionError("stored transaction hash verification failed")):
+            with self.assertRaises(MigrationPreconditionError):
+                migrate_transaction_hashes("safe-url", connect=lambda _url: mismatched)
+        self.assertTrue(mismatched.rolled_back)
+        self.assertFalse(mismatched.committed)
 
 
 if __name__ == "__main__":

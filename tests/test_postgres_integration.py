@@ -1,3 +1,4 @@
+import hashlib
 import os
 import secrets
 import shutil
@@ -90,6 +91,13 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             command += ["--migration", str(migration_path)]
         return subprocess.run(command, cwd=ROOT, env=env, text=True, capture_output=True, check=False)
 
+    def run_transaction_hash_migration(self, database_url):
+        env = dict(os.environ, DATABASE_URL=database_url)
+        return subprocess.run(
+            [sys.executable, "scripts/migrate_transaction_hashes.py"],
+            cwd=ROOT, env=env, text=True, capture_output=True, check=False,
+        )
+
     def connect(self, database="utsa_gno_explorer"):
         return psycopg.connect(f"postgresql://utsa_test:{self.password}@{self.host}:{self.port}/{database}")
 
@@ -107,7 +115,7 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         self.create_database(name)
         database_url = self.database_url_for(name)
         self.assertEqual(self.run_init(database_url).returncode, 0)
-        tx_hash = "A" * 64
+        tx_hash = hashlib.sha256(b"same").hexdigest().upper()
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
             cursor.executemany(
                 "INSERT INTO blocks (height, block_hash_base64, block_hash_hex, time_utc, tx_count) VALUES (%s, %s, %s, now(), 1)",
@@ -133,6 +141,20 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             for sql, params in invalid_rows:
                 with self.assertRaises(Exception), connection.transaction():
                     cursor.execute(sql, params)
+
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("UPDATE transactions SET tx_hash_hex = %s WHERE block_height = 100", ("F" * 64,))
+        mismatch = self.run_transaction_hash_migration(database_url)
+        self.assertNotEqual(mismatch.returncode, 0)
+        self.assertEqual(mismatch.stderr, "Transaction hash migration failed; ensure the indexer is stopped and inspect the database catalog\n")
+        self.assertNotIn(database_url, mismatch.stdout + mismatch.stderr)
+        self.assertNotIn(self.password, mismatch.stdout + mismatch.stderr)
+
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("UPDATE transactions SET tx_hash_hex = %s WHERE block_height = 100", (tx_hash,))
+        verified = self.run_transaction_hash_migration(database_url)
+        self.assertEqual(verified.returncode, 0, verified.stderr)
+        self.assertEqual(verified.stdout, "Transaction hash schema is already compatible\n")
 
     def prepare_legacy_database(self, name):
         self.create_database(name)
