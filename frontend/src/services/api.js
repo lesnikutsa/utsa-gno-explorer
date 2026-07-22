@@ -41,6 +41,7 @@ export const getBlocks = ({ limit, beforeHeight, hash } = {}) => {
   return request(`/blocks${queryString ? `?${queryString}` : ''}`)
 }
 export const getBlock = (height) => request(`/blocks/${encodeURIComponent(height)}`)
+export const getTransaction = (blockHeight, index) => request(`/blocks/${encodeURIComponent(blockHeight)}/transactions/${encodeURIComponent(index)}`)
 export const getValidators = () => request('/validators')
 export const searchValidators = ({ query, limit = 6 }) => {
   const params = new URLSearchParams()

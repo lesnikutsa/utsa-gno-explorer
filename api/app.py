@@ -26,6 +26,7 @@ from api.schemas import (
     NetworkResponse,
     NetworkValidators,
     SelectedRpc,
+    TransactionDetailResponse,
     ValidatorListItem,
     ValidatorSearchItem,
     ValidatorSearchResponse,
@@ -117,6 +118,21 @@ def _block_detail_from_row(detail: dict) -> BlockDetailResponse:
             )
             for row in detail["transactions"]
         ],
+    )
+
+
+def _transaction_detail_from_row(row: dict) -> TransactionDetailResponse:
+    return TransactionDetailResponse(
+        block_height=row["block_height"],
+        block_hash=_normalize_block_hash(row["block_hash_hex"]),
+        block_time=isoformat_utc_z(row["time_utc"]),
+        proposer_address=row["proposer_address"],
+        proposer_moniker=row.get("proposer_moniker"),
+        index=row["tx_index"],
+        raw_base64=row["raw_base64"],
+        raw_base64_length=row["raw_base64_length"],
+        decoded_byte_length=row["decoded_byte_length"],
+        decode_status=row["decode_status"],
     )
 
 
@@ -481,6 +497,21 @@ def get_blocks(
         items=[_block_summary_from_row(row) for row in page_rows],
         pagination=BlocksPagination(limit=limit, next_before_height=next_before_height),
     )
+
+
+@app.get("/api/blocks/{height}/transactions/{index}", response_model=TransactionDetailResponse)
+def get_transaction_detail(
+    height: int = Path(gt=0),
+    index: int = Path(ge=0),
+) -> TransactionDetailResponse:
+    try:
+        row = database.fetch_transaction_detail(height, index)
+    except Exception:
+        LOGGER.error("Explorer database transaction detail query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+    if row is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return _transaction_detail_from_row(row)
 
 
 @app.get("/api/blocks/{height}", response_model=BlockDetailResponse)

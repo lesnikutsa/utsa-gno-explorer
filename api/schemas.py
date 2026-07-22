@@ -69,6 +69,19 @@ class BlockTransactionSummary(BaseModel):
     decode_status: str
 
 
+class TransactionDetailResponse(BaseModel):
+    block_height: int = Field(ge=1)
+    block_hash: str
+    block_time: str
+    proposer_address: str | None
+    proposer_moniker: str | None = None
+    index: int = Field(ge=0)
+    raw_base64: str
+    raw_base64_length: int = Field(ge=0)
+    decoded_byte_length: int | None = Field(default=None, ge=0)
+    decode_status: str
+
+
 class BlockDetailResponse(BaseModel):
     height: int
     block_hash: str

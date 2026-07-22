@@ -202,6 +202,31 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .block-detail__state { padding: 18px; }
 .block-detail__state-actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
 .block-detail__state .block-detail__back { margin: 0; }
+.transaction-link { display: inline-block; border-radius: 3px; color: #dc795e; font-weight: 600; text-decoration: none; }
+.transaction-link:hover { color: var(--color-text-bright); }
+.transaction-link:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
+.transaction-detail { min-width: 0; }
+.transaction-detail__back { display: inline-flex; margin-bottom: 10px; color: #dc795e; font-size: 11px; font-weight: 600; }
+.transaction-detail__back:hover { color: var(--color-text-bright); }
+.transaction-detail__back:focus-visible, .transaction-detail__block-link:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
+.transaction-detail__header { margin-bottom: 14px; }
+.transaction-detail__header h1, .transaction-detail__state h1 { margin: 0 0 5px; color: var(--color-text-bright); font-size: 22px; font-weight: 600; }
+.transaction-detail__header p, .transaction-detail__state p { color: var(--color-text-secondary); font-size: 12px; }
+.transaction-detail__section { margin-bottom: 10px; }
+.transaction-detail__grid, .transaction-detail__size-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.transaction-detail__field { min-width: 0; padding: 11px 13px; }
+.transaction-detail__grid .transaction-detail__field:nth-child(odd), .transaction-detail__size-grid .transaction-detail__field:first-child { border-right: 1px solid var(--color-border-soft); }
+.transaction-detail__grid .transaction-detail__field:nth-child(n+3) { border-top: 1px solid var(--color-border-soft); }
+.transaction-detail__label { display: block; margin-bottom: 5px; color: var(--color-text-secondary); font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.transaction-detail__value, .transaction-detail__block-link { display: block; color: var(--color-text); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.transaction-detail__block-link { color: #dc795e; font-weight: 600; }
+.transaction-detail__field small { display: block; margin-top: 3px; color: var(--color-text-secondary); font-size: 9px; }
+.transaction-detail__raw .panel__heading { align-items: center; }
+.transaction-detail__raw-value { max-width: 100%; margin: 0; padding: 13px; overflow: visible; color: var(--color-text); font-size: 11px; line-height: 1.65; overflow-wrap: anywhere; user-select: text; white-space: pre-wrap; word-break: break-word; }
+.transaction-detail__notice { margin: 0; padding: 10px 12px; border: 1px solid var(--color-border-soft); border-radius: 5px; background: rgba(9,24,39,.45); color: var(--color-text-secondary); font-size: 10px; line-height: 1.5; }
+.transaction-detail__state { padding: 18px; }
+.transaction-detail__state-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 14px; }
+.transaction-detail__state .transaction-detail__back { margin: 0; }
 .validator-detail { min-width: 0; }
 .validator-detail__back { display: inline-flex; margin-bottom: 10px; color: #dc795e; font-size: 11px; font-weight: 600; }
 .validator-detail__back:hover { color: var(--color-text-bright); }
@@ -304,6 +329,9 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
   .block-detail__grid { grid-template-columns: 1fr; }
   .block-detail__grid .block-detail__field:nth-child(odd) { border-right: 0; }
   .block-detail__grid .block-detail__field + .block-detail__field { border-top: 1px solid var(--color-border-soft); }
+  .transaction-detail__grid, .transaction-detail__size-grid { grid-template-columns: 1fr; }
+  .transaction-detail__grid .transaction-detail__field:nth-child(odd), .transaction-detail__size-grid .transaction-detail__field:first-child { border-right: 0; }
+  .transaction-detail__grid .transaction-detail__field + .transaction-detail__field, .transaction-detail__size-grid .transaction-detail__field + .transaction-detail__field { border-top: 1px solid var(--color-border-soft); }
   .validator-detail__grid { grid-template-columns: 1fr; }
   .validator-detail__header { flex-wrap: wrap; justify-content: flex-start; }
   .validator-detail__header h1 { flex: 1 1 100%; min-width: 0; overflow-wrap: anywhere; }

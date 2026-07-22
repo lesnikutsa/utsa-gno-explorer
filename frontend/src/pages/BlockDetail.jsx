@@ -6,8 +6,12 @@ import { DataTable } from '../components/DataTable'
 import { StatusBadge } from '../components/StatusBadge'
 import { relativeTime } from '../utils/time'
 
-const transactionColumns = [
-  { key: 'index', label: 'Index', render: (transaction) => <span className="mono">#{transaction.index}</span> },
+const transactionColumns = (blockHeight) => [
+  {
+    key: 'index',
+    label: 'Transaction',
+    render: (transaction) => <a className="transaction-link mono" href={`/blocks/${encodeURIComponent(blockHeight)}/transactions/${encodeURIComponent(transaction.index)}`}>Transaction #{transaction.index}</a>,
+  },
   {
     key: 'raw_base64',
     label: 'Raw Base64',
@@ -106,7 +110,7 @@ export function BlockDetail({ blockDetail }) {
 
       <section className="panel block-detail__section block-detail__transactions" aria-labelledby="transactions-title">
         <div className="panel__heading"><h2 id="transactions-title">Transactions</h2></div>
-        <DataTable columns={transactionColumns} rows={block.transactions} rowKey={(transaction) => transaction.index} loading={false} emptyMessage="No transactions in this block." />
+        <DataTable columns={transactionColumns(block.height)} rows={block.transactions} rowKey={(transaction) => transaction.index} loading={false} emptyMessage="No transactions in this block." />
       </section>
     </article>
   )

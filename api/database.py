@@ -142,6 +142,27 @@ WHERE block_height = %s
 ORDER BY tx_index ASC
 """
 
+TRANSACTION_DETAIL_SQL = """
+SELECT
+    transaction.block_height,
+    transaction.tx_index,
+    transaction.raw_base64,
+    transaction.raw_base64_length,
+    transaction.decoded_byte_length,
+    transaction.decode_status,
+    block.block_hash_hex,
+    block.time_utc,
+    block.proposer_address,
+    profile.moniker AS proposer_moniker
+FROM transactions transaction
+JOIN blocks block
+  ON block.height = transaction.block_height
+LEFT JOIN valoper_profiles profile
+  ON profile.signing_address = block.proposer_address
+WHERE transaction.block_height = %s
+  AND transaction.tx_index = %s
+"""
+
 VALIDATORS_CHECKPOINT_SQL = """
 SELECT
     s.last_finalized_height AS height,
@@ -459,6 +480,15 @@ class ApiDatabase:
             "commit": commit,
             "transactions": [dict(row) for row in transaction_rows],
         }
+
+    def fetch_transaction_detail(self, block_height: int, tx_index: int) -> dict[str, Any] | None:
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(TRANSACTION_DETAIL_SQL, (block_height, tx_index))
+                row = cursor.fetchone()
+        return None if row is None else dict(row)
 
     def fetch_active_validators(self) -> dict[str, Any]:
         """Return the checkpoint and its active validators using one pooled connection."""
