@@ -240,9 +240,12 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .validator-detail__back { display: inline-flex; margin-bottom: 10px; color: #dc795e; font-size: 11px; font-weight: 600; }
 .validator-detail__back:hover { color: var(--color-text-bright); }
 .validator-detail__back:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
-.validator-detail__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.validator-detail__header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
 .validator-detail__header h1, .validator-detail__state h1 { margin: 0 0 5px; color: var(--color-text-bright); font-size: 22px; font-weight: 600; }
 .validator-detail__header p, .validator-detail__state p { color: var(--color-text-secondary); font-size: 12px; }
+.validator-detail__telegram-link { display: inline-flex; min-height: 28px; flex: 0 0 auto; align-items: center; padding: 5px 10px; border: 1px solid rgba(42, 171, 238, .62); border-radius: 5px; color: #72c8f4; font-size: 10px; font-weight: 700; line-height: 1; transition: border-color .15s ease, background-color .15s ease, color .15s ease; }
+.validator-detail__telegram-link:hover { border-color: #2aabee; background: rgba(42, 171, 238, .1); color: var(--color-text-bright); }
+.validator-detail__telegram-link:focus-visible { outline: 2px solid #2aabee; outline-offset: 3px; }
 .validator-detail__section { margin-bottom: 10px; }
 .validator-detail__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .validator-detail__field { min-width: 0; padding: 11px 13px; }
@@ -344,6 +347,7 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
   .transaction-detail__grid .transaction-detail__field:nth-child(odd), .transaction-detail__size-grid .transaction-detail__field:first-child { border-right: 0; }
   .transaction-detail__grid .transaction-detail__field + .transaction-detail__field, .transaction-detail__size-grid .transaction-detail__field + .transaction-detail__field { border-top: 1px solid var(--color-border-soft); }
   .validator-detail__grid { grid-template-columns: 1fr; }
+  .validator-detail__header { align-items: flex-start; }
   .validator-detail__header h1 { flex: 1 1 100%; min-width: 0; overflow-wrap: anywhere; }
   .validator-detail__grid .validator-detail__field:nth-child(odd) { border-right: 0; }
   .validator-detail__grid .validator-detail__field + .validator-detail__field { border-top: 1px solid var(--color-border-soft); }

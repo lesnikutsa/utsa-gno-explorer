@@ -8,6 +8,7 @@ import {
 } from '../components/ValidatorSigningStrip'
 import { formatIntegerString, getValidatorHealth } from '../utils/validatorHealth'
 import { hasValidatorMoniker } from '../utils/validatorIdentity'
+import { buildTelegramValidatorWatchUrl } from '../utils/telegram'
 
 const present = (value) => value !== null && value !== undefined && value !== ''
 const formatHeight = (value) => present(value) ? `#${formatIntegerString(value)}` : '—'
@@ -68,12 +69,24 @@ export function ValidatorDetail({ validatorDetail }) {
 
   const active = validator.current.active
   const status = active ? 'Active' : 'Inactive'
+  const telegramWatchUrl = buildTelegramValidatorWatchUrl(validator.address)
 
   return (
     <article className="validator-detail" aria-labelledby="validator-detail-title">
       <a className="validator-detail__back" href="/validators">← Back to Validators</a>
       <header className="validator-detail__header">
         <h1 id="validator-detail-title">{hasValidatorMoniker(validator) ? validator.moniker : 'Validator'}</h1>
+        {telegramWatchUrl && (
+          <a
+            className="validator-detail__telegram-link"
+            href={telegramWatchUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Monitor this validator in Telegram (opens in a new tab)"
+          >
+            Monitor in Telegram
+          </a>
+        )}
       </header>
 
       <section className="panel validator-detail__section" aria-labelledby="validator-current-status-title">
