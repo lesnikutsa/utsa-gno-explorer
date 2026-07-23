@@ -73,7 +73,8 @@ class DeploymentAssetTests(unittest.TestCase):
         self.assertIn("WorkingDirectory=/opt/utsa-gno-explorer", unit)
         self.assertIn("/opt/utsa-gno-explorer/.venv/bin/python /opt/utsa-gno-explorer/scripts/backup_database.py", unit)
         self.assertIn("--backup-dir /var/backups/utsa-gno-explorer", unit)
-        self.assertIn("--retention 14", unit)
+        self.assertIn("--retention 3", unit)
+        self.assertNotIn("--retention 14", unit)
         self.assertIn("--compose-file /opt/utsa-gno-explorer/deploy/postgres/compose.yml", unit)
         self.assertIn("--env-file /etc/utsa-gno-explorer/postgres.env", unit)
         self.assertIn("StandardOutput=journal", unit)
@@ -466,6 +467,9 @@ class SchemaValidationTests(unittest.TestCase):
 
 
 class BackupScriptTests(unittest.TestCase):
+    def test_parser_defaults_to_three_backups(self):
+        self.assertEqual(backup_database.build_parser().parse_args([]).retention, 3)
+
     def test_backup_filename_uses_utc_timestamp(self):
         name = backup_database.backup_filename(datetime(2026, 7, 15, 1, 2, 3, tzinfo=timezone.utc))
         self.assertEqual(name, "utsa-gno-explorer-20260715T010203Z.dump")
@@ -515,6 +519,8 @@ class BackupScriptTests(unittest.TestCase):
             directory = Path(tmp)
             compose_file = directory / "compose.yml"; compose_file.write_text("services: {}")
             env_file = directory / "postgres.env"; env_file.write_text("POSTGRES_DB=x")
+            old = directory / "utsa-gno-explorer-20260101T000000Z.dump"
+            old.write_bytes(b"old")
 
             def fake_run(command, stdout=None, stdin=None, stderr=None, check=False):
                 return type("Result", (), {"returncode": 1})()
@@ -524,6 +530,7 @@ class BackupScriptTests(unittest.TestCase):
                     backup_database.create_backup(directory, compose_file, env_file, retention=1)
             self.assertFalse((directory / "utsa-gno-explorer-20260715T010203Z.dump").exists())
             self.assertFalse((directory / "utsa-gno-explorer-20260715T010203Z.dump.part").exists())
+            self.assertTrue(old.exists())
 
 
     def test_failed_archive_validation_removes_part_without_final_backup(self):
@@ -531,6 +538,8 @@ class BackupScriptTests(unittest.TestCase):
             directory = Path(tmp)
             compose_file = directory / "compose.yml"; compose_file.write_text("services: {}")
             env_file = directory / "postgres.env"; env_file.write_text("POSTGRES_DB=x")
+            old = directory / "utsa-gno-explorer-20260101T000000Z.dump"
+            old.write_bytes(b"old")
             calls = []
             def fake_run(command, stdout=None, stdin=None, stderr=None, check=False):
                 calls.append(command)
@@ -543,25 +552,43 @@ class BackupScriptTests(unittest.TestCase):
                     backup_database.create_backup(directory, compose_file, env_file, retention=1)
             self.assertFalse((directory / "utsa-gno-explorer-20260715T010203Z.dump").exists())
             self.assertFalse((directory / "utsa-gno-explorer-20260715T010203Z.dump.part").exists())
+            self.assertTrue(old.exists())
 
-    def test_retention_never_removes_newest_or_unrelated_files(self):
+    def test_retention_keeps_three_newest_and_ignores_recovery_artifacts(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
-            compose_file = directory / "compose.yml"; compose_file.write_text("services: {}")
-            env_file = directory / "postgres.env"; env_file.write_text("POSTGRES_DB=x")
             old = directory / "utsa-gno-explorer-20260101T000000Z.dump"
+            second = directory / "utsa-gno-explorer-20260201T000000Z.dump"
+            third = directory / "utsa-gno-explorer-20260301T000000Z.dump"
             newest = directory / "utsa-gno-explorer-20260715T010203Z.dump"
-            symlink = directory / "utsa-gno-explorer-20260102T000000Z.dump"
+            symlink = directory / "utsa-gno-explorer-20260401T000000Z.dump"
             unrelated = directory / "utsa-gno-explorer-not-a-date.dump"
-            old.write_text("old")
+            manual = directory / "utsa-gno-explorer-test13-recovery.dump"
+            part = directory / "utsa-gno-explorer-20260501T000000Z.dump.part"
+            checksum = directory / "utsa-gno-explorer-20260101T000000Z.dump.sha256"
+            subdirectory = directory / "utsa-gno-explorer-20200101T000000Z.dump"
+            subdirectory.mkdir()
+            for path in (old, second, third, newest, unrelated, manual, part, checksum):
+                path.write_text("keep")
             newest.write_text("new")
-            unrelated.write_text("keep")
             symlink.symlink_to(old)
-            backup_database.apply_retention(directory, keep=1, newest=newest)
+            backup_database.apply_retention(directory, keep=3, newest=newest)
             self.assertFalse(old.exists())
+            self.assertTrue(second.exists())
+            self.assertTrue(third.exists())
             self.assertTrue(newest.exists())
-            self.assertTrue(unrelated.exists())
-            self.assertTrue(symlink.is_symlink())
+            for path in (unrelated, manual, part, checksum, subdirectory):
+                self.assertTrue(path.exists())
+            self.assertTrue(symlink.is_symlink(), "symlinks must not count as successful backups")
+
+    def test_zero_retention_disables_deletion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            backups = [directory / f"utsa-gno-explorer-20260{month}01T000000Z.dump" for month in range(1, 5)]
+            for backup in backups:
+                backup.write_text("keep")
+            backup_database.apply_retention(directory, keep=0, newest=backups[-1])
+            self.assertTrue(all(backup.exists() for backup in backups))
 
 
 class WaitForPostgresTests(unittest.TestCase):

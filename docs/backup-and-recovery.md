@@ -10,6 +10,10 @@ This document describes operational expectations for the future PostgreSQL datab
 - Encrypt backups at rest when they leave the trusted database environment.
 - Do not include private RPC credentials in database backups because the schema does not store secrets.
 
+The automated Explorer backup writes a temporary `.part` archive, validates it with `pg_restore --list`, and atomically finalizes it before rotation runs. Rotation retains exactly the 3 newest successful dumps named `utsa-gno-explorer-YYYYMMDDTHHMMSSZ.dump`. Manually named recovery dumps, validation restore files, checksum files, and unrelated files are outside automatic rotation.
+
+The production backup timer may be enabled only after the updated service and timer units are installed and `systemctl daemon-reload` has completed. Repository changes do not enable the production timer.
+
 ## Suggested logical backup command
 
 ```bash
