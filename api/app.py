@@ -77,6 +77,14 @@ def _normalize_block_hash(block_hash_hex: str) -> str:
     return block_hash_hex.upper()
 
 
+def _normalize_tx_hash(tx_hash_hex: str | None) -> str | None:
+    if tx_hash_hex is None:
+        return None
+    normalized = tx_hash_hex[2:] if tx_hash_hex.startswith(("0x", "0X")) else tx_hash_hex
+    normalized = normalized.upper()
+    return normalized if re.fullmatch(r"[0-9A-F]{64}", normalized) else None
+
+
 def _block_summary_from_row(row: dict) -> BlockSummary:
     return BlockSummary(
         height=row["height"],
@@ -111,6 +119,7 @@ def _block_detail_from_row(detail: dict) -> BlockDetailResponse:
         transactions=[
             BlockTransactionSummary(
                 index=row["tx_index"],
+                tx_hash=_normalize_tx_hash(row.get("tx_hash_hex")),
                 raw_base64=row["raw_base64"],
                 raw_base64_length=row["raw_base64_length"],
                 decoded_byte_length=row["decoded_byte_length"],
@@ -129,6 +138,7 @@ def _transaction_detail_from_row(row: dict) -> TransactionDetailResponse:
         proposer_address=row["proposer_address"],
         proposer_moniker=row.get("proposer_moniker"),
         index=row["tx_index"],
+        tx_hash=_normalize_tx_hash(row.get("tx_hash_hex")),
         raw_base64=row["raw_base64"],
         raw_base64_length=row["raw_base64_length"],
         decoded_byte_length=row["decoded_byte_length"],

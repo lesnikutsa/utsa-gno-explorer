@@ -27,7 +27,8 @@ class TransactionDetailFrontendContractTests(unittest.TestCase):
     def test_compact_accessible_block_transaction_link(self):
         block = self.read("frontend/src/pages/BlockDetail.jsx")
         self.assertIn("label: 'Index'", block)
-        self.assertIn('label: \'Raw Base64\'', block)
+        self.assertIn("label: 'Tx Hash'", block)
+        self.assertNotIn("label: 'Raw Base64'", block)
         self.assertIn("label: 'Base64 Decode'", block)
         detail = self.read("frontend/src/pages/TransactionDetail.jsx")
         self.assertIn('className="transaction-link mono"', block)
@@ -38,13 +39,20 @@ class TransactionDetailFrontendContractTests(unittest.TestCase):
         self.assertIn("href={canonicalBlockHref}", detail)
         self.assertIn("<CopyButton value={transaction.raw_base64}", detail)
         self.assertIn("Transaction #{transaction.index}", detail)
-        self.assertIn("canonical transaction hash are not indexed by this Explorer yet", detail)
+        self.assertIn('<CopyButton value={transaction.tx_hash} label="transaction hash" />', detail)
+        self.assertIn("title={transaction.tx_hash}", block)
+        self.assertIn('className="transaction-hash__full" aria-hidden="true">{transaction.tx_hash}', block)
+        self.assertIn('className="transaction-hash__short" aria-hidden="true"', block)
+        self.assertIn("transaction.tx_hash.slice(0, 12)", block)
+        self.assertIn("transaction.tx_hash.slice(-9)", block)
+        self.assertIn(": '—'", block)
+        self.assertNotIn("canonical transaction hash are not indexed", detail)
         self.assertNotIn("avatar", detail.lower())
         self.assertNotIn("logo", detail.lower())
 
-    def test_raw_base64_layout_is_scoped_and_truncated(self):
+    def test_transaction_hash_layout_is_scoped_and_truncated(self):
         styles = self.read("frontend/src/styles/app.css")
-        selector = ".block-detail__transactions .transaction-raw"
+        selector = ".block-detail__transactions .transaction-hash"
         self.assertIn(selector, styles)
         rule = styles[styles.index(selector):styles.index("}", styles.index(selector))]
         for declaration in (
@@ -57,6 +65,12 @@ class TransactionDetailFrontendContractTests(unittest.TestCase):
         ):
             self.assertIn(declaration, rule)
         self.assertIn(".block-detail__transactions .data-table th:nth-child(1) { width: 80px; }", styles)
+        self.assertIn("@media (min-width: 1200px)", styles)
+        self.assertIn(".block-detail__transactions .transaction-hash__full { display: none; }", styles)
+        self.assertIn(".block-detail__transactions .transaction-hash__short { display: block; }", styles)
+        responsive = styles[styles.index("@media (min-width: 1200px)"):]
+        self.assertIn(".block-detail__transactions .transaction-hash__full { display: block; }", responsive)
+        self.assertIn(".block-detail__transactions .transaction-hash__short { display: none; }", responsive)
         self.assertNotIn("\n.data-table { table-layout: fixed", styles)
 
     def test_block_hash_and_balanced_information_grid(self):

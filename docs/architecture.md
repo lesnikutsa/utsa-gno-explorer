@@ -1,5 +1,10 @@
 # Architecture
 
+## Canonical transaction hashes
+
+For every successfully Base64-decoded `result.block.data.txs[index]` value, the indexer stores `SHA-256(decoded transaction bytes)` as exactly 64 uppercase hexadecimal characters without a `0x` prefix. The decoded byte sequence is used unchanged; the Base64 text and structured fields are never hashed. Invalid Base64 rows retain a null hash, and decoding does not imply execution success. A hash is not database row identity: `(block_height, tx_index)` identifies each occurrence, repeated hashes are preserved, and the partial lookup index is non-unique. Future hash lookup may return multiple locations. Hash-based routes/search and structured Amino message parsing are deliberately deferred.
+
+
 This document describes the first explorer architecture checkpoint. It is a design document only: it does not introduce a continuous indexer, PostgreSQL server, Docker Compose, backend API, or frontend.
 
 ## Goals

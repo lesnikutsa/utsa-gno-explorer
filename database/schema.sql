@@ -35,6 +35,7 @@ CREATE TABLE transactions (
     decoded_bytes BYTEA,
     decoded_byte_length INTEGER CONSTRAINT transactions_decoded_byte_length_check CHECK (decoded_byte_length IS NULL OR decoded_byte_length >= 0),
     decode_status TEXT NOT NULL CONSTRAINT transactions_decode_status_check CHECK (decode_status IN ('decoded', 'invalid_base64', 'not_attempted')),
+    tx_hash_hex TEXT,
     payload_summary JSONB,
     inserted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT transactions_block_position_unique UNIQUE (block_height, tx_index),
@@ -42,13 +43,20 @@ CREATE TABLE transactions (
     CONSTRAINT transactions_decode_status_consistent CHECK (
         (decode_status = 'decoded' AND decoded_bytes IS NOT NULL AND decoded_byte_length = octet_length(decoded_bytes))
         OR (decode_status IN ('invalid_base64', 'not_attempted') AND decoded_bytes IS NULL AND decoded_byte_length IS NULL)
+    ),
+    CONSTRAINT transactions_tx_hash_hex_format CHECK (tx_hash_hex IS NULL OR tx_hash_hex ~ '^[0-9A-F]{64}$'),
+    CONSTRAINT transactions_tx_hash_consistent CHECK (
+        (decode_status = 'decoded' AND tx_hash_hex IS NOT NULL)
+        OR (decode_status IN ('invalid_base64', 'not_attempted') AND tx_hash_hex IS NULL)
     )
 );
 
 COMMENT ON TABLE transactions IS 'Ordered transactions within a block. The block position uniqueness makes reprocessing idempotent.';
 COMMENT ON COLUMN transactions.raw_base64 IS 'Raw transaction string exactly as returned by result.block.data.txs.';
 COMMENT ON COLUMN transactions.decoded_bytes IS 'Decoded bytes when base64 decoding succeeds; full Gno transaction parsing is deferred.';
+COMMENT ON COLUMN transactions.tx_hash_hex IS 'SHA-256 of the exact decoded Tendermint2 transaction bytes, in the Explorer canonical uppercase hexadecimal display/search form.';
 COMMENT ON COLUMN transactions.payload_summary IS 'Limited JSONB for future decoded payload summaries, not raw unbounded application data.';
+CREATE INDEX transactions_tx_hash_hex_idx ON transactions(tx_hash_hex) WHERE tx_hash_hex IS NOT NULL;
 
 -- Block detail pages use the unique constraint index on (block_height, tx_index).
 

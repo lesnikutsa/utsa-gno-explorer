@@ -1,3 +1,4 @@
+import hashlib
 import os
 import secrets
 import shutil
@@ -90,6 +91,13 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             command += ["--migration", str(migration_path)]
         return subprocess.run(command, cwd=ROOT, env=env, text=True, capture_output=True, check=False)
 
+    def run_transaction_hash_migration(self, database_url):
+        env = dict(os.environ, DATABASE_URL=database_url)
+        return subprocess.run(
+            [sys.executable, "scripts/migrate_transaction_hashes.py"],
+            cwd=ROOT, env=env, text=True, capture_output=True, check=False,
+        )
+
     def connect(self, database="utsa_gno_explorer"):
         return psycopg.connect(f"postgresql://utsa_test:{self.password}@{self.host}:{self.port}/{database}")
 
@@ -101,6 +109,52 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
 
     def database_url_for(self, name):
         return f"postgresql://utsa_test:{self.password}@{self.host}:{self.port}/{name}"
+
+    def test_transaction_hash_constraints_allow_repeated_occurrences(self):
+        name = f"utsa_tx_hash_{os.getpid()}"
+        self.create_database(name)
+        database_url = self.database_url_for(name)
+        self.assertEqual(self.run_init(database_url).returncode, 0)
+        tx_hash = hashlib.sha256(b"same").hexdigest().upper()
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.executemany(
+                "INSERT INTO blocks (height, block_hash_base64, block_hash_hex, time_utc, tx_count) VALUES (%s, %s, %s, now(), 1)",
+                [(100, "ZA==", "64"), (200, "yA==", "C8")],
+            )
+            cursor.executemany(
+                "INSERT INTO transactions (block_height, tx_index, raw_base64, raw_base64_length, decoded_bytes, decoded_byte_length, decode_status, tx_hash_hex) VALUES (%s, %s, 'c2FtZQ==', 8, %s, 4, 'decoded', %s)",
+                [(100, 0, b"same", tx_hash), (200, 2, b"same", tx_hash)],
+            )
+            cursor.execute("SELECT block_height, tx_index FROM transactions WHERE tx_hash_hex = %s ORDER BY block_height", (tx_hash,))
+            self.assertEqual(cursor.fetchall(), [(100, 0), (200, 2)])
+            cursor.execute("SELECT indisunique, pg_get_expr(indpred, indrelid) FROM pg_index WHERE indexrelid = 'transactions_tx_hash_hex_idx'::regclass")
+            unique, predicate = cursor.fetchone()
+            self.assertFalse(unique)
+            self.assertEqual(predicate.strip("()"), "tx_hash_hex IS NOT NULL")
+
+            invalid_rows = [
+                ("INSERT INTO transactions (block_height, tx_index, raw_base64, raw_base64_length, decoded_bytes, decoded_byte_length, decode_status, tx_hash_hex) VALUES (100, 3, 'YQ==', 4, %s, 1, 'decoded', 'bad')", (b"a",)),
+                ("INSERT INTO transactions (block_height, tx_index, raw_base64, raw_base64_length, decoded_bytes, decoded_byte_length, decode_status) VALUES (100, 4, 'YQ==', 4, %s, 1, 'decoded')", (b"a",)),
+                ("INSERT INTO transactions (block_height, tx_index, raw_base64, raw_base64_length, decode_status, tx_hash_hex) VALUES (100, 5, 'bad', 3, 'invalid_base64', %s)", (tx_hash,)),
+                ("INSERT INTO transactions (block_height, tx_index, raw_base64, raw_base64_length, decoded_bytes, decoded_byte_length, decode_status, tx_hash_hex) VALUES (100, 0, 'c2FtZQ==', 8, %s, 4, 'decoded', %s)", (b"same", tx_hash)),
+            ]
+            for sql, params in invalid_rows:
+                with self.assertRaises(Exception), connection.transaction():
+                    cursor.execute(sql, params)
+
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("UPDATE transactions SET tx_hash_hex = %s WHERE block_height = 100", ("F" * 64,))
+        mismatch = self.run_transaction_hash_migration(database_url)
+        self.assertNotEqual(mismatch.returncode, 0)
+        self.assertEqual(mismatch.stderr, "Transaction hash migration failed; ensure the indexer is stopped and inspect the database catalog\n")
+        self.assertNotIn(database_url, mismatch.stdout + mismatch.stderr)
+        self.assertNotIn(self.password, mismatch.stdout + mismatch.stderr)
+
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("UPDATE transactions SET tx_hash_hex = %s WHERE block_height = 100", (tx_hash,))
+        verified = self.run_transaction_hash_migration(database_url)
+        self.assertEqual(verified.returncode, 0, verified.stderr)
+        self.assertEqual(verified.stdout, "Transaction hash schema is already compatible\n")
 
     def prepare_legacy_database(self, name):
         self.create_database(name)

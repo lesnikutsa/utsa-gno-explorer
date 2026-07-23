@@ -1,5 +1,8 @@
 # Database
 
+`transactions.tx_hash_hex` is the SHA-256 digest of the exact bytes obtained by Base64-decoding `result.block.data.txs[index]`, formatted as 64 uppercase hexadecimal characters without `0x`. It is nullable for invalid or not-attempted decoding. The hash is not row identity: `(block_height, tx_index)` identifies an indexed occurrence, repeated hashes are preserved, and the partial hash lookup index is non-unique. A future hash lookup may therefore return multiple locations. Existing databases require the explicit transactional `scripts/migrate_transaction_hashes.py` backfill while the indexer is stopped. Hash routing/search and structured message parsing remain deferred; Base64 decoding does not imply execution success.
+
+
 `schema.sql` contains the PostgreSQL schema for the first UTSA Gno.land explorer design checkpoint.
 
 ## Scope

@@ -63,6 +63,7 @@ class BlockCommitSummary(BaseModel):
 
 class BlockTransactionSummary(BaseModel):
     index: int
+    tx_hash: str | None = None
     raw_base64: str
     raw_base64_length: int
     decoded_byte_length: int | None
@@ -76,6 +77,7 @@ class TransactionDetailResponse(BaseModel):
     proposer_address: str | None
     proposer_moniker: str | None = None
     index: int = Field(ge=0)
+    tx_hash: str | None = None
     raw_base64: str
     raw_base64_length: int = Field(ge=0)
     decoded_byte_length: int | None = Field(default=None, ge=0)
