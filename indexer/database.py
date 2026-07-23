@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -61,6 +62,13 @@ class PostgresDatabase:
             self.selected_rpc_endpoint_id = select_rpc_endpoint_cursor(cursor, chain_id, probe, reason)
         connection.commit()
 
+    def record_rpc_runtime_failure(self, chain_id: str, probe: RpcProbeResult, reason: str) -> None:
+        with self.connect() as connection, connection.cursor() as cursor:
+            _, was_selected = record_rpc_runtime_failure_cursor(cursor, chain_id, probe, reason)
+        connection.commit()
+        if was_selected:
+            self.selected_rpc_endpoint_id = None
+
     def write_height(self, parsed, chain_id: str, finalized_tip: int) -> None:
         with self.connect() as connection:
             with connection.cursor() as cursor:
@@ -93,7 +101,7 @@ def get_checkpoint_cursor(cursor, chain_id: str) -> int | None:
 def get_checkpoint_anchor_cursor(cursor, chain_id: str) -> CheckpointAnchor | None:
     cursor.execute("""
         SELECT s.chain_id, s.last_finalized_height, b.block_hash_hex
-        FROM indexer_state s JOIN blocks b ON b.height = s.last_finalized_height
+        FROM indexer_state s LEFT JOIN blocks b ON b.height = s.last_finalized_height
         WHERE s.state_key = %s
     """, ("default",))
     row = cursor.fetchone()
@@ -101,7 +109,12 @@ def get_checkpoint_anchor_cursor(cursor, chain_id: str) -> CheckpointAnchor | No
         return None
     if row[0] != chain_id:
         raise ChainIdentityError(f"Existing indexer_state chain_id={row[0]} does not match configured chain_id={chain_id}")
-    return CheckpointAnchor(int(row[1]), str(row[2]).upper())
+    block_hash_hex = row[2]
+    if block_hash_hex is None:
+        raise DatabaseError(f"Checkpoint block is missing at height {row[1]}")
+    if not isinstance(block_hash_hex, str) or re.fullmatch(r"[0-9A-F]{64}", block_hash_hex) is None:
+        raise DatabaseError(f"Checkpoint block hash is malformed at height {row[1]}")
+    return CheckpointAnchor(int(row[1]), block_hash_hex)
 
 def record_rpc_probe_cycle_cursor(cursor, chain_id: str, probes: list[RpcProbeResult]) -> int | None:
     selected_probe = next((probe for probe in probes if probe.selected), None)
@@ -130,11 +143,30 @@ def record_rpc_probe_cycle_cursor(cursor, chain_id: str, probes: list[RpcProbeRe
 
 def select_rpc_endpoint_cursor(cursor, chain_id: str, probe: RpcProbeResult, reason: str) -> int:
     endpoint_id = _upsert_rpc_endpoint(cursor, chain_id, probe, selected=False)
+    current_id = _current_selected_endpoint_id(cursor, chain_id)
+    if current_id == endpoint_id:
+        _mark_rpc_endpoint_selected(cursor, endpoint_id, probe)
+        return endpoint_id
     cursor.execute("UPDATE rpc_endpoints SET is_selected = false, updated_at = now() WHERE chain_id = %s AND is_selected", (chain_id,))
     _mark_rpc_endpoint_selected(cursor, endpoint_id, probe)
     selected_probe = RpcProbeResult(**{**probe.__dict__, "selected": True})
-    _insert_rpc_endpoint_check(cursor, endpoint_id, chain_id, selected_probe, reason[:200])
+    _insert_rpc_endpoint_check(cursor, endpoint_id, chain_id, selected_probe, reason[:80])
     return endpoint_id
+
+
+def record_rpc_runtime_failure_cursor(cursor, chain_id: str, probe: RpcProbeResult, reason: str) -> tuple[int, bool]:
+    current_id = _current_selected_endpoint_id(cursor, chain_id)
+    failed_probe = RpcProbeResult(**{
+        **probe.__dict__, "healthy": False, "selected": False,
+        "error_message": reason[:80],
+    })
+    endpoint_id = _upsert_rpc_endpoint(cursor, chain_id, failed_probe, selected=False)
+    cursor.execute(
+        "UPDATE rpc_endpoints SET is_enabled = true, is_selected = false, healthy = false, last_error = %s, last_checked_at = now(), updated_at = now() WHERE id = %s",
+        (reason[:80], endpoint_id),
+    )
+    _insert_rpc_endpoint_check(cursor, endpoint_id, chain_id, failed_probe, None)
+    return endpoint_id, current_id == endpoint_id
 
 def _current_selected_endpoint_id(cursor, chain_id: str) -> int | None:
     cursor.execute("SELECT id FROM rpc_endpoints WHERE chain_id = %s AND is_selected", (chain_id,))

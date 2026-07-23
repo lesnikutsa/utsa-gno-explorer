@@ -14,7 +14,8 @@ from indexer.service import IndexerService, plan_range
 from scripts.inspect_rpc import RpcError
 
 FIXTURES = Path(__file__).parent / "fixtures"
-COMMIT_HASH = "AQIDBA=="
+COMMIT_HASH = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+COMMIT_HASH_HEX = "000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F"
 PARTS_HASH = "BQYHCA=="
 VALID_SIGNATURE = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+Pw=="
 
@@ -65,6 +66,8 @@ class SqlLikeDb:
         self.members = {}
         self.signatures = {}
         self.probe_cycles = []
+        self.selection_calls = []
+        self.runtime_failures = []
 
     def get_checkpoint(self, chain_id):
         if self.checkpoint is None:
@@ -80,11 +83,15 @@ class SqlLikeDb:
             raise ChainIdentityError("wrong chain")
         from indexer.database import CheckpointAnchor
         stored = self.blocks.get(self.checkpoint)
-        return CheckpointAnchor(self.checkpoint, stored[1] if stored else "01020304")
+        return CheckpointAnchor(self.checkpoint, stored[1] if stored else COMMIT_HASH_HEX)
 
     def select_rpc_endpoint(self, chain_id, probe, reason):
         self.selected_url = probe.url
         self.switch_reason = reason
+        self.selection_calls.append((probe.url, reason))
+
+    def record_rpc_runtime_failure(self, chain_id, probe, reason):
+        self.runtime_failures.append((probe.url, reason))
 
     def record_rpc_probe_cycle(self, chain_id, probes):
         if self.chain_id != chain_id:

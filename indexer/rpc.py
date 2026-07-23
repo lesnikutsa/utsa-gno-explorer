@@ -29,6 +29,10 @@ class RpcProbeResult:
 class RpcContinuityError(RpcError):
     """An endpoint cannot prove continuity with the persisted canonical chain."""
 
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(reason)
+
 
 @dataclass(frozen=True)
 class SelectedRpc:
@@ -97,7 +101,7 @@ def _probe_endpoint(url: str, expected_chain_id: str, timeout: int) -> RpcProbeR
             chain_id=status.get("chain_id"),
             latest_height=status.get("latest_height"),
             catching_up=status.get("catching_up"),
-            error_message=str(exc),
+            error_message=_safe_probe_error(exc),
             client=client,
         )
     return RpcProbeResult(
@@ -111,6 +115,17 @@ def _probe_endpoint(url: str, expected_chain_id: str, timeout: int) -> RpcProbeR
         status_payload=status_payload,
     )
 
+
+
+def _safe_probe_error(exc: RpcError) -> str:
+    message = str(exc)
+    if message.startswith("wrong chain ID"):
+        return "wrong chain ID"
+    if message.startswith("malformed status"):
+        return "malformed status"
+    if message == "endpoint is catching up":
+        return "endpoint is catching up"
+    return "rpc_error"
 
 def _with_lag(probe: RpcProbeResult, highest_height: int, max_height_lag: int) -> RpcProbeResult:
     if not probe.healthy or probe.latest_height is None:
@@ -141,8 +156,8 @@ def canonical_block_hash_hex(payload: dict[str, Any]) -> str:
         decoded = decode_base64(value, "BlockID.Hash")
     except RpcError as exc:
         raise RpcContinuityError("malformed_block_hash") from exc
-    if not decoded:
-        raise RpcContinuityError("missing_block_hash")
+    if len(decoded) != 32:
+        raise RpcContinuityError("malformed_block_hash")
     return decoded.hex().upper()
 
 
@@ -160,8 +175,8 @@ def parent_block_hash_hex(payload: dict[str, Any]) -> str:
         decoded = decode_base64(value, "Header.LastBlockID.Hash")
     except RpcError as exc:
         raise RpcContinuityError("malformed_parent_hash") from exc
-    if not decoded:
-        raise RpcContinuityError("missing_parent_hash")
+    if len(decoded) != 32:
+        raise RpcContinuityError("malformed_parent_hash")
     return decoded.hex().upper()
 
 
@@ -173,6 +188,12 @@ def verify_parent_continuity(payload: dict[str, Any], expected_hash_hex: str) ->
 
 
 def verify_checkpoint_anchor(client: GnoRpcClient, height: int, expected_hash_hex: str) -> None:
+    if not isinstance(expected_hash_hex, str) or len(expected_hash_hex) != 64:
+        raise RpcContinuityError("malformed_checkpoint_hash")
+    try:
+        bytes.fromhex(expected_hash_hex)
+    except ValueError as exc:
+        raise RpcContinuityError("malformed_checkpoint_hash") from exc
     try:
         actual = canonical_block_hash_hex(client.get("block", height=height))
     except RpcContinuityError:

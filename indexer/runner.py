@@ -192,10 +192,25 @@ def _candidate_probes(probes: list[RpcProbeResult], required_height: int) -> lis
     ]
 
 
+def _endpoint_failure_reason(exc: BaseException) -> str:
+    if isinstance(exc, RpcContinuityError):
+        return exc.reason[:80]
+    if isinstance(exc, TimeoutError):
+        return "timeout"
+    if isinstance(exc, OSError):
+        return "transport_error"
+    if isinstance(exc, RpcError):
+        return "rpc_error"
+    return "malformed_payload"
+
+
 def _activate_candidate(database, chain_id: str, probe: RpcProbeResult, anchor: CheckpointAnchor | None, reason: str) -> None:
     if anchor is not None:
         verify_checkpoint_anchor(probe.client, anchor.height, anchor.block_hash_hex)
         LOGGER.info("rpc_anchor_verified endpoint=%s height=%s", sanitized_url(probe.url), anchor.height)
+    selector = getattr(database, "select_rpc_endpoint", None)
+    if selector is not None:
+        selector(chain_id, probe, reason)
 
 
 def run_cycle(database, chain_id: str, rpc_urls: list[str], max_height_lag: int, config: ContinuousConfig, stop: StopController) -> CycleResult:
@@ -210,21 +225,30 @@ def run_cycle(database, chain_id: str, rpc_urls: list[str], max_height_lag: int,
     candidates = _candidate_probes(probes, next_height)
     if not candidates:
         raise RpcError("All RPC endpoints are rejected or unavailable")
+
     highest_finalized_tip = max(probe.latest_height - 1 for probe in candidates)
+    excluded_urls: set[str] = set()
+    activated_urls: set[str] = set()
+
+    def reject(probe: RpcProbeResult, exc: BaseException) -> str:
+        reason = _endpoint_failure_reason(exc)
+        excluded_urls.add(probe.url)
+        recorder = getattr(database, "record_rpc_runtime_failure", None)
+        if recorder is not None:
+            recorder(chain_id, probe, reason)
+        LOGGER.warning("rpc_rejected endpoint=%s reason=%s", sanitized_url(probe.url), reason)
+        return reason
+
     if next_height > highest_finalized_tip:
-        # A caught-up endpoint still proves the persisted anchor before it is trusted.
         last_error = None
         for probe in candidates:
             try:
                 _activate_candidate(database, chain_id, probe, anchor, "initial_selection")
-                selector = getattr(database, "select_rpc_endpoint", None)
-                if selector is not None:
-                    selector(chain_id, probe, "initial_selection")
                 LOGGER.info("selected_rpc=%s latest_rpc_height=%s finalized_tip=%s checkpoint_before=%s", sanitized_url(probe.url), probe.latest_height, probe.latest_height - 1, checkpoint)
                 return CycleResult([], checkpoint, checkpoint, probe.latest_height - 1, None, None)
             except (RpcError, OSError) as exc:
                 last_error = exc
-                LOGGER.warning("rpc_rejected endpoint=%s reason=%s", sanitized_url(probe.url), str(exc).replace(" ", "_")[:80])
+                reject(probe, exc)
         raise RpcError("All RPC endpoints failed checkpoint continuity") from last_error
 
     candidates = [probe for probe in candidates if probe.latest_height - 1 >= next_height]
@@ -232,44 +256,46 @@ def run_cycle(database, chain_id: str, rpc_urls: list[str], max_height_lag: int,
     planned_end = min(max(probe.latest_height - 1 for probe in candidates), next_height + config.batch_size - 1)
     LOGGER.info("planned_range=%s-%s", next_height, planned_end)
     active: RpcProbeResult | None = None
-    previous_url: str | None = None
-    failure_reason = "initial_selection"
     expected_parent = anchor.block_hash_hex if anchor is not None else None
+    pending_failed_url: str | None = None
+    pending_reason: str | None = None
 
     for height in range(next_height, planned_end + 1):
         if stop.requested:
             break
         attempts = 0
         last_endpoint_error = None
-        height_candidates = ([active] if active is not None else []) + [p for p in candidates if p is not active]
+        ordered = ([active] if active is not None else []) + [p for p in candidates if p is not active]
         active = None
-        for probe in height_candidates:
-            if probe is None or probe.latest_height is None or probe.latest_height - 1 < height:
+        for probe in ordered:
+            if probe is None or probe.url in excluded_urls or probe.latest_height is None or probe.latest_height - 1 < height:
                 continue
             attempts += 1
             try:
-                current_anchor = CheckpointAnchor(height - 1, expected_parent) if expected_parent is not None else None
-                _activate_candidate(database, chain_id, probe, current_anchor, failure_reason)
-                if previous_url and previous_url != probe.url:
-                    LOGGER.info("rpc_failover height=%s from=%s to=%s reason=%s", height, sanitized_url(previous_url), sanitized_url(probe.url), failure_reason)
+                if probe.url not in activated_urls:
+                    current_anchor = CheckpointAnchor(height - 1, expected_parent) if expected_parent is not None else None
+                    selection_reason = pending_reason or "initial_selection"
+                    _activate_candidate(database, chain_id, probe, current_anchor, selection_reason)
+                    activated_urls.add(probe.url)
+                transition_from = pending_failed_url
+                transition_reason = pending_reason
                 LOGGER.info("selected_rpc=%s latest_rpc_height=%s finalized_tip=%s checkpoint_before=%s", sanitized_url(probe.url), probe.latest_height, probe.latest_height - 1, checkpoint)
                 block_payload, commit_payload, validators_payload = fetch_height(probe.client, height)
                 block_hash = verify_parent_continuity(block_payload, expected_parent) if expected_parent is not None else canonical_block_hash_hex(block_payload)
                 parsed = parse_height(height, block_payload, commit_payload, validators_payload)
-                selector = getattr(database, "select_rpc_endpoint", None)
-                if selector is not None:
-                    selector(chain_id, probe, failure_reason)
                 database.write_height(parsed, chain_id, probe.latest_height - 1)
+                if transition_from is not None:
+                    LOGGER.info("rpc_failover height=%s from=%s to=%s reason=%s", height, sanitized_url(transition_from), sanitized_url(probe.url), transition_reason)
             except (RpcError, OSError) as exc:
                 last_endpoint_error = exc
-                failure_reason = str(exc).replace(" ", "_")[:80] or exc.__class__.__name__
-                LOGGER.warning("rpc_rejected endpoint=%s reason=%s", sanitized_url(probe.url), failure_reason)
-                previous_url = probe.url
+                pending_failed_url = probe.url
+                pending_reason = reject(probe, exc)
                 continue
             active = probe
             expected_parent = block_hash
             processed.append(height)
-            failure_reason = "endpoint_failure"
+            pending_failed_url = None
+            pending_reason = None
             break
         if active is None:
             LOGGER.warning("all_rpc_candidates_failed height=%s attempts=%s", height, attempts)
