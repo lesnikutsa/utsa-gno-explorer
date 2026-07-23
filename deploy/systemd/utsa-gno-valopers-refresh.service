@@ -1,0 +1,30 @@
+[Unit]
+Description=Refresh UTSA Gno Explorer Valopers profiles
+Documentation=file:/opt/utsa-gno-explorer/docs/production-deployment.md
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+User=utsa-gno
+Group=utsa-gno
+WorkingDirectory=/opt/utsa-gno-explorer
+EnvironmentFile=/etc/utsa-gno-explorer/indexer.env
+ExecStartPre=/opt/utsa-gno-explorer/.venv/bin/python /opt/utsa-gno-explorer/scripts/wait_for_postgres.py --timeout 120 --retry-interval 2
+ExecStart=/opt/utsa-gno-explorer/.venv/bin/python /opt/utsa-gno-explorer/scripts/persist_valopers_snapshot.py
+TimeoutStartSec=30m
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+UMask=0077
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
