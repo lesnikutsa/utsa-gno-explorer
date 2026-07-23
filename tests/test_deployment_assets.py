@@ -60,6 +60,58 @@ class DeploymentAssetTests(unittest.TestCase):
         self.assertNotIn("git pull", unit)
         self.assertNotIn("--start-height", unit)
 
+    def test_valopers_refresh_service_contract(self):
+        unit = self.text("deploy/systemd/utsa-gno-valopers-refresh.service")
+        expected = [
+            "Type=oneshot",
+            "User=utsa-gno",
+            "Group=utsa-gno",
+            "WorkingDirectory=/opt/utsa-gno-explorer",
+            "EnvironmentFile=/etc/utsa-gno-explorer/indexer.env",
+            "ExecStartPre=/opt/utsa-gno-explorer/.venv/bin/python /opt/utsa-gno-explorer/scripts/wait_for_postgres.py --timeout 120 --retry-interval 2",
+            "ExecStart=/opt/utsa-gno-explorer/.venv/bin/python /opt/utsa-gno-explorer/scripts/persist_valopers_snapshot.py",
+            "TimeoutStartSec=30m",
+            "StandardOutput=journal",
+            "StandardError=journal",
+            "NoNewPrivileges=true",
+            "PrivateTmp=true",
+            "ProtectHome=true",
+            "ProtectSystem=strict",
+            "PrivateDevices=true",
+            "ProtectKernelTunables=true",
+            "ProtectKernelModules=true",
+            "ProtectControlGroups=true",
+            "RestrictSUIDSGID=true",
+            "LockPersonality=true",
+            "UMask=0077",
+            "CapabilityBoundingSet=",
+            "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
+        ]
+        for value in expected:
+            self.assertIn(value, unit)
+        self.assertNotIn("User=root", unit)
+        self.assertNotIn("Group=root", unit)
+        self.assertNotIn("Restart=always", unit)
+        self.assertNotIn("Restart=on-failure", unit)
+        self.assertNotIn("probe_valopers_snapshot.py", unit)
+        self.assertNotIn("run_indexer.py", unit)
+        self.assertLess(unit.index("ExecStartPre="), unit.index("ExecStart="))
+
+    def test_valopers_refresh_timer_contract(self):
+        timer = self.text("deploy/systemd/utsa-gno-valopers-refresh.timer")
+        expected = [
+            "OnCalendar=hourly",
+            "Persistent=true",
+            "RandomizedDelaySec=5m",
+            "AccuracySec=1m",
+            "Unit=utsa-gno-valopers-refresh.service",
+            "WantedBy=timers.target",
+        ]
+        for value in expected:
+            self.assertIn(value, timer)
+        self.assertEqual(timer.count("OnCalendar="), 1)
+        self.assertNotIn("OnBootSec", timer)
+
 
     def test_compose_has_stable_project_name_with_override(self):
         compose = self.text("deploy/postgres/compose.yml")

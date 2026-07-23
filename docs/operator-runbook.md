@@ -135,14 +135,13 @@ Backups use `pg_dump -Fc`, write archives as `.part` first, validate each archiv
 
 ## Apply the Valopers schema migration
 
-After merge and operator review, `python scripts/persist_valopers_snapshot.py` manually
+After merge and operator review, `python scripts/persist_valopers_snapshot.py`
 collects the complete registry from one healthy RPC at one pinned height. In one PostgreSQL
 transaction it takes a dedicated transaction advisory lock, validates current state,
 deletes profiles, inserts the ordered replacement, writes singleton state, verifies it,
 and commits. Failures roll back. Stale and divergent same-height snapshots are rejected;
 identical snapshots are unchanged. Empty registries are zero profiles plus one state row.
-No schedule, systemd service, or timer invokes it. The API and frontend read the persisted
-profiles after the operator-controlled refresh.
+The API and frontend read the persisted profiles after each successful refresh.
 
 Fresh empty databases use `python scripts/init_database.py`. For an existing
 production database, first create and verify a backup, then stop the indexer and
@@ -158,13 +157,53 @@ already-compatible ten-table catalog. It adds `valoper_profiles` and
 `valopers_snapshot_state` transactionally, validates the exact complete catalog
 before commit, and leaves existing indexed rows untouched. Any error rolls back.
 A successful migration can be rerun safely. It is never applied automatically;
-restart the indexer only after validation. Snapshot persistence and refresh remain
-manual; no automatic updater exists.
+restart the indexer only after validation.
 
 The read-only validator API (version 0.8.0) enriches validator identities from the
 persisted official Valopers snapshot using exact, case-sensitive `signing_address` equality.
 The API reads PostgreSQL only and never reads Telegram bot storage or Telegram user data.
-Valopers profile refresh remains the existing manual, operator-controlled persistence process.
+Valopers metadata is separate from consensus indexing: TM2 RPC provides consensus identity
+and activity but cannot provide official monikers. Install the hourly refresh only after
+the schema migration is complete. The timer reuses the existing atomic persistence script;
+it does not add Valopers collection to the block-indexing loop.
+
+```bash
+install -o root -g root -m 0644 \
+  deploy/systemd/utsa-gno-valopers-refresh.service \
+  /etc/systemd/system/utsa-gno-valopers-refresh.service
+install -o root -g root -m 0644 \
+  deploy/systemd/utsa-gno-valopers-refresh.timer \
+  /etc/systemd/system/utsa-gno-valopers-refresh.timer
+systemctl daemon-reload
+systemctl start utsa-gno-valopers-refresh.service
+journalctl \
+  -u utsa-gno-valopers-refresh.service \
+  -n 100 \
+  --no-pager
+systemctl enable --now utsa-gno-valopers-refresh.timer
+systemctl status utsa-gno-valopers-refresh.timer
+systemctl list-timers \
+  utsa-gno-valopers-refresh.timer \
+  --all \
+  --no-pager
+```
+
+The repository change itself does not install or enable these production units. After the
+manual pre-enable service test succeeds, `utsa-gno-valopers-refresh.timer` runs
+`utsa-gno-valopers-refresh.service` hourly at the beginning of the hour, delayed randomly
+by up to five minutes. `Persistent=true` catches up a missed occurrence after the server
+returns. Inspect failures in the service journal. To disable future runs:
+
+```bash
+systemctl disable --now utsa-gno-valopers-refresh.timer
+```
+
+Successful runs update moniker, operator address, signing gpub, description, and server
+type. Validators not registered in the Valopers realm continue to display their signing
+address. An RPC, chain-ID, pagination, identity-validation, or PostgreSQL failure returns
+non-zero and preserves the last successful snapshot through the existing validation,
+transaction rollback, and advisory-lock behavior. The API and frontend keep using that
+snapshot; the next timer occurrence retries without stopping the indexer.
 
 The full Validators table and Overview validator identities link to validator detail pages.
 The full table locally filters its loaded active set by official moniker or consensus signing
@@ -182,4 +221,4 @@ Frontend deployment remains operator-controlled.
 A deployment upgrading from `v0.5.0-production-runtime`, or any deployment without the
 compatible Valopers tables and API-role privilege, must first follow the existing
 operator-controlled Valopers schema migration and API-role grant procedure in the production
-deployment guide. No migration or profile refresh is automatic.
+deployment guide. No migration is automatic.

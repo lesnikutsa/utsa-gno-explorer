@@ -94,6 +94,56 @@ sudo systemctl enable --now utsa-gno-indexer.service
 
 The service uses user and group `utsa-gno`, `WorkingDirectory=/opt/utsa-gno-explorer`, `EnvironmentFile=/etc/utsa-gno-explorer/indexer.env`, and `ExecStart=/opt/utsa-gno-explorer/.venv/bin/python scripts/run_indexer.py`. It does not pass `--start-height`; bootstrap height belongs in the external environment only for first initialization. `ExecStartPre` runs `scripts/wait_for_postgres.py`, `Restart=on-failure` handles process failures, `KillSignal=SIGTERM` requests graceful shutdown, and `TimeoutStopSec=180` allows the current atomic height transaction to finish. The existing PostgreSQL advisory lock remains the primary duplicate-indexer protection.
 
+### Automatic Valopers profile refresh
+
+Consensus indexing supplies signing addresses, consensus public keys, voting power,
+proposer priority, signatures, and missed blocks, but it cannot supply official monikers.
+Official identity metadata is maintained separately in `gno.land/r/gnops/valopers`.
+The `utsa-gno-valopers-refresh.timer` invokes the named oneshot
+`utsa-gno-valopers-refresh.service` hourly. Each occurrence starts at the beginning of
+an hour with up to five minutes of randomized delay. `Persistent=true` causes a missed
+occurrence to run after the server returns. The service runs as `utsa-gno`, waits for
+PostgreSQL, and reuses `scripts/persist_valopers_snapshot.py`; it neither initializes
+the schema nor stops the indexer.
+
+Install both units, manually test the service, inspect its journal, and only then enable
+the timer. These repository changes do not install, start, or enable production units:
+
+```bash
+install -o root -g root -m 0644 \
+  deploy/systemd/utsa-gno-valopers-refresh.service \
+  /etc/systemd/system/utsa-gno-valopers-refresh.service
+install -o root -g root -m 0644 \
+  deploy/systemd/utsa-gno-valopers-refresh.timer \
+  /etc/systemd/system/utsa-gno-valopers-refresh.timer
+systemctl daemon-reload
+systemctl start utsa-gno-valopers-refresh.service
+journalctl \
+  -u utsa-gno-valopers-refresh.service \
+  -n 100 \
+  --no-pager
+systemctl enable --now utsa-gno-valopers-refresh.timer
+systemctl status utsa-gno-valopers-refresh.timer
+systemctl list-timers \
+  utsa-gno-valopers-refresh.timer \
+  --all \
+  --no-pager
+```
+
+Disable future refreshes without stopping any other production component:
+
+```bash
+systemctl disable --now utsa-gno-valopers-refresh.timer
+```
+
+A successful refresh atomically updates moniker, operator address, signing gpub,
+description, and server type. Validators absent from the Valopers realm continue to
+display their signing address. Collection, validation, or persistence failure makes
+the oneshot fail visibly in journald while the transaction and existing advisory-lock
+behavior preserve the last successful snapshot; no empty or partial replacement is
+published. The next hourly occurrence retries normally, while the API and frontend
+continue reading the previous snapshot.
+
 ## Operational checks
 
 ```bash

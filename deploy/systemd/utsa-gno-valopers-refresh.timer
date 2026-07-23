@@ -1,0 +1,13 @@
+[Unit]
+Description=Refresh UTSA Gno Explorer Valopers profiles hourly
+Documentation=file:/opt/utsa-gno-explorer/docs/production-deployment.md
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=5m
+AccuracySec=1m
+Unit=utsa-gno-valopers-refresh.service
+
+[Install]
+WantedBy=timers.target
