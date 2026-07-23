@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any
 
 from .rpc import RpcProbeResult
@@ -19,6 +20,12 @@ class FinalizedDataConflict(DatabaseError):
 
 class ChainIdentityError(DatabaseError):
     """Raised when persisted chain identity does not match runtime configuration."""
+
+
+@dataclass(frozen=True)
+class CheckpointAnchor:
+    height: int
+    block_hash_hex: str
 
 
 class PostgresDatabase:
@@ -39,11 +46,20 @@ class PostgresDatabase:
         with self.connect() as connection, connection.cursor() as cursor:
             return get_checkpoint_cursor(cursor, chain_id)
 
+    def get_checkpoint_anchor(self, chain_id: str) -> CheckpointAnchor | None:
+        with self.connect() as connection, connection.cursor() as cursor:
+            return get_checkpoint_anchor_cursor(cursor, chain_id)
+
     def record_rpc_probe_cycle(self, chain_id: str, probes: list[RpcProbeResult]) -> None:
         with self.connect() as connection:
             with connection.cursor() as cursor:
                 self.selected_rpc_endpoint_id = record_rpc_probe_cycle_cursor(cursor, chain_id, probes)
             connection.commit()
+
+    def select_rpc_endpoint(self, chain_id: str, probe: RpcProbeResult, reason: str) -> None:
+        with self.connect() as connection, connection.cursor() as cursor:
+            self.selected_rpc_endpoint_id = select_rpc_endpoint_cursor(cursor, chain_id, probe, reason)
+        connection.commit()
 
     def write_height(self, parsed, chain_id: str, finalized_tip: int) -> None:
         with self.connect() as connection:
@@ -73,9 +89,28 @@ def get_checkpoint_cursor(cursor, chain_id: str) -> int | None:
     return int(last_finalized_height)
 
 
+
+def get_checkpoint_anchor_cursor(cursor, chain_id: str) -> CheckpointAnchor | None:
+    cursor.execute("""
+        SELECT s.chain_id, s.last_finalized_height, b.block_hash_hex
+        FROM indexer_state s JOIN blocks b ON b.height = s.last_finalized_height
+        WHERE s.state_key = %s
+    """, ("default",))
+    row = cursor.fetchone()
+    if row is None:
+        return None
+    if row[0] != chain_id:
+        raise ChainIdentityError(f"Existing indexer_state chain_id={row[0]} does not match configured chain_id={chain_id}")
+    return CheckpointAnchor(int(row[1]), str(row[2]).upper())
+
 def record_rpc_probe_cycle_cursor(cursor, chain_id: str, probes: list[RpcProbeResult]) -> int | None:
     selected_probe = next((probe for probe in probes if probe.selected), None)
 
+    configured_urls = [probe.url for probe in probes]
+    cursor.execute(
+        "UPDATE rpc_endpoints SET is_enabled = false, is_selected = false, updated_at = now() WHERE chain_id = %s AND NOT (url = ANY(%s))",
+        (chain_id, configured_urls),
+    )
     endpoint_ids: dict[str, int] = {}
     previous_selected_id = _current_selected_endpoint_id(cursor, chain_id)
     for probe in probes:
@@ -91,6 +126,15 @@ def record_rpc_probe_cycle_cursor(cursor, chain_id: str, probes: list[RpcProbeRe
         _insert_rpc_endpoint_check(cursor, endpoint_ids[probe.url], chain_id, probe, switch_reason if probe.selected else None)
     return selected_endpoint_id
 
+
+
+def select_rpc_endpoint_cursor(cursor, chain_id: str, probe: RpcProbeResult, reason: str) -> int:
+    endpoint_id = _upsert_rpc_endpoint(cursor, chain_id, probe, selected=False)
+    cursor.execute("UPDATE rpc_endpoints SET is_selected = false, updated_at = now() WHERE chain_id = %s AND is_selected", (chain_id,))
+    _mark_rpc_endpoint_selected(cursor, endpoint_id, probe)
+    selected_probe = RpcProbeResult(**{**probe.__dict__, "selected": True})
+    _insert_rpc_endpoint_check(cursor, endpoint_id, chain_id, selected_probe, reason[:200])
+    return endpoint_id
 
 def _current_selected_endpoint_id(cursor, chain_id: str) -> int | None:
     cursor.execute("SELECT id FROM rpc_endpoints WHERE chain_id = %s AND is_selected", (chain_id,))
@@ -111,6 +155,7 @@ def _upsert_rpc_endpoint(cursor, chain_id: str, probe: RpcProbeResult, selected:
         )
         VALUES (%s, %s, %s, now(), %s, %s, %s, %s, %s)
         ON CONFLICT (url) DO UPDATE SET
+            is_enabled = true,
             last_checked_at = now(),
             latest_observed_height = EXCLUDED.latest_observed_height,
             observed_lag = EXCLUDED.observed_lag,

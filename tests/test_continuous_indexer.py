@@ -256,7 +256,7 @@ class ContinuousIndexerTests(unittest.TestCase):
 
         self.assertEqual(
             {call for call in calls if call[0] == "fetch"},
-            {("fetch", 10, "block"), ("fetch", 10, "commit"), ("fetch", 10, "validators")},
+            {("fetch", 9, "block"), ("fetch", 10, "block"), ("fetch", 10, "commit"), ("fetch", 10, "validators")},
         )
         self.assertEqual(parsed_heights, [])
         self.assertFalse(any(call[0] == "write" for call in calls))

@@ -797,3 +797,7 @@ deletes existing indexed rows and is safe to rerun after success. No container,
 Compose entrypoint, systemd unit, indexer, API, or import applies it
 automatically. Restart the indexer only after validation. Snapshot persistence remains a manual operator action. The API and frontend read the
 persisted profiles; no automatic refresh is performed.
+
+### Ordered RPC failover safety
+
+Configure `GNO_RPC_URLS` in preference order. Each complete probe cycle synchronizes enabled endpoints for the configured chain, and the indexer uses the first endpoint that passes status, lag, trusted checkpoint-anchor, and parent-continuity checks. Removed same-chain URLs are disabled and deselected. If a request fails mid-batch, the next candidate retries the same height without global backoff; backoff begins only when every candidate is exhausted. A single configured RPC follows the same retry behavior and never advances the checkpoint while unavailable or unable to prove continuity. Keep separate networks in separate database/runtime instances: `chain_id` equality alone is not cryptographic fork protection.

@@ -29,6 +29,7 @@ def payloads(height=122):
     validators = load("validators.json")
     block_id = {"hash": COMMIT_HASH, "parts": {"total": "1", "hash": PARTS_HASH}}
     block["result"]["block"]["header"]["height"] = str(height)
+    block["result"]["block"]["header"]["last_block_id"] = {"hash": COMMIT_HASH}
     block["result"]["block_meta"]["block_id"]["hash"] = COMMIT_HASH
     commit["result"]["signed_header"]["header"]["height"] = str(height)
     commit["result"]["signed_header"]["commit"]["block_id"] = copy.deepcopy(block_id)
@@ -71,6 +72,19 @@ class SqlLikeDb:
         if self.chain_id != chain_id:
             raise ChainIdentityError("wrong chain")
         return self.checkpoint
+
+    def get_checkpoint_anchor(self, chain_id):
+        if self.checkpoint is None:
+            return None
+        if self.chain_id != chain_id:
+            raise ChainIdentityError("wrong chain")
+        from indexer.database import CheckpointAnchor
+        stored = self.blocks.get(self.checkpoint)
+        return CheckpointAnchor(self.checkpoint, stored[1] if stored else "01020304")
+
+    def select_rpc_endpoint(self, chain_id, probe, reason):
+        self.selected_url = probe.url
+        self.switch_reason = reason
 
     def record_rpc_probe_cycle(self, chain_id, probes):
         if self.chain_id != chain_id:

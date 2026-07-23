@@ -14,9 +14,9 @@ from urllib.parse import urlsplit, urlunsplit
 
 from scripts.inspect_rpc import RpcError
 
-from .database import ChainIdentityError, DatabaseError, FinalizedDataConflict, PostgresDatabase
+from .database import ChainIdentityError, CheckpointAnchor, DatabaseError, FinalizedDataConflict, PostgresDatabase
 from .parsers import parse_height
-from .rpc import fetch_height, probe_rpc_endpoints, selected_rpc_from_probes
+from .rpc import RpcContinuityError, RpcProbeResult, canonical_block_hash_hex, fetch_height, probe_rpc_endpoints, verify_checkpoint_anchor, verify_parent_continuity
 
 LOGGER = logging.getLogger(__name__)
 
@@ -172,30 +172,113 @@ class AdvisoryLock:
             LOGGER.warning("best-effort advisory lock connection close failed: %s", exc)
 
 
-def run_cycle(database, chain_id: str, rpc_urls: list[str], max_height_lag: int, config: ContinuousConfig, stop: StopController) -> CycleResult:
+def _anchor(database, chain_id: str) -> CheckpointAnchor | None:
+    getter = getattr(database, "get_checkpoint_anchor", None)
+    if getter is not None:
+        return getter(chain_id)
     checkpoint = database.get_checkpoint(chain_id)
+    if checkpoint is None:
+        return None
+    blocks = getattr(database, "blocks", {})
+    stored = blocks.get(checkpoint)
+    return CheckpointAnchor(checkpoint, stored[1]) if stored else None
+
+
+def _candidate_probes(probes: list[RpcProbeResult], required_height: int) -> list[RpcProbeResult]:
+    return [
+        probe for probe in probes
+        if probe.healthy and probe.client is not None and probe.latest_height is not None
+        and probe.latest_height >= required_height - 1
+    ]
+
+
+def _activate_candidate(database, chain_id: str, probe: RpcProbeResult, anchor: CheckpointAnchor | None, reason: str) -> None:
+    if anchor is not None:
+        verify_checkpoint_anchor(probe.client, anchor.height, anchor.block_hash_hex)
+        LOGGER.info("rpc_anchor_verified endpoint=%s height=%s", sanitized_url(probe.url), anchor.height)
+
+
+def run_cycle(database, chain_id: str, rpc_urls: list[str], max_height_lag: int, config: ContinuousConfig, stop: StopController) -> CycleResult:
+    anchor = _anchor(database, chain_id)
+    checkpoint = anchor.height if anchor is not None else database.get_checkpoint(chain_id)
     if checkpoint is None and config.start_height is None:
         raise FatalIndexerError("--start-height or INDEXER_START_HEIGHT is required for an empty database")
     probes = probe_rpc_endpoints(rpc_urls, chain_id, max_height_lag)
-    database.record_rpc_probe_cycle(chain_id, probes)
-    selected = selected_rpc_from_probes(probes, max_height_lag)
-    LOGGER.info("selected_rpc=%s latest_rpc_height=%s finalized_tip=%s checkpoint_before=%s", sanitized_url(selected.client.base_url), selected.latest_height, selected.finalized_tip, checkpoint)
+    persisted_probes = [RpcProbeResult(**{**probe.__dict__, "selected": False}) for probe in probes]
+    database.record_rpc_probe_cycle(chain_id, persisted_probes)
     next_height = config.start_height if checkpoint is None else checkpoint + 1
-    if next_height > selected.finalized_tip:
-        LOGGER.info("caught up: checkpoint=%s finalized_tip=%s", checkpoint, selected.finalized_tip)
-        return CycleResult([], checkpoint, checkpoint, selected.finalized_tip, None, None)
-    end_height = min(selected.finalized_tip, next_height + config.batch_size - 1)
-    LOGGER.info("planned_range=%s-%s", next_height, end_height)
+    candidates = _candidate_probes(probes, next_height)
+    if not candidates:
+        raise RpcError("All RPC endpoints are rejected or unavailable")
+    highest_finalized_tip = max(probe.latest_height - 1 for probe in candidates)
+    if next_height > highest_finalized_tip:
+        # A caught-up endpoint still proves the persisted anchor before it is trusted.
+        last_error = None
+        for probe in candidates:
+            try:
+                _activate_candidate(database, chain_id, probe, anchor, "initial_selection")
+                selector = getattr(database, "select_rpc_endpoint", None)
+                if selector is not None:
+                    selector(chain_id, probe, "initial_selection")
+                LOGGER.info("selected_rpc=%s latest_rpc_height=%s finalized_tip=%s checkpoint_before=%s", sanitized_url(probe.url), probe.latest_height, probe.latest_height - 1, checkpoint)
+                return CycleResult([], checkpoint, checkpoint, probe.latest_height - 1, None, None)
+            except (RpcError, OSError) as exc:
+                last_error = exc
+                LOGGER.warning("rpc_rejected endpoint=%s reason=%s", sanitized_url(probe.url), str(exc).replace(" ", "_")[:80])
+        raise RpcError("All RPC endpoints failed checkpoint continuity") from last_error
+
+    candidates = [probe for probe in candidates if probe.latest_height - 1 >= next_height]
     processed: list[int] = []
-    for height in range(next_height, end_height + 1):
+    planned_end = min(max(probe.latest_height - 1 for probe in candidates), next_height + config.batch_size - 1)
+    LOGGER.info("planned_range=%s-%s", next_height, planned_end)
+    active: RpcProbeResult | None = None
+    previous_url: str | None = None
+    failure_reason = "initial_selection"
+    expected_parent = anchor.block_hash_hex if anchor is not None else None
+
+    for height in range(next_height, planned_end + 1):
         if stop.requested:
             break
-        block_payload, commit_payload, validators_payload = fetch_height(selected.client, height)
-        parsed = parse_height(height, block_payload, commit_payload, validators_payload)
-        database.write_height(parsed, chain_id, selected.finalized_tip)
-        processed.append(height)
+        attempts = 0
+        last_endpoint_error = None
+        height_candidates = ([active] if active is not None else []) + [p for p in candidates if p is not active]
+        active = None
+        for probe in height_candidates:
+            if probe is None or probe.latest_height is None or probe.latest_height - 1 < height:
+                continue
+            attempts += 1
+            try:
+                current_anchor = CheckpointAnchor(height - 1, expected_parent) if expected_parent is not None else None
+                _activate_candidate(database, chain_id, probe, current_anchor, failure_reason)
+                if previous_url and previous_url != probe.url:
+                    LOGGER.info("rpc_failover height=%s from=%s to=%s reason=%s", height, sanitized_url(previous_url), sanitized_url(probe.url), failure_reason)
+                LOGGER.info("selected_rpc=%s latest_rpc_height=%s finalized_tip=%s checkpoint_before=%s", sanitized_url(probe.url), probe.latest_height, probe.latest_height - 1, checkpoint)
+                block_payload, commit_payload, validators_payload = fetch_height(probe.client, height)
+                block_hash = verify_parent_continuity(block_payload, expected_parent) if expected_parent is not None else canonical_block_hash_hex(block_payload)
+                parsed = parse_height(height, block_payload, commit_payload, validators_payload)
+                selector = getattr(database, "select_rpc_endpoint", None)
+                if selector is not None:
+                    selector(chain_id, probe, failure_reason)
+                database.write_height(parsed, chain_id, probe.latest_height - 1)
+            except (RpcError, OSError) as exc:
+                last_endpoint_error = exc
+                failure_reason = str(exc).replace(" ", "_")[:80] or exc.__class__.__name__
+                LOGGER.warning("rpc_rejected endpoint=%s reason=%s", sanitized_url(probe.url), failure_reason)
+                previous_url = probe.url
+                continue
+            active = probe
+            expected_parent = block_hash
+            processed.append(height)
+            failure_reason = "endpoint_failure"
+            break
+        if active is None:
+            LOGGER.warning("all_rpc_candidates_failed height=%s attempts=%s", height, attempts)
+            if attempts == 1 and last_endpoint_error is not None:
+                raise last_endpoint_error
+            raise RpcError(f"All RPC candidates failed at height {height}") from last_endpoint_error
     checkpoint_after = database.get_checkpoint(chain_id)
-    return CycleResult(processed, checkpoint, checkpoint_after, selected.finalized_tip, next_height, end_height)
+    finalized_tip = active.latest_height - 1 if active is not None and active.latest_height is not None else None
+    return CycleResult(processed, checkpoint, checkpoint_after, finalized_tip, next_height, planned_end)
 
 
 def run_continuous(database: PostgresDatabase, chain_id: str, rpc_urls: list[str], max_height_lag: int, config: ContinuousConfig, stop: StopController | None = None, wait: Waiter = stop_aware_wait, lock_factory: Callable[[PostgresDatabase, str], AdvisoryLock] = AdvisoryLock) -> int:

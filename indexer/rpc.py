@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
-from scripts.inspect_rpc import GnoRpcClient, RpcError, parse_status, validate_status_for_health
+from scripts.inspect_rpc import GnoRpcClient, RpcError, decode_base64, parse_status, validate_status_for_health
 
 LOGGER = logging.getLogger(__name__)
 
@@ -24,6 +24,10 @@ class RpcProbeResult:
     error_message: str | None = None
     client: GnoRpcClient | None = None
     status_payload: dict[str, Any] | None = None
+
+
+class RpcContinuityError(RpcError):
+    """An endpoint cannot prove continuity with the persisted canonical chain."""
 
 
 @dataclass(frozen=True)
@@ -122,6 +126,61 @@ def _selected_probe_index(probes: list[RpcProbeResult], max_height_lag: int) -> 
         if probe.healthy and probe.observed_lag is not None and probe.observed_lag <= max_height_lag:
             return index
     return None
+
+
+
+def canonical_block_hash_hex(payload: dict[str, Any]) -> str:
+    """Return the canonical TM2 block hash as normalized uppercase hexadecimal."""
+    try:
+        value = payload["result"]["block_meta"]["block_id"]["hash"]
+    except (KeyError, TypeError) as exc:
+        raise RpcContinuityError("malformed_block_hash") from exc
+    if not isinstance(value, str) or not value:
+        raise RpcContinuityError("missing_block_hash")
+    try:
+        decoded = decode_base64(value, "BlockID.Hash")
+    except RpcError as exc:
+        raise RpcContinuityError("malformed_block_hash") from exc
+    if not decoded:
+        raise RpcContinuityError("missing_block_hash")
+    return decoded.hex().upper()
+
+
+def parent_block_hash_hex(payload: dict[str, Any]) -> str:
+    """Return header.last_block_id.hash for both TM2 field spellings."""
+    try:
+        header = payload["result"]["block"]["header"]
+        block_id = header.get("last_block_id") or header.get("last_block_id_hash") or header.get("lastBlockID")
+        value = block_id.get("hash") or block_id.get("Hash")
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise RpcContinuityError("missing_parent_hash") from exc
+    if not isinstance(value, str) or not value:
+        raise RpcContinuityError("missing_parent_hash")
+    try:
+        decoded = decode_base64(value, "Header.LastBlockID.Hash")
+    except RpcError as exc:
+        raise RpcContinuityError("malformed_parent_hash") from exc
+    if not decoded:
+        raise RpcContinuityError("missing_parent_hash")
+    return decoded.hex().upper()
+
+
+def verify_parent_continuity(payload: dict[str, Any], expected_hash_hex: str) -> str:
+    actual = parent_block_hash_hex(payload)
+    if actual != expected_hash_hex.upper():
+        raise RpcContinuityError("parent_hash_mismatch")
+    return canonical_block_hash_hex(payload)
+
+
+def verify_checkpoint_anchor(client: GnoRpcClient, height: int, expected_hash_hex: str) -> None:
+    try:
+        actual = canonical_block_hash_hex(client.get("block", height=height))
+    except RpcContinuityError:
+        raise
+    except RpcError as exc:
+        raise RpcContinuityError("checkpoint_unavailable") from exc
+    if actual != expected_hash_hex.upper():
+        raise RpcContinuityError("checkpoint_hash_mismatch")
 
 
 def fetch_height(client: GnoRpcClient, height: int) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
