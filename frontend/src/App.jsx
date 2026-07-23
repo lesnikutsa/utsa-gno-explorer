@@ -1,4 +1,6 @@
+import { useEffect } from 'react'
 import { ExplorerLayout } from './layouts/ExplorerLayout'
+import { networkProfile } from './config/networkProfile'
 import { Blocks } from './pages/Blocks'
 import { BlockDetail } from './pages/BlockDetail'
 import { TransactionDetail } from './pages/TransactionDetail'
@@ -84,6 +86,12 @@ function ValidatorDetailPage({ address }) {
 
 export default function App() {
   const path = window.location.pathname
+
+  useEffect(() => {
+    document.title = `${networkProfile.projectName} Explorer`
+    const descriptionMeta = document.querySelector('meta[name="description"]')
+    if (descriptionMeta) descriptionMeta.setAttribute('content', networkProfile.description)
+  }, [])
 
   if (path === '/blocks' || path === '/blocks/') {
     return <BlocksPage />

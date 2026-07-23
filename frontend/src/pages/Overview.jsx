@@ -10,6 +10,7 @@ import { relativeTime } from '../utils/time'
 import { shortAddress } from '../utils/address'
 import { getMissedBlocks, getValidatorHealth, getValidatorMissedBreakdown } from '../utils/validatorHealth'
 import { hasValidatorMoniker } from '../utils/validatorIdentity'
+import { networkProfile } from '../config/networkProfile'
 
 const missedSeverity = (missed) => missed >= 10 ? 'high' : missed >= 2 ? 'medium' : 'low'
 const LATEST_BLOCKS_ROW_LIMIT = 7
@@ -165,7 +166,7 @@ export function Overview({ explorerData, mascotSrc = null }) {
       </section>
 
       <ResourceStrip />
-      <footer className="page-footer">Gno.land Explorer by UTSA</footer>
+      <footer className="page-footer">{networkProfile.projectName} Explorer by UTSA</footer>
     </>
   )
 }
