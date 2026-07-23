@@ -221,6 +221,7 @@ def run_continuous(database: PostgresDatabase, chain_id: str, rpc_urls: list[str
             cycle += 1
             attempted_cycles += 1
             LOGGER.info("cycle=%s starting", cycle)
+            cycle_started_at = time.perf_counter()
             try:
                 result = run_cycle(database, chain_id, rpc_urls, max_height_lag, config, stop)
             except (FinalizedDataConflict, ChainIdentityError) as exc:
@@ -245,7 +246,17 @@ def run_continuous(database: PostgresDatabase, chain_id: str, rpc_urls: list[str
                 backoff = min(config.max_backoff_seconds, backoff * 2)
                 continue
             successful_cycles += 1
-            LOGGER.info("cycle=%s processed_heights=%s checkpoint_after=%s", cycle, result.processed, result.checkpoint_after)
+            cycle_duration = time.perf_counter() - cycle_started_at
+            if result.processed and cycle_duration > 0:
+                LOGGER.info(
+                    "cycle=%s processed_heights=%s checkpoint_after=%s duration_seconds=%.6f blocks_per_second=%.3f",
+                    cycle, result.processed, result.checkpoint_after, cycle_duration, len(result.processed) / cycle_duration,
+                )
+            else:
+                LOGGER.info(
+                    "cycle=%s processed_heights=%s checkpoint_after=%s duration_seconds=%.6f",
+                    cycle, result.processed, result.checkpoint_after, cycle_duration,
+                )
             if result.processed:
                 backoff = config.error_backoff_seconds
             if config.once:

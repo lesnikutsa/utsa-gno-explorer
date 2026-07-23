@@ -102,6 +102,8 @@ It is not a continuous production indexer. It has no infinite loop, no scheduler
 
 For checkpoint `C` and finalized tip `T`, the next height is always `C + 1`. One cycle processes no more than `min(T - C, batch_size)` heights, and `batch_size` must not exceed `INDEXER_HARD_MAX_HEIGHTS`. The runner never skips intermediate heights and never jumps directly to the tip after downtime. When `C >= T`, the runner is in steady state: it records the probe cycle, writes no block data, and waits for the next poll.
 
+For each individual height, the independent `block`, `commit`, and `validators` RPC requests run concurrently in at most three worker threads. Parsing begins only after all three payloads have completed successfully, so a request failure cannot produce a partial height. Different heights remain strictly sequential: the current height is fetched, parsed, written to PostgreSQL, and checkpointed before the next height starts. `INDEXER_BATCH_SIZE` is the number of heights planned per cycle, not the number of concurrently processed or written heights. The fetch improvement is bounded by the slowest of the three RPC methods rather than their combined latency. RPC failover within a height or batch is intentionally not implemented here.
+
 ### Continuous exit codes and waits
 
 `--once` performs exactly one attempted probe/catch-up cycle. It exits `0` after a successful or caught-up cycle and exits non-zero when that single attempt ends in a transient or fatal error.
