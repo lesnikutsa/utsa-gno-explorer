@@ -13,7 +13,8 @@ class AverageBlockTimeContractTests(unittest.TestCase):
 
     def test_query_uses_a_bounded_indexed_sample(self):
         self.assertIn("from blocks where height <= s.last_finalized_height", self.sql)
-        self.assertIn("order by height desc limit 100", self.sql)
+        self.assertIn("order by height desc limit 20", self.sql)
+        self.assertNotIn("order by height desc limit 100", self.sql)
         self.assertIn("count(*)::bigint as sample_size", self.sql)
 
     def test_query_validates_continuity_and_endpoint_times(self):

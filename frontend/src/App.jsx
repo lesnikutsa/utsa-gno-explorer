@@ -20,7 +20,12 @@ function OverviewPage() {
   const explorerData = useExplorerData()
 
   return (
-    <ExplorerLayout healthState={explorerData.healthState} nextFastRefreshAt={explorerData.nextFastRefreshAt}>
+    <ExplorerLayout
+      healthState={explorerData.healthState}
+      nextFastRefreshAt={explorerData.nextFastRefreshAt}
+      averageBlockTimeSeconds={explorerData.data.network?.average_block_time_seconds}
+      averageBlockTimeSampleSize={explorerData.data.network?.average_block_time_sample_size}
+    >
       <Overview
         explorerData={explorerData}
         mascotSrc={NETWORK_MASCOT_SRC}

@@ -84,7 +84,7 @@ LEFT JOIN LATERAL (
             FROM blocks
             WHERE height <= s.last_finalized_height
             ORDER BY height DESC
-            LIMIT 100
+            LIMIT 20
         ) bounded_blocks
     ) sampled_blocks
 ) block_time ON true

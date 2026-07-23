@@ -143,10 +143,10 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             self.assertIsNone(sample([(1, epoch), (3, epoch + timedelta(seconds=8))])["average_block_time_seconds"])
             self.assertIsNone(sample([(1, epoch), (2, epoch)])["average_block_time_seconds"])
 
-            rows = [(height, epoch + timedelta(seconds=height * 3)) for height in range(1, 102)]
+            rows = [(height, epoch + timedelta(seconds=height * 3)) for height in range(1, 22)]
             rows[0] = (1, epoch - timedelta(days=30))
             row = sample(rows)
-            self.assertEqual(row["average_block_time_sample_size"], 100)
+            self.assertEqual(row["average_block_time_sample_size"], 20)
             self.assertEqual(row["average_block_time_seconds"], 3)
 
     def test_transaction_hash_constraints_allow_repeated_occurrences(self):

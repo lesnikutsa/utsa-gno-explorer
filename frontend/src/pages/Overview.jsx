@@ -11,7 +11,6 @@ import { shortAddress } from '../utils/address'
 import { getMissedBlocks, getValidatorHealth, getValidatorMissedBreakdown } from '../utils/validatorHealth'
 import { hasValidatorMoniker } from '../utils/validatorIdentity'
 import { networkProfile } from '../config/networkProfile'
-import { formatAverageBlockTime } from '../utils/blockTime'
 
 const missedSeverity = (missed) => missed >= 10 ? 'high' : missed >= 2 ? 'medium' : 'low'
 const LATEST_BLOCKS_ROW_LIMIT = 7
@@ -48,15 +47,10 @@ export function Overview({ explorerData, mascotSrc = null }) {
   const networkLabel = { loading: '—', healthy: 'Healthy', degraded: 'Degraded', error: 'Error' }[healthState]
   const latestHeight = data.network?.latest_block.height ?? null
   const firstBlockHeight = data.blocks[0]?.height ?? null
-  const averageBlockTime = formatAverageBlockTime(data.network?.average_block_time_seconds)
-  const averageBlockTimeSampleSize = Number(data.network?.average_block_time_sample_size)
   const previousLatestHeight = useRef(null)
   const previousFirstBlockHeight = useRef(null)
-  const previousAverageBlockTime = useRef(null)
-  const averageBlockTimeTimer = useRef(null)
   const [updatedLatestHeight, setUpdatedLatestHeight] = useState(null)
   const [insertedBlockHeight, setInsertedBlockHeight] = useState(null)
-  const [averageBlockTimeUpdating, setAverageBlockTimeUpdating] = useState(false)
   const historyMap = useMemo(() => new Map(
     (data.validatorHistory?.items ?? []).filter((item) => item?.address).map((item) => [item.address, item]),
   ), [data.validatorHistory])
@@ -110,27 +104,6 @@ export function Overview({ explorerData, mascotSrc = null }) {
     return () => timers.forEach((timer) => window.clearTimeout(timer))
   }, [latestHeight, firstBlockHeight])
 
-  useEffect(() => {
-    if (previousAverageBlockTime.current !== null && previousAverageBlockTime.current !== averageBlockTime) {
-      if (!(previousAverageBlockTime.current === '—' && averageBlockTime === '—')) {
-        if (averageBlockTimeTimer.current !== null) window.clearTimeout(averageBlockTimeTimer.current)
-        setAverageBlockTimeUpdating(true)
-        averageBlockTimeTimer.current = window.setTimeout(() => {
-          setAverageBlockTimeUpdating(false)
-          averageBlockTimeTimer.current = null
-        }, 800)
-      }
-    }
-    previousAverageBlockTime.current = averageBlockTime
-    return () => {
-      if (averageBlockTimeTimer.current !== null) window.clearTimeout(averageBlockTimeTimer.current)
-    }
-  }, [averageBlockTime])
-
-  const averageBlockTimeTitle = averageBlockTime !== '—' && Number.isInteger(averageBlockTimeSampleSize) && averageBlockTimeSampleSize >= 2
-    ? `Average across ${averageBlockTimeSampleSize} indexed blocks (${Math.max(averageBlockTimeSampleSize - 1, 0)} intervals)`
-    : 'Average block time is unavailable'
-
   return (
     <>
       <section className="status-grid" aria-label="Network summary">
@@ -175,10 +148,10 @@ export function Overview({ explorerData, mascotSrc = null }) {
             </div>
             <div className="network-preview__metric">
               <span className="network-preview__metric-label">
-                <BlocksIcon />
-                <span>Avg Block Time</span>
+                <NetworkIcon />
+                <span>Hosting Providers</span>
               </span>
-              <strong className={averageBlockTimeUpdating ? 'network-preview__metric-value--updating' : undefined} title={averageBlockTimeTitle}>{averageBlockTime}</strong>
+              <strong>—</strong>
             </div>
           </div>
           <div className="network-preview__map"><img className="network-preview__map-image" src="/assets/network-map.png?v=1" alt="" aria-hidden="true" /></div>
