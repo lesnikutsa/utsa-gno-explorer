@@ -8,9 +8,10 @@ import tempfile
 import threading
 import time
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from api.database import ACTIVE_VALIDATORS_SQL, VALIDATOR_IDENTITY_SQL
+from api.database import ACTIVE_VALIDATORS_SQL, NETWORK_SQL, VALIDATOR_IDENTITY_SQL
 from indexer.database import PostgresDatabase
 from indexer.rpc import RpcProbeResult
 from indexer.valopers_parser import ValoperProfile
@@ -110,6 +111,43 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
 
     def database_url_for(self, name):
         return f"postgresql://utsa_test:{self.password}@{self.host}:{self.port}/{name}"
+
+    def test_average_block_time_network_query_guards_and_latest_window(self):
+        name = f"utsa_average_block_time_{os.getpid()}"
+        self.create_database(name)
+        database_url = self.database_url_for(name)
+        self.assertEqual(self.run_init(database_url).returncode, 0)
+        epoch = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+        with psycopg.connect(database_url, row_factory=psycopg.rows.dict_row) as connection, connection.cursor() as cursor:
+            def sample(rows):
+                cursor.execute("TRUNCATE blocks CASCADE")
+                cursor.execute("DELETE FROM indexer_state")
+                cursor.executemany(
+                    "INSERT INTO blocks (height, block_hash_base64, block_hash_hex, time_utc, tx_count) VALUES (%s, %s, %s, %s, 0)",
+                    [(height, f"hash-{height}", f"{height:064X}", timestamp) for height, timestamp in rows],
+                )
+                last_height = max(height for height, _ in rows)
+                cursor.execute(
+                    "INSERT INTO indexer_state (state_key, chain_id, last_finalized_height) VALUES ('default', 'test-13', %s)",
+                    (last_height,),
+                )
+                cursor.execute(NETWORK_SQL, ("default",))
+                return cursor.fetchone()
+
+            row = sample([(1, epoch), (2, epoch + timedelta(seconds=4))])
+            self.assertEqual((row["average_block_time_seconds"], row["average_block_time_sample_size"]), (4, 2))
+            row = sample([(1, epoch), (2, epoch + timedelta(seconds=3)), (3, epoch + timedelta(seconds=8))])
+            self.assertEqual(row["average_block_time_seconds"], 4)
+            self.assertIsNone(sample([(1, epoch)])["average_block_time_seconds"])
+            self.assertIsNone(sample([(1, epoch), (3, epoch + timedelta(seconds=8))])["average_block_time_seconds"])
+            self.assertIsNone(sample([(1, epoch), (2, epoch)])["average_block_time_seconds"])
+
+            rows = [(height, epoch + timedelta(seconds=height * 3)) for height in range(1, 102)]
+            rows[0] = (1, epoch - timedelta(days=30))
+            row = sample(rows)
+            self.assertEqual(row["average_block_time_sample_size"], 100)
+            self.assertEqual(row["average_block_time_seconds"], 3)
 
     def test_transaction_hash_constraints_allow_repeated_occurrences(self):
         name = f"utsa_tx_hash_{os.getpid()}"

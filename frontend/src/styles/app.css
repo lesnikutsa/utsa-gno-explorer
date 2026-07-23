@@ -84,6 +84,7 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .data-table tbody tr.is-new-row { animation: row-insert 850ms ease-out; }
 .data-table tbody tr.is-new-row td:first-child .accent-value { animation: height-highlight 850ms ease-out; }
 .data-table tbody tr.is-new-row td:nth-child(5) .muted { animation: hash-highlight 850ms ease-out; }
+.network-preview__metric-value--updating { animation: height-highlight 800ms ease-out; }
 .data-table tbody tr.is-settling-row { animation: row-settle 700ms ease-out both; }
 .data-table tbody tr.is-settling-row:nth-child(2) { animation-delay: 35ms; }
 .data-table tbody tr.is-settling-row:nth-child(3) { animation-delay: 70ms; }
@@ -363,7 +364,7 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
   .resource-strip { flex-wrap: wrap; gap: 16px; }.resource-divider { display: none; }.network-preview__content { grid-template-columns: 1fr; }.network-preview__map { min-height: 120px; }.network-preview__mascot { display: none; }
 }
 @media (max-width: 480px) { .status-grid { grid-template-columns: 1fr; }.resource-guides > div { gap: 12px; flex-direction: column; } }
-@media (prefers-reduced-motion: reduce) { .pulse--healthy, .live-dot, .status-card.is-updating, .status-card.is-updating .status-card__value, .data-table tbody tr.is-new-row, .data-table tbody tr.is-new-row td:first-child .accent-value, .data-table tbody tr.is-new-row td:nth-child(5) .muted, .data-table tbody tr.is-settling-row { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .pulse--healthy, .live-dot, .status-card.is-updating, .status-card.is-updating .status-card__value, .data-table tbody tr.is-new-row, .data-table tbody tr.is-new-row td:first-child .accent-value, .data-table tbody tr.is-new-row td:nth-child(5) .muted, .data-table tbody tr.is-settling-row, .network-preview__metric-value--updating { animation: none; } }
 
 .validator-signing-cell { display: inline-flex; align-items: flex-start; flex-direction: column; gap: 5px; }
 .signing-strip { display: inline-grid; width: 280px; height: 11px; grid-template-columns: repeat(var(--signing-count), minmax(1px, 1fr)); gap: 1px; }

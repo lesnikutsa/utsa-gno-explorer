@@ -43,6 +43,8 @@ SELECT
     b.tx_count,
     COALESCE(v.active_count, 0) AS validator_active_count,
     COALESCE(v.total_voting_power, 0)::text AS validator_total_voting_power,
+    block_time.average_block_time_seconds,
+    block_time.average_block_time_sample_size,
     r.url AS rpc_url,
     r.healthy AS rpc_healthy,
     r.catching_up AS rpc_catching_up,
@@ -58,6 +60,34 @@ LEFT JOIN LATERAL (
     FROM validator_set_members vsm
     WHERE vsm.height = s.last_finalized_height
 ) v ON true
+LEFT JOIN LATERAL (
+    SELECT
+        sample_size AS average_block_time_sample_size,
+        CASE
+            WHEN sample_size >= 2
+             AND maximum_height - minimum_height + 1 = sample_size
+             AND ending_time IS NOT NULL
+             AND starting_time IS NOT NULL
+             AND ending_time > starting_time
+            THEN EXTRACT(EPOCH FROM (ending_time - starting_time)) / (sample_size - 1)
+            ELSE NULL
+        END AS average_block_time_seconds
+    FROM (
+        SELECT
+            count(*)::bigint AS sample_size,
+            min(height) AS minimum_height,
+            max(height) AS maximum_height,
+            (array_agg(time_utc ORDER BY height ASC))[1] AS starting_time,
+            (array_agg(time_utc ORDER BY height DESC))[1] AS ending_time
+        FROM (
+            SELECT height, time_utc
+            FROM blocks
+            WHERE height <= s.last_finalized_height
+            ORDER BY height DESC
+            LIMIT 100
+        ) bounded_blocks
+    ) sampled_blocks
+) block_time ON true
 LEFT JOIN rpc_endpoints r ON r.id = s.selected_rpc_endpoint_id
 WHERE s.state_key = %s
 """

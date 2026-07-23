@@ -205,6 +205,12 @@ def _network_response_from_row(row: dict) -> NetworkResponse:
         finalized_tip_height=finalized_tip_height,
         indexed_height=indexed_height,
         indexer_lag=indexer_lag,
+        average_block_time_seconds=(
+            float(row["average_block_time_seconds"])
+            if row["average_block_time_seconds"] is not None
+            else None
+        ),
+        average_block_time_sample_size=int(row["average_block_time_sample_size"]),
         latest_block=_block_summary_from_row(
             {
                 "height": row["block_height"],
