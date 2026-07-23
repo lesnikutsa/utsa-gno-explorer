@@ -1,17 +1,16 @@
 import { UtsaLogo } from './UtsaLogo'
-import { BlocksIcon, ChevronDownIcon, HomeIcon, MapIcon, NetworkIcon, ValidatorsIcon } from './Icons'
+import { BlocksIcon, ChevronDownIcon, HomeIcon, ValidatorsIcon } from './Icons'
+import { networkProfile } from '../config/networkProfile'
 
 const items = [
   { label: 'Overview', Icon: HomeIcon, href: '/' },
   { label: 'Blocks', Icon: BlocksIcon, href: '/blocks' },
   { label: 'Validators', Icon: ValidatorsIcon, href: '/validators' },
-  { label: 'Network', Icon: NetworkIcon },
-  { label: 'Peers & Map', Icon: MapIcon },
 ]
 
 export function Sidebar({ open, onClose, chainId }) {
   const pathname = window.location.pathname
-  const chainLabel = chainId ? `Gno.land · ${chainId}` : 'Gno.land network'
+  const chainLabel = chainId ? `${networkProfile.projectName} · ${chainId}` : `${networkProfile.projectName} network`
   const isActive = (href) => {
     if (href === '/') return pathname === '/'
     return pathname === href || pathname.startsWith(`${href}/`)
@@ -28,8 +27,6 @@ export function Sidebar({ open, onClose, chainId }) {
         </div>
         <nav className="sidebar__nav" aria-label="Explorer navigation">
           {items.map(({ label, Icon, href }) => {
-            if (!href) return <span key={label} className="nav-item is-disabled" aria-disabled="true"><Icon />{label}</span>
-
             const active = isActive(href)
             return <a key={label} className={`nav-item ${active ? 'is-active' : ''}`} href={href} onClick={onClose} aria-current={active ? 'page' : undefined}><Icon />{label}</a>
           })}
