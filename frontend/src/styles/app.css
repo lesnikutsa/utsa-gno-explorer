@@ -243,9 +243,6 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .validator-detail__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .validator-detail__header h1, .validator-detail__state h1 { margin: 0 0 5px; color: var(--color-text-bright); font-size: 22px; font-weight: 600; }
 .validator-detail__header p, .validator-detail__state p { color: var(--color-text-secondary); font-size: 12px; }
-.validator-detail__telegram-link { flex: 0 0 auto; padding: 6px 10px; border: 1px solid #229ed9; border-radius: 4px; background: rgba(34,158,217,.1); color: #63c5f2; font-size: 10px; font-weight: 700; line-height: 1.4; }
-.validator-detail__telegram-link:hover { border-color: #63c5f2; background: rgba(34,158,217,.2); color: var(--color-text-bright); }
-.validator-detail__telegram-link:focus-visible { outline: 2px solid #63c5f2; outline-offset: 3px; }
 .validator-detail__section { margin-bottom: 10px; }
 .validator-detail__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .validator-detail__field { min-width: 0; padding: 11px 13px; }
@@ -347,7 +344,6 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
   .transaction-detail__grid .transaction-detail__field:nth-child(odd), .transaction-detail__size-grid .transaction-detail__field:first-child { border-right: 0; }
   .transaction-detail__grid .transaction-detail__field + .transaction-detail__field, .transaction-detail__size-grid .transaction-detail__field + .transaction-detail__field { border-top: 1px solid var(--color-border-soft); }
   .validator-detail__grid { grid-template-columns: 1fr; }
-  .validator-detail__header { flex-wrap: wrap; justify-content: flex-start; }
   .validator-detail__header h1 { flex: 1 1 100%; min-width: 0; overflow-wrap: anywhere; }
   .validator-detail__grid .validator-detail__field:nth-child(odd) { border-right: 0; }
   .validator-detail__grid .validator-detail__field + .validator-detail__field { border-top: 1px solid var(--color-border-soft); }

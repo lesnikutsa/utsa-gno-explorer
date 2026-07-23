@@ -2,6 +2,13 @@
 
 This runbook is for safe test execution of the bounded prototype only. It is not a production operations guide.
 
+## Active Topaz configuration
+
+The current single-network runtime is **Gno.land Topaz Testnet** (`topaz-1`). Use RPCs in
+this order: `https://rpc.topaz.testnets.gno.land`, `https://gnoland-testnet-rpc.itrocket.net`, and `https://topaz.rpc.onbloc.xyz`. A new Topaz database must be empty, must start at block `1`, and must not
+contain Testnet 13 rows or checkpoints. Database recreation and deployment are separate,
+manual operator actions.
+
 ## Prepare
 
 1. Create a temporary PostgreSQL database.
@@ -162,8 +169,7 @@ Valopers profile refresh remains the existing manual, operator-controlled persis
 The full Validators table and Overview validator identities link to validator detail pages.
 The full table locally filters its loaded active set by official moniker or consensus signing
 address. Detail pages refresh every 2 seconds and present Current Status, 100 actual indexed
-signing blocks with all supported signing states, official profile and public-key fields, and
-a Testnet 13 deep link that opens `@UTSAGNOTest13Bot` with the exact signing-address payload.
+signing blocks with all supported signing states, and official profile and public-key fields.
 Peers & Decentralization Map remains a coming-soon presentation area.
 
 Production already running the compatible pre-release state, including commit

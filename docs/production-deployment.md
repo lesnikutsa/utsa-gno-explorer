@@ -7,6 +7,15 @@ Stop the production indexer before running `python scripts/migrate_transaction_h
 
 This guide packages the existing foreground continuous indexer without changing indexing semantics. Production uses PostgreSQL 16 in Docker Compose and runs the Python indexer on the host through systemd. Production deployment is operator-controlled: no container entrypoint or systemd unit runs `git pull`, schema updates, or destructive restore automatically.
 
+## Active Topaz runtime configuration
+
+The single-network runtime targets **Gno.land Topaz Testnet** with chain ID `topaz-1`.
+Configure `GNO_RPC_URLS` in this exact order: `https://rpc.topaz.testnets.gno.land`, `https://gnoland-testnet-rpc.itrocket.net`, and `https://topaz.rpc.onbloc.xyz`. Set
+`INDEXER_START_HEIGHT=1`. Topaz is a fresh chain, not a continuation or hardfork replay of
+Testnet 13: create the Explorer database empty and never reuse Testnet 13 rows or checkpoints.
+Database replacement and production deployment remain explicit operator operations outside
+this repository change.
+
 ## Runtime layout
 
 - Repository: `/opt/utsa-gno-explorer`

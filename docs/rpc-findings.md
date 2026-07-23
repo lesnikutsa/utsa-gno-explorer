@@ -1,8 +1,11 @@
-# RPC findings for Gno.land Testnet 13
+# Historical RPC findings for Gno.land Testnet 13
 
-This document records the response fields targeted by `scripts/inspect_rpc.py`.
-The prototype is intentionally small and should be verified against a real
-public Testnet 13 RPC before these paths are treated as stable production input.
+This document preserves the Testnet 13 observations that informed `scripts/inspect_rpc.py`.
+They are historical and are not active endpoint or deployment instructions. The active
+single-network runtime is Gno.land Topaz Testnet (`topaz-1`), using, in order,
+`https://rpc.topaz.testnets.gno.land`, `https://gnoland-testnet-rpc.itrocket.net`, and
+`https://topaz.rpc.onbloc.xyz`. Topaz must start at block 1 in a fresh empty database;
+Testnet 13 rows and checkpoints must not be reused.
 
 ## RPC methods used
 
@@ -82,7 +85,7 @@ For latest height `H` from `/status`:
 
 - Endpoints are read from `GNO_RPC_URLS` as a comma-separated ordered list.
 - Legacy `GNO_RPC_URL` is supported only when `GNO_RPC_URLS` is unset.
-- Expected chain ID is read from `GNO_CHAIN_ID` and defaults to `test-13`.
+- Expected chain ID is read from `GNO_CHAIN_ID` and defaults to `topaz-1`.
 - Maximum acceptable height lag is read from `RPC_MAX_HEIGHT_LAG` and defaults to `10`.
 - Every endpoint is probed with `/status` before selection.
 - Malformed status responses, wrong chain IDs, and catching-up endpoints are rejected.
@@ -91,7 +94,7 @@ For latest height `H` from `/status`:
 - Health output reports height and lag for every responding healthy endpoint.
 - The script fails clearly if no configured endpoint is suitable.
 
-## Live verification
+## Historical Testnet 13 live verification
 
 Live verification succeeded on 2026-07-14 from server `exp2` against all five configured public Gno.land Testnet 13 RPC endpoints. All five endpoints reported chain ID `test-13`, `catching_up=false`, and the same latest height at the time of the check. This document intentionally does not pin that live height because it changes continuously.
 

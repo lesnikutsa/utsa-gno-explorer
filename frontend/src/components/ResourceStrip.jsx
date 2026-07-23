@@ -5,8 +5,6 @@ const ExternalLink = ({ href, children }) => <a href={href} target="_blank" rel=
 export function ResourceStrip() {
   return (
     <section className="resource-strip" aria-label="Explorer resources">
-      <div className="resource-item"><small>UTSA Tool</small><ExternalLink href="https://t.me/UTSAGNOTest13Bot">Telegram Bot</ExternalLink></div>
-      <span className="resource-divider" />
       <div className="resource-guides">
         <small>UTSA Guides</small>
         <div><ExternalLink href="https://utsa.gitbook.io/services/testnet/gno.land">English</ExternalLink><ExternalLink href="https://teletype.in/@lesnik13utsa/65wu7A2kPfo">Русский</ExternalLink></div>

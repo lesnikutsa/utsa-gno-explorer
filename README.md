@@ -11,11 +11,18 @@ Custom Gno.land explorer with blocks, validators, uptime and signing history.
 - [Database README](database/README.md)
 - [PostgreSQL schema](database/schema.sql)
 
+## Active network
+
+The single-network Explorer runtime now targets **Gno.land Topaz Testnet** with chain ID
+`topaz-1`. Topaz is a fresh chain: initialize the existing PostgreSQL database as empty,
+do not reuse Testnet 13 rows or checkpoints, and start indexing at block `1`. The ordered
+RPC list is `https://rpc.topaz.testnets.gno.land`,
+`https://gnoland-testnet-rpc.itrocket.net`, then `https://topaz.rpc.onbloc.xyz`.
+
 ## RPC discovery prototype
 
-This repository currently contains a small Python prototype for inspecting the
-Gno.land Testnet 13 RPC before adding an indexer, database, backend, or
-frontend.
+This repository contains an RPC inspection utility configured for the active
+Gno.land Topaz Testnet runtime.
 
 ### Requirements
 
@@ -41,13 +48,13 @@ cp .env.example .env
 
 The script automatically loads simple `KEY=VALUE` entries from `.env`. It reads
 RPC endpoints from `GNO_RPC_URLS`, a comma-separated ordered list, validates the
-chain ID with `GNO_CHAIN_ID` (default `test-13`), and limits acceptable endpoint
+chain ID with `GNO_CHAIN_ID` (default `topaz-1`), and limits acceptable endpoint
 staleness with `RPC_MAX_HEIGHT_LAG` (default `10`). For temporary backward
 compatibility, it also accepts legacy `GNO_RPC_URL` when `GNO_RPC_URLS` is not
 set.
 
 ```bash
-GNO_RPC_URLS="https://gnoland-testnet-rpc.itrocket.net,https://rpc.test13.testnets.gno.land" python scripts/inspect_rpc.py
+GNO_RPC_URLS="https://rpc.topaz.testnets.gno.land,https://gnoland-testnet-rpc.itrocket.net,https://topaz.rpc.onbloc.xyz" python scripts/inspect_rpc.py
 ```
 
 Do not commit private RPC URLs or secrets.
@@ -164,10 +171,6 @@ and not-active states. The profile presents the signing address, operator addres
 Valopers signing public key (`gpub1...`), RPC consensus public-key type and value, and the
 Valopers description.
 
-On Testnet 13, the validator detail page provides a deep link to `@UTSAGNOTest13Bot` with
-the exact signing address as its payload. The link only opens the separate Telegram bot;
-the Explorer does not read Telegram databases, bot storage, or Telegram user data.
-
 **Peers & Decentralization Map** remains a coming-soon presentation area.
 
 ### Network and blocks API
@@ -200,8 +203,7 @@ The full active-validator table and the Overview **Validators by Missed Blocks**
 show official Valopers monikers when available, fall back to the shortened signing address,
 and link identities to the detail route. Inactive indexed validators remain valid detail
 pages. Profiles come from the manually persisted official Valopers snapshot, and refresh
-remains operator-controlled. The Explorer does not read Telegram data; its validator detail
-page only opens `@UTSAGNOTest13Bot` with the exact signing-address payload.
+remains operator-controlled.
 The list response contains the active validator set at the completed checkpoint, current voting power, and 20-block and 100-block active-membership uptime. Addresses are consensus signing addresses.
 
 ## Bounded indexer prototype
