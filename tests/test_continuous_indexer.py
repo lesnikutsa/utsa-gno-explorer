@@ -166,6 +166,29 @@ class ContinuousIndexerTests(unittest.TestCase):
             run_continuous(db, "test-13", ["x"], 10, ContinuousConfig(10, 1, 1, 1, 2, once=True), lock_factory=FakeLock)
         self.assertEqual(db.checkpoint, 10)
 
+    def test_cycle_performance_log_preserves_fields(self):
+        with self.patch_select(12), self.assertLogs("indexer.runner", level="INFO") as captured:
+            code = run_continuous(
+                SqlLikeDb(None), "test-13", ["x"], 10,
+                ContinuousConfig(10, 2, 1, 1, 2, once=True), lock_factory=FakeLock,
+            )
+        self.assertEqual(code, 0)
+        cycle_log = next(message for message in captured.output if "processed_heights=" in message)
+        for field in ("cycle=1", "processed_heights=", "checkpoint_after=", "duration_seconds=", "blocks_per_second="):
+            self.assertIn(field, cycle_log)
+
+    def test_caught_up_cycle_log_omits_throughput(self):
+        with self.patch_select(11), self.assertLogs("indexer.runner", level="INFO") as captured:
+            code = run_continuous(
+                SqlLikeDb(10), "test-13", ["x"], 10,
+                ContinuousConfig(10, 1, 1, 1, 2, once=True), lock_factory=FakeLock,
+            )
+        self.assertEqual(code, 0)
+        cycle_log = next(message for message in captured.output if "processed_heights=" in message)
+        for field in ("cycle=1", "processed_heights=[]", "checkpoint_after=10", "duration_seconds="):
+            self.assertIn(field, cycle_log)
+        self.assertNotIn("blocks_per_second=", cycle_log)
+
     def test_max_cycles_stops_deterministically(self):
         db = SqlLikeDb(None)
         with self.patch_select(20):
@@ -199,6 +222,47 @@ class ContinuousIndexerTests(unittest.TestCase):
         with self.patch_select(20), self.assertRaises(RuntimeError):
             run_cycle(db, "test-13", ["x"], 10, self.config, StopController())
         self.assertEqual(db.checkpoint, 9)
+
+    def test_single_rpc_method_failure_prevents_parse_write_and_next_height(self):
+        calls = []
+
+        class PartialFailureClient(FakeClient):
+            def get(self, method, **params):
+                height = params["height"]
+                calls.append(("fetch", height, method))
+                if method == "commit":
+                    raise RpcError("commit failed")
+                return super().get(method, **params)
+
+        class RecordingDb(SqlLikeDb):
+            def write_height(self, parsed, chain_id, finalized_tip):
+                calls.append(("write", parsed.height))
+                return super().write_height(parsed, chain_id, finalized_tip)
+
+        client = PartialFailureClient(20)
+        probe = RpcProbeResult(
+            "https://example.test", True, True, "test-13", 20, 0, False,
+            client=client, status_payload={},
+        )
+        db = RecordingDb(9)
+        parsed_heights = []
+        cycle_result = None
+        with (
+            patch("indexer.runner.probe_rpc_endpoints", return_value=[probe]),
+            patch("indexer.runner.parse_height", side_effect=lambda *args: parsed_heights.append(args[0])),
+            self.assertRaisesRegex(RpcError, "commit failed"),
+        ):
+            cycle_result = run_cycle(db, "test-13", ["x"], 10, self.config, StopController())
+
+        self.assertEqual(
+            {call for call in calls if call[0] == "fetch"},
+            {("fetch", 10, "block"), ("fetch", 10, "commit"), ("fetch", 10, "validators")},
+        )
+        self.assertEqual(parsed_heights, [])
+        self.assertFalse(any(call[0] == "write" for call in calls))
+        self.assertEqual(db.checkpoint, 9)
+        self.assertFalse(any(call[:2] == ("fetch", 11) for call in calls))
+        self.assertIsNone(cycle_result)
 
     def test_next_height_fetch_starts_only_after_previous_write(self):
         events = []
