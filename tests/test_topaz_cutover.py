@@ -27,12 +27,19 @@ class TopazCutoverTests(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(configured_chain_id(), "topaz-1")
 
-    def test_test13_telegram_source_is_removed(self):
+    def test_test13_telegram_source_is_removed_and_topaz_monitor_is_active(self):
         frontend = ROOT / "frontend" / "src"
         source = "\n".join(path.read_text() for path in frontend.rglob("*") if path.is_file())
+        telegram = (frontend / "utils/telegram.js").read_text()
+        validator_detail = (frontend / "pages/ValidatorDetail.jsx").read_text()
+
         self.assertNotIn("UTSAGNOTest13Bot", source)
         self.assertNotIn("watch_gno13_", source)
-        self.assertNotIn("Monitor in Telegram", source)
+
+        self.assertIn("UTSAGNOBot", telegram)
+        self.assertIn("watch_topaz_", telegram)
+        self.assertIn("buildTelegramValidatorWatchUrl", validator_detail)
+        self.assertIn("Monitor in Telegram", validator_detail)
 
     def test_resource_strip_keeps_remaining_resources(self):
         source = (ROOT / "frontend/src/components/ResourceStrip.jsx").read_text()
