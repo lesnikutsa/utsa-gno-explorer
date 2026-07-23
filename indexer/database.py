@@ -58,14 +58,17 @@ class PostgresDatabase:
             connection.commit()
 
     def select_rpc_endpoint(self, chain_id: str, probe: RpcProbeResult, reason: str) -> None:
-        with self.connect() as connection, connection.cursor() as cursor:
-            self.selected_rpc_endpoint_id = select_rpc_endpoint_cursor(cursor, chain_id, probe, reason)
-        connection.commit()
+        with self.connect() as connection:
+            with connection.cursor() as cursor:
+                endpoint_id = select_rpc_endpoint_cursor(cursor, chain_id, probe, reason)
+            connection.commit()
+        self.selected_rpc_endpoint_id = endpoint_id
 
     def record_rpc_runtime_failure(self, chain_id: str, probe: RpcProbeResult, reason: str) -> None:
-        with self.connect() as connection, connection.cursor() as cursor:
-            _, was_selected = record_rpc_runtime_failure_cursor(cursor, chain_id, probe, reason)
-        connection.commit()
+        with self.connect() as connection:
+            with connection.cursor() as cursor:
+                _, was_selected = record_rpc_runtime_failure_cursor(cursor, chain_id, probe, reason)
+            connection.commit()
         if was_selected:
             self.selected_rpc_endpoint_id = None
 

@@ -12,6 +12,7 @@ from pathlib import Path
 
 from api.database import ACTIVE_VALIDATORS_SQL, VALIDATOR_IDENTITY_SQL
 from indexer.database import PostgresDatabase
+from indexer.rpc import RpcProbeResult
 from indexer.valopers_parser import ValoperProfile
 from indexer.valopers_persistence import (
     StaleValopersSnapshot, ValopersChainIdentityError, ValopersSnapshotConflict,
@@ -213,6 +214,40 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             self.assertIsNotNone(cursor.fetchone())
             cursor.execute("SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'rpc_endpoints_one_selected_per_chain_idx'")
             self.assertIsNotNone(cursor.fetchone())
+
+    def test_rpc_persistence_transaction_lifetime(self):
+        name = f"utsa_rpc_persistence_{os.getpid()}"
+        self.create_database(name)
+        database_url = self.database_url_for(name)
+        self.assertEqual(self.run_init(database_url).returncode, 0)
+        database = PostgresDatabase(database_url)
+        probe = RpcProbeResult(
+            "https://rpc.example.test", True, True, "test-chain", 100, 0, False,
+        )
+
+        database.select_rpc_endpoint("test-chain", probe, "continuity verified")
+        self.assertIsNotNone(database.selected_rpc_endpoint_id)
+        endpoint_id = database.selected_rpc_endpoint_id
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT is_selected FROM rpc_endpoints WHERE id = %s", (endpoint_id,),
+            )
+            self.assertEqual(cursor.fetchone(), (True,))
+            cursor.execute(
+                "SELECT count(*) FROM rpc_endpoint_checks "
+                "WHERE rpc_endpoint_id = %s AND switch_reason = %s",
+                (endpoint_id, "continuity verified"),
+            )
+            self.assertEqual(cursor.fetchone(), (1,))
+
+        database.record_rpc_runtime_failure("test-chain", probe, "runtime failure")
+        self.assertIsNone(database.selected_rpc_endpoint_id)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT healthy, is_selected FROM rpc_endpoints WHERE id = %s",
+                (endpoint_id,),
+            )
+            self.assertEqual(cursor.fetchone(), (False, False))
 
     def test_incompatible_schema_is_rejected(self):
         bad_database = f"utsa_bad_schema_{os.getpid()}"
