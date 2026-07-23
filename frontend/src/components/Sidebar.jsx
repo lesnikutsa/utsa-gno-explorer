@@ -9,8 +9,9 @@ const items = [
   { label: 'Peers & Map', Icon: MapIcon },
 ]
 
-export function Sidebar({ open, onClose }) {
+export function Sidebar({ open, onClose, chainId }) {
   const pathname = window.location.pathname
+  const chainLabel = chainId ? `Gno.land · ${chainId}` : 'Gno.land network'
   const isActive = (href) => {
     if (href === '/') return pathname === '/'
     return pathname === href || pathname.startsWith(`${href}/`)
@@ -23,7 +24,7 @@ export function Sidebar({ open, onClose }) {
         <UtsaLogo />
         <div className="chain-select">
           <span className="sidebar__label">Current chain</span>
-          <button type="button">Gno.land Topaz Testnet <ChevronDownIcon /></button>
+          <button type="button" title={chainLabel}>{chainLabel} <ChevronDownIcon /></button>
         </div>
         <nav className="sidebar__nav" aria-label="Explorer navigation">
           {items.map(({ label, Icon, href }) => {
