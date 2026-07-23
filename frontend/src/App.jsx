@@ -5,12 +5,14 @@ import { TransactionDetail } from './pages/TransactionDetail'
 import { Overview } from './pages/Overview'
 import { ValidatorDetail } from './pages/ValidatorDetail'
 import { Validators } from './pages/Validators'
+import { Network } from './pages/Network'
 import { useBlocksPage } from './hooks/useBlocksPage'
 import { useBlockDetail } from './hooks/useBlockDetail'
 import { useTransactionDetail } from './hooks/useTransactionDetail'
 import { useExplorerData } from './hooks/useExplorerData'
 import { useValidatorDetail } from './hooks/useValidatorDetail'
 import { useValidatorsPage } from './hooks/useValidatorsPage'
+import { useNetworkPage } from './hooks/useNetworkPage'
 
 const NETWORK_MASCOT_SRC = '/assets/network-mascot.png?v=1'
 
@@ -72,6 +74,15 @@ function ValidatorsPage() {
   )
 }
 
+function NetworkPage() {
+  const networkPage = useNetworkPage()
+  return (
+    <ExplorerLayout healthState={networkPage.healthState} nextFastRefreshAt={networkPage.nextRefreshAt}>
+      <Network networkPage={networkPage} />
+    </ExplorerLayout>
+  )
+}
+
 function ValidatorDetailPage({ address }) {
   const validatorDetail = useValidatorDetail(address)
 
@@ -91,6 +102,10 @@ export default function App() {
 
   if (path === '/validators' || path === '/validators/') {
     return <ValidatorsPage />
+  }
+
+  if (path === '/network' || path === '/network/') {
+    return <NetworkPage />
   }
 
   const validatorDetailMatch = path.match(/^\/validators\/([^/]+)\/?$/)

@@ -14,8 +14,9 @@ class ChainIdentitySourceContractTests(unittest.TestCase):
 
     def test_sidebar_renders_dynamic_chain_and_fallback(self):
         self.assertIn("Sidebar({ open, onClose, chainId })", self.sidebar)
-        self.assertIn("`Gno.land · ${chainId}`", self.sidebar)
-        self.assertIn("'Gno.land network'", self.sidebar)
+        self.assertIn("import networkProfile from '../config/networkProfile'", self.sidebar)
+        self.assertIn("`${networkProfile.projectName} · ${chainId}`", self.sidebar)
+        self.assertIn("`${networkProfile.projectName} network`", self.sidebar)
         self.assertIn("title={chainLabel}", self.sidebar)
 
     def test_sidebar_has_no_hardcoded_network_identity(self):

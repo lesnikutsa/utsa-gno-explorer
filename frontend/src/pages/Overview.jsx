@@ -5,7 +5,8 @@ import { ResourceStrip } from '../components/ResourceStrip'
 import { StatusBadge } from '../components/StatusBadge'
 import { ValidatorSigningStrip } from '../components/ValidatorSigningStrip'
 import { ProposerIdentity } from '../components/ProposerIdentity'
-import { BlocksIcon, ChainIcon, MapIcon, NetworkIcon, ValidatorsIcon } from '../components/Icons'
+import { BlocksIcon, ChainIcon, NetworkIcon, ValidatorsIcon } from '../components/Icons'
+import networkProfile from '../config/networkProfile'
 import { relativeTime } from '../utils/time'
 import { shortAddress } from '../utils/address'
 import { getMissedBlocks, getValidatorHealth, getValidatorMissedBreakdown } from '../utils/validatorHealth'
@@ -125,38 +126,15 @@ export function Overview({ explorerData, mascotSrc = null }) {
 
       <section className="network-preview" aria-labelledby="network-preview-title">
         <header className="network-preview__header">
-          <h2 id="network-preview-title">Peers & Decentralization Map</h2>
-          <span className="eyebrow">Coming soon</span>
+          <h2 id="network-preview-title">Network &amp; Decentralization</h2>
+          <a className="network-preview__cta" href="/network">Explore Network</a>
         </header>
 
         <div className="network-preview__content">
-          <div className="network-preview__metrics" aria-label="Future peer metrics">
-            <div className="network-preview__metric">
-              <span className="network-preview__metric-label">
-                <NetworkIcon />
-                <span>Total Peers</span>
-              </span>
-              <strong>—</strong>
-            </div>
-            <div className="network-preview__metric">
-              <span className="network-preview__metric-label">
-                <MapIcon />
-                <span>Countries</span>
-              </span>
-              <strong>—</strong>
-            </div>
-            <div className="network-preview__metric">
-              <span className="network-preview__metric-label">
-                <ChainIcon />
-                <span>Decentralization</span>
-              </span>
-              <strong>—</strong>
-            </div>
-          </div>
           <div className="network-preview__map"><img className="network-preview__map-image" src="/assets/network-map.png?v=1" alt="" aria-hidden="true" /></div>
           <div className="network-preview__insight">
             <h3>Network at a glance</h3>
-            <p>Peer locations, country coverage, and network distribution—all in one view.</p>
+            <p>Explore network identity, development activity, and the future peer distribution map.</p>
           </div>
           <div className="network-preview__mascot" aria-hidden="true">
             {mascotSrc ? <img src={mascotSrc} alt="" /> : <span>Network mascot</span>}
@@ -165,7 +143,7 @@ export function Overview({ explorerData, mascotSrc = null }) {
       </section>
 
       <ResourceStrip />
-      <footer className="page-footer">Gno.land Explorer by UTSA</footer>
+      <footer className="page-footer">{networkProfile.projectName} Explorer by UTSA</footer>
     </>
   )
 }
