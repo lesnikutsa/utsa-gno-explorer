@@ -1,10 +1,15 @@
 """RPC selection and finalized-height fetching for bounded runs."""
 from __future__ import annotations
 
+import logging
+import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
 from scripts.inspect_rpc import GnoRpcClient, RpcError, parse_status, validate_status_for_health
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -120,8 +125,25 @@ def _selected_probe_index(probes: list[RpcProbeResult], max_height_lag: int) -> 
 
 
 def fetch_height(client: GnoRpcClient, height: int) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-    return (
-        client.get("block", height=height),
-        client.get("commit", height=height),
-        client.get("validators", height=height),
+    started_at = time.perf_counter()
+
+    def timed_get(method: str) -> tuple[dict[str, Any], float]:
+        request_started_at = time.perf_counter()
+        payload = client.get(method, height=height)
+        return payload, time.perf_counter() - request_started_at
+
+    methods = ("block", "commit", "validators")
+    with ThreadPoolExecutor(max_workers=3, thread_name_prefix=f"rpc-height-{height}") as executor:
+        futures = [executor.submit(timed_get, method) for method in methods]
+        results = [future.result() for future in futures]
+
+    total_duration = time.perf_counter() - started_at
+    LOGGER.info(
+        "rpc_fetch height=%s total_seconds=%.6f block_seconds=%.6f commit_seconds=%.6f validators_seconds=%.6f",
+        height,
+        total_duration,
+        results[0][1],
+        results[1][1],
+        results[2][1],
     )
+    return results[0][0], results[1][0], results[2][0]

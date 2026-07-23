@@ -200,6 +200,37 @@ class ContinuousIndexerTests(unittest.TestCase):
             run_cycle(db, "test-13", ["x"], 10, self.config, StopController())
         self.assertEqual(db.checkpoint, 9)
 
+    def test_next_height_fetch_starts_only_after_previous_write(self):
+        events = []
+
+        class OrderedClient(FakeClient):
+            def get(self, method, **params):
+                events.append(("fetch", params["height"], method))
+                return super().get(method, **params)
+
+        class OrderedDb(SqlLikeDb):
+            def write_height(self, parsed, chain_id, finalized_tip):
+                events.append(("write", parsed.height))
+                return super().write_height(parsed, chain_id, finalized_tip)
+
+        db = OrderedDb(9)
+        choice = selected(13)
+        choice = SelectedRpc(OrderedClient(13), {}, 13, 12, choice.probes)
+        choice.probes[0] = RpcProbeResult(
+            "https://example.test", True, True, "test-13", 13, 0, False,
+            client=choice.client, status_payload={},
+        )
+        with patch("indexer.runner.probe_rpc_endpoints", return_value=choice.probes):
+            result = run_cycle(db, "test-13", ["x"], 10, self.config, StopController())
+
+        self.assertEqual(result.processed, [10, 11, 12])
+        self.assertEqual([event[1] for event in events if event[0] == "write"], [10, 11, 12])
+        for height in (11, 12):
+            previous_write = events.index(("write", height - 1))
+            next_fetches = [index for index, event in enumerate(events) if event[:2] == ("fetch", height)]
+            self.assertTrue(next_fetches)
+            self.assertGreater(min(next_fetches), previous_write)
+
     def test_config_validation_and_lock_key_are_deterministic(self):
         with self.assertRaises(FatalIndexerError):
             validate_continuous_config(ContinuousConfig(0, 1, 1, 1, 1))
