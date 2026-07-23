@@ -121,7 +121,7 @@ def configured_rpc_urls() -> list[str]:
 
 def configured_chain_id() -> str:
     load_dotenv()
-    return os.environ.get("GNO_CHAIN_ID", "test-13").strip() or "test-13"
+    return os.environ.get("GNO_CHAIN_ID", "topaz-1").strip() or "topaz-1"
 
 
 def configured_max_height_lag() -> int:

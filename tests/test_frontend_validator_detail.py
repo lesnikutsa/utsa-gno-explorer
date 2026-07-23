@@ -96,39 +96,12 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
         self.assertNotIn("Profile Source Height", self.page)
         self.assertIn("validator.address", self.page)
 
-    def test_telegram_monitor_uses_encoded_signing_address_payload(self):
-        self.assertIn("const TELEGRAM_MONITOR_BOT = 'UTSAGNOTest13Bot'", self.page)
-        self.assertIn("const TELEGRAM_MONITOR_PREFIX = 'watch_gno13_'", self.page)
-        self.assertIn("`${TELEGRAM_MONITOR_PREFIX}${validator.address}`", self.page)
-        self.assertIn(
-            "`https://t.me/${TELEGRAM_MONITOR_BOT}?start=${encodeURIComponent(payload)}`",
-            self.page,
-        )
-        payload = self.page[self.page.index("const payload ="):self.page.index("const telegramMonitorUrl =")]
-        self.assertIn("present(validator.address)", payload)
-        self.assertNotIn("validator.moniker", payload)
-        self.assertNotIn("validator.operator_address", payload)
-
-    def test_loaded_header_has_accessible_external_telegram_link(self):
-        header = self.page[self.page.index('<header className="validator-detail__header">'):self.page.index("</header>")]
-        self.assertIn("telegramMonitorUrl &&", header)
-        self.assertIn("Monitor in Telegram", header)
-        self.assertIn('href={telegramMonitorUrl}', header)
-        self.assertIn('target="_blank"', header)
-        self.assertIn('rel="noopener noreferrer"', header)
-        self.assertIn('aria-label="Monitor this validator in Telegram (opens in a new tab)"', header)
-        self.assertNotIn("onClick", header)
-        self.assertNotIn("StatusBadge", header)
-
-    def test_telegram_monitor_is_scoped_and_responsive(self):
-        telegram_url = "https://t.me/UTSAGNOTest13Bot?start="
-        self.assertNotIn(telegram_url, self.overview)
-        self.assertNotIn(telegram_url, self.validators)
-        self.assertIn(".validator-detail__telegram-link", self.styles)
-        self.assertIn(".validator-detail__telegram-link:hover", self.styles)
-        self.assertIn(".validator-detail__telegram-link:focus-visible", self.styles)
-        mobile = self.styles[self.styles.index("@media (max-width: 760px)"):]
-        self.assertIn(".validator-detail__header { flex-wrap: wrap; justify-content: flex-start; }", mobile)
+    def test_test13_telegram_monitor_is_removed(self):
+        self.assertNotIn("UTSAGNOTest13Bot", self.page)
+        self.assertNotIn("watch_gno13_", self.page)
+        self.assertNotIn("Monitor in Telegram", self.page)
+        self.assertNotIn("telegramMonitorUrl", self.page)
+        self.assertNotIn("validator-detail__telegram-link", self.styles)
 
     def test_profile_contains_only_description(self):
         profile = self.page[self.page.index("Validator Profile"):self.page.index("</section>", self.page.index("Validator Profile"))]

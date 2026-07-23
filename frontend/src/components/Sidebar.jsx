@@ -23,7 +23,7 @@ export function Sidebar({ open, onClose }) {
         <UtsaLogo />
         <div className="chain-select">
           <span className="sidebar__label">Current chain</span>
-          <button type="button">Gno.land Testnet 13 <ChevronDownIcon /></button>
+          <button type="button">Gno.land Topaz Testnet <ChevronDownIcon /></button>
         </div>
         <nav className="sidebar__nav" aria-label="Explorer navigation">
           {items.map(({ label, Icon, href }) => {

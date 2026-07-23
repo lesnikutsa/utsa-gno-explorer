@@ -129,7 +129,7 @@ class DeploymentAssetTests(unittest.TestCase):
     def test_example_indexer_env_uses_placeholders(self):
         env = self.text("deploy/systemd/indexer.env.example")
         self.assertIn("REPLACE_WITH_PASSWORD", env)
-        self.assertIn("REPLACE_WITH_FIRST_EMPTY_DATABASE_HEIGHT", env)
+        self.assertIn("INDEXER_START_HEIGHT=1", env)
         self.assertNotIn("change-me", env)
 
     def test_gitignore_protects_secret_like_files_without_examples(self):
