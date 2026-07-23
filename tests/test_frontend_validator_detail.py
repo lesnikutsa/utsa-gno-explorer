@@ -14,6 +14,7 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
         cls.page = (ROOT / "frontend/src/pages/ValidatorDetail.jsx").read_text()
         cls.validators = (ROOT / "frontend/src/pages/Validators.jsx").read_text()
         cls.overview = (ROOT / "frontend/src/pages/Overview.jsx").read_text()
+        cls.telegram = (ROOT / "frontend/src/utils/telegram.js").read_text()
         cls.styles = (ROOT / "frontend/src/styles/app.css").read_text()
 
     def test_api_client_encodes_address_with_existing_request(self):
@@ -96,12 +97,39 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
         self.assertNotIn("Profile Source Height", self.page)
         self.assertIn("validator.address", self.page)
 
-    def test_test13_telegram_monitor_is_removed(self):
-        self.assertNotIn("UTSAGNOTest13Bot", self.page)
-        self.assertNotIn("watch_gno13_", self.page)
-        self.assertNotIn("Monitor in Telegram", self.page)
-        self.assertNotIn("telegramMonitorUrl", self.page)
-        self.assertNotIn("validator-detail__telegram-link", self.styles)
+    def test_topaz_telegram_helper_normalizes_and_validates_signing_address(self):
+        self.assertNotIn("UTSAGNOTest13Bot", self.telegram)
+        self.assertNotIn("watch_gno13_", self.telegram)
+        self.assertIn("export const TELEGRAM_BOT_USERNAME = 'UTSAGNOBot'", self.telegram)
+        self.assertIn("export const TELEGRAM_WATCH_PREFIX = 'watch_topaz_'", self.telegram)
+        self.assertIn("signingAddress.trim().toLowerCase()", self.telegram)
+        self.assertIn("/^g1[0-9a-z]{38}$/", self.telegram)
+        self.assertIn("typeof signingAddress !== 'string'", self.telegram)
+        self.assertGreaterEqual(self.telegram.count("return null"), 2)
+        self.assertIn("!SIGNING_ADDRESS_PATTERN.test(normalizedSigningAddress)", self.telegram)
+        self.assertIn("encodeURIComponent(startPayload)", self.telegram)
+
+    def test_topaz_telegram_link_uses_signing_address_and_accessible_new_tab(self):
+        self.assertIn("buildTelegramValidatorWatchUrl(validator.address)", self.page)
+        self.assertIn("{telegramWatchUrl && (", self.page)
+        self.assertIn('className="validator-detail__telegram-link"', self.page)
+        self.assertIn('href={telegramWatchUrl}', self.page)
+        self.assertIn('target="_blank"', self.page)
+        self.assertIn('rel="noopener noreferrer"', self.page)
+        self.assertIn(
+            'aria-label="Monitor this validator in Telegram (opens in a new tab)"',
+            self.page,
+        )
+        self.assertIn("Monitor in Telegram", self.page)
+
+    def test_topaz_telegram_link_has_compact_interactive_responsive_styles(self):
+        self.assertIn(".validator-detail__telegram-link {", self.styles)
+        self.assertIn(".validator-detail__telegram-link:hover {", self.styles)
+        self.assertIn(".validator-detail__telegram-link:focus-visible {", self.styles)
+        header = self.styles[self.styles.index(".validator-detail__header {"):]
+        self.assertIn("flex-wrap: wrap", header.split("}", 1)[0])
+        mobile = self.styles[self.styles.index("@media (max-width: 760px)"):]
+        self.assertIn(".validator-detail__header h1 { flex: 1 1 100%;", mobile)
 
     def test_profile_contains_only_description(self):
         profile = self.page[self.page.index("Validator Profile"):self.page.index("</section>", self.page.index("Validator Profile"))]
