@@ -87,7 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--backup-dir", type=Path, default=DEFAULT_BACKUP_DIR)
     parser.add_argument("--compose-file", type=Path, default=DEFAULT_COMPOSE_FILE)
     parser.add_argument("--env-file", type=Path, default=DEFAULT_ENV_FILE)
-    parser.add_argument("--retention", type=int, default=14, help="Number of successful backups to keep; 0 disables deletion.")
+    parser.add_argument("--retention", type=int, default=3, help="Number of successful backups to keep; 0 disables deletion.")
     return parser
 
 

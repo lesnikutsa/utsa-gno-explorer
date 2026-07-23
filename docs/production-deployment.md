@@ -127,10 +127,10 @@ Backups use `pg_dump -Fc` through the PostgreSQL Compose container. Online logic
 Manual backup command:
 
 ```bash
-python scripts/backup_database.py --backup-dir /var/backups/utsa-gno-explorer --retention 14
+python scripts/backup_database.py --backup-dir /var/backups/utsa-gno-explorer --retention 3
 ```
 
-Install the automated backup timer:
+Install the automated backup timer. Enable it only after the updated service and timer units are installed and `systemctl daemon-reload` has completed; installing these files does not itself enable the production timer:
 
 ```bash
 install -o root -g root -m 0644 \
@@ -164,7 +164,7 @@ find /var/backups/utsa-gno-explorer \
   -name 'utsa-gno-explorer-*.dump'
 ```
 
-The service runs as root so it can access Docker without adding `utsa-gno` to the docker group, logs to journald, uses restrictive `UMask=0077`, and passes only file paths and non-secret options in argv. Backup files and the backup directory remain root-only. The systemd service sets `DOCKER_CONFIG=/run/utsa-gno-explorer-backup`, using its private `RuntimeDirectory=utsa-gno-explorer-backup` as Docker CLI configuration storage so the hardened `ProtectHome=true` sandbox does not depend on `/root/.docker`. The script uses umask `077`, writes a `.part` file first, validates the archive with `pg_restore --list`, atomically renames only after success, and deletes only older files matching `utsa-gno-explorer-YYYYMMDDTHHMMSSZ.dump`. Retention keeps 14 successful backups. It never deletes the newest backup it just created and does not stop the indexer.
+The service runs as root so it can access Docker without adding `utsa-gno` to the docker group, logs to journald, uses restrictive `UMask=0077`, and passes only file paths and non-secret options in argv. Backup files and the backup directory remain root-only. The systemd service sets `DOCKER_CONFIG=/run/utsa-gno-explorer-backup`, using its private `RuntimeDirectory=utsa-gno-explorer-backup` as Docker CLI configuration storage so the hardened `ProtectHome=true` sandbox does not depend on `/root/.docker`. The script uses umask `077`, writes a `.part` file first, validates the archive with `pg_restore --list`, and atomically renames only after success. Only then does rotation retain the 3 newest successful files matching `utsa-gno-explorer-YYYYMMDDTHHMMSSZ.dump`. Manually named recovery dumps, validation restore files, checksum files, and unrelated files are outside automatic rotation. It never deletes the newest backup it just created and does not stop the indexer.
 
 ## Validation restore
 
