@@ -5,7 +5,8 @@ import os, sys
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from scripts.init_database import EXPECTED_COLUMNS, fetch_schema_snapshot, validate_schema_snapshot
+from scripts.init_database import (PRE_NETWORK_DISTRIBUTION_EXPECTATIONS,
+    fetch_schema_snapshot, validate_schema_snapshot, validate_schema_stage)
 MIGRATION = ROOT / "database/migrations/0003_add_network_distribution.sql"
 TABLES = {"network_distribution_geo_cache", "network_distribution_snapshots", "network_distribution_snapshot_sources"}
 
@@ -20,9 +21,14 @@ def migrate(database_url: str, connect=None):
         if present and present != TABLES:
             raise RuntimeError(f"unknown partial network-distribution schema: {sorted(present)}")
         if not present:
+            snapshot = fetch_schema_snapshot(cursor)
+            if not snapshot.get("tables"):
+                raise RuntimeError("empty public schema; use python scripts/init_database.py")
+            validate_schema_stage(snapshot, PRE_NETWORK_DISTRIBUTION_EXPECTATIONS)
             cursor.execute(MIGRATION.read_text())
         validate_schema_snapshot(fetch_schema_snapshot(cursor))
         connection.commit()
+    return "applied" if not present else "already-compatible"
 
 def main():
     try: migrate(os.getenv("DATABASE_URL", ""))

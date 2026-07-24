@@ -7,6 +7,21 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
+CONTINENT_NAME_LIMIT = 128
+COUNTRY_NAME_LIMIT = 128
+REGION_NAME_LIMIT = 255
+PROVIDER_NAME_LIMIT = 255
+LOOKUP_PROVIDER = "ipwho.is"
+
+
+def normalize_external_text(value: object, limit: int) -> str | None:
+    """Normalize untrusted provider text to a bounded PostgreSQL-safe value."""
+    if not isinstance(value, str):
+        return None
+    without_controls = "".join(" " if ord(char) < 32 or ord(char) == 127 else char for char in value)
+    normalized = " ".join(without_controls.split())
+    return normalized[:limit] or None
+
 
 @dataclass(frozen=True)
 class GeoRecord:
@@ -18,7 +33,7 @@ class GeoRecord:
     region_name: str | None = None
     asn: int | None = None
     provider_name: str | None = None
-    lookup_provider: str = "ipwho.is"
+    lookup_provider: str = LOOKUP_PROVIDER
     fetched_at: datetime | None = None
     expires_at: datetime | None = None
     error_code: str | None = None
@@ -45,11 +60,16 @@ def lookup_ip(ip: str, api_url: str, timeout: int, success_ttl: int, failure_ttl
         asn = asn if asn and asn > 0 else None
     except (TypeError, ValueError):
         asn = None
-    provider = connection.get("org") or connection.get("isp") or (f"AS{asn}" if asn else None)
+    organization = normalize_external_text(connection.get("org"), PROVIDER_NAME_LIMIT)
+    isp = normalize_external_text(connection.get("isp"), PROVIDER_NAME_LIMIT)
+    provider = organization or isp or (f"AS{asn}" if asn else None)
     code = data.get("country_code")
     code = code.upper() if isinstance(code, str) and len(code) == 2 and code.isascii() and code.isalpha() else None
-    return GeoRecord(ip, True, data.get("continent"), code, data.get("country"), data.get("region"), asn,
-                     str(provider)[:255] if provider else None, fetched_at=now,
+    return GeoRecord(ip, True,
+                     normalize_external_text(data.get("continent"), CONTINENT_NAME_LIMIT), code,
+                     normalize_external_text(data.get("country"), COUNTRY_NAME_LIMIT),
+                     normalize_external_text(data.get("region"), REGION_NAME_LIMIT), asn,
+                     provider, lookup_provider=LOOKUP_PROVIDER, fetched_at=now,
                      expires_at=now + timedelta(seconds=success_ttl))
 
 

@@ -33,13 +33,16 @@ def _public_ip(address: str) -> str | None:
         if value.startswith(("tcp://", "p2p://")):
             value = value.split("://", 1)[1]
     try:
-        parsed = urlsplit("//" + value)
-        host = parsed.hostname
-        if not host:
-            return None
-        if parsed.port is not None and not 1 <= parsed.port <= 65535:
-            return None
-        ip = ipaddress.ip_address(host)
+        try:
+            ip = ipaddress.ip_address(value)
+        except ValueError:
+            parsed = urlsplit("//" + value)
+            host = parsed.hostname
+            if not host:
+                return None
+            if parsed.port is not None and not 1 <= parsed.port <= 65535:
+                return None
+            ip = ipaddress.ip_address(host)
     except (ValueError, TypeError):
         return None
     if (not ip.is_global or ip.is_private or ip.is_loopback or ip.is_link_local

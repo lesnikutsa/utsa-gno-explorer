@@ -19,6 +19,9 @@ from indexer.valopers_persistence import (
     StaleValopersSnapshot, ValopersChainIdentityError, ValopersSnapshotConflict,
 )
 from indexer.valopers_snapshot import ValopersSnapshot
+from network_distribution.geo import GeoRecord
+from network_distribution.persistence import save_geo_cache, save_snapshot, select_sources
+from scripts.migrate_network_distribution_schema import migrate as migrate_network_distribution_schema
 
 try:
     import psycopg
@@ -648,6 +651,81 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             ):
                 cursor.execute(VALIDATOR_IDENTITY_SQL, (address,))
                 self.assertEqual(cursor.fetchone()["moniker"], expected_moniker)
+
+
+    def run_network_distribution_migration(self, database_url):
+        env = dict(os.environ, DATABASE_URL=database_url)
+        return subprocess.run(
+            [sys.executable, "scripts/migrate_network_distribution_schema.py"],
+            cwd=ROOT, env=env, text=True, capture_output=True, check=False,
+        )
+
+    def test_network_distribution_migration_and_existing_rows(self):
+        name = f"utsa_distribution_migration_{os.getpid()}"
+        self.create_database(name)
+        database_url = self.database_url_for(name)
+        schema = (ROOT / "database/schema.sql").read_text()
+        migration = (ROOT / "database/migrations/0003_add_network_distribution.sql").read_text()
+        pre_schema = schema.replace(migration, "")
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute(pre_schema)
+            cursor.execute("INSERT INTO blocks (height,block_hash_base64,block_hash_hex,time_utc,tx_count) VALUES (1,'h',%s,now(),1)", ('A'*64,))
+            cursor.execute("INSERT INTO transactions (block_height,tx_index,raw_base64,raw_base64_length,decode_status) VALUES (1,0,'x',1,'not_attempted')")
+            cursor.execute("INSERT INTO validators (signing_address,public_key_type,public_key_value,first_seen_height,last_seen_height) VALUES ('validator','type','key',1,1)")
+            cursor.execute("INSERT INTO rpc_endpoints (url,chain_id) VALUES ('https://rpc.example','chain')")
+            cursor.execute("INSERT INTO valoper_profiles (operator_address,moniker,description,server_type,signing_address,signing_pubkey,source_height,list_position) VALUES (%s,'m','d','cloud',%s,%s,1,0)", ('g1'+'2'*38,'g1'+'3'*38,'gpub1'+'2'*86))
+        self.assertEqual(self.run_network_distribution_migration(database_url).returncode, 0)
+        self.assertEqual(self.run_network_distribution_migration(database_url).returncode, 0)
+        self.assertEqual(self.run_init(database_url).returncode, 0)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            for table in ('blocks','transactions','validators','rpc_endpoints','valoper_profiles'):
+                cursor.execute(f"SELECT count(*) FROM {table}")
+                self.assertEqual(cursor.fetchone()[0], 1)
+
+    def test_network_distribution_cache_snapshots_retention_and_sources(self):
+        name = f"utsa_distribution_storage_{os.getpid()}"
+        self.create_database(name)
+        database_url = self.database_url_for(name)
+        self.assertEqual(self.run_init(database_url).returncode, 0)
+        now = datetime.now(timezone.utc)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("INSERT INTO rpc_endpoints (url,chain_id,is_selected,healthy,catching_up,last_checked_at,latest_observed_height) VALUES ('https://selected','chain',true,true,false,now(),10),('https://height','chain',false,true,false,now(),9),('https://stable','chain',false,true,false,now(),9),('https://disabled','chain',false,true,false,now(),100),('https://wrong','wrong',false,true,false,now(),100),('https://unhealthy','chain',false,false,false,now(),100),('https://catching','chain',false,true,true,now(),100),('https://stale','chain',false,true,false,now()-interval '1 day',100) RETURNING id")
+            ids=[row[0] for row in cursor.fetchall()]
+            cursor.execute("UPDATE rpc_endpoints SET is_enabled=false WHERE url='https://disabled'")
+            sources=select_sources(connection,'chain',3,600)
+            self.assertEqual([row['id'] for row in sources],ids[:3])
+            self.assertEqual(len(select_sources(connection,'chain',1,600)),1)
+            endpoint_id=ids[0]
+        success=GeoRecord('8.8.8.8',True,'North America','US','United States','Region',1,'Provider',fetched_at=now,expires_at=now+timedelta(hours=1))
+        failed=GeoRecord('8.8.8.8',False,fetched_at=now,expires_at=now+timedelta(hours=1),error_code='timeout')
+        with psycopg.connect(database_url) as connection:
+            save_geo_cache(connection,[success]); save_geo_cache(connection,[failed])
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT lookup_success FROM network_distribution_geo_cache WHERE ip='8.8.8.8'"); self.assertTrue(cursor.fetchone()[0])
+                cursor.execute("UPDATE network_distribution_geo_cache SET expires_at=now()-interval '1 second'"); connection.commit()
+            save_geo_cache(connection,[failed])
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT lookup_success,continent_name,error_code FROM network_distribution_geo_cache WHERE ip='8.8.8.8'"); self.assertEqual(cursor.fetchone(),(False,None,'timeout'))
+        def result(chain, endpoint, scanned):
+            return {'chain_id':chain,'source_kind':'tendermint_net_info','scanned_at':scanned,'rpc_sources_total':1,'rpc_sources_ok':1,'visible_node_ids':0,'unique_public_ips':0,'geolocated_node_ids':0,'geolocated_public_ips':0,'node_id_ip_conflicts':0,'region_count':0,'country_count':0,'provider_count':0,'regions':[],'countries':[],'providers':[],'sources':[{'source_order':0,'rpc_endpoint_id':endpoint,'success':True,'reported_peer_count':0,'accepted_peer_count':0,'duration_ms':1,'error_code':None}]}
+        with psycopg.connect(database_url) as connection:
+            first=save_snapshot(connection,result('chain',endpoint_id,now),2)
+            save_snapshot(connection,result('other',endpoint_id,now),1)
+            save_snapshot(connection,result('chain',endpoint_id,now+timedelta(seconds=1)),2)
+            save_snapshot(connection,result('chain',endpoint_id,now+timedelta(seconds=2)),2)
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT count(*) FROM network_distribution_snapshots WHERE chain_id='chain'"); self.assertEqual(cursor.fetchone()[0],2)
+                cursor.execute("SELECT count(*) FROM network_distribution_snapshots WHERE chain_id='other'"); self.assertEqual(cursor.fetchone()[0],1)
+                cursor.execute("DELETE FROM rpc_endpoints WHERE id=%s",(endpoint_id,)); connection.commit()
+                cursor.execute("SELECT rpc_endpoint_id FROM network_distribution_snapshot_sources LIMIT 1"); self.assertIsNone(cursor.fetchone()[0])
+                cursor.execute("DELETE FROM network_distribution_snapshots WHERE id=(SELECT min(id) FROM network_distribution_snapshots)"); connection.commit()
+                cursor.execute("SELECT count(*) FROM network_distribution_snapshot_sources WHERE snapshot_id NOT IN (SELECT id FROM network_distribution_snapshots)"); self.assertEqual(cursor.fetchone()[0],0)
+            previous=save_snapshot(connection,result('chain',None,now+timedelta(seconds=3)),2)
+            broken=result('chain',None,now+timedelta(seconds=4)); broken['sources'][0]['error_code']='invalid'
+            with self.assertRaises(Exception): save_snapshot(connection,broken,2)
+            connection.rollback()
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT count(*) FROM network_distribution_snapshots WHERE id=%s",(previous,)); self.assertEqual(cursor.fetchone()[0],1)
 
 
 if __name__ == "__main__":
