@@ -347,9 +347,26 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         self.assertIn("Valopers schema is already compatible", rerun.stdout)
         self.assertEqual(rerun.stderr, "")
 
+        transaction_migration = self.run_transaction_hash_migration(database_url)
+        self.assertEqual(transaction_migration.returncode, 0, transaction_migration.stderr)
+        self.assertEqual(transaction_migration.stdout, "Transaction hash migration applied and validated\n")
+        self.assertEqual(transaction_migration.stderr, "")
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT count(*), count(tx_hash_hex) FROM transactions")
+            self.assertEqual(cursor.fetchone(), (before_counts["transactions"], 0))
+            cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='transactions' AND column_name='tx_hash_hex'")
+            self.assertEqual(cursor.fetchone(), ("tx_hash_hex",))
+            cursor.execute("SELECT conname FROM pg_constraint WHERE conname IN ('transactions_tx_hash_hex_format','transactions_tx_hash_consistent') ORDER BY conname")
+            self.assertEqual({row[0] for row in cursor.fetchall()}, {"transactions_tx_hash_hex_format", "transactions_tx_hash_consistent"})
+            cursor.execute("SELECT indexname FROM pg_indexes WHERE schemaname='public' AND indexname='transactions_tx_hash_hex_idx'")
+            self.assertEqual(cursor.fetchone(), ("transactions_tx_hash_hex_idx",))
+
+        before_transaction_rerun = self.table_names_and_counts(database_url)
         transaction_rerun = self.run_transaction_hash_migration(database_url)
         self.assertEqual(transaction_rerun.returncode, 0, transaction_rerun.stderr)
-        self.assertIn("already compatible", transaction_rerun.stdout)
+        self.assertEqual(transaction_rerun.stdout, "Transaction hash schema is already compatible\n")
+        self.assertEqual(transaction_rerun.stderr, "")
+        self.assertEqual(self.table_names_and_counts(database_url), before_transaction_rerun)
 
         before_guidance_tables, before_guidance_counts = self.table_names_and_counts(database_url)
         guidance = self.run_init(database_url)
@@ -371,7 +388,7 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         self.assertEqual(post_network_transactions.returncode, 0, post_network_transactions.stderr)
         self.assertIn("already compatible", post_network_transactions.stdout)
 
-        outputs = [migrated, rerun, transaction_rerun, guidance, network_migration,
+        outputs = [migrated, rerun, transaction_migration, transaction_rerun, guidance, network_migration,
                    network_rerun, validated, post_network_valopers, post_network_transactions]
         for result in outputs:
             self.assertNotIn(self.password, result.stdout + result.stderr)
@@ -773,7 +790,10 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                 cursor.execute("DELETE FROM network_distribution_snapshots WHERE id=(SELECT min(id) FROM network_distribution_snapshots)"); connection.commit()
                 cursor.execute("SELECT count(*) FROM network_distribution_snapshot_sources WHERE snapshot_id NOT IN (SELECT id FROM network_distribution_snapshots)"); self.assertEqual(cursor.fetchone()[0],0)
             previous=save_snapshot(connection,result('chain',None,now+timedelta(seconds=3)),2)
+            connection.commit()
             with connection.cursor() as cursor:
+                cursor.execute("SELECT count(*) FROM network_distribution_snapshots WHERE id=%s",(previous,))
+                self.assertEqual(cursor.fetchone()[0],1)
                 cursor.execute("SELECT count(*) FROM network_distribution_snapshots")
                 snapshots_before_failure = cursor.fetchone()[0]
                 cursor.execute("SELECT count(*) FROM network_distribution_snapshot_sources")
@@ -785,6 +805,7 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                 cursor.execute("SELECT count(*) FROM network_distribution_snapshots WHERE id=%s",(previous,)); self.assertEqual(cursor.fetchone()[0],1)
                 cursor.execute("SELECT count(*) FROM network_distribution_snapshots"); self.assertEqual(cursor.fetchone()[0],snapshots_before_failure)
                 cursor.execute("SELECT count(*) FROM network_distribution_snapshot_sources"); self.assertEqual(cursor.fetchone()[0],sources_before_failure)
+                cursor.execute("SELECT count(*) FROM network_distribution_snapshot_sources s LEFT JOIN network_distribution_snapshots n ON n.id=s.snapshot_id WHERE n.id IS NULL"); self.assertEqual(cursor.fetchone()[0],0)
                 cursor.execute("SELECT count(*) FROM network_distribution_snapshots WHERE chain_id='chain'"); self.assertLessEqual(cursor.fetchone()[0],2)
 
 
