@@ -32,6 +32,7 @@ async function request(path) {
 
 export const getHealth = () => request('/health')
 export const getNetwork = () => request('/network')
+export const getNetworkDistribution = () => request('/network/distribution')
 export const getBlocks = ({ limit, beforeHeight, hash } = {}) => {
   const query = new URLSearchParams()
   if (limit !== undefined && limit !== null && limit !== '') query.set('limit', limit)

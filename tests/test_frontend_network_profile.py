@@ -14,6 +14,7 @@ class FrontendNetworkProfileTests(unittest.TestCase):
         cls.sidebar = (ROOT / "frontend/src/components/Sidebar.jsx").read_text()
         cls.logo = (ROOT / "frontend/src/components/UtsaLogo.jsx").read_text()
         cls.overview = (ROOT / "frontend/src/pages/Overview.jsx").read_text()
+        cls.network_panel = (ROOT / "frontend/src/components/NetworkDistributionPanel.jsx").read_text()
         cls.app = (ROOT / "frontend/src/App.jsx").read_text()
 
     def test_profile_uses_public_vite_values_with_fallbacks(self):
@@ -51,10 +52,13 @@ class FrontendNetworkProfileTests(unittest.TestCase):
         self.assertIn('<div className="brand__asset" aria-hidden="true">', self.logo)
 
     def test_overview_preserves_map_preview_and_profiles_footer(self):
-        for text in ("Peers & Decentralization Map", "Coming soon", "Total Peers", "Countries", "Providers"):
-            self.assertIn(text, self.overview)
-        self.assertIn('/assets/network-map.png?v=1', self.overview)
-        self.assertIn("network-preview__mascot", self.overview)
+        network_preview = self.overview + self.network_panel
+        for text in ("Peers &amp; Decentralization Map", "Visible Peers", "Countries", "Providers", "Observed Network Distribution"):
+            self.assertIn(text, network_preview)
+        self.assertNotIn("Coming soon", network_preview)
+        self.assertNotIn("Total Peers", network_preview)
+        self.assertIn('/assets/network-map.png?v=1', self.network_panel)
+        self.assertIn("network-preview__mascot", self.network_panel)
         self.assertIn("{networkProfile.projectName} Explorer by UTSA", self.overview)
         self.assertNotIn("Explore Network", self.overview)
         self.assertNotIn('href="/network"', self.overview)
