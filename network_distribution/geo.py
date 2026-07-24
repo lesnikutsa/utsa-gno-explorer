@@ -45,8 +45,11 @@ def lookup_ip(ip: str, api_url: str, timeout: int, success_ttl: int, failure_ttl
     data = None
     try:
         response = requests.get(f"{api_url}/{ip}", timeout=timeout)
-        response.raise_for_status()
-        data = response.json()
+        if response.status_code == 429:
+            error = "rate_limited"
+        else:
+            response.raise_for_status()
+            data = response.json()
     except requests.Timeout:
         error = "timeout"
     except (requests.RequestException, ValueError):

@@ -28,7 +28,9 @@ from indexer.valopers_persistence import (
 )
 from indexer.valopers_snapshot import ValopersSnapshot
 from network_distribution.geo import GeoRecord
-from network_distribution.persistence import save_geo_cache, save_snapshot, select_sources
+from network_distribution.persistence import (
+    has_geolocated_snapshot, load_geo_cache, save_geo_cache, save_snapshot, select_sources,
+)
 from scripts import init_database
 from scripts.migrate_network_distribution_schema import migrate as migrate_network_distribution_schema
 
@@ -904,6 +906,7 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             with connection.cursor() as cursor:
                 cursor.execute("SELECT lookup_success,continent_name,country_code,country_name,region_name,asn,provider_name,error_code,fetched_at <= expires_at FROM network_distribution_geo_cache WHERE ip='8.8.8.8'")
                 self.assertEqual(cursor.fetchone(),(False,None,None,None,None,None,None,'timeout',True))
+
         def result(chain, endpoint, scanned):
             return {'chain_id':chain,'source_kind':'tendermint_net_info','scanned_at':scanned,'rpc_sources_total':1,'rpc_sources_ok':1,'visible_node_ids':0,'unique_public_ips':0,'geolocated_node_ids':0,'geolocated_public_ips':0,'node_id_ip_conflicts':0,'region_count':0,'country_count':0,'provider_count':0,'regions':[],'countries':[],'providers':[],'sources':[{'source_order':0,'rpc_endpoint_id':endpoint,'success':True,'reported_peer_count':0,'accepted_peer_count':0,'duration_ms':1,'error_code':None}]}
         with psycopg.connect(database_url) as connection:
@@ -936,6 +939,55 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                 cursor.execute("SELECT count(*) FROM network_distribution_snapshot_sources"); self.assertEqual(cursor.fetchone()[0],sources_before_failure)
                 cursor.execute("SELECT count(*) FROM network_distribution_snapshot_sources s LEFT JOIN network_distribution_snapshots n ON n.id=s.snapshot_id WHERE n.id IS NULL"); self.assertEqual(cursor.fetchone()[0],0)
                 cursor.execute("SELECT count(*) FROM network_distribution_snapshots WHERE chain_id='chain'"); self.assertLessEqual(cursor.fetchone()[0],2)
+
+    def test_network_distribution_geo_cache_uses_canonical_inet_keys(self):
+        name = f"utsa_distribution_cache_keys_{os.getpid()}"
+        self.create_database(name)
+        database_url = self.database_url_for(name)
+        self.assertEqual(self.run_init(database_url).returncode, 0)
+        now = datetime.now(timezone.utc)
+        ipv4 = GeoRecord('192.0.2.10', True, 'North America', 'US', 'United States',
+                         'Test Region', 64500, 'IPv4 Provider', fetched_at=now,
+                         expires_at=now + timedelta(hours=1))
+        ipv6 = GeoRecord('2001:db8::1', True, 'Europe', 'DE', 'Germany',
+                         'IPv6 Region', 64501, 'IPv6 Provider', fetched_at=now,
+                         expires_at=now + timedelta(hours=1))
+        with psycopg.connect(database_url) as connection:
+            save_geo_cache(connection, [ipv4, ipv6])
+            cached = load_geo_cache(connection, {ipv4.ip, ipv6.ip})
+        self.assertEqual(set(cached), {'192.0.2.10', '2001:db8::1'})
+        self.assertNotIn('192.0.2.10/32', cached)
+        self.assertNotIn('2001:db8::1/128', cached)
+        self.assertEqual(cached[ipv4.ip], ipv4)
+        self.assertEqual(cached[ipv6.ip], ipv6)
+
+    def test_geolocated_snapshot_exists_across_retained_history(self):
+        name = f"utsa_distribution_good_history_{os.getpid()}"
+        self.create_database(name)
+        database_url = self.database_url_for(name)
+        self.assertEqual(self.run_init(database_url).returncode, 0)
+        epoch = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+        def result(chain, scanned_at, geolocated):
+            return {
+                'chain_id': chain, 'source_kind': 'tendermint_net_info', 'scanned_at': scanned_at,
+                'rpc_sources_total': 1, 'rpc_sources_ok': 1, 'visible_node_ids': 1,
+                'unique_public_ips': 1, 'geolocated_node_ids': int(geolocated > 0),
+                'geolocated_public_ips': geolocated, 'node_id_ip_conflicts': 0,
+                'region_count': int(geolocated > 0), 'country_count': int(geolocated > 0),
+                'provider_count': int(geolocated > 0), 'regions': [], 'countries': [],
+                'providers': [], 'sources': [],
+            }
+
+        with psycopg.connect(database_url) as connection:
+            self.assertFalse(has_geolocated_snapshot(connection, 'chain'))
+            save_snapshot(connection, result('chain', epoch, 0), 10)
+            self.assertFalse(has_geolocated_snapshot(connection, 'chain'))
+            save_snapshot(connection, result('other', epoch + timedelta(seconds=1), 1), 10)
+            self.assertFalse(has_geolocated_snapshot(connection, 'chain'))
+            save_snapshot(connection, result('chain', epoch + timedelta(seconds=2), 1), 10)
+            save_snapshot(connection, result('chain', epoch + timedelta(seconds=3), 0), 10)
+            self.assertTrue(has_geolocated_snapshot(connection, 'chain'))
 
 
 if __name__ == "__main__":

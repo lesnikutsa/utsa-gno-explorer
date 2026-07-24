@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timedelta, timezone
 from network_distribution.collector import AllSourcesFailed, collect_distribution
-from network_distribution.geo import GeoRecord
+from network_distribution.geo import GeoRecord, resolve_geo
 from network_distribution.tendermint import PeerIdentity, parse_net_info, parse_peer
 
 class PeerTests(unittest.TestCase):
@@ -25,3 +25,17 @@ class AggregateTests(unittest.TestCase):
  def test_all_fail(self):
   with self.assertRaises(AllSourcesFailed):
    collect_distribution('c',[{'id':1,'url':'x'}],fetch=lambda *_: (_ for _ in ()).throw(ValueError('timeout')))
+ def test_warm_ipv4_and_ipv6_cache_populates_aggregates_without_lookup(self):
+  now=datetime.now(timezone.utc)
+  cached={
+   '8.8.8.8':GeoRecord('8.8.8.8',True,'North America','US','United States','Region',64500,'Provider',expires_at=now+timedelta(hours=1)),
+   '2001:4860:4860::8888':GeoRecord('2001:4860:4860::8888',True,'North America','US','United States','Region',64500,'Provider',expires_at=now+timedelta(hours=1)),
+  }
+  config=unittest.mock.Mock(geo_max_lookups=10,geo_concurrency=1)
+  peers=[PeerIdentity('v4','8.8.8.8'),PeerIdentity('v6','2001:4860:4860::8888')]
+  with unittest.mock.patch('network_distribution.geo.lookup_ip',side_effect=AssertionError('warm cache must not perform a lookup')) as lookup:
+   resolver=lambda ips: resolve_geo(ips,cached,config)[0]
+   result=collect_distribution('chain',[{'id':1,'url':'rpc'}],fetch=lambda *_:(2,peers),geo_resolver=resolver)
+  lookup.assert_not_called()
+  self.assertEqual(result['geolocated_public_ips'],2)
+  self.assertEqual((result['country_count'],result['provider_count']),(1,1))

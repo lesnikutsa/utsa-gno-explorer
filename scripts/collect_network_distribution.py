@@ -8,8 +8,8 @@ sys.path.insert(0, str(ROOT))
 from network_distribution.collector import AllSourcesFailed, collect_distribution
 from network_distribution.config import Config
 from network_distribution.geo import resolve_geo
-from network_distribution.persistence import (acquire_lock, load_geo_cache, release_lock, save_geo_cache,
-    save_snapshot, select_sources)
+from network_distribution.persistence import (acquire_lock, has_geolocated_snapshot, load_geo_cache,
+    release_lock, save_geo_cache, save_snapshot, select_sources)
 
 def parser():
     value = lambda text: int(text) if text.isdigit() and 1 <= int(text) <= 20 else (_ for _ in ()).throw(argparse.ArgumentTypeError("must be between 1 and 20"))
@@ -35,6 +35,10 @@ def run(args):
             if args.dry_run:
                 print(json.dumps(result, indent=2 if args.pretty else None, sort_keys=True)); return 0
             if refreshed: save_geo_cache(connection, refreshed)
+            if (result["unique_public_ips"] > 0 and result["geolocated_public_ips"] == 0
+                    and has_geolocated_snapshot(connection, config.chain_id)):
+                print("network distribution snapshot skipped: geo_unavailable")
+                return 0
             save_snapshot(connection, result, config.snapshot_retention)
             print(f"network distribution saved: chain={config.chain_id} rpc={result['rpc_sources_ok']}/{result['rpc_sources_total']} nodes={result['visible_node_ids']} ips={result['unique_public_ips']} geolocated_ips={result['geolocated_public_ips']}")
             return 0

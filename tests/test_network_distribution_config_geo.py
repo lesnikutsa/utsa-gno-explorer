@@ -40,3 +40,19 @@ class ConfigGeoTests(unittest.TestCase):
   with patch('network_distribution.geo.lookup_ip',return_value=GeoRecord('9.9.9.9',False,error_code='timeout',expires_at=now+timedelta(hours=1))) as lookup:
    rows,updates=resolve_geo({'8.8.8.8','1.1.1.1','9.9.9.9','4.4.4.4'},{'8.8.8.8':valid,'1.1.1.1':failed},config)
   self.assertEqual(lookup.call_count,1); self.assertEqual(len(updates),1); self.assertIn('8.8.8.8',rows)
+ def test_http_outcomes(self):
+  rate_limited=Mock(status_code=429)
+  server_error=Mock(status_code=500)
+  server_error.raise_for_status.side_effect=__import__('requests').HTTPError('internal body')
+  valid=Mock(status_code=200); valid.raise_for_status.return_value=None
+  valid.json.return_value={'success':True,'country_code':'US','country':'United States','continent':'North America','connection':{'asn':64500,'org':'Provider'}}
+  cases=[(rate_limited,'rate_limited'),(server_error,'request_error')]
+  for response,error_code in cases:
+   with self.subTest(error_code=error_code),patch('network_distribution.geo.requests.get',return_value=response):
+    row=lookup_ip('8.8.8.8','https://geo',1,3600,60)
+    self.assertFalse(row.lookup_success); self.assertEqual(row.error_code,error_code)
+    self.assertGreater(row.expires_at,row.fetched_at)
+  with patch('network_distribution.geo.requests.get',side_effect=__import__('requests').Timeout):
+   self.assertEqual(lookup_ip('8.8.8.8','https://geo',1,3600,60).error_code,'timeout')
+  with patch('network_distribution.geo.requests.get',return_value=valid):
+   self.assertTrue(lookup_ip('8.8.8.8','https://geo',1,3600,60).lookup_success)

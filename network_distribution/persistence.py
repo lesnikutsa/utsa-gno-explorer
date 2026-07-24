@@ -39,10 +39,20 @@ def release_lock(connection, chain_id: str) -> None:
 def load_geo_cache(connection, ips: set[str]) -> dict[str, GeoRecord]:
     if not ips: return {}
     with connection.cursor() as cursor:
-        cursor.execute("""SELECT ip::text, lookup_success, continent_name, country_code, country_name,
+        cursor.execute("""SELECT host(ip), lookup_success, continent_name, country_code, country_name,
             region_name, asn, provider_name, lookup_provider, fetched_at, expires_at, error_code
             FROM network_distribution_geo_cache WHERE ip = ANY(%s::inet[])""", (list(ips),))
         return {row[0]: GeoRecord(*row) for row in cursor.fetchall()}
+
+
+def has_geolocated_snapshot(connection, chain_id: str) -> bool:
+    """Return whether any retained snapshot has useful GeoIP coverage."""
+    with connection.cursor() as cursor:
+        cursor.execute("""SELECT EXISTS (
+            SELECT 1 FROM network_distribution_snapshots
+            WHERE chain_id = %s AND geolocated_public_ips > 0
+        )""", (chain_id,))
+        return bool(cursor.fetchone()[0])
 
 
 def save_geo_cache(connection, records: list[GeoRecord]) -> None:
