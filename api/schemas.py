@@ -53,6 +53,56 @@ class NetworkResponse(BaseModel):
     selected_rpc: SelectedRpc | None
 
 
+class NetworkDistributionRpcSources(BaseModel):
+    total: int = Field(ge=0)
+    ok: int = Field(ge=0)
+
+
+class NetworkDistributionRegion(BaseModel):
+    name: str = Field(min_length=1)
+    count: int = Field(ge=0)
+    share_percent: float = Field(ge=0, le=100)
+
+
+class NetworkDistributionCountry(BaseModel):
+    code: str = Field(pattern=r"^[A-Z]{2}$")
+    name: str = Field(min_length=1)
+    count: int = Field(ge=0)
+    share_percent: float = Field(ge=0, le=100)
+
+
+class NetworkDistributionProvider(BaseModel):
+    asn: int | None = Field(default=None, gt=0)
+    name: str = Field(min_length=1)
+    count: int = Field(ge=0)
+    share_percent: float = Field(ge=0, le=100)
+
+
+class NetworkDistributionResponse(BaseModel):
+    chain_id: str
+    source_kind: str
+    updated_at: str
+    rpc_sources: NetworkDistributionRpcSources
+    visible_node_ids: int = Field(ge=0)
+    unique_public_ips: int = Field(ge=0)
+    geolocated_node_ids: int = Field(ge=0)
+    geolocated_public_ips: int = Field(ge=0)
+    geolocation_coverage_percent: float = Field(ge=0, le=100)
+    node_id_ip_conflicts: int = Field(ge=0)
+    region_count: int = Field(ge=0)
+    country_count: int = Field(ge=0)
+    provider_count: int = Field(ge=0)
+    region_covered_public_ips: int = Field(ge=0)
+    country_covered_public_ips: int = Field(ge=0)
+    provider_covered_public_ips: int = Field(ge=0)
+    region_coverage_percent: float = Field(ge=0, le=100)
+    country_coverage_percent: float = Field(ge=0, le=100)
+    provider_coverage_percent: float = Field(ge=0, le=100)
+    regions: list[NetworkDistributionRegion]
+    countries: list[NetworkDistributionCountry]
+    providers: list[NetworkDistributionProvider]
+
+
 class BlockCommitSummary(BaseModel):
     validators: int
     signed: int

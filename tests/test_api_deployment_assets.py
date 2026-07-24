@@ -119,6 +119,34 @@ class ApiDeploymentAssetTests(unittest.TestCase):
         end = self.documentation.index("For rollback,", start)
         return self.documentation[start:end]
 
+    def network_distribution_prerequisite_section(self):
+        start = self.documentation.index("#### Network distribution API access prerequisite")
+        end = self.documentation.index("For API-only changes", start)
+        return self.documentation[start:end]
+
+    def test_network_distribution_prerequisite_is_least_privilege_and_ordered(self):
+        section = self.network_distribution_prerequisite_section()
+        normalized = " ".join(section.split())
+        grant = "GRANT SELECT ON TABLE public.network_distribution_snapshots TO utsa_gno_api;"
+        self.assertIn(grant, normalized)
+        self.assertIn("has_table_privilege( 'utsa_gno_api', 'public.network_distribution_snapshots', 'SELECT' )", normalized)
+        for privilege in ("INSERT", "UPDATE", "DELETE", "TRUNCATE"):
+            self.assertIn(f"'{privilege}'", section)
+            self.assertNotIn(f"GRANT {privilege}", section)
+        self.assertNotIn("GRANT SELECT ON TABLE public.network_distribution_geo_cache", normalized)
+        self.assertNotIn("GRANT SELECT ON TABLE public.network_distribution_snapshot_sources", normalized)
+        self.assertLess(section.index("0003_network_distribution.sql"), section.index("GRANT SELECT"))
+        self.assertLess(section.index("GRANT SELECT"), section.index("Verify least privilege"))
+        self.assertLess(section.index("Verify least privilege"), section.index("systemctl restart"))
+        self.assertLess(section.index("systemctl restart"), section.index("/api/network/distribution"))
+
+    def test_network_distribution_prerequisite_is_api_only_and_non_secret(self):
+        section = self.network_distribution_prerequisite_section().lower()
+        self.assertEqual(section.count("systemctl restart"), 1)
+        self.assertIn("systemctl restart utsa-gno-api.service", section)
+        for forbidden in ("stop utsa-gno-indexer", "stop utsa-gno-network-distribution", "stop postgresql", "database_url=", "migrate_network_distribution_schema.py"):
+            self.assertNotIn(forbidden, section)
+
     def test_valopers_prerequisite_grants_only_required_profile_select(self):
         section = self.valopers_schema_prerequisite_section()
         grant = "GRANT SELECT ON TABLE public.valoper_profiles TO utsa_gno_api;"

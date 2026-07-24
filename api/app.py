@@ -24,6 +24,11 @@ from api.schemas import (
     BlocksResponse,
     HealthResponse,
     NetworkResponse,
+    NetworkDistributionCountry,
+    NetworkDistributionProvider,
+    NetworkDistributionRegion,
+    NetworkDistributionResponse,
+    NetworkDistributionRpcSources,
     NetworkValidators,
     SelectedRpc,
     TransactionDetailResponse,
@@ -230,6 +235,92 @@ def _network_response_from_row(row: dict) -> NetworkResponse:
     )
 
 
+def _network_distribution_response_from_row(row: dict) -> NetworkDistributionResponse:
+    if row["scanned_at"] is None:
+        raise LookupError("Network distribution snapshot is missing")
+    totals = {
+        "rpc_sources_total": row["rpc_sources_total"],
+        "rpc_sources_ok": row["rpc_sources_ok"],
+        "visible_node_ids": row["visible_node_ids"],
+        "unique_public_ips": row["unique_public_ips"],
+        "geolocated_node_ids": row["geolocated_node_ids"],
+        "geolocated_public_ips": row["geolocated_public_ips"],
+        "node_id_ip_conflicts": row["node_id_ip_conflicts"],
+        "region_count": row["region_count"],
+        "country_count": row["country_count"],
+        "provider_count": row["provider_count"],
+    }
+    if any(type(value) is not int or value < 0 for value in totals.values()):
+        raise ValueError("Invalid aggregate count")
+    if totals["rpc_sources_ok"] > totals["rpc_sources_total"]:
+        raise ValueError("Invalid RPC source counts")
+    if totals["geolocated_node_ids"] > totals["visible_node_ids"]:
+        raise ValueError("Invalid node geolocation count")
+    if totals["geolocated_public_ips"] > totals["unique_public_ips"]:
+        raise ValueError("Invalid IP geolocation count")
+
+    definitions = (
+        ("regions", "region_count", NetworkDistributionRegion, "name"),
+        ("countries", "country_count", NetworkDistributionCountry, "code"),
+        ("providers", "provider_count", NetworkDistributionProvider, None),
+    )
+    parsed = {}
+    covered = {}
+    for list_key, count_key, model, unique_field in definitions:
+        values = row[list_key]
+        if not isinstance(values, list) or len(values) != totals[count_key]:
+            raise ValueError("Invalid aggregate list")
+        seen = set()
+        parsed_items = []
+        count_sum = 0
+        for value in values:
+            if not isinstance(value, dict) or type(value.get("count")) is not int or value["count"] < 0:
+                raise ValueError("Invalid aggregate item")
+            raw_name = value.get("name")
+            if not isinstance(raw_name, str) or not raw_name.strip():
+                raise ValueError("Invalid aggregate name")
+            if list_key == "countries":
+                code = value.get("code")
+                if not isinstance(code, str) or re.fullmatch(r"[A-Z]{2}", code, re.ASCII) is None:
+                    raise ValueError("Invalid country code")
+            if list_key == "providers":
+                asn = value.get("asn")
+                if asn is not None and (type(asn) is not int or asn <= 0):
+                    raise ValueError("Invalid provider ASN")
+                key = ("asn", asn) if asn is not None else ("name", " ".join(raw_name.split()).casefold())
+            else:
+                key = value[unique_field]
+            if key in seen:
+                raise ValueError("Duplicate aggregate grouping")
+            seen.add(key)
+            count_sum += value["count"]
+            parsed_items.append(model(
+                **value,
+                share_percent=_rounded_percent(value["count"], totals["geolocated_public_ips"]),
+            ))
+        if count_sum > totals["geolocated_public_ips"]:
+            raise ValueError("Aggregate coverage exceeds geolocation total")
+        parsed[list_key] = parsed_items
+        covered[list_key] = count_sum
+
+    return NetworkDistributionResponse(
+        chain_id=row["chain_id"], source_kind=row["source_kind"],
+        updated_at=isoformat_utc_z(row["scanned_at"]),
+        rpc_sources=NetworkDistributionRpcSources(total=totals["rpc_sources_total"], ok=totals["rpc_sources_ok"]),
+        visible_node_ids=totals["visible_node_ids"], unique_public_ips=totals["unique_public_ips"],
+        geolocated_node_ids=totals["geolocated_node_ids"], geolocated_public_ips=totals["geolocated_public_ips"],
+        geolocation_coverage_percent=_rounded_percent(totals["geolocated_public_ips"], totals["unique_public_ips"]),
+        node_id_ip_conflicts=totals["node_id_ip_conflicts"], region_count=totals["region_count"],
+        country_count=totals["country_count"], provider_count=totals["provider_count"],
+        region_covered_public_ips=covered["regions"], country_covered_public_ips=covered["countries"],
+        provider_covered_public_ips=covered["providers"],
+        region_coverage_percent=_rounded_percent(covered["regions"], totals["unique_public_ips"]),
+        country_coverage_percent=_rounded_percent(covered["countries"], totals["unique_public_ips"]),
+        provider_coverage_percent=_rounded_percent(covered["providers"], totals["unique_public_ips"]),
+        regions=parsed["regions"], countries=parsed["countries"], providers=parsed["providers"],
+    )
+
+
 def _normalize_hash_query(value: str) -> tuple[str | None, str | None]:
     stripped = value.strip()
     if not stripped:
@@ -423,6 +514,20 @@ def get_network() -> NetworkResponse:
         LOGGER.error("Explorer database network query failed")
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
     return _network_response_from_row(row)
+
+
+@app.get("/api/network/distribution", response_model=NetworkDistributionResponse)
+def get_network_distribution() -> NetworkDistributionResponse:
+    try:
+        row = database.fetch_network_distribution()
+        if row["scanned_at"] is None:
+            raise HTTPException(status_code=404, detail="Network distribution snapshot not found")
+        return _network_distribution_response_from_row(row)
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.error("Explorer database network distribution query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
 
 
 @app.get("/api/validators", response_model=ValidatorsResponse)

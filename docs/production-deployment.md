@@ -486,6 +486,65 @@ sudo systemctl disable --now utsa-gno-api.service
 
 ### API-only update and rollback
 
+#### Network distribution API access prerequisite
+
+This is a bounded prerequisite for deploying the network-distribution read endpoint. Use
+an administrator connection without placing or printing a password on the command line.
+The indexer, collector timer, and PostgreSQL remain running throughout this procedure.
+
+1. Confirm that migration `0003_network_distribution.sql` is already recorded and that
+   `public.network_distribution_snapshots` exists. Do not run a migration from this
+   procedure.
+2. Grant only the aggregate snapshot access required by the API:
+
+   ```sql
+   GRANT SELECT
+     ON TABLE public.network_distribution_snapshots
+     TO utsa_gno_api;
+   ```
+
+3. Verify least privilege before restarting the API:
+
+   ```sql
+   SELECT has_table_privilege(
+     'utsa_gno_api',
+     'public.network_distribution_snapshots',
+     'SELECT'
+   );
+
+   SELECT privilege, has_table_privilege(
+     'utsa_gno_api',
+     'public.network_distribution_snapshots',
+     privilege
+   )
+   FROM unnest(ARRAY['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE']) AS privilege;
+
+   SELECT table_name, has_table_privilege(
+     'utsa_gno_api',
+     'public.' || table_name,
+     'SELECT'
+   )
+   FROM unnest(ARRAY[
+     'network_distribution_geo_cache',
+     'network_distribution_snapshot_sources'
+   ]) AS table_name;
+   ```
+
+   The first result must be `true`; every write privilege and both auxiliary-table
+   `SELECT` results must be `false`.
+4. After deploying the API code, restart only the API:
+
+   ```bash
+   sudo systemctl restart utsa-gno-api.service
+   ```
+
+5. Smoke-test the local endpoint:
+
+   ```bash
+   curl --fail --silent --show-error \
+     http://127.0.0.1:18180/api/network/distribution
+   ```
+
 For API-only changes, do not stop PostgreSQL or the indexer. Create an isolated Git worktree for PR validation, validate there, and merge only after validation. Then explicitly fast-forward the production checkout and restart only the API:
 
 ```bash

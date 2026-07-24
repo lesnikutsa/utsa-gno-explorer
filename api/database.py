@@ -92,6 +92,38 @@ LEFT JOIN rpc_endpoints r ON r.id = s.selected_rpc_endpoint_id
 WHERE s.state_key = %s
 """
 
+NETWORK_DISTRIBUTION_SQL = """
+SELECT
+    state.chain_id,
+    snapshot.source_kind,
+    snapshot.scanned_at,
+    snapshot.rpc_sources_total,
+    snapshot.rpc_sources_ok,
+    snapshot.visible_node_ids,
+    snapshot.unique_public_ips,
+    snapshot.geolocated_node_ids,
+    snapshot.geolocated_public_ips,
+    snapshot.node_id_ip_conflicts,
+    snapshot.region_count,
+    snapshot.country_count,
+    snapshot.provider_count,
+    snapshot.regions,
+    snapshot.countries,
+    snapshot.providers
+FROM indexer_state state
+LEFT JOIN LATERAL (
+    SELECT source_kind, scanned_at, rpc_sources_total, rpc_sources_ok,
+           visible_node_ids, unique_public_ips, geolocated_node_ids,
+           geolocated_public_ips, node_id_ip_conflicts, region_count,
+           country_count, provider_count, regions, countries, providers
+    FROM network_distribution_snapshots
+    WHERE chain_id = state.chain_id
+    ORDER BY scanned_at DESC, id DESC
+    LIMIT 1
+) snapshot ON true
+WHERE state.state_key = %s
+"""
+
 BLOCK_COLUMNS = """
     block.height,
     block.block_hash_hex,
@@ -456,6 +488,18 @@ class ApiDatabase:
             if not self._default_indexer_state_exists():
                 raise MissingIndexerStateError("Default indexer state is missing")
             raise MissingIndexedBlockError("Indexed block is missing")
+        return dict(row)
+
+    def fetch_network_distribution(self) -> dict[str, Any]:
+        """Return the latest aggregate snapshot for the default indexer chain."""
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(NETWORK_DISTRIBUTION_SQL, ("default",))
+                row = cursor.fetchone()
+        if row is None:
+            raise MissingIndexerStateError("Default indexer state is missing")
         return dict(row)
 
     def _default_indexer_state_exists(self) -> bool:
