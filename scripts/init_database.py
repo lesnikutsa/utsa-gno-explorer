@@ -131,6 +131,36 @@ EXPECTED_INDEXES = {
     "valoper_profiles_moniker_idx": ("valoper_profiles", False, (("moniker", "ASC"), ("operator_address", "ASC")), None),
 }
 
+# Network-distribution schema is part of the final (0003) catalog only. Historical migration
+# tools retain their own stage-specific expectations.
+EXPECTED_TABLES.update({"network_distribution_geo_cache", "network_distribution_snapshots", "network_distribution_snapshot_sources"})
+EXPECTED_COLUMNS.update({
+ "network_distribution_geo_cache": {
+  "ip": ("inet","NO","",None), "lookup_success": ("boolean","NO","",None), "continent_name": ("text","YES","",None), "country_code": ("text","YES","",None), "country_name": ("text","YES","",None), "region_name": ("text","YES","",None), "asn": ("bigint","YES","",None), "provider_name": ("text","YES","",None), "lookup_provider": ("text","NO","",None), "fetched_at": ("timestamp with time zone","NO","",None), "expires_at": ("timestamp with time zone","NO","",None), "error_code": ("text","YES","",None), "inserted_at": ("timestamp with time zone","NO","","now()"), "updated_at": ("timestamp with time zone","NO","","now()")},
+ "network_distribution_snapshots": {
+  "id": ("bigint","NO","a",None), "chain_id": ("text","NO","",None), "source_kind": ("text","NO","",None), "scanned_at": ("timestamp with time zone","NO","",None), "rpc_sources_total": ("integer","NO","",None), "rpc_sources_ok": ("integer","NO","",None), "visible_node_ids": ("integer","NO","",None), "unique_public_ips": ("integer","NO","",None), "geolocated_node_ids": ("integer","NO","",None), "geolocated_public_ips": ("integer","NO","",None), "node_id_ip_conflicts": ("integer","NO","","0"), "region_count": ("integer","NO","",None), "country_count": ("integer","NO","",None), "provider_count": ("integer","NO","",None), "regions": ("jsonb","NO","",None), "countries": ("jsonb","NO","",None), "providers": ("jsonb","NO","",None), "inserted_at": ("timestamp with time zone","NO","","now()")},
+ "network_distribution_snapshot_sources": {
+  "snapshot_id": ("bigint","NO","",None), "source_order": ("integer","NO","",None), "rpc_endpoint_id": ("bigint","YES","",None), "success": ("boolean","NO","",None), "reported_peer_count": ("integer","YES","",None), "accepted_peer_count": ("integer","NO","","0"), "duration_ms": ("integer","YES","",None), "error_code": ("text","YES","",None), "inserted_at": ("timestamp with time zone","NO","","now()")}})
+EXPECTED_PRIMARY_KEYS.update({"network_distribution_geo_cache": ("ip",), "network_distribution_snapshots": ("id",), "network_distribution_snapshot_sources": ("snapshot_id","source_order")})
+EXPECTED_FOREIGN_KEYS.update({
+ ("network_distribution_snapshot_sources", ("snapshot_id",), "network_distribution_snapshots", ("id",), "c"),
+ ("network_distribution_snapshot_sources", ("rpc_endpoint_id",), "rpc_endpoints", ("id",), "n")})
+EXPECTED_CHECKS.update({
+ "network_distribution_geo_cache_country_code_check": "CHECK (country_code IS NULL OR country_code ~ '^[A-Z]{2}$')",
+ "network_distribution_geo_cache_asn_check": "CHECK (asn IS NULL OR asn > 0)",
+ "network_distribution_geo_cache_provider_name_check": "CHECK (provider_name IS NULL OR char_length(provider_name) <= 255)",
+ "network_distribution_geo_cache_error_code_check": "CHECK (error_code IS NULL OR char_length(error_code) <= 64)",
+ "network_distribution_geo_cache_expiry_check": "CHECK (expires_at >= fetched_at)",
+ "network_distribution_snapshots_counts_check": "CHECK (rpc_sources_total >= 0 AND rpc_sources_ok >= 0 AND visible_node_ids >= 0 AND unique_public_ips >= 0 AND geolocated_node_ids >= 0 AND geolocated_public_ips >= 0 AND node_id_ip_conflicts >= 0 AND region_count >= 0 AND country_count >= 0 AND provider_count >= 0 AND rpc_sources_ok <= rpc_sources_total AND geolocated_node_ids <= visible_node_ids AND geolocated_public_ips <= unique_public_ips)",
+ "network_distribution_snapshots_arrays_check": "CHECK (jsonb_typeof(regions) = 'array' AND jsonb_typeof(countries) = 'array' AND jsonb_typeof(providers) = 'array')",
+ "network_distribution_snapshot_sources_values_check": "CHECK (source_order >= 0 AND (reported_peer_count IS NULL OR reported_peer_count >= 0) AND accepted_peer_count >= 0 AND (duration_ms IS NULL OR duration_ms >= 0) AND (error_code IS NULL OR char_length(error_code) <= 64))",
+ "network_distribution_snapshot_sources_state_check": "CHECK ((success AND error_code IS NULL) OR (NOT success AND error_code IS NOT NULL))"})
+EXPECTED_INDEXES.update({
+ "network_distribution_geo_cache_expires_idx": ("network_distribution_geo_cache",False,(("expires_at","ASC"),),None),
+ "network_distribution_geo_cache_country_idx": ("network_distribution_geo_cache",False,(("country_code","ASC"),),"lookup_success AND country_code IS NOT NULL"),
+ "network_distribution_geo_cache_asn_idx": ("network_distribution_geo_cache",False,(("asn","ASC"),("provider_name","ASC")),"lookup_success AND asn IS NOT NULL"),
+ "network_distribution_snapshots_chain_latest_idx": ("network_distribution_snapshots",False,(("chain_id","ASC"),("scanned_at","DESC"),("id","DESC")),None)})
+
 class SchemaCompatibilityError(RuntimeError):
     """Raised when an existing schema is not compatible with the expected explorer schema."""
 

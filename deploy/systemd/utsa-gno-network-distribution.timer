@@ -1,0 +1,12 @@
+[Unit]
+Description=Collect Network Explorer distribution every 15 minutes
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+RandomizedDelaySec=1m
+AccuracySec=1m
+Unit=utsa-gno-network-distribution.service
+
+[Install]
+WantedBy=timers.target

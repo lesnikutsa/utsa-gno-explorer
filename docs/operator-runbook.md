@@ -222,3 +222,19 @@ A deployment upgrading from `v0.5.0-production-runtime`, or any deployment witho
 compatible Valopers tables and API-role privilege, must first follow the existing
 operator-controlled Valopers schema migration and API-role grant procedure in the production
 deployment guide. No migration is automatic.
+
+## Network distribution collector
+
+The collector measures peers visible through one or more healthy Tendermint `/net_info` RPC sources. It is an observed sample, not a complete network census. It reuses persisted `rpc_endpoints` health, preferring the selected endpoint, then greatest observed height, then endpoint ID. The default limit is one; `NETWORK_DISTRIBUTION_RPC_LIMIT` supports 1–20 without requiring that all requested sources exist. Node IDs are deduplicated by source priority and conflicting later IPs are counted but discarded. Country, region, and provider rankings count unique public IPs.
+
+GeoIP/ASN data comes from `https://ipwho.is` by default and is cached for seven days (failed lookups for one hour). External lookups and concurrency are bounded. The newest 120 snapshots per chain are retained by default. No API or frontend consumes these tables yet.
+
+Manual comparison and collection:
+
+```bash
+python scripts/collect_network_distribution.py --dry-run --pretty --rpc-limit 1
+python scripts/collect_network_distribution.py --dry-run --pretty --rpc-limit 3
+python scripts/collect_network_distribution.py
+```
+
+Configure `NETWORK_DISTRIBUTION_CHAIN_ID` (falling back to `GNO_CHAIN_ID`) and optional `NETWORK_DISTRIBUTION_RPC_HEALTH_MAX_AGE`, `NETWORK_DISTRIBUTION_GEO_API_URL`, `NETWORK_DISTRIBUTION_GEO_TIMEOUT`, `NETWORK_DISTRIBUTION_GEO_CACHE_TTL`, `NETWORK_DISTRIBUTION_GEO_FAILURE_TTL`, `NETWORK_DISTRIBUTION_GEO_MAX_LOOKUPS`, `NETWORK_DISTRIBUTION_GEO_CONCURRENCY`, and `NETWORK_DISTRIBUTION_SNAPSHOT_RETENTION` in the external environment file.

@@ -860,3 +860,16 @@ persisted profiles; no automatic refresh is performed.
 ### Ordered RPC failover safety
 
 Configure `GNO_RPC_URLS` in preference order. Each complete probe cycle synchronizes enabled endpoints for the configured chain, and the indexer uses the first endpoint that passes status, lag, trusted checkpoint-anchor, and parent-continuity checks. Removed same-chain URLs are disabled and deselected. The active endpoint proves its checkpoint only once per activation. If a request fails mid-batch, it is persisted unhealthy and excluded for the rest of the cycle; the next candidate proves the latest checkpoint once and retries the same height without global backoff. Endpoint selection is persisted only on initial activation or a real switch; backoff begins only when every candidate is exhausted. A single configured RPC follows the same retry behavior and never advances the checkpoint while unavailable or unable to prove continuity. Keep separate networks in separate database/runtime instances: `chain_id` equality alone is not cryptographic fork protection.
+
+## Network distribution rollout (not yet deployed)
+
+1. Create a fresh PostgreSQL backup.
+2. Stop only services required by the repository migration policy.
+3. Run `python scripts/migrate_network_distribution_schema.py`.
+4. Run `python scripts/init_database.py`.
+5. Perform `python scripts/collect_network_distribution.py --dry-run --pretty --rpc-limit 1` (and optionally compare `--rpc-limit 3`).
+6. Perform one persisted `python scripts/collect_network_distribution.py` run.
+7. Inspect snapshot and source counts in PostgreSQL.
+8. Only after validation, install the service and timer into `/etc/systemd/system`, run `systemctl daemon-reload`, and enable `utsa-gno-network-distribution.timer`.
+
+Verify with `systemctl list-timers utsa-gno-network-distribution.timer` and `journalctl -u utsa-gno-network-distribution.service`. The timer runs every 15 minutes with a one-minute randomized delay and persistent catch-up. The collector uses a chain-specific advisory lock. Snapshot writes and retention pruning are atomic; all-RPC failure leaves the previous snapshot unchanged. Rollback means disabling the timer and restoring the fresh backup; the repository does not automatically deploy, enable, or migrate anything.
