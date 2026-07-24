@@ -11,7 +11,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.init_database import EXPECTED_TABLES, fetch_schema_snapshot, validate_schema_snapshot
+from scripts.init_database import (EXPECTED_TABLES, NETWORK_DISTRIBUTION_TABLES,
+    PRE_NETWORK_DISTRIBUTION_EXPECTATIONS, fetch_schema_snapshot, validate_schema_snapshot)
+from scripts.init_database import validate_schema_stage
 
 MIGRATION = REPO_ROOT / "database" / "migrations" / "0001_add_valopers_persistence.sql"
 LEGACY_TABLES = {
@@ -42,8 +44,13 @@ def migrate_valopers_schema(database_url: str, migration_path: Path = MIGRATION,
                 ORDER BY c.relname
             """)
             tables = {row[0] for row in cursor.fetchall()}
-            if tables == EXPECTED_TABLES:
-                validate_schema_snapshot(fetch_schema_snapshot(cursor))
+            if tables in (EXPECTED_TABLES, EXPECTED_TABLES - NETWORK_DISTRIBUTION_TABLES):
+                expectations = None if tables == EXPECTED_TABLES else PRE_NETWORK_DISTRIBUTION_EXPECTATIONS
+                snapshot = fetch_schema_snapshot(cursor)
+                if expectations is None:
+                    validate_schema_snapshot(snapshot)
+                else:
+                    validate_schema_stage(snapshot, expectations)
                 return "already-compatible"
             if tables != LEGACY_TABLES:
                 if not tables:
@@ -53,7 +60,11 @@ def migrate_valopers_schema(database_url: str, migration_path: Path = MIGRATION,
                 raise MigrationPreconditionError("public schema is not the exact legacy schema")
 
             cursor.execute(migration_sql)
-            validate_schema_snapshot(fetch_schema_snapshot(cursor))
+            snapshot = fetch_schema_snapshot(cursor)
+            if NETWORK_DISTRIBUTION_TABLES <= set(snapshot.get("tables", set())):
+                validate_schema_snapshot(snapshot)
+            else:
+                validate_schema_stage(snapshot, PRE_NETWORK_DISTRIBUTION_EXPECTATIONS)
         connection.commit()
     return "applied"
 

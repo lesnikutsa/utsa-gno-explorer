@@ -52,10 +52,13 @@ def collect_distribution(chain_id, sources, geo_records=None, timeout=10, fetch=
     geo_records = geo_resolver(ips) if geo_resolver else (geo_records or {})
     successful = {ip: geo_records[ip] for ip in ips if ip in geo_records and geo_records[ip].lookup_success}
     regions, countries = Counter(), Counter()
+    country_names = defaultdict(set)
     providers, provider_names = Counter(), defaultdict(set)
     for ip, geo in successful.items():
         if geo.continent_name: regions[geo.continent_name] += 1
-        if geo.country_code and geo.country_name: countries[(geo.country_code, geo.country_name)] += 1
+        if geo.country_code and geo.country_name:
+            countries[geo.country_code] += 1
+            country_names[geo.country_code].add(geo.country_name)
         if geo.asn:
             key = ("asn", geo.asn); provider_names[key].add(geo.provider_name or f"AS{geo.asn}")
         elif geo.provider_name:
@@ -72,6 +75,10 @@ def collect_distribution(chain_id, sources, geo_records=None, timeout=10, fetch=
         "geolocated_public_ips": len(successful), "node_id_ip_conflicts": len(conflicts),
         "region_count": len(regions), "country_count": len(countries), "provider_count": len(providers),
         "regions": _rank(regions, lambda name, count: {"name": name, "count": count}),
-        "countries": _rank(countries, lambda key, count: {"code": key[0], "name": key[1], "count": count}),
+        "countries": _rank(countries, lambda code, count: {
+            "code": code,
+            "name": sorted(country_names[code], key=lambda value: (value.casefold(), value))[0],
+            "count": count,
+        }),
         "providers": provider_rows, "sources": [asdict(result) for result in results],
     }

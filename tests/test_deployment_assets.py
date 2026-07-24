@@ -716,3 +716,13 @@ class WaitForPostgresTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class NetworkDistributionDeploymentAssetTests(unittest.TestCase):
+    def test_network_distribution_service_and_timer_contract(self):
+        service = (ROOT / "deploy/systemd/utsa-gno-network-distribution.service").read_text()
+        timer = (ROOT / "deploy/systemd/utsa-gno-network-distribution.timer").read_text()
+        for value in ["Type=oneshot", "User=utsa-gno", "Group=utsa-gno", "EnvironmentFile=/etc/utsa-gno-explorer/indexer.env", "EnvironmentFile=-/etc/utsa-gno-explorer/network-distribution.env", "wait_for_postgres.py", "NoNewPrivileges=true", "ProtectSystem=strict", "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6"]:
+            self.assertIn(value, service)
+        for value in ["OnCalendar=*:0/15", "Persistent=true", "RandomizedDelaySec=1m", "AccuracySec=1m"]:
+            self.assertIn(value, timer)
+        self.assertNotIn("systemctl enable", service + timer)

@@ -2,19 +2,25 @@
 CREATE TABLE network_distribution_geo_cache (
     ip INET PRIMARY KEY,
     lookup_success BOOLEAN NOT NULL,
-    continent_name TEXT,
+    continent_name TEXT CONSTRAINT network_distribution_geo_cache_continent_name_check CHECK (continent_name IS NULL OR char_length(continent_name) <= 128),
     country_code TEXT CONSTRAINT network_distribution_geo_cache_country_code_check CHECK (country_code IS NULL OR country_code ~ '^[A-Z]{2}$'),
-    country_name TEXT,
-    region_name TEXT,
+    country_name TEXT CONSTRAINT network_distribution_geo_cache_country_name_check CHECK (country_name IS NULL OR char_length(country_name) <= 128),
+    region_name TEXT CONSTRAINT network_distribution_geo_cache_region_name_check CHECK (region_name IS NULL OR char_length(region_name) <= 255),
     asn BIGINT CONSTRAINT network_distribution_geo_cache_asn_check CHECK (asn IS NULL OR asn > 0),
     provider_name TEXT CONSTRAINT network_distribution_geo_cache_provider_name_check CHECK (provider_name IS NULL OR char_length(provider_name) <= 255),
-    lookup_provider TEXT NOT NULL,
+    lookup_provider TEXT NOT NULL CONSTRAINT network_distribution_geo_cache_lookup_provider_check CHECK (char_length(lookup_provider) BETWEEN 1 AND 128),
     fetched_at TIMESTAMPTZ NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL,
     error_code TEXT CONSTRAINT network_distribution_geo_cache_error_code_check CHECK (error_code IS NULL OR char_length(error_code) <= 64),
     inserted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT network_distribution_geo_cache_expiry_check CHECK (expires_at >= fetched_at)
+    CONSTRAINT network_distribution_geo_cache_expiry_check CHECK (expires_at >= fetched_at),
+    CONSTRAINT network_distribution_geo_cache_state_check CHECK (
+        (lookup_success AND error_code IS NULL)
+        OR (NOT lookup_success AND error_code IS NOT NULL AND continent_name IS NULL
+            AND country_code IS NULL AND country_name IS NULL AND region_name IS NULL
+            AND asn IS NULL AND provider_name IS NULL)
+    )
 );
 CREATE INDEX network_distribution_geo_cache_expires_idx ON network_distribution_geo_cache (expires_at);
 CREATE INDEX network_distribution_geo_cache_country_idx ON network_distribution_geo_cache (country_code) WHERE lookup_success AND country_code IS NOT NULL;

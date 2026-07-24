@@ -57,7 +57,14 @@ def save_geo_cache(connection, records: list[GeoRecord]) -> None:
                 country_name=excluded.country_name,region_name=excluded.region_name,asn=excluded.asn,
                 provider_name=excluded.provider_name,lookup_provider=excluded.lookup_provider,
                 fetched_at=excluded.fetched_at,expires_at=excluded.expires_at,error_code=excluded.error_code,
-                updated_at=now()""", tuple(row.__dict__.values()))
+                updated_at=now()
+                WHERE excluded.lookup_success
+                   OR NOT network_distribution_geo_cache.lookup_success
+                   OR network_distribution_geo_cache.expires_at <= now()""", (
+                    row.ip, row.lookup_success, row.continent_name, row.country_code,
+                    row.country_name, row.region_name, row.asn, row.provider_name,
+                    row.lookup_provider, row.fetched_at, row.expires_at, row.error_code,
+                ))
     connection.commit()
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import ipaddress
 from dataclasses import dataclass
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 import requests
 
@@ -12,6 +12,15 @@ import requests
 class PeerIdentity:
     node_id: str
     ip: str
+
+
+def _node_id(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if not normalized or len(normalized) > 255 or any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in normalized):
+        return None
+    return normalized
 
 
 def _public_ip(address: str) -> str | None:
@@ -42,15 +51,25 @@ def _public_ip(address: str) -> str | None:
 def parse_peer(peer: dict) -> PeerIdentity | None:
     info = peer.get("node_info") if isinstance(peer.get("node_info"), dict) else {}
     net_address = info.get("net_address")
-    if isinstance(net_address, str) and "@" in net_address:
-        node_id, _ = net_address.split("@", 1)
+    fallback_id = next((_node_id(v) for v in (info.get("id"), peer.get("node_id"), peer.get("id")) if _node_id(v)), None)
+    if isinstance(net_address, str):
+        address_value = net_address
+        embedded_id = None
+        without_scheme = address_value.split("://", 1)[1] if address_value.startswith(("tcp://", "p2p://")) else address_value
+        if "@" in without_scheme:
+            embedded, address = without_scheme.rsplit("@", 1)
+            embedded_id = _node_id(embedded)
+            address_value = address
         ip = _public_ip(net_address)
-        if node_id.strip() and ip:
-            return PeerIdentity(node_id.strip().lower(), ip)
-    node_id = next((v for v in (info.get("id"), peer.get("node_id"), peer.get("id")) if isinstance(v, str) and v.strip()), None)
+        if embedded_id and ip:
+            return PeerIdentity(embedded_id, ip)
+        ip = _public_ip(address_value)
+        if fallback_id and ip:
+            return PeerIdentity(fallback_id, ip)
+    node_id = fallback_id
     address = next((v for v in (info.get("listen_addr"), peer.get("remote_ip"), peer.get("ip"), peer.get("remote_addr")) if isinstance(v, str) and v.strip()), None)
     ip = _public_ip(address) if address else None
-    return PeerIdentity(node_id.strip().lower(), ip) if node_id and ip else None
+    return PeerIdentity(node_id, ip) if node_id and ip else None
 
 
 def parse_net_info(payload: object) -> tuple[int, list[PeerIdentity]]:
@@ -73,7 +92,11 @@ def parse_net_info(payload: object) -> tuple[int, list[PeerIdentity]]:
 
 
 def fetch_net_info(base_url: str, timeout: int) -> tuple[int, list[PeerIdentity]]:
-    url = base_url.rstrip("/") + "/net_info"
+    parsed = urlsplit(base_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("request_error")
+    path = parsed.path.rstrip("/") + "/net_info"
+    url = urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
     try:
         response = requests.get(url, timeout=timeout)
         response.raise_for_status()

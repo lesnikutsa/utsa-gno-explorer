@@ -13,7 +13,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.init_database import EXPECTED_CHECKS, EXPECTED_COLUMNS, EXPECTED_INDEXES, fetch_schema_snapshot, validate_schema_snapshot
+from scripts.init_database import (EXPECTED_CHECKS, EXPECTED_COLUMNS, EXPECTED_INDEXES,
+    EXPECTED_TABLES, NETWORK_DISTRIBUTION_TABLES, PRE_NETWORK_DISTRIBUTION_EXPECTATIONS,
+    fetch_schema_snapshot, validate_schema_snapshot, validate_schema_stage)
 
 MIGRATION = REPO_ROOT / "database" / "migrations" / "0002_add_transaction_hash.sql"
 HASH_COLUMN = "tx_hash_hex"
@@ -42,7 +44,7 @@ def _validate_exact_legacy(cursor) -> None:
         raise MigrationPreconditionError("transaction hash schema is an unknown partial state")
     indexes[HASH_INDEX] = EXPECTED_INDEXES[HASH_INDEX]
     try:
-        validate_schema_snapshot(snapshot)
+        validate_schema_stage(snapshot, PRE_NETWORK_DISTRIBUTION_EXPECTATIONS)
     except Exception as exc:
         raise MigrationPreconditionError("public schema is not the exact legacy schema") from exc
 
@@ -155,7 +157,16 @@ def migrate_transaction_hashes(database_url: str, migration_path: Path = MIGRATI
             if state == "unknown":
                 raise MigrationPreconditionError("transaction hash schema is an unknown partial state")
             if state == "compatible":
-                validate_schema_snapshot(fetch_schema_snapshot(cursor))
+                snapshot = fetch_schema_snapshot(cursor)
+                tables = set(snapshot.get("tables", set()))
+                if not tables:  # Compatibility with callers that provide a validation mock.
+                    validate_schema_snapshot(snapshot)
+                elif tables == EXPECTED_TABLES:
+                    validate_schema_snapshot(snapshot)
+                elif tables == EXPECTED_TABLES - NETWORK_DISTRIBUTION_TABLES:
+                    validate_schema_stage(snapshot, PRE_NETWORK_DISTRIBUTION_EXPECTATIONS)
+                else:
+                    raise MigrationPreconditionError("public schema is not an exact compatible stage")
                 _verify_hash_contents(cursor, batch_size)
                 return "already-compatible"
             _validate_exact_legacy(cursor)
@@ -166,7 +177,7 @@ def migrate_transaction_hashes(database_url: str, migration_path: Path = MIGRATI
             cursor.execute("ALTER TABLE transactions VALIDATE CONSTRAINT transactions_tx_hash_hex_format")
             cursor.execute("ALTER TABLE transactions VALIDATE CONSTRAINT transactions_tx_hash_consistent")
             cursor.execute("CREATE INDEX transactions_tx_hash_hex_idx ON transactions(tx_hash_hex) WHERE tx_hash_hex IS NOT NULL")
-            validate_schema_snapshot(fetch_schema_snapshot(cursor))
+            validate_schema_stage(fetch_schema_snapshot(cursor), PRE_NETWORK_DISTRIBUTION_EXPECTATIONS)
         connection.commit()
     return "applied"
 

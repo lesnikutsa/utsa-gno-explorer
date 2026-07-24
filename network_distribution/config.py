@@ -21,6 +21,7 @@ class Config:
     chain_id: str
     rpc_limit: int
     rpc_health_max_age: int
+    rpc_timeout: int
     geo_api_url: str
     geo_timeout: int
     geo_cache_ttl: int
@@ -43,6 +44,7 @@ class Config:
         return cls(
             database_url, chain_id, rpc_limit or configured_limit,
             _integer("NETWORK_DISTRIBUTION_RPC_HEALTH_MAX_AGE", 600, 1, 86400),
+            _integer("NETWORK_DISTRIBUTION_RPC_TIMEOUT", 10, 1, 120),
             os.getenv("NETWORK_DISTRIBUTION_GEO_API_URL", "https://ipwho.is").rstrip("/"),
             _integer("NETWORK_DISTRIBUTION_GEO_TIMEOUT", 10, 1, 120),
             _integer("NETWORK_DISTRIBUTION_GEO_CACHE_TTL", 604800, 3600, 31536000),
