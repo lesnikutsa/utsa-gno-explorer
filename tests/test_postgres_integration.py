@@ -11,7 +11,15 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from api.database import ACTIVE_VALIDATORS_SQL, NETWORK_SQL, VALIDATOR_IDENTITY_SQL
+from api.config import ApiConfig
+from api.database import (
+    ACTIVE_VALIDATORS_SQL,
+    NETWORK_DISTRIBUTION_SQL,
+    NETWORK_SQL,
+    VALIDATOR_IDENTITY_SQL,
+    ApiDatabase,
+    MissingIndexerStateError,
+)
 from indexer.database import PostgresDatabase
 from indexer.rpc import RpcProbeResult
 from indexer.valopers_parser import ValoperProfile
@@ -767,6 +775,81 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             [sys.executable, "scripts/migrate_network_distribution_schema.py"],
             cwd=ROOT, env=env, text=True, capture_output=True, check=False,
         )
+
+    def test_api_network_distribution_latest_snapshot_contract(self):
+        name = f"utsa_distribution_api_{os.getpid()}"
+        self.create_database(name)
+        database_url = self.database_url_for(name)
+        self.assertEqual(self.run_init(database_url).returncode, 0)
+        epoch = datetime(2026, 7, 24, 10, 0, tzinfo=timezone.utc)
+        insert_sql = """
+            INSERT INTO network_distribution_snapshots (
+                chain_id, source_kind, scanned_at, rpc_sources_total, rpc_sources_ok,
+                visible_node_ids, unique_public_ips, geolocated_node_ids,
+                geolocated_public_ips, node_id_ip_conflicts, region_count,
+                country_count, provider_count, regions, countries, providers
+            ) VALUES (%s, 'tendermint_net_info', %s, 3, 3, 8, 7, 8, 7, 0,
+                      1, 1, 1, %s::jsonb, %s::jsonb, %s::jsonb)
+            RETURNING id
+        """
+        regions = '[{"name":"Europe","count":7}]'
+        countries = '[{"code":"FI","name":"Finland","count":6}]'
+        providers = '[{"asn":24940,"name":"Provider","count":5}]'
+
+        api_database = ApiDatabase()
+        api_database.open(ApiConfig(database_url=database_url))
+        self.addCleanup(api_database.close)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO indexer_state (state_key, chain_id, last_finalized_height) "
+                "VALUES ('default', 'topaz-1', 0)"
+            )
+            cursor.execute(insert_sql, ("topaz-1", epoch, regions, countries, providers))
+            cursor.execute(insert_sql, ("topaz-1", epoch + timedelta(minutes=1), regions, countries, providers))
+        row = api_database.fetch_network_distribution()
+        self.assertEqual(row["scanned_at"], epoch + timedelta(minutes=1))
+        self.assertEqual(row["chain_id"], "topaz-1")
+        self.assertIsInstance(row["regions"], list)
+        self.assertIsInstance(row["regions"][0], dict)
+        self.assertIsInstance(row["countries"], list)
+        self.assertIsInstance(row["providers"], list)
+        self.assertEqual(
+            set(row),
+            {"chain_id", "source_kind", "scanned_at", "rpc_sources_total", "rpc_sources_ok",
+             "visible_node_ids", "unique_public_ips", "geolocated_node_ids",
+             "geolocated_public_ips", "node_id_ip_conflicts", "region_count",
+             "country_count", "provider_count", "regions", "countries", "providers"},
+        )
+
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("DELETE FROM network_distribution_snapshots")
+            cursor.execute(insert_sql, ("topaz-1", epoch, regions, countries, providers)); first_id = cursor.fetchone()[0]
+            cursor.execute(insert_sql, ("topaz-1", epoch, regions, countries, providers)); second_id = cursor.fetchone()[0]
+        self.assertGreater(second_id, first_id)
+        self.assertEqual(api_database.fetch_network_distribution()["providers"][0]["count"], 5)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("UPDATE network_distribution_snapshots SET providers = '[{\"asn\":24940,\"name\":\"Newest ID\",\"count\":5}]'::jsonb WHERE id = %s", (second_id,))
+        self.assertEqual(api_database.fetch_network_distribution()["providers"][0]["name"], "Newest ID")
+
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("DELETE FROM network_distribution_snapshots")
+            cursor.execute(insert_sql, ("topaz-1", epoch, regions, countries, providers))
+            cursor.execute(insert_sql, ("other-1", epoch + timedelta(days=1), regions, countries, providers))
+        self.assertEqual(api_database.fetch_network_distribution()["chain_id"], "topaz-1")
+
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("DELETE FROM network_distribution_snapshots")
+        row = api_database.fetch_network_distribution()
+        self.assertEqual(row["chain_id"], "topaz-1")
+        self.assertIsNone(row["scanned_at"])
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("DELETE FROM indexer_state WHERE state_key = 'default'")
+        with self.assertRaises(MissingIndexerStateError):
+            api_database.fetch_network_distribution()
+
+        normalized_sql = NETWORK_DISTRIBUTION_SQL.lower()
+        for forbidden in ("network_distribution_geo_cache", "network_distribution_snapshot_sources", "rpc_endpoints"):
+            self.assertNotIn(forbidden, normalized_sql)
 
     def test_network_distribution_migration_and_existing_rows(self):
         name = f"utsa_distribution_migration_{os.getpid()}"

@@ -135,7 +135,13 @@ class ApiDeploymentAssetTests(unittest.TestCase):
             self.assertNotIn(f"GRANT {privilege}", section)
         self.assertNotIn("GRANT SELECT ON TABLE public.network_distribution_geo_cache", normalized)
         self.assertNotIn("GRANT SELECT ON TABLE public.network_distribution_snapshot_sources", normalized)
-        self.assertLess(section.index("0003_network_distribution.sql"), section.index("GRANT SELECT"))
+        self.assertIn("database/migrations/0003_add_network_distribution.sql", section)
+        self.assertNotIn("0003_network_distribution.sql", section)
+        self.assertIn("to_regclass('public.network_distribution_snapshots')", section)
+        self.assertIn("AS privileges(privilege)", section)
+        self.assertIn("AS auxiliary(table_name)", section)
+        self.assertLess(section.index("0003_add_network_distribution.sql"), section.index("to_regclass"))
+        self.assertLess(section.index("to_regclass"), section.index("GRANT SELECT"))
         self.assertLess(section.index("GRANT SELECT"), section.index("Verify least privilege"))
         self.assertLess(section.index("Verify least privilege"), section.index("systemctl restart"))
         self.assertLess(section.index("systemctl restart"), section.index("/api/network/distribution"))
@@ -144,7 +150,11 @@ class ApiDeploymentAssetTests(unittest.TestCase):
         section = self.network_distribution_prerequisite_section().lower()
         self.assertEqual(section.count("systemctl restart"), 1)
         self.assertIn("systemctl restart utsa-gno-api.service", section)
-        for forbidden in ("stop utsa-gno-indexer", "stop utsa-gno-network-distribution", "stop postgresql", "database_url=", "migrate_network_distribution_schema.py"):
+        self.assertIn("previously ran `python scripts/migrate_network_distribution_schema.py`", section)
+        self.assertIn("`python scripts/init_database.py`", section)
+        for forbidden in ("stop utsa-gno-indexer", "stop utsa-gno-network-distribution", "stop postgresql", "database_url="):
+            self.assertNotIn(forbidden, section)
+        for forbidden in ("grant create", "owner to", "all privileges"):
             self.assertNotIn(forbidden, section)
 
     def test_valopers_prerequisite_grants_only_required_profile_select(self):

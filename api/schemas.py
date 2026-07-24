@@ -79,8 +79,8 @@ class NetworkDistributionProvider(BaseModel):
 
 
 class NetworkDistributionResponse(BaseModel):
-    chain_id: str
-    source_kind: str
+    chain_id: str = Field(min_length=1)
+    source_kind: str = Field(min_length=1)
     updated_at: str
     rpc_sources: NetworkDistributionRpcSources
     visible_node_ids: int = Field(ge=0)

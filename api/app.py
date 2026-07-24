@@ -238,6 +238,12 @@ def _network_response_from_row(row: dict) -> NetworkResponse:
 def _network_distribution_response_from_row(row: dict) -> NetworkDistributionResponse:
     if row["scanned_at"] is None:
         raise LookupError("Network distribution snapshot is missing")
+    if not isinstance(row["scanned_at"], datetime):
+        raise ValueError("Invalid snapshot timestamp")
+    for key in ("chain_id", "source_kind"):
+        value = row[key]
+        if not _is_canonical_text(value):
+            raise ValueError("Invalid snapshot text")
     totals = {
         "rpc_sources_total": row["rpc_sources_total"],
         "rpc_sources_ok": row["rpc_sources_ok"],
@@ -260,13 +266,13 @@ def _network_distribution_response_from_row(row: dict) -> NetworkDistributionRes
         raise ValueError("Invalid IP geolocation count")
 
     definitions = (
-        ("regions", "region_count", NetworkDistributionRegion, "name"),
-        ("countries", "country_count", NetworkDistributionCountry, "code"),
-        ("providers", "provider_count", NetworkDistributionProvider, None),
+        ("regions", "region_count", NetworkDistributionRegion, {"name", "count"}),
+        ("countries", "country_count", NetworkDistributionCountry, {"code", "name", "count"}),
+        ("providers", "provider_count", NetworkDistributionProvider, {"asn", "name", "count"}),
     )
     parsed = {}
     covered = {}
-    for list_key, count_key, model, unique_field in definitions:
+    for list_key, count_key, model, allowed_keys in definitions:
         values = row[list_key]
         if not isinstance(values, list) or len(values) != totals[count_key]:
             raise ValueError("Invalid aggregate list")
@@ -274,10 +280,11 @@ def _network_distribution_response_from_row(row: dict) -> NetworkDistributionRes
         parsed_items = []
         count_sum = 0
         for value in values:
-            if not isinstance(value, dict) or type(value.get("count")) is not int or value["count"] < 0:
+            if (not isinstance(value, dict) or set(value) != allowed_keys
+                    or type(value.get("count")) is not int or value["count"] < 0):
                 raise ValueError("Invalid aggregate item")
             raw_name = value.get("name")
-            if not isinstance(raw_name, str) or not raw_name.strip():
+            if not _is_canonical_text(raw_name):
                 raise ValueError("Invalid aggregate name")
             if list_key == "countries":
                 code = value.get("code")
@@ -288,8 +295,10 @@ def _network_distribution_response_from_row(row: dict) -> NetworkDistributionRes
                 if asn is not None and (type(asn) is not int or asn <= 0):
                     raise ValueError("Invalid provider ASN")
                 key = ("asn", asn) if asn is not None else ("name", " ".join(raw_name.split()).casefold())
+            elif list_key == "regions":
+                key = " ".join(raw_name.split()).casefold()
             else:
-                key = value[unique_field]
+                key = value["code"]
             if key in seen:
                 raise ValueError("Duplicate aggregate grouping")
             seen.add(key)
@@ -318,6 +327,15 @@ def _network_distribution_response_from_row(row: dict) -> NetworkDistributionRes
         country_coverage_percent=_rounded_percent(covered["countries"], totals["unique_public_ips"]),
         provider_coverage_percent=_rounded_percent(covered["providers"], totals["unique_public_ips"]),
         regions=parsed["regions"], countries=parsed["countries"], providers=parsed["providers"],
+    )
+
+
+def _is_canonical_text(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and bool(value)
+        and value == value.strip()
+        and all(character.isprintable() for character in value)
     )
 
 

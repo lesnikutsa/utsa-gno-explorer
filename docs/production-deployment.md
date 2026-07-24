@@ -492,10 +492,21 @@ This is a bounded prerequisite for deploying the network-distribution read endpo
 an administrator connection without placing or printing a password on the command line.
 The indexer, collector timer, and PostgreSQL remain running throughout this procedure.
 
-1. Confirm that migration `0003_network_distribution.sql` is already recorded and that
-   `public.network_distribution_snapshots` exists. Do not run a migration from this
-   procedure.
-2. Grant only the aggregate snapshot access required by the API:
+1. Confirm that network-distribution migration
+   `database/migrations/0003_add_network_distribution.sql` has already been applied and
+   that the final schema validation has succeeded. The normal production migration
+   procedure previously ran `python scripts/migrate_network_distribution_schema.py` and
+   `python scripts/init_database.py`; do not run either command in this API-only procedure.
+2. Confirm the aggregate snapshot table exists:
+
+   ```sql
+   SELECT
+       to_regclass('public.network_distribution_snapshots')
+           IS NOT NULL AS snapshots_table_exists;
+   ```
+
+   The expected result is `true`.
+3. Grant only the aggregate snapshot access required by the API:
 
    ```sql
    GRANT SELECT
@@ -503,7 +514,7 @@ The indexer, collector timer, and PostgreSQL remain running throughout this proc
      TO utsa_gno_api;
    ```
 
-3. Verify least privilege before restarting the API:
+4. Verify least privilege before deploying the API:
 
    ```sql
    SELECT has_table_privilege(
@@ -512,33 +523,42 @@ The indexer, collector timer, and PostgreSQL remain running throughout this proc
      'SELECT'
    );
 
-   SELECT privilege, has_table_privilege(
-     'utsa_gno_api',
-     'public.network_distribution_snapshots',
-     privilege
-   )
-   FROM unnest(ARRAY['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE']) AS privilege;
+   SELECT
+     privileges.privilege,
+     has_table_privilege(
+       'utsa_gno_api',
+       'public.network_distribution_snapshots',
+       privileges.privilege
+     )
+   FROM unnest(
+     ARRAY['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE']
+   ) AS privileges(privilege);
 
-   SELECT table_name, has_table_privilege(
-     'utsa_gno_api',
-     'public.' || table_name,
-     'SELECT'
-   )
-   FROM unnest(ARRAY[
-     'network_distribution_geo_cache',
-     'network_distribution_snapshot_sources'
-   ]) AS table_name;
+   SELECT
+     auxiliary.table_name,
+     has_table_privilege(
+       'utsa_gno_api',
+       'public.' || auxiliary.table_name,
+       'SELECT'
+     )
+   FROM unnest(
+     ARRAY[
+       'network_distribution_geo_cache',
+       'network_distribution_snapshot_sources'
+     ]
+   ) AS auxiliary(table_name);
    ```
 
    The first result must be `true`; every write privilege and both auxiliary-table
    `SELECT` results must be `false`.
-4. After deploying the API code, restart only the API:
+5. Deploy the reviewed API code using the API-only update procedure below.
+6. Restart only the API:
 
    ```bash
    sudo systemctl restart utsa-gno-api.service
    ```
 
-5. Smoke-test the local endpoint:
+7. Smoke-test the local endpoint:
 
    ```bash
    curl --fail --silent --show-error \

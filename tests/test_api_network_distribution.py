@@ -58,6 +58,13 @@ class NetworkDistributionApiTests(unittest.TestCase):
         self.assertEqual(data["geolocation_coverage_percent"], 100.0)
         forbidden = {"id", "inserted_at", "ip", "node_id", "rpc_url", "sources"}
         self.assertTrue(forbidden.isdisjoint(data))
+        def keys(value):
+            if isinstance(value, dict):
+                return set(value).union(*(keys(item) for item in value.values()))
+            if isinstance(value, list):
+                return set().union(*(keys(item) for item in value), set())
+            return set()
+        self.assertTrue({"ip", "node_id", "rpc_url", "snapshot_id", "sources"}.isdisjoint(keys(data)))
 
     def test_round_half_up_and_zero_denominator(self):
         row = snapshot(unique_public_ips=6, geolocated_public_ips=6, geolocated_node_ids=6,
@@ -86,13 +93,34 @@ class NetworkDistributionApiTests(unittest.TestCase):
             self.assertEqual(response.json(), {"detail": "Explorer database is unavailable"})
             self.assertNotIn(SECRET, response.text)
 
+    def test_secret_database_exception_is_not_logged(self):
+        logger = logging.getLogger("api.app")
+        with self.assertLogs(logger, level="ERROR") as logs:
+            with self.client(FakeDatabase(error=RuntimeError(SECRET))) as client:
+                response = client.get("/api/network/distribution")
+        combined = response.text + "\n" + "\n".join(logs.output)
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("Explorer database network distribution query failed", combined)
+        for secret in (SECRET, "secret", "private", "user"):
+            self.assertNotIn(secret, combined)
+
     def test_malformed_aggregates_are_sanitized_and_safely_logged(self):
         cases = [
             {"regions": {}}, {"countries": "bad"}, {"providers": ["bad"]},
             {"region_count": 2},
             {"countries": [{"code": "FI", "name": "Finland", "count": 8}, {"code": "FI", "name": "duplicate", "count": 9}], "country_count": 2},
-            {"providers": [{"asn": None, "name": " ACME  Corp ", "count": 1}, {"asn": None, "name": "acme corp", "count": 1}], "provider_count": 2},
+            {"providers": [{"asn": None, "name": "ACME  Corp", "count": 1}, {"asn": None, "name": "acme corp", "count": 1}], "provider_count": 2},
             {"regions": [{"name": "Europe", "count": 65}]},
+            {"regions": [{"name": "Europe", "count": 1}, {"name": " europe ", "count": 1}], "region_count": 2},
+            {"providers": [{"asn": 10, "name": "One", "count": 1}, {"asn": 10, "name": "Two", "count": 1}], "provider_count": 2},
+            {"countries": [{"code": "FI", "name": "Finland", "count": 65}]},
+            {"providers": [{"asn": 24940, "name": "Provider", "count": 65}]},
+            {"regions": [{"name": "Europe", "count": 1, "ip": "hidden"}]},
+            {"countries": [{"code": "FI", "name": "Finland", "count": 1, "node_id": "hidden"}]},
+            {"providers": [{"asn": 24940, "name": "Provider", "count": 1, "rpc_url": "hidden"}]},
+            {"chain_id": ""}, {"source_kind": "   "}, {"scanned_at": "not-a-datetime"},
+            {"regions": [{"name": "Euro\npe", "count": 1}]},
+            {"countries": [{"code": "FI", "name": " Finland", "count": 1}]},
         ]
         logger = logging.getLogger("api.app")
         for changes in cases:
@@ -102,6 +130,17 @@ class NetworkDistributionApiTests(unittest.TestCase):
             self.assertEqual(response.status_code, 503)
             self.assertNotIn("ACME", combined); self.assertNotIn(SECRET, combined)
             self.assertNotIn("Traceback", combined)
+
+    def test_partial_country_and_provider_coverage_remain_valid(self):
+        row = snapshot(
+            countries=[{"code": "FI", "name": "Finland", "count": 5}],
+            providers=[{"asn": None, "name": "Provider", "count": 3}],
+        )
+        with self.client(FakeDatabase(row)) as client:
+            response = client.get("/api/network/distribution")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["country_covered_public_ips"], 5)
+        self.assertEqual(response.json()["provider_covered_public_ips"], 3)
 
     def test_schema_constraints(self):
         NetworkDistributionProvider(asn=None, name="Provider", count=0, share_percent=0)
