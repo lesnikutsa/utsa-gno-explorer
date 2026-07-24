@@ -13,6 +13,7 @@ class FrontendNetworkDistributionTests(unittest.TestCase):
         cls.hook = (ROOT / "frontend/src/hooks/useExplorerData.js").read_text()
         cls.overview = (ROOT / "frontend/src/pages/Overview.jsx").read_text()
         cls.panel = (ROOT / "frontend/src/components/NetworkDistributionPanel.jsx").read_text()
+        cls.formatter = ROOT / "frontend/src/utils/networkDistributionFormat.js"
 
     def test_api_service_uses_shared_request(self):
         self.assertIn("export const getNetworkDistribution", self.api)
@@ -39,6 +40,30 @@ class FrontendNetworkDistributionTests(unittest.TestCase):
         script = f'''import {{ countryFlag as f }} from {json.dumps(helper.as_uri())};\nconsole.log(JSON.stringify([f('FI'), f('DE'), f('US'), f('fi'), f('USA'), f('1A'), f(null), f(undefined)]));'''
         result = subprocess.run(["node", "--input-type=module", "-e", script], check=True, capture_output=True, text=True)
         self.assertEqual(json.loads(result.stdout), ["🇫🇮", "🇩🇪", "🇺🇸", "", "", "", "", ""])
+
+    def test_distribution_formatters(self):
+        script = f'''
+import {{ formatDistributionCount as count, formatDistributionPercent as percent, formatDistributionAsn as asn, validDistributionTimestamp as timestamp }} from {json.dumps(self.formatter.as_uri())};
+console.log(JSON.stringify({{
+  counts: [count(0), count(64), count(1234), count(null), count(undefined), count(''), count('64'), count(false), count(NaN), count(Infinity), count(-1), count(1.5)],
+  percentages: [percent(0), percent(90.5), percent(98.44), percent(100), percent(null), percent(''), percent('98.44'), percent(-1), percent(100.01), percent(Infinity)],
+  asns: [asn(24940), asn(51167), asn(1), asn(0), asn(-1), asn(1.5), asn(null), asn('24940'), asn(Infinity)],
+  timestamps: [timestamp('2026-07-24T10:19:29.573347Z'), timestamp('invalid'), timestamp(''), timestamp(null), timestamp([]), timestamp({{}})],
+}}));
+'''
+        result = subprocess.run(["node", "--input-type=module", "-e", script], check=True, capture_output=True, text=True)
+        values = json.loads(result.stdout)
+        self.assertEqual(values["counts"], ["0", "64", "1,234", "—", "—", "—", "—", "—", "—", "—", "—", "—"])
+        self.assertEqual(values["percentages"], ["0%", "90.5%", "98.44%", "100%", "—", "—", "—", "—", "—", "—"])
+        self.assertEqual(values["asns"], ["AS24940", "AS51167", "AS1", "", "", "", "", "", ""])
+        self.assertNotIn(",", values["asns"][0])
+        self.assertEqual(values["timestamps"], ["2026-07-24T10:19:29.573347Z", "", "", "", "", ""])
+
+    def test_incomplete_snapshot_and_empty_list_contracts(self):
+        for required in ("!Array.isArray(distribution)", "hasUsableSnapshot", "snapshot?.visible_node_ids", "No country distribution available.", "No provider distribution available."):
+            self.assertIn(required, self.panel)
+        self.assertIn("const asn = kind === 'provider' ? formatDistributionAsn(item?.asn) : ''", self.panel)
+        self.assertIn("{asn && <span", self.panel)
 
     def test_privacy_and_accessibility(self):
         source = self.panel + self.hook
