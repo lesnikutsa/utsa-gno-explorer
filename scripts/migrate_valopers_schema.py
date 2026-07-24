@@ -11,7 +11,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.init_database import EXPECTED_TABLES, fetch_schema_snapshot, validate_schema_snapshot
+from scripts.init_database import (
+    BASE_LEGACY_EXPECTATIONS, FINAL_SCHEMA_EXPECTATIONS,
+    PRE_NETWORK_DISTRIBUTION_EXPECTATIONS, TRANSACTION_HASH_ONLY_EXPECTATIONS,
+    VALOPERS_ONLY_EXPECTATIONS, fetch_schema_snapshot,
+    validate_one_of_exact_schema_stages, validate_schema_snapshot,
+)
 
 MIGRATION = REPO_ROOT / "database" / "migrations" / "0001_add_valopers_persistence.sql"
 LEGACY_TABLES = {
@@ -42,18 +47,36 @@ def migrate_valopers_schema(database_url: str, migration_path: Path = MIGRATION,
                 ORDER BY c.relname
             """)
             tables = {row[0] for row in cursor.fetchall()}
-            if tables == EXPECTED_TABLES:
-                validate_schema_snapshot(fetch_schema_snapshot(cursor))
+            if not tables:
+                raise MigrationPreconditionError(
+                    "empty public schema; use python scripts/init_database.py"
+                )
+            allowed_table_sets = {
+                frozenset(expectations["tables"]) for expectations in (
+                    BASE_LEGACY_EXPECTATIONS, TRANSACTION_HASH_ONLY_EXPECTATIONS,
+                    VALOPERS_ONLY_EXPECTATIONS, PRE_NETWORK_DISTRIBUTION_EXPECTATIONS,
+                    FINAL_SCHEMA_EXPECTATIONS,
+                )
+            }
+            if frozenset(tables) not in allowed_table_sets:
+                raise MigrationPreconditionError("public schema is not an exact supported stage")
+            snapshot = fetch_schema_snapshot(cursor)
+            try:
+                stage = validate_one_of_exact_schema_stages(snapshot, {
+                    "base": BASE_LEGACY_EXPECTATIONS,
+                    "transaction-hash-only": TRANSACTION_HASH_ONLY_EXPECTATIONS,
+                    "valopers-only": VALOPERS_ONLY_EXPECTATIONS,
+                    "pre-network": PRE_NETWORK_DISTRIBUTION_EXPECTATIONS,
+                    "final": FINAL_SCHEMA_EXPECTATIONS,
+                })
+            except Exception as exc:
+                raise MigrationPreconditionError("public schema is not an exact supported stage") from exc
+            if stage in {"valopers-only", "pre-network", "final"}:
                 return "already-compatible"
-            if tables != LEGACY_TABLES:
-                if not tables:
-                    raise MigrationPreconditionError(
-                        "empty public schema; use python scripts/init_database.py"
-                    )
-                raise MigrationPreconditionError("public schema is not the exact legacy schema")
 
             cursor.execute(migration_sql)
-            validate_schema_snapshot(fetch_schema_snapshot(cursor))
+            target = VALOPERS_ONLY_EXPECTATIONS if stage == "base" else PRE_NETWORK_DISTRIBUTION_EXPECTATIONS
+            validate_schema_snapshot(fetch_schema_snapshot(cursor), target)
         connection.commit()
     return "applied"
 

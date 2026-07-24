@@ -116,3 +116,7 @@ The migration never runs from application startup, services, containers, or
 Compose. It preserves all existing indexed rows, rolls back on SQL or exact
 catalog-validation failure, and may be rerun safely after success. It creates no
 snapshot row or profile data.
+
+## Network distribution schema
+
+Migration `0003_add_network_distribution.sql` adds an INET-keyed GeoIP cache, aggregated snapshots, and per-RPC snapshot results. Existing databases must run `python scripts/migrate_network_distribution_schema.py`; fresh databases receive the same objects through `python scripts/init_database.py`. The migration is additive, transactional and preserves existing history. Restore the pre-migration backup to roll back the schema because no destructive down migration is supplied.

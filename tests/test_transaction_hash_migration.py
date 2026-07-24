@@ -193,7 +193,7 @@ class TransactionHashMigrationTests(unittest.TestCase):
         compatible = FakeConnection()
         with patch("scripts.migrate_transaction_hashes._catalog_state", return_value="compatible"), \
              patch("scripts.migrate_transaction_hashes.fetch_schema_snapshot", return_value={}), \
-             patch("scripts.migrate_transaction_hashes.validate_schema_snapshot"), \
+             patch("scripts.migrate_transaction_hashes.validate_one_of_exact_schema_stages", return_value="pre-network"), \
              patch("scripts.migrate_transaction_hashes._verify_hash_contents") as verify_contents:
             self.assertEqual(migrate_transaction_hashes("safe-url", connect=lambda _url: compatible), "already-compatible")
         verify_contents.assert_called_once_with(compatible.cursor_value.__enter__(), 500)
@@ -202,7 +202,7 @@ class TransactionHashMigrationTests(unittest.TestCase):
         mismatched = FakeConnection()
         with patch("scripts.migrate_transaction_hashes._catalog_state", return_value="compatible"), \
              patch("scripts.migrate_transaction_hashes.fetch_schema_snapshot", return_value={}), \
-             patch("scripts.migrate_transaction_hashes.validate_schema_snapshot"), \
+             patch("scripts.migrate_transaction_hashes.validate_one_of_exact_schema_stages", return_value="pre-network"), \
              patch("scripts.migrate_transaction_hashes._verify_hash_contents",
                    side_effect=MigrationPreconditionError("stored transaction hash verification failed")):
             with self.assertRaises(MigrationPreconditionError):

@@ -19,6 +19,10 @@ from indexer.valopers_persistence import (
     StaleValopersSnapshot, ValopersChainIdentityError, ValopersSnapshotConflict,
 )
 from indexer.valopers_snapshot import ValopersSnapshot
+from network_distribution.geo import GeoRecord
+from network_distribution.persistence import save_geo_cache, save_snapshot, select_sources
+from scripts import init_database
+from scripts.migrate_network_distribution_schema import migrate as migrate_network_distribution_schema
 
 try:
     import psycopg
@@ -246,8 +250,17 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         second = self.run_init()
         self.assertEqual(second.returncode, 0, second.stderr)
         with self.connect() as connection, connection.cursor() as cursor:
-            cursor.execute("SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'")
-            self.assertEqual(cursor.fetchone()[0], 10)
+            cursor.execute("""
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+            """)
+            tables = {row[0] for row in cursor.fetchall()}
+            self.assertEqual(tables, init_database.EXPECTED_TABLES)
+            self.assertTrue({
+                "network_distribution_geo_cache",
+                "network_distribution_snapshots",
+                "network_distribution_snapshot_sources",
+            } <= tables)
             cursor.execute("SELECT conname FROM pg_constraint WHERE conname = 'validator_signatures_height_signing_address_fkey'")
             self.assertIsNotNone(cursor.fetchone())
             cursor.execute("SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'rpc_endpoints_one_selected_per_chain_idx'")
@@ -324,20 +337,72 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         self.assertNotIn(self.password, migrated.stdout + migrated.stderr)
         self.assertNotIn(database_url, migrated.stdout + migrated.stderr)
 
-        validated = self.run_init(database_url)
-        self.assertEqual(validated.returncode, 0, validated.stderr)
+        after_valopers_tables, after_valopers_counts = self.table_names_and_counts(database_url)
+        self.assertEqual(after_valopers_tables, LEGACY_TABLES | {"valoper_profiles", "valopers_snapshot_state"})
+        for table in LEGACY_TABLES:
+            self.assertEqual(after_valopers_counts[table], before_counts[table])
+
         rerun = self.run_migration(database_url)
         self.assertEqual(rerun.returncode, 0, rerun.stderr)
         self.assertIn("Valopers schema is already compatible", rerun.stdout)
         self.assertEqual(rerun.stderr, "")
 
+        transaction_migration = self.run_transaction_hash_migration(database_url)
+        self.assertEqual(transaction_migration.returncode, 0, transaction_migration.stderr)
+        self.assertEqual(transaction_migration.stdout, "Transaction hash migration applied and validated\n")
+        self.assertEqual(transaction_migration.stderr, "")
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT count(*), count(tx_hash_hex) FROM transactions")
+            self.assertEqual(cursor.fetchone(), (before_counts["transactions"], 0))
+            cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='transactions' AND column_name='tx_hash_hex'")
+            self.assertEqual(cursor.fetchone(), ("tx_hash_hex",))
+            cursor.execute("SELECT conname FROM pg_constraint WHERE conname IN ('transactions_tx_hash_hex_format','transactions_tx_hash_consistent') ORDER BY conname")
+            self.assertEqual({row[0] for row in cursor.fetchall()}, {"transactions_tx_hash_hex_format", "transactions_tx_hash_consistent"})
+            cursor.execute("SELECT indexname FROM pg_indexes WHERE schemaname='public' AND indexname='transactions_tx_hash_hex_idx'")
+            self.assertEqual(cursor.fetchone(), ("transactions_tx_hash_hex_idx",))
+
+        before_transaction_rerun = self.table_names_and_counts(database_url)
+        transaction_rerun = self.run_transaction_hash_migration(database_url)
+        self.assertEqual(transaction_rerun.returncode, 0, transaction_rerun.stderr)
+        self.assertEqual(transaction_rerun.stdout, "Transaction hash schema is already compatible\n")
+        self.assertEqual(transaction_rerun.stderr, "")
+        self.assertEqual(self.table_names_and_counts(database_url), before_transaction_rerun)
+
+        before_guidance_tables, before_guidance_counts = self.table_names_and_counts(database_url)
+        guidance = self.run_init(database_url)
+        self.assertNotEqual(guidance.returncode, 0)
+        self.assertIn("python scripts/migrate_network_distribution_schema.py", guidance.stderr)
+        self.assertEqual(self.table_names_and_counts(database_url), (before_guidance_tables, before_guidance_counts))
+
+        network_migration = self.run_network_distribution_migration(database_url)
+        self.assertEqual(network_migration.returncode, 0, network_migration.stderr)
+        network_rerun = self.run_network_distribution_migration(database_url)
+        self.assertEqual(network_rerun.returncode, 0, network_rerun.stderr)
+        validated = self.run_init(database_url)
+        self.assertEqual(validated.returncode, 0, validated.stderr)
+
+        post_network_valopers = self.run_migration(database_url)
+        self.assertEqual(post_network_valopers.returncode, 0, post_network_valopers.stderr)
+        self.assertIn("Valopers schema is already compatible", post_network_valopers.stdout)
+        post_network_transactions = self.run_transaction_hash_migration(database_url)
+        self.assertEqual(post_network_transactions.returncode, 0, post_network_transactions.stderr)
+        self.assertIn("already compatible", post_network_transactions.stdout)
+
+        outputs = [migrated, rerun, transaction_migration, transaction_rerun, guidance, network_migration,
+                   network_rerun, validated, post_network_valopers, post_network_transactions]
+        for result in outputs:
+            self.assertNotIn(self.password, result.stdout + result.stderr)
+            self.assertNotIn(database_url, result.stdout + result.stderr)
+
         after_tables, after_counts = self.table_names_and_counts(database_url)
-        self.assertEqual(after_tables, LEGACY_TABLES | {"valoper_profiles", "valopers_snapshot_state"})
-        self.assertEqual(len(after_tables), 10)
+        self.assertEqual(after_tables, init_database.EXPECTED_TABLES)
         for table in LEGACY_TABLES:
             self.assertEqual(after_counts[table], before_counts[table])
         self.assertEqual(after_counts["valoper_profiles"], 0)
         self.assertEqual(after_counts["valopers_snapshot_state"], 0)
+        for table in ("network_distribution_geo_cache", "network_distribution_snapshots",
+                      "network_distribution_snapshot_sources"):
+            self.assertEqual(after_counts[table], 0)
 
     def test_post_ddl_incompatibility_rolls_back_migration(self):
         database_url = self.prepare_legacy_database(f"utsa_migration_rollback_{os.getpid()}")
@@ -360,6 +425,52 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         self.assertEqual(after_counts, before_counts)
         self.assertNotIn("valoper_profiles", after_tables)
         self.assertNotIn("valopers_snapshot_state", after_tables)
+
+    def test_legacy_schema_supports_transaction_hash_migration_before_valopers(self):
+        database_url = self.prepare_legacy_database(f"utsa_legacy_hash_first_{os.getpid()}")
+        before_tables, before_counts = self.table_names_and_counts(database_url)
+
+        transaction = self.run_transaction_hash_migration(database_url)
+        self.assertEqual(transaction.returncode, 0, transaction.stderr)
+        self.assertEqual(transaction.stdout, "Transaction hash migration applied and validated\n")
+        transaction_rerun = self.run_transaction_hash_migration(database_url)
+        self.assertEqual(transaction_rerun.returncode, 0, transaction_rerun.stderr)
+        self.assertEqual(transaction_rerun.stdout, "Transaction hash schema is already compatible\n")
+
+        valopers = self.run_migration(database_url)
+        self.assertEqual(valopers.returncode, 0, valopers.stderr)
+        self.assertIn("Valopers schema migration applied and validated", valopers.stdout)
+        valopers_rerun = self.run_migration(database_url)
+        self.assertEqual(valopers_rerun.returncode, 0, valopers_rerun.stderr)
+        self.assertIn("Valopers schema is already compatible", valopers_rerun.stdout)
+
+        guidance = self.run_init(database_url)
+        self.assertNotEqual(guidance.returncode, 0)
+        self.assertIn("python scripts/migrate_network_distribution_schema.py", guidance.stderr)
+        network = self.run_network_distribution_migration(database_url)
+        self.assertEqual(network.returncode, 0, network.stderr)
+        final_init = self.run_init(database_url)
+        self.assertEqual(final_init.returncode, 0, final_init.stderr)
+        final_valopers = self.run_migration(database_url)
+        final_transactions = self.run_transaction_hash_migration(database_url)
+        final_network = self.run_network_distribution_migration(database_url)
+        self.assertIn("already compatible", final_valopers.stdout)
+        self.assertIn("already compatible", final_transactions.stdout)
+        self.assertEqual(final_network.returncode, 0, final_network.stderr)
+
+        outputs = (transaction, transaction_rerun, valopers, valopers_rerun, guidance,
+                   network, final_init, final_valopers, final_transactions, final_network)
+        for result in outputs:
+            self.assertNotIn(self.password, result.stdout + result.stderr)
+            self.assertNotIn(database_url, result.stdout + result.stderr)
+        tables, counts = self.table_names_and_counts(database_url)
+        self.assertEqual(tables, init_database.EXPECTED_TABLES)
+        for table in LEGACY_TABLES:
+            self.assertEqual(counts[table], before_counts[table])
+        for table in ("valoper_profiles", "valopers_snapshot_state",
+                      "network_distribution_geo_cache", "network_distribution_snapshots",
+                      "network_distribution_snapshot_sources"):
+            self.assertEqual(counts[table], 0)
 
     def test_atomic_valopers_snapshot_lifecycle(self):
         name = f"utsa_valopers_persistence_{os.getpid()}"
@@ -648,6 +759,100 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             ):
                 cursor.execute(VALIDATOR_IDENTITY_SQL, (address,))
                 self.assertEqual(cursor.fetchone()["moniker"], expected_moniker)
+
+
+    def run_network_distribution_migration(self, database_url):
+        env = dict(os.environ, DATABASE_URL=database_url)
+        return subprocess.run(
+            [sys.executable, "scripts/migrate_network_distribution_schema.py"],
+            cwd=ROOT, env=env, text=True, capture_output=True, check=False,
+        )
+
+    def test_network_distribution_migration_and_existing_rows(self):
+        name = f"utsa_distribution_migration_{os.getpid()}"
+        self.create_database(name)
+        database_url = self.database_url_for(name)
+        schema = (ROOT / "database/schema.sql").read_text()
+        migration = (ROOT / "database/migrations/0003_add_network_distribution.sql").read_text()
+        pre_schema = schema.replace(migration, "")
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute(pre_schema)
+            cursor.execute("INSERT INTO blocks (height,block_hash_base64,block_hash_hex,time_utc,tx_count) VALUES (1,'h',%s,now(),1)", ('A'*64,))
+            cursor.execute("INSERT INTO transactions (block_height,tx_index,raw_base64,raw_base64_length,decode_status) VALUES (1,0,'x',1,'not_attempted')")
+            cursor.execute("INSERT INTO validators (signing_address,public_key_type,public_key_value,first_seen_height,last_seen_height) VALUES ('validator','type','key',1,1)")
+            cursor.execute("INSERT INTO rpc_endpoints (url,chain_id) VALUES ('https://rpc.example','chain')")
+            cursor.execute("INSERT INTO valoper_profiles (operator_address,moniker,description,server_type,signing_address,signing_pubkey,source_height,list_position) VALUES (%s,'m','d','cloud',%s,%s,1,0)", ('g1'+'2'*38,'g1'+'3'*38,'gpub1'+'2'*86))
+        self.assertEqual(self.run_network_distribution_migration(database_url).returncode, 0)
+        self.assertEqual(self.run_network_distribution_migration(database_url).returncode, 0)
+        self.assertEqual(self.run_init(database_url).returncode, 0)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            for table in ('blocks','transactions','validators','rpc_endpoints','valoper_profiles'):
+                cursor.execute(f"SELECT count(*) FROM {table}")
+                self.assertEqual(cursor.fetchone()[0], 1)
+
+    def test_network_distribution_cache_snapshots_retention_and_sources(self):
+        name = f"utsa_distribution_storage_{os.getpid()}"
+        self.create_database(name)
+        database_url = self.database_url_for(name)
+        self.assertEqual(self.run_init(database_url).returncode, 0)
+        now = datetime.now(timezone.utc)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("INSERT INTO rpc_endpoints (url,chain_id,is_selected,healthy,catching_up,last_checked_at,latest_observed_height) VALUES ('https://selected','chain',true,true,false,now(),10),('https://height','chain',false,true,false,now(),9),('https://stable','chain',false,true,false,now(),9),('https://disabled','chain',false,true,false,now(),100),('https://wrong','wrong',false,true,false,now(),100),('https://unhealthy','chain',false,false,false,now(),100),('https://catching','chain',false,true,true,now(),100),('https://stale','chain',false,true,false,now()-interval '1 day',100) RETURNING id")
+            ids=[row[0] for row in cursor.fetchall()]
+            cursor.execute("UPDATE rpc_endpoints SET is_enabled=false WHERE url='https://disabled'")
+            sources=select_sources(connection,'chain',3,600)
+            self.assertEqual([row['id'] for row in sources],ids[:3])
+            self.assertEqual(len(select_sources(connection,'chain',1,600)),1)
+            endpoint_id=ids[0]
+        success=GeoRecord('8.8.8.8',True,'North America','US','United States','Region',1,'Provider',fetched_at=now,expires_at=now+timedelta(hours=1))
+        failed=GeoRecord('8.8.8.8',False,fetched_at=now,expires_at=now+timedelta(hours=1),error_code='timeout')
+        with psycopg.connect(database_url) as connection:
+            save_geo_cache(connection,[success]); save_geo_cache(connection,[failed])
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT lookup_success,continent_name,country_code,country_name,region_name,asn,provider_name,error_code,fetched_at <= expires_at FROM network_distribution_geo_cache WHERE ip='8.8.8.8'")
+                self.assertEqual(cursor.fetchone(), (True,'North America','US','United States','Region',1,'Provider',None,True))
+                cursor.execute("""UPDATE network_distribution_geo_cache
+                    SET fetched_at=now()-interval '2 hours', expires_at=now()-interval '1 hour'
+                    WHERE ip='8.8.8.8'""")
+                connection.commit()
+                cursor.execute("SELECT fetched_at <= expires_at, expires_at < now() FROM network_distribution_geo_cache WHERE ip='8.8.8.8'")
+                self.assertEqual(cursor.fetchone(), (True, True))
+            save_geo_cache(connection,[failed])
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT lookup_success,continent_name,country_code,country_name,region_name,asn,provider_name,error_code,fetched_at <= expires_at FROM network_distribution_geo_cache WHERE ip='8.8.8.8'")
+                self.assertEqual(cursor.fetchone(),(False,None,None,None,None,None,None,'timeout',True))
+        def result(chain, endpoint, scanned):
+            return {'chain_id':chain,'source_kind':'tendermint_net_info','scanned_at':scanned,'rpc_sources_total':1,'rpc_sources_ok':1,'visible_node_ids':0,'unique_public_ips':0,'geolocated_node_ids':0,'geolocated_public_ips':0,'node_id_ip_conflicts':0,'region_count':0,'country_count':0,'provider_count':0,'regions':[],'countries':[],'providers':[],'sources':[{'source_order':0,'rpc_endpoint_id':endpoint,'success':True,'reported_peer_count':0,'accepted_peer_count':0,'duration_ms':1,'error_code':None}]}
+        with psycopg.connect(database_url) as connection:
+            first=save_snapshot(connection,result('chain',endpoint_id,now),2)
+            save_snapshot(connection,result('other',endpoint_id,now),1)
+            save_snapshot(connection,result('chain',endpoint_id,now+timedelta(seconds=1)),2)
+            save_snapshot(connection,result('chain',endpoint_id,now+timedelta(seconds=2)),2)
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT count(*) FROM network_distribution_snapshots WHERE chain_id='chain'"); self.assertEqual(cursor.fetchone()[0],2)
+                cursor.execute("SELECT count(*) FROM network_distribution_snapshots WHERE chain_id='other'"); self.assertEqual(cursor.fetchone()[0],1)
+                cursor.execute("DELETE FROM rpc_endpoints WHERE id=%s",(endpoint_id,)); connection.commit()
+                cursor.execute("SELECT rpc_endpoint_id FROM network_distribution_snapshot_sources LIMIT 1"); self.assertIsNone(cursor.fetchone()[0])
+                cursor.execute("DELETE FROM network_distribution_snapshots WHERE id=(SELECT min(id) FROM network_distribution_snapshots)"); connection.commit()
+                cursor.execute("SELECT count(*) FROM network_distribution_snapshot_sources WHERE snapshot_id NOT IN (SELECT id FROM network_distribution_snapshots)"); self.assertEqual(cursor.fetchone()[0],0)
+            previous=save_snapshot(connection,result('chain',None,now+timedelta(seconds=3)),2)
+            connection.commit()
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT count(*) FROM network_distribution_snapshots WHERE id=%s",(previous,))
+                self.assertEqual(cursor.fetchone()[0],1)
+                cursor.execute("SELECT count(*) FROM network_distribution_snapshots")
+                snapshots_before_failure = cursor.fetchone()[0]
+                cursor.execute("SELECT count(*) FROM network_distribution_snapshot_sources")
+                sources_before_failure = cursor.fetchone()[0]
+            broken=result('chain',None,now+timedelta(seconds=4)); broken['sources'][0]['error_code']='invalid'
+            with self.assertRaises(Exception): save_snapshot(connection,broken,2)
+            connection.rollback()
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT count(*) FROM network_distribution_snapshots WHERE id=%s",(previous,)); self.assertEqual(cursor.fetchone()[0],1)
+                cursor.execute("SELECT count(*) FROM network_distribution_snapshots"); self.assertEqual(cursor.fetchone()[0],snapshots_before_failure)
+                cursor.execute("SELECT count(*) FROM network_distribution_snapshot_sources"); self.assertEqual(cursor.fetchone()[0],sources_before_failure)
+                cursor.execute("SELECT count(*) FROM network_distribution_snapshot_sources s LEFT JOIN network_distribution_snapshots n ON n.id=s.snapshot_id WHERE n.id IS NULL"); self.assertEqual(cursor.fetchone()[0],0)
+                cursor.execute("SELECT count(*) FROM network_distribution_snapshots WHERE chain_id='chain'"); self.assertLessEqual(cursor.fetchone()[0],2)
 
 
 if __name__ == "__main__":

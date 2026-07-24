@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import copy
 import hashlib
 import os
 import sys
@@ -13,7 +12,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.init_database import EXPECTED_CHECKS, EXPECTED_COLUMNS, EXPECTED_INDEXES, fetch_schema_snapshot, validate_schema_snapshot
+from scripts.init_database import (
+    BASE_LEGACY_EXPECTATIONS, FINAL_SCHEMA_EXPECTATIONS,
+    PRE_NETWORK_DISTRIBUTION_EXPECTATIONS, TRANSACTION_HASH_ONLY_EXPECTATIONS,
+    VALOPERS_ONLY_EXPECTATIONS, fetch_schema_snapshot,
+    validate_one_of_exact_schema_stages, validate_schema_snapshot,
+)
 
 MIGRATION = REPO_ROOT / "database" / "migrations" / "0002_add_transaction_hash.sql"
 HASH_COLUMN = "tx_hash_hex"
@@ -25,24 +29,13 @@ class MigrationPreconditionError(RuntimeError):
     """Raised when the catalog is neither exact legacy nor fully compatible."""
 
 
-def _validate_exact_legacy(cursor) -> None:
-    """Validate all legacy objects by augmenting its snapshot to the final shape."""
-    snapshot = copy.deepcopy(fetch_schema_snapshot(cursor))
-    transaction_columns = snapshot.get("columns", {}).get("transactions", {})
-    if HASH_COLUMN in transaction_columns:
-        raise MigrationPreconditionError("transaction hash schema is an unknown partial state")
-    transaction_columns[HASH_COLUMN] = EXPECTED_COLUMNS["transactions"][HASH_COLUMN]
-    checks = snapshot.setdefault("check_constraints", {})
-    for name in HASH_CONSTRAINTS:
-        if name in checks:
-            raise MigrationPreconditionError("transaction hash schema is an unknown partial state")
-        checks[name] = EXPECTED_CHECKS[name]
-    indexes = snapshot.setdefault("indexes", {})
-    if HASH_INDEX in indexes:
-        raise MigrationPreconditionError("transaction hash schema is an unknown partial state")
-    indexes[HASH_INDEX] = EXPECTED_INDEXES[HASH_INDEX]
+def _validate_exact_legacy(cursor) -> str:
+    """Return the exact hash-free stage accepted by migration 0002."""
     try:
-        validate_schema_snapshot(snapshot)
+        return validate_one_of_exact_schema_stages(fetch_schema_snapshot(cursor), {
+            "base": BASE_LEGACY_EXPECTATIONS,
+            "valopers-only": VALOPERS_ONLY_EXPECTATIONS,
+        })
     except Exception as exc:
         raise MigrationPreconditionError("public schema is not the exact legacy schema") from exc
 
@@ -155,10 +148,18 @@ def migrate_transaction_hashes(database_url: str, migration_path: Path = MIGRATI
             if state == "unknown":
                 raise MigrationPreconditionError("transaction hash schema is an unknown partial state")
             if state == "compatible":
-                validate_schema_snapshot(fetch_schema_snapshot(cursor))
+                snapshot = fetch_schema_snapshot(cursor)
+                try:
+                    validate_one_of_exact_schema_stages(snapshot, {
+                        "transaction-hash-only": TRANSACTION_HASH_ONLY_EXPECTATIONS,
+                        "pre-network": PRE_NETWORK_DISTRIBUTION_EXPECTATIONS,
+                        "final": FINAL_SCHEMA_EXPECTATIONS,
+                    })
+                except Exception as exc:
+                    raise MigrationPreconditionError("public schema is not an exact compatible stage")
                 _verify_hash_contents(cursor, batch_size)
                 return "already-compatible"
-            _validate_exact_legacy(cursor)
+            source_stage = _validate_exact_legacy(cursor)
             cursor.execute(migration_path.read_text())
             _backfill(cursor, batch_size)
             _verify(cursor)
@@ -166,7 +167,9 @@ def migrate_transaction_hashes(database_url: str, migration_path: Path = MIGRATI
             cursor.execute("ALTER TABLE transactions VALIDATE CONSTRAINT transactions_tx_hash_hex_format")
             cursor.execute("ALTER TABLE transactions VALIDATE CONSTRAINT transactions_tx_hash_consistent")
             cursor.execute("CREATE INDEX transactions_tx_hash_hex_idx ON transactions(tx_hash_hex) WHERE tx_hash_hex IS NOT NULL")
-            validate_schema_snapshot(fetch_schema_snapshot(cursor))
+            target = (TRANSACTION_HASH_ONLY_EXPECTATIONS if source_stage == "base"
+                      else PRE_NETWORK_DISTRIBUTION_EXPECTATIONS)
+            validate_schema_snapshot(fetch_schema_snapshot(cursor), target)
         connection.commit()
     return "applied"
 

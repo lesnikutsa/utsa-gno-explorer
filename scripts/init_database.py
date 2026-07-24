@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import os
 import re
 import sys
@@ -130,6 +131,86 @@ EXPECTED_INDEXES = {
     "valoper_profiles_list_position_idx": ("valoper_profiles", False, (("list_position", "ASC"), ("operator_address", "ASC")), None),
     "valoper_profiles_moniker_idx": ("valoper_profiles", False, (("moniker", "ASC"), ("operator_address", "ASC")), None),
 }
+
+# Network-distribution schema is part of the final (0003) catalog only. Historical migration
+# tools retain their own stage-specific expectations.
+EXPECTED_TABLES.update({"network_distribution_geo_cache", "network_distribution_snapshots", "network_distribution_snapshot_sources"})
+EXPECTED_COLUMNS.update({
+ "network_distribution_geo_cache": {
+  "ip": ("inet","NO","",None), "lookup_success": ("boolean","NO","",None), "continent_name": ("text","YES","",None), "country_code": ("text","YES","",None), "country_name": ("text","YES","",None), "region_name": ("text","YES","",None), "asn": ("bigint","YES","",None), "provider_name": ("text","YES","",None), "lookup_provider": ("text","NO","",None), "fetched_at": ("timestamp with time zone","NO","",None), "expires_at": ("timestamp with time zone","NO","",None), "error_code": ("text","YES","",None), "inserted_at": ("timestamp with time zone","NO","","now()"), "updated_at": ("timestamp with time zone","NO","","now()")},
+ "network_distribution_snapshots": {
+  "id": ("bigint","NO","a",None), "chain_id": ("text","NO","",None), "source_kind": ("text","NO","",None), "scanned_at": ("timestamp with time zone","NO","",None), "rpc_sources_total": ("integer","NO","",None), "rpc_sources_ok": ("integer","NO","",None), "visible_node_ids": ("integer","NO","",None), "unique_public_ips": ("integer","NO","",None), "geolocated_node_ids": ("integer","NO","",None), "geolocated_public_ips": ("integer","NO","",None), "node_id_ip_conflicts": ("integer","NO","","0"), "region_count": ("integer","NO","",None), "country_count": ("integer","NO","",None), "provider_count": ("integer","NO","",None), "regions": ("jsonb","NO","",None), "countries": ("jsonb","NO","",None), "providers": ("jsonb","NO","",None), "inserted_at": ("timestamp with time zone","NO","","now()")},
+ "network_distribution_snapshot_sources": {
+  "snapshot_id": ("bigint","NO","",None), "source_order": ("integer","NO","",None), "rpc_endpoint_id": ("bigint","YES","",None), "success": ("boolean","NO","",None), "reported_peer_count": ("integer","YES","",None), "accepted_peer_count": ("integer","NO","","0"), "duration_ms": ("integer","YES","",None), "error_code": ("text","YES","",None), "inserted_at": ("timestamp with time zone","NO","","now()")}})
+EXPECTED_PRIMARY_KEYS.update({"network_distribution_geo_cache": ("ip",), "network_distribution_snapshots": ("id",), "network_distribution_snapshot_sources": ("snapshot_id","source_order")})
+EXPECTED_FOREIGN_KEYS.update({
+ ("network_distribution_snapshot_sources", ("snapshot_id",), "network_distribution_snapshots", ("id",), "c"),
+ ("network_distribution_snapshot_sources", ("rpc_endpoint_id",), "rpc_endpoints", ("id",), "n")})
+EXPECTED_CHECKS.update({
+ "network_distribution_geo_cache_country_code_check": "CHECK (country_code IS NULL OR country_code ~ '^[A-Z]{2}$')",
+ "network_distribution_geo_cache_asn_check": "CHECK (asn IS NULL OR asn > 0)",
+ "network_distribution_geo_cache_provider_name_check": "CHECK (provider_name IS NULL OR char_length(provider_name) <= 255)",
+ "network_distribution_geo_cache_error_code_check": "CHECK (error_code IS NULL OR char_length(error_code) <= 64)",
+ "network_distribution_geo_cache_expiry_check": "CHECK (expires_at >= fetched_at)",
+ "network_distribution_geo_cache_continent_name_check": "CHECK (continent_name IS NULL OR char_length(continent_name) <= 128)",
+ "network_distribution_geo_cache_country_name_check": "CHECK (country_name IS NULL OR char_length(country_name) <= 128)",
+ "network_distribution_geo_cache_region_name_check": "CHECK (region_name IS NULL OR char_length(region_name) <= 255)",
+ "network_distribution_geo_cache_lookup_provider_check": "CHECK (char_length(lookup_provider) >= 1 AND char_length(lookup_provider) <= 128)",
+ "network_distribution_geo_cache_state_check": "CHECK ((lookup_success AND error_code IS NULL) OR (NOT lookup_success AND error_code IS NOT NULL AND continent_name IS NULL AND country_code IS NULL AND country_name IS NULL AND region_name IS NULL AND asn IS NULL AND provider_name IS NULL))",
+ "network_distribution_snapshots_counts_check": "CHECK (rpc_sources_total >= 0 AND rpc_sources_ok >= 0 AND visible_node_ids >= 0 AND unique_public_ips >= 0 AND geolocated_node_ids >= 0 AND geolocated_public_ips >= 0 AND node_id_ip_conflicts >= 0 AND region_count >= 0 AND country_count >= 0 AND provider_count >= 0 AND rpc_sources_ok <= rpc_sources_total AND geolocated_node_ids <= visible_node_ids AND geolocated_public_ips <= unique_public_ips)",
+ "network_distribution_snapshots_arrays_check": "CHECK (jsonb_typeof(regions) = 'array' AND jsonb_typeof(countries) = 'array' AND jsonb_typeof(providers) = 'array')",
+ "network_distribution_snapshot_sources_values_check": "CHECK (source_order >= 0 AND (reported_peer_count IS NULL OR reported_peer_count >= 0) AND accepted_peer_count >= 0 AND (duration_ms IS NULL OR duration_ms >= 0) AND (error_code IS NULL OR char_length(error_code) <= 64))",
+ "network_distribution_snapshot_sources_state_check": "CHECK ((success AND error_code IS NULL) OR (NOT success AND error_code IS NOT NULL))"})
+EXPECTED_INDEXES.update({
+ "network_distribution_geo_cache_expires_idx": ("network_distribution_geo_cache",False,(("expires_at","ASC"),),None),
+ "network_distribution_geo_cache_country_idx": ("network_distribution_geo_cache",False,(("country_code","ASC"),),"lookup_success AND country_code IS NOT NULL"),
+ "network_distribution_geo_cache_asn_idx": ("network_distribution_geo_cache",False,(("asn","ASC"),("provider_name","ASC")),"lookup_success AND asn IS NOT NULL"),
+ "network_distribution_snapshots_chain_latest_idx": ("network_distribution_snapshots",False,(("chain_id","ASC"),("scanned_at","DESC"),("id","DESC")),None)})
+
+NETWORK_DISTRIBUTION_TABLES = {
+    "network_distribution_geo_cache",
+    "network_distribution_snapshots",
+    "network_distribution_snapshot_sources",
+}
+VALOPERS_TABLES = {"valoper_profiles", "valopers_snapshot_state"}
+TRANSACTION_HASH_COLUMN = "tx_hash_hex"
+TRANSACTION_HASH_CHECKS = {"transactions_tx_hash_hex_format", "transactions_tx_hash_consistent"}
+TRANSACTION_HASH_INDEXES = {"transactions_tx_hash_hex_idx"}
+
+
+def schema_expectations(*, excluded_tables: set[str] | None = None,
+                        include_transaction_hash: bool = True) -> dict[str, Any]:
+    """Derive an exact historical stage without mutating final expectations."""
+    excluded_tables = excluded_tables or set()
+    result = {
+        "tables": EXPECTED_TABLES - excluded_tables,
+        "columns": {name: copy.deepcopy(value) for name, value in EXPECTED_COLUMNS.items() if name not in excluded_tables},
+        "primary_keys": {name: value for name, value in EXPECTED_PRIMARY_KEYS.items() if name not in excluded_tables},
+        "unique_constraints": {value for value in EXPECTED_UNIQUES if value[0] not in excluded_tables},
+        "foreign_keys": {value for value in EXPECTED_FOREIGN_KEYS if value[0] not in excluded_tables and value[2] not in excluded_tables},
+        "check_constraints": {name: value for name, value in EXPECTED_CHECKS.items()
+                              if not any(name.startswith(f"{table}_") for table in excluded_tables)},
+        "indexes": {name: value for name, value in EXPECTED_INDEXES.items() if value[0] not in excluded_tables},
+    }
+    if not include_transaction_hash:
+        result["columns"]["transactions"].pop(TRANSACTION_HASH_COLUMN)
+        for name in TRANSACTION_HASH_CHECKS:
+            result["check_constraints"].pop(name)
+        for name in TRANSACTION_HASH_INDEXES:
+            result["indexes"].pop(name)
+    return result
+
+
+FINAL_SCHEMA_EXPECTATIONS = schema_expectations()
+PRE_NETWORK_DISTRIBUTION_EXPECTATIONS = schema_expectations(excluded_tables=NETWORK_DISTRIBUTION_TABLES)
+VALOPERS_ONLY_EXPECTATIONS = schema_expectations(
+    excluded_tables=NETWORK_DISTRIBUTION_TABLES, include_transaction_hash=False)
+TRANSACTION_HASH_ONLY_EXPECTATIONS = schema_expectations(
+    excluded_tables=NETWORK_DISTRIBUTION_TABLES | VALOPERS_TABLES)
+BASE_LEGACY_EXPECTATIONS = schema_expectations(
+    excluded_tables=NETWORK_DISTRIBUTION_TABLES | VALOPERS_TABLES,
+    include_transaction_hash=False)
+
 
 class SchemaCompatibilityError(RuntimeError):
     """Raised when an existing schema is not compatible with the expected explorer schema."""
@@ -294,18 +375,20 @@ def _default_matches(actual: str | None, expected: str | None) -> bool:
     return _norm(actual) == expected or (expected == "now()" and _norm(actual) == "now()")
 
 
-def validate_schema_snapshot(snapshot: dict[str, Any]) -> None:
+def validate_schema_snapshot(snapshot: dict[str, Any], expectations: dict[str, Any] | None = None) -> None:
+    expectations = expectations or FINAL_SCHEMA_EXPECTATIONS
+    expected_tables = expectations["tables"]
     tables = set(snapshot.get("tables", set()))
-    if tables != EXPECTED_TABLES:
-        missing = EXPECTED_TABLES - tables
-        extra = tables - EXPECTED_TABLES
+    if tables != expected_tables:
+        missing = expected_tables - tables
+        extra = tables - expected_tables
         details = []
         if missing:
             details.append(f"missing expected tables: {', '.join(sorted(missing))}")
         if extra:
             details.append(f"unexpected public tables: {', '.join(sorted(extra))}")
         raise SchemaCompatibilityError("; ".join(details))
-    for table, expected_columns in EXPECTED_COLUMNS.items():
+    for table, expected_columns in expectations["columns"].items():
         actual_columns = snapshot.get("columns", {}).get(table, {})
         if set(actual_columns) != set(expected_columns):
             raise SchemaCompatibilityError(f"incompatible column set for {table}")
@@ -313,34 +396,67 @@ def validate_schema_snapshot(snapshot: dict[str, Any]) -> None:
             actual = tuple(actual_columns[column])
             if actual[:3] != expected[:3] or not _default_matches(actual[3], expected[3]):
                 raise SchemaCompatibilityError(f"incompatible column {table}.{column}")
-    for table, columns in EXPECTED_PRIMARY_KEYS.items():
+    for table, columns in expectations["primary_keys"].items():
         if tuple(snapshot.get("primary_keys", {}).get(table, ())) != columns:
             raise SchemaCompatibilityError(f"incompatible primary key for {table}")
     actual_uniques = {(table, tuple(cols)) for table, cols in snapshot.get("unique_constraints", set())}
-    if EXPECTED_UNIQUES != actual_uniques:
-        raise SchemaCompatibilityError(f"incompatible unique constraints: missing={sorted(EXPECTED_UNIQUES - actual_uniques)} unexpected={sorted(actual_uniques - EXPECTED_UNIQUES)}")
+    expected_uniques = expectations["unique_constraints"]
+    if expected_uniques != actual_uniques:
+        raise SchemaCompatibilityError(f"incompatible unique constraints: missing={sorted(expected_uniques - actual_uniques)} unexpected={sorted(actual_uniques - expected_uniques)}")
     actual_foreign_keys = {(table, tuple(cols), ref, tuple(ref_cols), action) for table, cols, ref, ref_cols, action in snapshot.get("foreign_keys", set())}
-    if EXPECTED_FOREIGN_KEYS != actual_foreign_keys:
-        raise SchemaCompatibilityError(f"incompatible foreign keys: missing={sorted(EXPECTED_FOREIGN_KEYS - actual_foreign_keys)} unexpected={sorted(actual_foreign_keys - EXPECTED_FOREIGN_KEYS)}")
+    expected_foreign_keys = expectations["foreign_keys"]
+    if expected_foreign_keys != actual_foreign_keys:
+        raise SchemaCompatibilityError(f"incompatible foreign keys: missing={sorted(expected_foreign_keys - actual_foreign_keys)} unexpected={sorted(actual_foreign_keys - expected_foreign_keys)}")
     checks = snapshot.get("check_constraints", {})
     actual_check_names = set(checks)
-    expected_check_names = set(EXPECTED_CHECKS)
+    expected_checks = expectations["check_constraints"]
+    expected_check_names = set(expected_checks)
     if actual_check_names != expected_check_names:
         raise SchemaCompatibilityError(f"incompatible check constraint set: missing={sorted(expected_check_names - actual_check_names)} unexpected={sorted(actual_check_names - expected_check_names)}")
-    for name, expected in EXPECTED_CHECKS.items():
+    for name, expected in expected_checks.items():
         actual = _norm(checks[name]) or ""
         expected_normalized = _norm(expected) or ""
         if actual != expected_normalized:
             raise SchemaCompatibilityError(f"incompatible check constraint {name}: expected={expected_normalized!r} actual={actual!r}")
     indexes = snapshot.get("indexes", {})
     actual_index_names = set(indexes)
-    expected_index_names = set(EXPECTED_INDEXES)
+    expected_indexes = expectations["indexes"]
+    expected_index_names = set(expected_indexes)
     if actual_index_names != expected_index_names:
         raise SchemaCompatibilityError(f"incompatible explicit index set: missing={sorted(expected_index_names - actual_index_names)} unexpected={sorted(actual_index_names - expected_index_names)}")
-    for name, expected in EXPECTED_INDEXES.items():
+    for name, expected in expected_indexes.items():
         actual = indexes[name]
         if (actual[0], bool(actual[1]), tuple(actual[2]), _norm(actual[3])) != (expected[0], expected[1], expected[2], _norm(expected[3])):
             raise SchemaCompatibilityError(f"incompatible index {name}")
+
+
+def validate_schema_stage(snapshot: dict[str, Any], expectations: dict[str, Any]) -> None:
+    """Validate an exact stage or the complete final schema, rejecting partial later DDL."""
+    tables = set(snapshot.get("tables", set()))
+    later_tables = FINAL_SCHEMA_EXPECTATIONS["tables"] - expectations["tables"]
+    present_later = tables & later_tables
+    if present_later:
+        if present_later != later_tables:
+            raise SchemaCompatibilityError("newer schema is an unknown partial state")
+        validate_schema_snapshot(snapshot, FINAL_SCHEMA_EXPECTATIONS)
+        return
+    validate_schema_snapshot(snapshot, expectations)
+
+
+def validate_one_of_exact_schema_stages(
+        snapshot: dict[str, Any], named_expectations: dict[str, dict[str, Any]]) -> str:
+    """Return the single exact matching stage; reject partial or ambiguous catalogs."""
+    matches = []
+    for name, expectations in named_expectations.items():
+        try:
+            validate_schema_snapshot(snapshot, expectations)
+        except SchemaCompatibilityError:
+            continue
+        matches.append(name)
+    if len(matches) != 1:
+        detail = "no exact stage matched" if not matches else f"ambiguous stages: {', '.join(matches)}"
+        raise SchemaCompatibilityError(detail)
+    return matches[0]
 
 
 def fetch_schema_snapshot(cursor) -> dict[str, Any]:
@@ -451,7 +567,18 @@ def initialize_or_validate(database_url: str, schema_path: Path = SCHEMA, connec
                 cursor.execute(schema_sql)
                 validate_schema_snapshot(fetch_schema_snapshot(cursor))
             else:
-                validate_schema_snapshot(fetch_schema_snapshot(cursor))
+                snapshot = fetch_schema_snapshot(cursor)
+                if existing == PRE_NETWORK_DISTRIBUTION_EXPECTATIONS["tables"]:
+                    try:
+                        validate_schema_snapshot(snapshot, PRE_NETWORK_DISTRIBUTION_EXPECTATIONS)
+                    except SchemaCompatibilityError:
+                        pass
+                    else:
+                        raise SchemaCompatibilityError(
+                            "Network-distribution schema is missing; run:\n"
+                            "python scripts/migrate_network_distribution_schema.py"
+                        )
+                validate_schema_snapshot(snapshot)
         connection.commit()
 
 
