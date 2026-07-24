@@ -45,14 +45,14 @@ def load_geo_cache(connection, ips: set[str]) -> dict[str, GeoRecord]:
         return {row[0]: GeoRecord(*row) for row in cursor.fetchall()}
 
 
-def latest_geolocated_public_ips(connection, chain_id: str) -> int | None:
-    """Return the GeoIP coverage of the latest snapshot, if one exists."""
+def has_geolocated_snapshot(connection, chain_id: str) -> bool:
+    """Return whether any retained snapshot has useful GeoIP coverage."""
     with connection.cursor() as cursor:
-        cursor.execute("""SELECT geolocated_public_ips
-            FROM network_distribution_snapshots WHERE chain_id = %s
-            ORDER BY scanned_at DESC, id DESC LIMIT 1""", (chain_id,))
-        row = cursor.fetchone()
-        return row[0] if row else None
+        cursor.execute("""SELECT EXISTS (
+            SELECT 1 FROM network_distribution_snapshots
+            WHERE chain_id = %s AND geolocated_public_ips > 0
+        )""", (chain_id,))
+        return bool(cursor.fetchone()[0])
 
 
 def save_geo_cache(connection, records: list[GeoRecord]) -> None:

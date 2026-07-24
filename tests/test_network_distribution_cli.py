@@ -26,18 +26,18 @@ class CliTests(unittest.TestCase):
         'unique_public_ips':2,'geolocated_public_ips':0}
   config=unittest.mock.Mock(chain_id='c',database_url='db',rpc_limit=1,rpc_health_max_age=1,
                             rpc_timeout=1,snapshot_retention=10)
-  scenarios=[(3,dict(base),False,True),(None,dict(base),True,False),
-             (3,{**base,'geolocated_public_ips':1},True,False)]
-  for previous,result,should_save,should_skip in scenarios:
+  scenarios=[(True,dict(base),False,True),(False,dict(base),True,False),
+             (True,{**base,'geolocated_public_ips':1},True,False)]
+  for has_good,result,should_save,should_skip in scenarios:
    output=io.StringIO()
-   with self.subTest(previous=previous,geo=result['geolocated_public_ips']), \
+   with self.subTest(has_good=has_good,geo=result['geolocated_public_ips']), \
         patch('psycopg.connect',return_value=Connection()), \
         patch.object(cli.Config,'from_env',return_value=config), \
         patch.object(cli,'acquire_lock',return_value=True), \
         patch.object(cli,'release_lock'), \
         patch.object(cli,'select_sources',return_value=[{'id':1,'url':'rpc'}]), \
         patch.object(cli,'collect_distribution',return_value=result), \
-        patch.object(cli,'latest_geolocated_public_ips',return_value=previous), \
+        patch.object(cli,'has_geolocated_snapshot',return_value=has_good), \
         patch.object(cli,'save_snapshot') as save, redirect_stdout(output):
     self.assertEqual(cli.run(cli.parser().parse_args([])),0)
    self.assertEqual(save.called,should_save)

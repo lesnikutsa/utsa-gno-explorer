@@ -28,7 +28,9 @@ from indexer.valopers_persistence import (
 )
 from indexer.valopers_snapshot import ValopersSnapshot
 from network_distribution.geo import GeoRecord
-from network_distribution.persistence import load_geo_cache, save_geo_cache, save_snapshot, select_sources
+from network_distribution.persistence import (
+    has_geolocated_snapshot, load_geo_cache, save_geo_cache, save_snapshot, select_sources,
+)
 from scripts import init_database
 from scripts.migrate_network_distribution_schema import migrate as migrate_network_distribution_schema
 
@@ -958,6 +960,34 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         self.assertNotIn('2001:db8::1/128', cached)
         self.assertEqual(cached[ipv4.ip], ipv4)
         self.assertEqual(cached[ipv6.ip], ipv6)
+
+    def test_geolocated_snapshot_exists_across_retained_history(self):
+        name = f"utsa_distribution_good_history_{os.getpid()}"
+        self.create_database(name)
+        database_url = self.database_url_for(name)
+        self.assertEqual(self.run_init(database_url).returncode, 0)
+        epoch = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+        def result(chain, scanned_at, geolocated):
+            return {
+                'chain_id': chain, 'source_kind': 'tendermint_net_info', 'scanned_at': scanned_at,
+                'rpc_sources_total': 1, 'rpc_sources_ok': 1, 'visible_node_ids': 1,
+                'unique_public_ips': 1, 'geolocated_node_ids': int(geolocated > 0),
+                'geolocated_public_ips': geolocated, 'node_id_ip_conflicts': 0,
+                'region_count': int(geolocated > 0), 'country_count': int(geolocated > 0),
+                'provider_count': int(geolocated > 0), 'regions': [], 'countries': [],
+                'providers': [], 'sources': [],
+            }
+
+        with psycopg.connect(database_url) as connection:
+            self.assertFalse(has_geolocated_snapshot(connection, 'chain'))
+            save_snapshot(connection, result('chain', epoch, 0), 10)
+            self.assertFalse(has_geolocated_snapshot(connection, 'chain'))
+            save_snapshot(connection, result('other', epoch + timedelta(seconds=1), 1), 10)
+            self.assertFalse(has_geolocated_snapshot(connection, 'chain'))
+            save_snapshot(connection, result('chain', epoch + timedelta(seconds=2), 1), 10)
+            save_snapshot(connection, result('chain', epoch + timedelta(seconds=3), 0), 10)
+            self.assertTrue(has_geolocated_snapshot(connection, 'chain'))
 
 
 if __name__ == "__main__":
