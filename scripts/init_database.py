@@ -172,11 +172,17 @@ NETWORK_DISTRIBUTION_TABLES = {
     "network_distribution_snapshots",
     "network_distribution_snapshot_sources",
 }
+VALOPERS_TABLES = {"valoper_profiles", "valopers_snapshot_state"}
+TRANSACTION_HASH_COLUMN = "tx_hash_hex"
+TRANSACTION_HASH_CHECKS = {"transactions_tx_hash_hex_format", "transactions_tx_hash_consistent"}
+TRANSACTION_HASH_INDEXES = {"transactions_tx_hash_hex_idx"}
 
 
-def schema_expectations_without(excluded_tables: set[str]) -> dict[str, Any]:
-    """Return exact final-schema expectations with one migration stage removed."""
-    return {
+def schema_expectations(*, excluded_tables: set[str] | None = None,
+                        include_transaction_hash: bool = True) -> dict[str, Any]:
+    """Derive an exact historical stage without mutating final expectations."""
+    excluded_tables = excluded_tables or set()
+    result = {
         "tables": EXPECTED_TABLES - excluded_tables,
         "columns": {name: copy.deepcopy(value) for name, value in EXPECTED_COLUMNS.items() if name not in excluded_tables},
         "primary_keys": {name: value for name, value in EXPECTED_PRIMARY_KEYS.items() if name not in excluded_tables},
@@ -186,10 +192,24 @@ def schema_expectations_without(excluded_tables: set[str]) -> dict[str, Any]:
                               if not any(name.startswith(f"{table}_") for table in excluded_tables)},
         "indexes": {name: value for name, value in EXPECTED_INDEXES.items() if value[0] not in excluded_tables},
     }
+    if not include_transaction_hash:
+        result["columns"]["transactions"].pop(TRANSACTION_HASH_COLUMN)
+        for name in TRANSACTION_HASH_CHECKS:
+            result["check_constraints"].pop(name)
+        for name in TRANSACTION_HASH_INDEXES:
+            result["indexes"].pop(name)
+    return result
 
 
-FINAL_SCHEMA_EXPECTATIONS = schema_expectations_without(set())
-PRE_NETWORK_DISTRIBUTION_EXPECTATIONS = schema_expectations_without(NETWORK_DISTRIBUTION_TABLES)
+FINAL_SCHEMA_EXPECTATIONS = schema_expectations()
+PRE_NETWORK_DISTRIBUTION_EXPECTATIONS = schema_expectations(excluded_tables=NETWORK_DISTRIBUTION_TABLES)
+VALOPERS_ONLY_EXPECTATIONS = schema_expectations(
+    excluded_tables=NETWORK_DISTRIBUTION_TABLES, include_transaction_hash=False)
+TRANSACTION_HASH_ONLY_EXPECTATIONS = schema_expectations(
+    excluded_tables=NETWORK_DISTRIBUTION_TABLES | VALOPERS_TABLES)
+BASE_LEGACY_EXPECTATIONS = schema_expectations(
+    excluded_tables=NETWORK_DISTRIBUTION_TABLES | VALOPERS_TABLES,
+    include_transaction_hash=False)
 
 
 class SchemaCompatibilityError(RuntimeError):
@@ -421,6 +441,22 @@ def validate_schema_stage(snapshot: dict[str, Any], expectations: dict[str, Any]
         validate_schema_snapshot(snapshot, FINAL_SCHEMA_EXPECTATIONS)
         return
     validate_schema_snapshot(snapshot, expectations)
+
+
+def validate_one_of_exact_schema_stages(
+        snapshot: dict[str, Any], named_expectations: dict[str, dict[str, Any]]) -> str:
+    """Return the single exact matching stage; reject partial or ambiguous catalogs."""
+    matches = []
+    for name, expectations in named_expectations.items():
+        try:
+            validate_schema_snapshot(snapshot, expectations)
+        except SchemaCompatibilityError:
+            continue
+        matches.append(name)
+    if len(matches) != 1:
+        detail = "no exact stage matched" if not matches else f"ambiguous stages: {', '.join(matches)}"
+        raise SchemaCompatibilityError(detail)
+    return matches[0]
 
 
 def fetch_schema_snapshot(cursor) -> dict[str, Any]:

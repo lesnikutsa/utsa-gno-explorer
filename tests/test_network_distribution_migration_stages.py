@@ -15,3 +15,20 @@ def test_partial_newer_stage_is_rejected():
 
 def test_final_validation_does_not_accept_pre_network_stage():
  with pytest.raises(init_database.SchemaCompatibilityError): init_database.validate_schema_snapshot(snapshot(init_database.PRE_NETWORK_DISTRIBUTION_EXPECTATIONS))
+
+def test_five_historical_stages_are_exact_and_distinct():
+ stages={
+  'base':init_database.BASE_LEGACY_EXPECTATIONS,
+  'valopers-only':init_database.VALOPERS_ONLY_EXPECTATIONS,
+  'transaction-hash-only':init_database.TRANSACTION_HASH_ONLY_EXPECTATIONS,
+  'pre-network':init_database.PRE_NETWORK_DISTRIBUTION_EXPECTATIONS,
+  'final':init_database.FINAL_SCHEMA_EXPECTATIONS,
+ }
+ for name,expectations in stages.items():
+  assert init_database.validate_one_of_exact_schema_stages(snapshot(expectations),stages)==name
+
+def test_unknown_partial_hash_stage_is_rejected():
+ stages={'base':init_database.BASE_LEGACY_EXPECTATIONS,'hash':init_database.TRANSACTION_HASH_ONLY_EXPECTATIONS}
+ value=snapshot(init_database.BASE_LEGACY_EXPECTATIONS)
+ value['columns']['transactions']['tx_hash_hex']=init_database.EXPECTED_COLUMNS['transactions']['tx_hash_hex']
+ with pytest.raises(init_database.SchemaCompatibilityError): init_database.validate_one_of_exact_schema_stages(value,stages)

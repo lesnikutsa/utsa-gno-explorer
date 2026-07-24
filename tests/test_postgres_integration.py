@@ -426,6 +426,52 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         self.assertNotIn("valoper_profiles", after_tables)
         self.assertNotIn("valopers_snapshot_state", after_tables)
 
+    def test_legacy_schema_supports_transaction_hash_migration_before_valopers(self):
+        database_url = self.prepare_legacy_database(f"utsa_legacy_hash_first_{os.getpid()}")
+        before_tables, before_counts = self.table_names_and_counts(database_url)
+
+        transaction = self.run_transaction_hash_migration(database_url)
+        self.assertEqual(transaction.returncode, 0, transaction.stderr)
+        self.assertEqual(transaction.stdout, "Transaction hash migration applied and validated\n")
+        transaction_rerun = self.run_transaction_hash_migration(database_url)
+        self.assertEqual(transaction_rerun.returncode, 0, transaction_rerun.stderr)
+        self.assertEqual(transaction_rerun.stdout, "Transaction hash schema is already compatible\n")
+
+        valopers = self.run_migration(database_url)
+        self.assertEqual(valopers.returncode, 0, valopers.stderr)
+        self.assertIn("Valopers schema migration applied and validated", valopers.stdout)
+        valopers_rerun = self.run_migration(database_url)
+        self.assertEqual(valopers_rerun.returncode, 0, valopers_rerun.stderr)
+        self.assertIn("Valopers schema is already compatible", valopers_rerun.stdout)
+
+        guidance = self.run_init(database_url)
+        self.assertNotEqual(guidance.returncode, 0)
+        self.assertIn("python scripts/migrate_network_distribution_schema.py", guidance.stderr)
+        network = self.run_network_distribution_migration(database_url)
+        self.assertEqual(network.returncode, 0, network.stderr)
+        final_init = self.run_init(database_url)
+        self.assertEqual(final_init.returncode, 0, final_init.stderr)
+        final_valopers = self.run_migration(database_url)
+        final_transactions = self.run_transaction_hash_migration(database_url)
+        final_network = self.run_network_distribution_migration(database_url)
+        self.assertIn("already compatible", final_valopers.stdout)
+        self.assertIn("already compatible", final_transactions.stdout)
+        self.assertEqual(final_network.returncode, 0, final_network.stderr)
+
+        outputs = (transaction, transaction_rerun, valopers, valopers_rerun, guidance,
+                   network, final_init, final_valopers, final_transactions, final_network)
+        for result in outputs:
+            self.assertNotIn(self.password, result.stdout + result.stderr)
+            self.assertNotIn(database_url, result.stdout + result.stderr)
+        tables, counts = self.table_names_and_counts(database_url)
+        self.assertEqual(tables, init_database.EXPECTED_TABLES)
+        for table in LEGACY_TABLES:
+            self.assertEqual(counts[table], before_counts[table])
+        for table in ("valoper_profiles", "valopers_snapshot_state",
+                      "network_distribution_geo_cache", "network_distribution_snapshots",
+                      "network_distribution_snapshot_sources"):
+            self.assertEqual(counts[table], 0)
+
     def test_atomic_valopers_snapshot_lifecycle(self):
         name = f"utsa_valopers_persistence_{os.getpid()}"
         self.create_database(name)

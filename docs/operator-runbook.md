@@ -238,3 +238,5 @@ python scripts/collect_network_distribution.py
 ```
 
 Configure `NETWORK_DISTRIBUTION_CHAIN_ID` (falling back to `GNO_CHAIN_ID`) and optional `NETWORK_DISTRIBUTION_RPC_HEALTH_MAX_AGE`, `NETWORK_DISTRIBUTION_RPC_TIMEOUT`, `NETWORK_DISTRIBUTION_GEO_API_URL`, `NETWORK_DISTRIBUTION_GEO_TIMEOUT`, `NETWORK_DISTRIBUTION_GEO_CACHE_TTL`, `NETWORK_DISTRIBUTION_GEO_FAILURE_TTL`, `NETWORK_DISTRIBUTION_GEO_MAX_LOOKUPS`, `NETWORK_DISTRIBUTION_GEO_CONCURRENCY`, and `NETWORK_DISTRIBUTION_SNAPSHOT_RETENTION` in the external environment file. RPC and GeoIP timeouts are independent and both default to 10 seconds.
+
+Historical migrations 0001 (Valopers) and 0002 (transaction hashes) are independent and support either order. Migration 0003 requires both earlier migrations. Production already has 0001 and 0002, so this rollout runs only the explicit 0003 command. `init_database.py` validates stages but never applies migrations automatically; no production migration is performed by repository code.

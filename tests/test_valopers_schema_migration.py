@@ -14,15 +14,16 @@ from scripts import init_database, migrate_valopers_schema
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def expected_snapshot():
+def expected_snapshot(expectations=None):
+    expectations = expectations or init_database.FINAL_SCHEMA_EXPECTATIONS
     return {
-        "tables": set(init_database.EXPECTED_TABLES),
-        "columns": copy.deepcopy(init_database.EXPECTED_COLUMNS),
-        "primary_keys": dict(init_database.EXPECTED_PRIMARY_KEYS),
-        "unique_constraints": set(init_database.EXPECTED_UNIQUES),
-        "foreign_keys": set(init_database.EXPECTED_FOREIGN_KEYS),
-        "check_constraints": dict(init_database.EXPECTED_CHECKS),
-        "indexes": dict(init_database.EXPECTED_INDEXES),
+        "tables": set(expectations["tables"]),
+        "columns": copy.deepcopy(expectations["columns"]),
+        "primary_keys": dict(expectations["primary_keys"]),
+        "unique_constraints": set(expectations["unique_constraints"]),
+        "foreign_keys": set(expectations["foreign_keys"]),
+        "check_constraints": dict(expectations["check_constraints"]),
+        "indexes": dict(expectations["indexes"]),
     }
 
 
@@ -166,7 +167,17 @@ class MigrationScriptTests(unittest.TestCase):
     def run_migration(self, tables, snapshot=None, ddl_error=None):
         events = []
         connection = FakeConnection(tables, events, ddl_error)
-        with patch("scripts.migrate_valopers_schema.fetch_schema_snapshot", side_effect=lambda cursor: events.append("snapshot") or (snapshot or expected_snapshot())), patch("scripts.migrate_valopers_schema.validate_schema_snapshot", side_effect=lambda value: events.append("validate") or init_database.validate_schema_snapshot(value)):
+        if snapshot is not None:
+            snapshots = [snapshot]
+        elif tables == migrate_valopers_schema.LEGACY_TABLES:
+            snapshots = [expected_snapshot(init_database.BASE_LEGACY_EXPECTATIONS),
+                         expected_snapshot(init_database.VALOPERS_ONLY_EXPECTATIONS)]
+        else:
+            snapshots = [expected_snapshot()]
+        def next_snapshot(cursor):
+            events.append("snapshot")
+            return snapshots.pop(0) if len(snapshots) > 1 else snapshots[0]
+        with patch("scripts.migrate_valopers_schema.fetch_schema_snapshot", side_effect=next_snapshot), patch("scripts.migrate_valopers_schema.validate_schema_snapshot", side_effect=lambda value, expectations=None: events.append("validate") or init_database.validate_schema_snapshot(value, expectations)):
             result = migrate_valopers_schema.migrate_valopers_schema(
                 "postgresql://safe", connect=lambda url: connection
             )
@@ -180,7 +191,9 @@ class MigrationScriptTests(unittest.TestCase):
         result, connection, events = self.run_migration(migrate_valopers_schema.LEGACY_TABLES)
         self.assertEqual(result, "applied")
         self.assertEqual(events.count("ddl"), 1)
-        self.assertLess(events.index("ddl"), events.index("snapshot"))
+        snapshot_events = [index for index, event in enumerate(events) if event == "snapshot"]
+        self.assertLess(snapshot_events[0], events.index("ddl"))
+        self.assertLess(events.index("ddl"), snapshot_events[1])
         self.assertLess(events.index("validate"), events.index("commit"))
         self.assertEqual(connection.commits, 1)
 
@@ -204,13 +217,10 @@ class MigrationScriptTests(unittest.TestCase):
                 self.assertEqual(connection.commits, 0)
 
     def test_sql_and_validation_errors_do_not_commit(self):
-        events = []
-        connection = FakeConnection(migrate_valopers_schema.LEGACY_TABLES, events, RuntimeError("secret DSN"))
         with self.assertRaises(RuntimeError):
-            migrate_valopers_schema.migrate_valopers_schema("postgresql://safe", connect=lambda url: connection)
-        self.assertEqual(connection.commits, 0)
+            self.run_migration(migrate_valopers_schema.LEGACY_TABLES, ddl_error=RuntimeError("secret DSN"))
         bad = expected_snapshot(); bad["tables"].remove("valoper_profiles")
-        with self.assertRaises(init_database.SchemaCompatibilityError):
+        with self.assertRaises(migrate_valopers_schema.MigrationPreconditionError):
             self.run_migration(migrate_valopers_schema.LEGACY_TABLES, bad)
 
     def test_missing_file_opens_no_connection(self):
