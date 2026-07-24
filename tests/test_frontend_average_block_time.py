@@ -20,8 +20,9 @@ console.log(JSON.stringify([f(null), f(undefined), f('3'), f(NaN), f(Infinity), 
 
     def test_overview_restores_distribution_metrics(self):
         source = (ROOT / "frontend/src/pages/Overview.jsx").read_text()
-        for text in ("Total Peers", "Countries", "Hosting Providers", "Peers & Decentralization Map", "Coming soon", "/assets/network-map.png", "mascotSrc"):
+        for text in ("Total Peers", "Countries", "Providers", "Peers & Decentralization Map", "Coming soon", "/assets/network-map.png", "mascotSrc"):
             self.assertIn(text, source)
+        self.assertNotIn("Hosting Providers", source)
         for text in ("formatAverageBlockTime", "average_block_time_seconds", "average_block_time_sample_size", "Avg Block Time"):
             self.assertNotIn(text, source)
         self.assertNotIn("<span>Decentralization</span>", source)
@@ -33,6 +34,8 @@ console.log(JSON.stringify([f(null), f(undefined), f('3'), f(NaN), f(Infinity), 
         css = (ROOT / "frontend/src/styles/app.css").read_text()
         for text in ("formatAverageBlockTime", "averageBlockTimeSeconds", "averageBlockTimeSampleSize", "indexed blocks", "intervals", "topbar-block-time"):
             self.assertIn(text, source)
+        self.assertNotIn("20 indexed blocks", source)
+        self.assertNotRegex(source, r"fetch\(|axios")
         self.assertLess(source.index('</form>'), source.index('className="topbar-block-time"'))
         self.assertLess(source.index('className="topbar-block-time"'), source.index('className="network-update"'))
         self.assertIn("previousAverageBlockTime.current !== formattedAverageBlockTime", source)

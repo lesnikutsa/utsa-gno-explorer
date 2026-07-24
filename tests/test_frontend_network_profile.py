@@ -51,7 +51,7 @@ class FrontendNetworkProfileTests(unittest.TestCase):
         self.assertIn('<div className="brand__asset" aria-hidden="true">', self.logo)
 
     def test_overview_preserves_map_preview_and_profiles_footer(self):
-        for text in ("Peers & Decentralization Map", "Coming soon", "Total Peers", "Countries", "Hosting Providers"):
+        for text in ("Peers & Decentralization Map", "Coming soon", "Total Peers", "Countries", "Providers"):
             self.assertIn(text, self.overview)
         self.assertIn('/assets/network-map.png?v=1', self.overview)
         self.assertIn("network-preview__mascot", self.overview)

@@ -149,7 +149,7 @@ export function Overview({ explorerData, mascotSrc = null }) {
             <div className="network-preview__metric">
               <span className="network-preview__metric-label">
                 <NetworkIcon />
-                <span>Hosting Providers</span>
+                <span>Providers</span>
               </span>
               <strong>—</strong>
             </div>
