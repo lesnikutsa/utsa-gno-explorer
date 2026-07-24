@@ -15,6 +15,7 @@ class FrontendNetworkDistributionTests(unittest.TestCase):
         cls.panel = (ROOT / "frontend/src/components/NetworkDistributionPanel.jsx").read_text()
         cls.validators = (ROOT / "frontend/src/pages/Validators.jsx").read_text()
         cls.css = (ROOT / "frontend/src/styles/app.css").read_text()
+        cls.theme = (ROOT / "frontend/src/styles/theme.css").read_text()
         cls.main = (ROOT / "frontend/src/main.jsx").read_text()
         cls.formatter = ROOT / "frontend/src/utils/networkDistributionFormat.js"
 
@@ -72,9 +73,14 @@ class FrontendNetworkDistributionTests(unittest.TestCase):
         self.assertIn("width: fit-content", toggle)
         self.assertIn("min-width: 100px", toggle)
         self.assertIn("margin: 7px auto 0", toggle)
-        self.assertIn("min-height: 20px", toggle)
-        self.assertIn("font: 400 8px var(--font-sans)", toggle)
-        self.assertIn("padding: 2px 8px", toggle)
+        self.assertIn("min-height: 22px", toggle)
+        self.assertIn("font-family: var(--font-ui)", toggle)
+        self.assertIn("font-size: 10px", toggle)
+        self.assertIn("font-weight: 400", toggle)
+        self.assertIn("line-height: 1.2", toggle)
+        self.assertNotIn("var(--font-sans)", toggle)
+        self.assertRegex(self.theme, r"--font-ui\s*:")
+        self.assertIn("padding: 3px 10px", toggle)
         self.assertIn("text-align: center", toggle)
         self.assertNotIn("var(--color-accent)", toggle)
 
