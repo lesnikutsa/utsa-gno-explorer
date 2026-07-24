@@ -486,6 +486,101 @@ sudo systemctl disable --now utsa-gno-api.service
 
 ### API-only update and rollback
 
+#### Network distribution API access prerequisite
+
+This is a bounded prerequisite for deploying the network-distribution read endpoint. Use
+an administrator connection without placing or printing a password on the command line.
+The indexer, collector timer, and PostgreSQL remain running throughout this procedure.
+
+1. Confirm that network-distribution migration
+   `database/migrations/0003_add_network_distribution.sql` has already been applied and
+   that the final schema validation has succeeded. The normal production migration
+   procedure previously ran `python scripts/migrate_network_distribution_schema.py` and
+   `python scripts/init_database.py`; do not run either command in this API-only procedure.
+2. Confirm the aggregate snapshot table exists:
+
+   ```sql
+   SELECT
+       to_regclass('public.network_distribution_snapshots')
+           IS NOT NULL AS snapshots_table_exists;
+   ```
+
+   The expected result is `true`.
+3. Remove access to the auxiliary distribution tables, including on fresh installations
+   where the earlier API-role setup may have granted `SELECT` on all existing tables:
+
+   ```sql
+   REVOKE SELECT
+     ON TABLE
+       public.network_distribution_geo_cache,
+       public.network_distribution_snapshot_sources
+     FROM utsa_gno_api;
+   ```
+
+   This revoke is safe and idempotent when the role did not already possess these
+   privileges. The endpoint needs only `indexer_state` and
+   `network_distribution_snapshots`; raw GeoIP cache and per-source rows remain
+   inaccessible to the API role. Do not revoke access to tables used by existing API
+   endpoints.
+4. Grant only the aggregate snapshot access required by the API:
+
+   ```sql
+   GRANT SELECT
+     ON TABLE public.network_distribution_snapshots
+     TO utsa_gno_api;
+   ```
+
+5. Verify least privilege before deploying the API:
+
+   ```sql
+   SELECT has_table_privilege(
+     'utsa_gno_api',
+     'public.network_distribution_snapshots',
+     'SELECT'
+   );
+
+   SELECT
+     privileges.privilege,
+     has_table_privilege(
+       'utsa_gno_api',
+       'public.network_distribution_snapshots',
+       privileges.privilege
+     )
+   FROM unnest(
+     ARRAY['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE']
+   ) AS privileges(privilege);
+
+   SELECT
+     auxiliary.table_name,
+     has_table_privilege(
+       'utsa_gno_api',
+       'public.' || auxiliary.table_name,
+       'SELECT'
+     )
+   FROM unnest(
+     ARRAY[
+       'network_distribution_geo_cache',
+       'network_distribution_snapshot_sources'
+     ]
+   ) AS auxiliary(table_name);
+   ```
+
+   The first result must be `true`; every write privilege and both auxiliary-table
+   `SELECT` results must be `false`.
+6. Deploy the reviewed API code using the API-only update procedure below.
+7. Restart only the API:
+
+   ```bash
+   sudo systemctl restart utsa-gno-api.service
+   ```
+
+8. Smoke-test the local endpoint:
+
+   ```bash
+   curl --fail --silent --show-error \
+     http://127.0.0.1:18180/api/network/distribution
+   ```
+
 For API-only changes, do not stop PostgreSQL or the indexer. Create an isolated Git worktree for PR validation, validate there, and merge only after validation. Then explicitly fast-forward the production checkout and restart only the API:
 
 ```bash
