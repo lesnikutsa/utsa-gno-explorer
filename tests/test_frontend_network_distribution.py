@@ -68,6 +68,10 @@ class FrontendNetworkDistributionTests(unittest.TestCase):
         toggle = self.css.split(".distribution__toggle {", 1)[1].split("}", 1)[0]
         self.assertIn("var(--color-text-secondary)", toggle)
         self.assertIn("rgba(9,24,39,.32)", toggle)
+        self.assertIn("min-height: 26px", toggle)
+        self.assertIn("font: 500 9px var(--font-sans)", toggle)
+        self.assertIn("padding: 4px 10px", toggle)
+        self.assertIn("text-align: center", toggle)
         self.assertNotIn("var(--color-accent)", toggle)
 
     def test_distribution_formatters(self):

@@ -322,7 +322,7 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .distribution-ranking__name { min-width: 0; color: var(--color-text); }
 .distribution-ranking__flag { width: 14px; height: 10px; margin-right: 6px; background-size: cover; border-radius: 1px; vertical-align: -1px; }
 .distribution-ranking__asn { color: var(--color-text-secondary); font: 8px var(--font-mono); }
-.distribution__toggle { width: 100%; min-height: 30px; margin-top: 7px; border: 1px solid var(--color-border-soft); border-radius: 4px; background: rgba(9,24,39,.32); color: var(--color-text-secondary); font: 600 10px var(--font-sans); cursor: pointer; transition: border-color .15s ease, background-color .15s ease, color .15s ease; }
+.distribution__toggle { width: 100%; min-height: 26px; margin-top: 7px; padding: 4px 10px; border: 1px solid var(--color-border-soft); border-radius: 4px; background: rgba(9,24,39,.32); color: var(--color-text-secondary); font: 500 9px var(--font-sans); text-align: center; cursor: pointer; transition: border-color .15s ease, background-color .15s ease, color .15s ease; }
 .distribution__toggle:hover { border-color: rgba(116,138,156,.55); background: rgba(255,255,255,.035); color: var(--color-text); }
 .distribution__toggle:focus-visible { outline: 1px solid var(--color-text-secondary); outline-offset: 2px; border-color: rgba(116,138,156,.65); }
 .distribution__empty, .distribution__unavailable { margin: 0; padding: 9px; border: 1px solid var(--color-border-soft); border-radius: 4px; color: var(--color-text-secondary); font-size: 10px; }
