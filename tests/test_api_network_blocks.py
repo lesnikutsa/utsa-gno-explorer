@@ -1,5 +1,6 @@
 import logging
 import unittest
+from decimal import Decimal
 from datetime import datetime, timezone
 from unittest.mock import patch
 
@@ -90,6 +91,8 @@ def network_row(**overrides):
         "tx_count": 0,
         "validator_active_count": 20,
         "validator_total_voting_power": "123456789",
+        "average_block_time_seconds": Decimal("3.1842"),
+        "average_block_time_sample_size": 100,
         "rpc_url": "https://example-rpc",
         "rpc_healthy": True,
         "rpc_catching_up": False,
@@ -128,6 +131,8 @@ class ApiNetworkBlocksTests(unittest.TestCase):
                 "finalized_tip_height": 869383,
                 "indexed_height": 869383,
                 "indexer_lag": 0,
+                "average_block_time_seconds": 3.1842,
+                "average_block_time_sample_size": 100,
                 "latest_block": {
                     "height": 869383,
                     "block_hash": BLOCK_HASH,
@@ -151,6 +156,19 @@ class ApiNetworkBlocksTests(unittest.TestCase):
                 },
             },
         )
+
+    def test_network_maps_unavailable_average_sample_sizes(self):
+        fake_database = FakeDatabase()
+        for sample_size in (0, 1):
+            fake_database.network_row = network_row(
+                average_block_time_seconds=None,
+                average_block_time_sample_size=sample_size,
+            )
+            with self.make_client(fake_database) as client:
+                data = client.get("/api/network").json()
+            self.assertIsNone(data["average_block_time_seconds"])
+            self.assertEqual(data["average_block_time_sample_size"], sample_size)
+            self.assertIsInstance(data["average_block_time_sample_size"], int)
 
     def test_network_voting_power_is_string_and_zero_validator_rows_are_zero(self):
         fake_database = FakeDatabase()

@@ -148,8 +148,8 @@ export function Overview({ explorerData, mascotSrc = null }) {
             </div>
             <div className="network-preview__metric">
               <span className="network-preview__metric-label">
-                <ChainIcon />
-                <span>Decentralization</span>
+                <NetworkIcon />
+                <span>Providers</span>
               </span>
               <strong>—</strong>
             </div>

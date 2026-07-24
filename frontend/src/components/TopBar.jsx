@@ -1,18 +1,45 @@
 import { useEffect, useRef, useState } from 'react'
-import { MenuIcon, SearchIcon } from './Icons'
+import { BlocksIcon, MenuIcon, SearchIcon } from './Icons'
 import { useGlobalSearch } from '../hooks/useGlobalSearch'
 import { shortAddress } from '../utils/address'
+import { formatAverageBlockTime } from '../utils/blockTime'
 
 const labels = { loading: 'Connecting', healthy: 'Healthy', degraded: 'Degraded', error: 'Unavailable' }
 
-export function TopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefreshCountdown = true }) {
+export function TopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefreshCountdown = true, averageBlockTimeSeconds, averageBlockTimeSampleSize }) {
   const [clock, setClock] = useState(Date.now())
   const searchInputRef = useRef(null)
   const searchFormRef = useRef(null)
+  const previousAverageBlockTime = useRef(null)
+  const averageBlockTimeTimer = useRef(null)
+  const [averageBlockTimeUpdating, setAverageBlockTimeUpdating] = useState(false)
   const {
     query, status, message, searching, validatorResults, dropdownOpen, highlightedIndex,
     submitSearch, updateQuery, clearSearch, selectValidator, closeDropdown, moveHighlight,
   } = useGlobalSearch()
+  const formattedAverageBlockTime = formatAverageBlockTime(averageBlockTimeSeconds)
+  const sampleSize = Number(averageBlockTimeSampleSize)
+  const showAverageBlockTime = formattedAverageBlockTime !== '—' && Number.isInteger(sampleSize) && sampleSize >= 2
+
+  useEffect(() => {
+    if (!showAverageBlockTime) {
+      previousAverageBlockTime.current = null
+      setAverageBlockTimeUpdating(false)
+      return undefined
+    }
+    if (previousAverageBlockTime.current !== null && previousAverageBlockTime.current !== formattedAverageBlockTime) {
+      if (averageBlockTimeTimer.current !== null) window.clearTimeout(averageBlockTimeTimer.current)
+      setAverageBlockTimeUpdating(true)
+      averageBlockTimeTimer.current = window.setTimeout(() => {
+        setAverageBlockTimeUpdating(false)
+        averageBlockTimeTimer.current = null
+      }, 800)
+    }
+    previousAverageBlockTime.current = formattedAverageBlockTime
+    return () => {
+      if (averageBlockTimeTimer.current !== null) window.clearTimeout(averageBlockTimeTimer.current)
+    }
+  }, [formattedAverageBlockTime, showAverageBlockTime])
 
   useEffect(() => {
     if (!showRefreshCountdown) return undefined
@@ -117,6 +144,13 @@ export function TopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefres
           </div>
         )}
       </form>
+      {showAverageBlockTime && (
+        <div className="topbar-block-time" title={`Average across ${sampleSize} indexed blocks (${sampleSize - 1} intervals)`}>
+          <BlocksIcon />
+          <span className="topbar-block-time__label">Avg Block Time</span>
+          <strong className={averageBlockTimeUpdating ? 'topbar-block-time__value topbar-block-time__value--updating' : 'topbar-block-time__value'}>{formattedAverageBlockTime}</strong>
+        </div>
+      )}
       <div className="network-update">
         <span className={`pulse pulse--${healthState}`} />
         <div><strong>{labels[healthState]}</strong>{showRefreshCountdown && <span>Next refresh: {secondsUntilRefresh}s</span>}</div>

@@ -46,6 +46,8 @@ class NetworkResponse(BaseModel):
     finalized_tip_height: int | None
     indexed_height: int
     indexer_lag: int | None
+    average_block_time_seconds: float | None = Field(default=None, ge=0)
+    average_block_time_sample_size: int = Field(ge=0)
     latest_block: BlockSummary
     validators: NetworkValidators
     selected_rpc: SelectedRpc | None
