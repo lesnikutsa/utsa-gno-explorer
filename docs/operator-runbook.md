@@ -227,7 +227,9 @@ deployment guide. No migration is automatic.
 
 The collector measures peers visible through one or more healthy Tendermint `/net_info` RPC sources. It is an observed sample, not a complete network census. It reuses persisted `rpc_endpoints` health, preferring the selected endpoint, then greatest observed height, then endpoint ID. The default limit is one; `NETWORK_DISTRIBUTION_RPC_LIMIT` supports 1–20 without requiring that all requested sources exist. Node IDs are deduplicated by source priority and conflicting later IPs are counted but discarded. Country, region, and provider rankings count unique public IPs.
 
-GeoIP/ASN data comes from `https://ipwho.is` by default and is cached for seven days (failed lookups for one hour). External lookups and concurrency are bounded. The newest 120 snapshots per chain are retained by default. No API or frontend consumes these tables yet.
+GeoIP/ASN data comes from `https://ipwho.is` by default and is cached for seven days (failed lookups for one hour). PostgreSQL `inet` cache keys are loaded with `host(ip)`, so successful IPv4 and IPv6 rows are reused without repeated external requests. Provider HTTP 429 responses are recorded internally as `rate_limited` and retain the configured failure TTL. External lookups and concurrency are bounded. A collection with public IPs but no GeoIP results does not replace an existing snapshot with useful geography; a first-run bootstrap snapshot may still contain no geography. The newest 120 snapshots per chain are retained by default. No raw IP address or node ID is exposed by the aggregate API.
+
+After deploying this fix, verify a manual collection and cache reuse before re-enabling the network-distribution collector timer. Deployment documentation does not enable the timer automatically.
 
 Manual comparison and collection:
 
