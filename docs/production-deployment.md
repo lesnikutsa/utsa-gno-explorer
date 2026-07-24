@@ -506,7 +506,23 @@ The indexer, collector timer, and PostgreSQL remain running throughout this proc
    ```
 
    The expected result is `true`.
-3. Grant only the aggregate snapshot access required by the API:
+3. Remove access to the auxiliary distribution tables, including on fresh installations
+   where the earlier API-role setup may have granted `SELECT` on all existing tables:
+
+   ```sql
+   REVOKE SELECT
+     ON TABLE
+       public.network_distribution_geo_cache,
+       public.network_distribution_snapshot_sources
+     FROM utsa_gno_api;
+   ```
+
+   This revoke is safe and idempotent when the role did not already possess these
+   privileges. The endpoint needs only `indexer_state` and
+   `network_distribution_snapshots`; raw GeoIP cache and per-source rows remain
+   inaccessible to the API role. Do not revoke access to tables used by existing API
+   endpoints.
+4. Grant only the aggregate snapshot access required by the API:
 
    ```sql
    GRANT SELECT
@@ -514,7 +530,7 @@ The indexer, collector timer, and PostgreSQL remain running throughout this proc
      TO utsa_gno_api;
    ```
 
-4. Verify least privilege before deploying the API:
+5. Verify least privilege before deploying the API:
 
    ```sql
    SELECT has_table_privilege(
@@ -551,14 +567,14 @@ The indexer, collector timer, and PostgreSQL remain running throughout this proc
 
    The first result must be `true`; every write privilege and both auxiliary-table
    `SELECT` results must be `false`.
-5. Deploy the reviewed API code using the API-only update procedure below.
-6. Restart only the API:
+6. Deploy the reviewed API code using the API-only update procedure below.
+7. Restart only the API:
 
    ```bash
    sudo systemctl restart utsa-gno-api.service
    ```
 
-7. Smoke-test the local endpoint:
+8. Smoke-test the local endpoint:
 
    ```bash
    curl --fail --silent --show-error \

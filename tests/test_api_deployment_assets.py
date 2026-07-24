@@ -127,7 +127,12 @@ class ApiDeploymentAssetTests(unittest.TestCase):
     def test_network_distribution_prerequisite_is_least_privilege_and_ordered(self):
         section = self.network_distribution_prerequisite_section()
         normalized = " ".join(section.split())
+        revoke = (
+            "REVOKE SELECT ON TABLE public.network_distribution_geo_cache, "
+            "public.network_distribution_snapshot_sources FROM utsa_gno_api;"
+        )
         grant = "GRANT SELECT ON TABLE public.network_distribution_snapshots TO utsa_gno_api;"
+        self.assertIn(revoke, normalized)
         self.assertIn(grant, normalized)
         self.assertIn("has_table_privilege( 'utsa_gno_api', 'public.network_distribution_snapshots', 'SELECT' )", normalized)
         for privilege in ("INSERT", "UPDATE", "DELETE", "TRUNCATE"):
@@ -141,7 +146,8 @@ class ApiDeploymentAssetTests(unittest.TestCase):
         self.assertIn("AS privileges(privilege)", section)
         self.assertIn("AS auxiliary(table_name)", section)
         self.assertLess(section.index("0003_add_network_distribution.sql"), section.index("to_regclass"))
-        self.assertLess(section.index("to_regclass"), section.index("GRANT SELECT"))
+        self.assertLess(section.index("to_regclass"), section.index("REVOKE SELECT"))
+        self.assertLess(section.index("REVOKE SELECT"), section.index("GRANT SELECT"))
         self.assertLess(section.index("GRANT SELECT"), section.index("Verify least privilege"))
         self.assertLess(section.index("Verify least privilege"), section.index("systemctl restart"))
         self.assertLess(section.index("systemctl restart"), section.index("/api/network/distribution"))
@@ -152,10 +158,16 @@ class ApiDeploymentAssetTests(unittest.TestCase):
         self.assertIn("systemctl restart utsa-gno-api.service", section)
         self.assertIn("previously ran `python scripts/migrate_network_distribution_schema.py`", section)
         self.assertIn("`python scripts/init_database.py`", section)
+        self.assertEqual(section.count("scripts/migrate_network_distribution_schema.py"), 1)
+        self.assertEqual(section.count("scripts/init_database.py"), 1)
+        self.assertIn("do not run either command", section)
         for forbidden in ("stop utsa-gno-indexer", "stop utsa-gno-network-distribution", "stop postgresql", "database_url="):
             self.assertNotIn(forbidden, section)
         for forbidden in ("grant create", "owner to", "all privileges"):
             self.assertNotIn(forbidden, section)
+        revoke_clause = section[section.index("revoke select"):section.index("from utsa_gno_api;")]
+        for required_table in ("indexer_state", "blocks", "validators", "valoper_profiles"):
+            self.assertNotIn(required_table, revoke_clause)
 
     def test_valopers_prerequisite_grants_only_required_profile_select(self):
         section = self.valopers_schema_prerequisite_section()
