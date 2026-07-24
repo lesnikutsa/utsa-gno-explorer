@@ -34,6 +34,12 @@ class FrontendNetworkDistributionTests(unittest.TestCase):
             self.assertIn(value, self.panel)
         self.assertNotIn("Coming soon", self.panel)
         self.assertNotIn("Total Peers", self.panel)
+        self.assertIn(">#{index + 1}</span>", self.panel)
+
+    def test_rpc_summary_is_dynamic_and_pluralized(self):
+        self.assertIn("snapshot?.rpc_sources?.total === 1 ? 'RPC source' : 'RPC sources'", self.panel)
+        self.assertIn("${sourcesOk}/${sourcesTotal} ${rpcSourceLabel}", self.panel)
+        self.assertIn("Based on unique public IPs", self.panel)
 
     def test_country_flag_helper(self):
         helper = ROOT / "frontend/src/utils/countryFlag.js"

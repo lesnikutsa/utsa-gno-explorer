@@ -29,7 +29,7 @@ function RankingList({ id, items, kind }) {
         const key = aggregateKey(item, index, kind)
         const duplicateKey = items.findIndex((candidate, candidateIndex) => aggregateKey(candidate, candidateIndex, kind) === key) !== index
         return <li className="distribution-ranking__row" key={duplicateKey ? `${key}-${index}` : key}>
-          <span className="distribution-ranking__position">{index + 1}.</span>
+          <span className="distribution-ranking__position">#{index + 1}</span>
           <span className="distribution-ranking__identity" title={kind === 'provider' && typeof item?.name === 'string' ? item.name : undefined}>
             <span className="distribution-ranking__name">{flag && <span className="distribution-ranking__flag" aria-hidden="true">{flag}</span>}{typeof item?.name === 'string' && item.name ? item.name : '—'}</span>
             {asn && <span className="distribution-ranking__asn">{asn}</span>}
@@ -55,11 +55,12 @@ export function NetworkDistributionPanel({ distribution, error = false, loading 
   const regions = Array.isArray(snapshot?.regions) ? snapshot.regions : []
   const sourcesOk = formatDistributionCount(snapshot?.rpc_sources?.ok)
   const sourcesTotal = formatDistributionCount(snapshot?.rpc_sources?.total)
+  const rpcSourceLabel = snapshot?.rpc_sources?.total === 1 ? 'RPC source' : 'RPC sources'
 
   let metadata = 'Network distribution unavailable'
   if (!hasUsableSnapshot && loading) metadata = 'Loading network snapshot…'
   else if (hasUsableSnapshot && error) metadata = <>Data delayed · Updated <time dateTime={updatedAt} title={updatedAt}>{relativeTime(updatedAt)}</time></>
-  else if (hasUsableSnapshot) metadata = <>Updated <time dateTime={updatedAt} title={updatedAt}>{relativeTime(updatedAt)}</time> · {sourcesOk}/{sourcesTotal} RPC sources · Geo coverage {formatDistributionPercent(snapshot.geolocation_coverage_percent)}</>
+  else if (hasUsableSnapshot) metadata = <>Updated <time dateTime={updatedAt} title={updatedAt}>{relativeTime(updatedAt)}</time> · {sourcesOk}/{sourcesTotal} {rpcSourceLabel} · Geo coverage {formatDistributionPercent(snapshot.geolocation_coverage_percent)}</>
 
   return (
     <section className="network-preview" aria-labelledby="network-preview-title">
@@ -71,7 +72,7 @@ export function NetworkDistributionPanel({ distribution, error = false, loading 
           <Metric Icon={NetworkIcon} label="Providers" value={snapshot?.provider_count} />
         </div>
         <div className="network-preview__map"><img className="network-preview__map-image" src="/assets/network-map.png?v=1" alt="" aria-hidden="true" /></div>
-        <div className="network-preview__insight"><h3>Network at a glance</h3><p>{hasUsableSnapshot ? `Observed through ${sourcesOk}/${sourcesTotal} RPC sources. The observed network distribution is calculated from unique public IPs; peer identities and IP addresses are not exposed.` : 'This view summarizes an observed network sample when distribution data is available.'}</p></div>
+        <div className="network-preview__insight"><h3>Network at a glance</h3><p>{hasUsableSnapshot ? `Observed through ${sourcesOk}/${sourcesTotal} ${rpcSourceLabel} · Based on unique public IPs` : 'Observed network distribution will appear when snapshot data is available.'}</p></div>
         <div className="network-preview__mascot" aria-hidden="true">{mascotSrc ? <img src={mascotSrc} alt="" /> : <span>Network mascot</span>}</div>
       </div>
       <section className="distribution" aria-labelledby="distribution-title">
