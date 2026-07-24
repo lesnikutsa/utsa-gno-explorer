@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getBlocks, getHealth, getNetwork, getValidatorSigningHistory, getValidators } from '../services/api'
+import { getBlocks, getHealth, getNetwork, getNetworkDistribution, getValidatorSigningHistory, getValidators } from '../services/api'
 
 const FAST_POLL_MS = 5_000
 const SLOW_POLL_MS = 15_000
 
 export function useExplorerData() {
-  const [data, setData] = useState({ health: null, network: null, blocks: [], validators: [], validatorsHeight: null, validatorHistory: null })
-  const [errors, setErrors] = useState({ health: false, network: false, blocks: false, validators: false, validatorHistory: false })
+  const [data, setData] = useState({ health: null, network: null, blocks: [], validators: [], validatorsHeight: null, validatorHistory: null, distribution: null })
+  const [errors, setErrors] = useState({ health: false, network: false, blocks: false, validators: false, validatorHistory: false, distribution: false })
   const [loading, setLoading] = useState(true)
   const [nextFastRefreshAt, setNextFastRefreshAt] = useState(null)
   const mounted = useRef(false)
@@ -44,10 +44,11 @@ export function useExplorerData() {
   const refreshSlow = useCallback(async () => {
     if (slowInFlight.current) return
     slowInFlight.current = true
-    const [health, initialValidators, initialValidatorHistory] = await Promise.allSettled([
+    const [health, initialValidators, initialValidatorHistory, distribution] = await Promise.allSettled([
       getHealth(),
       getValidators(),
       getValidatorSigningHistory({ limit: 50 }),
+      getNetworkDistribution(),
     ])
     let validators = initialValidators
     let validatorHistory = initialValidatorHistory
@@ -72,12 +73,14 @@ export function useExplorerData() {
         validators: validatorsSucceeded ? validators.value.items ?? [] : current.validators,
         validatorsHeight: validatorsSucceeded ? validators.value.height : current.validatorsHeight,
         validatorHistory: historyMatched ? validatorHistory.value : current.validatorHistory,
+        distribution: distribution.status === 'fulfilled' ? distribution.value : current.distribution,
       }))
       setErrors((current) => ({
         ...current,
         health: health.status === 'rejected',
         validators: validators.status === 'rejected',
         validatorHistory: !historyMatched,
+        distribution: distribution.status === 'rejected',
       }))
       finishInitialGroup('slow')
       slowTimer.current = window.setTimeout(refreshSlow, SLOW_POLL_MS)

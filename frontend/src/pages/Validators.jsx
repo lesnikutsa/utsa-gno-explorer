@@ -44,7 +44,7 @@ export function Validators({ validatorsPage }) {
   ), [historyResponse])
   const historyBlocks = historyResponse?.blocks
   const columns = useMemo(() => [
-    { key: 'powerRank', label: 'Power Rank', render: (row) => <span className="mono">#{row.powerRank}</span> },
+    { key: 'powerRank', label: 'Power Rank', render: (row) => <span className="power-rank">#{row.powerRank}</span> },
     { key: 'address', label: 'Validator', sortable: true, defaultSortDirection: 'ascending', render: (row) => (
       <a className="validator-identity validator-identity--link" href={`/validators/${encodeURIComponent(row.address)}`} title={row.address}>
         {hasValidatorMoniker(row) ? (

@@ -19,9 +19,13 @@ console.log(JSON.stringify([f(null), f(undefined), f('3'), f(NaN), f(Infinity), 
         self.assertEqual(json.loads(result.stdout), ["—", "—", "—", "—", "—", "—", "—", "3.18s", "12.4s", "60.0s", "1m 00s", "1m 05s", "2m 00s", "2m 05s"])
 
     def test_overview_restores_distribution_metrics(self):
-        source = (ROOT / "frontend/src/pages/Overview.jsx").read_text()
-        for text in ("Total Peers", "Countries", "Providers", "Peers & Decentralization Map", "Coming soon", "/assets/network-map.png", "mascotSrc"):
+        overview = (ROOT / "frontend/src/pages/Overview.jsx").read_text()
+        panel = (ROOT / "frontend/src/components/NetworkDistributionPanel.jsx").read_text()
+        source = overview + panel
+        for text in ("Visible Peers", "Countries", "Providers", "Peers &amp; Decentralization Map", "Observed Network Distribution", "/assets/network-map.png?v=1", "mascotSrc"):
             self.assertIn(text, source)
+        self.assertNotIn("Total Peers", source)
+        self.assertNotIn("Coming soon", source)
         self.assertNotIn("Hosting Providers", source)
         for text in ("formatAverageBlockTime", "average_block_time_seconds", "average_block_time_sample_size", "Avg Block Time"):
             self.assertNotIn(text, source)
