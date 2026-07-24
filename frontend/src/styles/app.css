@@ -100,6 +100,7 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .missed-value--medium { color: var(--color-warning); }
 .missed-value--high { color: var(--color-error); }
 .mono { font-family: var(--font-mono); }
+.power-rank { color: var(--color-text); font: 400 11px var(--font-mono); }
 .muted { color: var(--color-text-secondary); }
 .accent-value { color: #dc795e; }
 .table-link { display: inline-block; }
@@ -316,10 +317,10 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .distribution__rankings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .distribution-ranking { display: grid; gap: 5px; }
 .distribution-ranking__row { display: grid; grid-template-columns: 24px minmax(0, 1fr) 48px 58px; align-items: center; gap: 6px; padding: 6px 8px; font-size: 10px; }
-.distribution-ranking__position { color: var(--color-text-secondary); font: 600 9px var(--font-mono); }
+.distribution-ranking__position { display: inline-block; }
 .distribution-ranking__identity { display: flex; min-width: 0; align-items: baseline; flex-wrap: wrap; gap: 3px 7px; overflow-wrap: anywhere; }
 .distribution-ranking__name { min-width: 0; color: var(--color-text); }
-.distribution-ranking__flag { margin-right: 6px; }
+.distribution-ranking__flag { width: 14px; height: 10px; margin-right: 6px; background-size: cover; border-radius: 1px; vertical-align: -1px; }
 .distribution-ranking__asn { color: var(--color-text-secondary); font: 8px var(--font-mono); }
 .distribution__toggle { width: 100%; min-height: 30px; margin-top: 7px; border: 1px solid var(--color-border-soft); border-radius: 4px; background: rgba(9,24,39,.32); color: var(--color-text-secondary); font: 600 10px var(--font-sans); cursor: pointer; transition: border-color .15s ease, background-color .15s ease, color .15s ease; }
 .distribution__toggle:hover { border-color: rgba(116,138,156,.55); background: rgba(255,255,255,.035); color: var(--color-text); }

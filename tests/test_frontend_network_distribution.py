@@ -13,6 +13,9 @@ class FrontendNetworkDistributionTests(unittest.TestCase):
         cls.hook = (ROOT / "frontend/src/hooks/useExplorerData.js").read_text()
         cls.overview = (ROOT / "frontend/src/pages/Overview.jsx").read_text()
         cls.panel = (ROOT / "frontend/src/components/NetworkDistributionPanel.jsx").read_text()
+        cls.validators = (ROOT / "frontend/src/pages/Validators.jsx").read_text()
+        cls.css = (ROOT / "frontend/src/styles/app.css").read_text()
+        cls.main = (ROOT / "frontend/src/main.jsx").read_text()
         cls.formatter = ROOT / "frontend/src/utils/networkDistributionFormat.js"
 
     def test_api_service_uses_shared_request(self):
@@ -34,7 +37,9 @@ class FrontendNetworkDistributionTests(unittest.TestCase):
             self.assertIn(value, self.panel)
         self.assertNotIn("Coming soon", self.panel)
         self.assertNotIn("Total Peers", self.panel)
-        self.assertIn(">#{index + 1}</span>", self.panel)
+        self.assertIn('className="distribution-ranking__position power-rank">#{index + 1}</span>', self.panel)
+        self.assertIn('className="power-rank">#{row.powerRank}</span>', self.validators)
+        self.assertIn('.power-rank {', self.css)
 
     def test_rpc_summary_is_dynamic_and_pluralized(self):
         self.assertIn("snapshot?.rpc_sources?.total === 1 ? 'RPC source' : 'RPC sources'", self.panel)
@@ -45,7 +50,25 @@ class FrontendNetworkDistributionTests(unittest.TestCase):
         helper = ROOT / "frontend/src/utils/countryFlag.js"
         script = f'''import {{ countryFlag as f }} from {json.dumps(helper.as_uri())};\nconsole.log(JSON.stringify([f('FI'), f('DE'), f('US'), f('fi'), f('USA'), f('1A'), f(null), f(undefined)]));'''
         result = subprocess.run(["node", "--input-type=module", "-e", script], check=True, capture_output=True, text=True)
-        self.assertEqual(json.loads(result.stdout), ["🇫🇮", "🇩🇪", "🇺🇸", "", "", "", "", ""])
+        self.assertEqual(json.loads(result.stdout), ["fi fi-fi", "fi fi-de", "fi fi-us", "", "", "", "", ""])
+
+    def test_flags_are_bundled_classes_without_remote_loading(self):
+        helper = (ROOT / "frontend/src/utils/countryFlag.js").read_text()
+        package = json.loads((ROOT / "frontend/package.json").read_text())
+        self.assertEqual(package["dependencies"]["flag-icons"], "7.5.0")
+        self.assertIn("flag-icons/css/flag-icons.min.css", self.main)
+        self.assertIn('className={`distribution-ranking__flag ${flag}`}', self.panel)
+        self.assertIn('aria-hidden="true"', self.panel)
+        self.assertIn("item.name", self.panel)
+        for source in (helper, self.panel, self.main):
+            self.assertNotRegex(source, r"flagcdn|cdn\.|https?://|fetch\(")
+        self.assertNotIn("String.fromCodePoint", helper)
+
+    def test_toggle_style_remains_quiet(self):
+        toggle = self.css.split(".distribution__toggle {", 1)[1].split("}", 1)[0]
+        self.assertIn("var(--color-text-secondary)", toggle)
+        self.assertIn("rgba(9,24,39,.32)", toggle)
+        self.assertNotIn("var(--color-accent)", toggle)
 
     def test_distribution_formatters(self):
         script = f'''

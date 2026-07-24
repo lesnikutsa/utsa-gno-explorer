@@ -29,9 +29,9 @@ function RankingList({ id, items, kind }) {
         const key = aggregateKey(item, index, kind)
         const duplicateKey = items.findIndex((candidate, candidateIndex) => aggregateKey(candidate, candidateIndex, kind) === key) !== index
         return <li className="distribution-ranking__row" key={duplicateKey ? `${key}-${index}` : key}>
-          <span className="distribution-ranking__position">#{index + 1}</span>
+          <span className="distribution-ranking__position power-rank">#{index + 1}</span>
           <span className="distribution-ranking__identity" title={kind === 'provider' && typeof item?.name === 'string' ? item.name : undefined}>
-            <span className="distribution-ranking__name">{flag && <span className="distribution-ranking__flag" aria-hidden="true">{flag}</span>}{typeof item?.name === 'string' && item.name ? item.name : '—'}</span>
+            <span className="distribution-ranking__name">{flag && <span className={`distribution-ranking__flag ${flag}`} aria-hidden="true" />}{typeof item?.name === 'string' && item.name ? item.name : '—'}</span>
             {asn && <span className="distribution-ranking__asn">{asn}</span>}
           </span>
           <span className="distribution-ranking__count">{formatDistributionCount(item?.count)}</span>
