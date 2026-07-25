@@ -291,6 +291,15 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             cursor.execute("UPDATE transactions SET payload_summary = NULL WHERE block_height = 100 AND tx_index = 0")
         self.assertIsNone(_transaction_detail_from_row(database.fetch_transaction_detail(100, 0)).summary)
 
+        # Exercise the null first-page cursor against PostgreSQL, where an untyped
+        # parameter used only by IS NULL would otherwise fail type inference.
+        list_rows = database.fetch_transactions(
+            limit=20,
+            before_height=None,
+            before_tx_index=None,
+        )
+        self.assertEqual([(item["block_height"], item["tx_index"]) for item in list_rows], [(100, 0)])
+
     def prepare_legacy_database(self, name):
         self.create_database(name)
         database_url = self.database_url_for(name)

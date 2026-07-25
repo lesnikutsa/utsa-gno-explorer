@@ -261,6 +261,7 @@ def _transaction_list_item_from_row(row: dict) -> TransactionListItem:
         tx_hash=_normalize_tx_hash(row.get("tx_hash_hex")),
         block_time=isoformat_utc_z(row["time_utc"]),
         type=summary.primary.type if summary is not None else "unknown",
+        operation=summary.primary.label if summary is not None else "Transaction",
     )
 
 

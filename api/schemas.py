@@ -201,6 +201,7 @@ class TransactionListItem(BaseModel):
     tx_hash: str | None = None
     block_time: str
     type: str = Field(min_length=1, max_length=160)
+    operation: str = Field(min_length=1, max_length=80)
 
 
 class TransactionsPagination(BaseModel):

@@ -238,9 +238,14 @@ SELECT
 FROM transactions transaction
 JOIN blocks block
   ON block.height = transaction.block_height
-WHERE %s IS NULL
-   OR transaction.block_height < %s
-   OR (transaction.block_height = %s AND transaction.tx_index < %s)
+WHERE (
+    %s::bigint IS NULL
+    OR transaction.block_height < %s::bigint
+    OR (
+        transaction.block_height = %s::bigint
+        AND transaction.tx_index < %s::integer
+    )
+)
 ORDER BY transaction.block_height DESC, transaction.tx_index DESC
 LIMIT %s
 """

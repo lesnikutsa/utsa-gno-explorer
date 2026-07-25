@@ -96,6 +96,7 @@ class ApiTransactionsTests(unittest.TestCase):
             (10, 2), (10, 1), (10, 0), (9, 0),
         ])
         self.assertEqual(fake.calls, [(20, None, None)])
+        # Like Blocks API, the backend default stays 20; UI page size is client-controlled.
         self.assertEqual(data["pagination"]["limit"], 20)
 
     def test_composite_cursor_has_no_duplicates_or_gaps(self):
@@ -136,6 +137,7 @@ class ApiTransactionsTests(unittest.TestCase):
         with self.make_client(FakeDatabase()) as client:
             self.assertEqual(client.get("/api/transactions?limit=0").status_code, 422)
             self.assertEqual(client.get("/api/transactions?limit=101").status_code, 422)
+            self.assertEqual(client.get("/api/transactions?limit=25").status_code, 200)
             self.assertEqual(client.get("/api/transactions?limit=100").status_code, 200)
 
     def test_time_type_nullable_hash_and_private_fields(self):
@@ -154,8 +156,10 @@ class ApiTransactionsTests(unittest.TestCase):
             "tx_hash": None,
             "block_time": "2026-07-25T12:30:45Z",
             "type": "gno.bank.MsgSend",
+            "operation": "Send Tokens",
         })
         self.assertEqual(items[1]["type"], "unknown")
+        self.assertEqual(items[1]["operation"], "Transaction")
         for private in ("raw_base64", "decoded_bytes", "payload_summary", "internal_error", "decoder_error"):
             self.assertNotIn(private, response.text)
 
@@ -171,10 +175,19 @@ class ApiTransactionsTests(unittest.TestCase):
     def test_sql_joins_blocks_and_uses_deterministic_cursor_order(self):
         normalized = " ".join(TRANSACTIONS_SQL.lower().split())
         self.assertIn("join blocks block on block.height = transaction.block_height", normalized)
-        self.assertIn("transaction.block_height < %s", normalized)
-        self.assertIn("transaction.block_height = %s and transaction.tx_index < %s", normalized)
         self.assertIn("order by transaction.block_height desc, transaction.tx_index desc", normalized)
         self.assertNotIn("count(", normalized)
+        self.assertIn("%s::bigint is null", normalized)
+        self.assertIn("transaction.block_height < %s::bigint", normalized)
+        self.assertIn("transaction.block_height = %s::bigint", normalized)
+        self.assertIn("transaction.tx_index < %s::integer", normalized)
+
+    def test_missing_summary_uses_safe_type_and_operation_fallbacks(self):
+        fake = FakeDatabase([transaction_row(10, 0, payload_summary=None)])
+        with self.make_client(fake) as client:
+            item = client.get("/api/transactions").json()["items"][0]
+        self.assertEqual(item["type"], "unknown")
+        self.assertEqual(item["operation"], "Transaction")
 
 
 if __name__ == "__main__":
