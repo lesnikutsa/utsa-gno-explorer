@@ -37,7 +37,12 @@ class FrontendNetworkProfileTests(unittest.TestCase):
     def test_sidebar_contains_only_complete_navigation(self):
         self.assertIn("networkProfile", self.sidebar)
         items = re.findall(r"\{ label: '([^']+)', Icon: \w+, href: '([^']+)' \}", self.sidebar)
-        self.assertEqual(items, [("Overview", "/"), ("Blocks", "/blocks"), ("Validators", "/validators")])
+        self.assertEqual(items, [
+            ("Overview", "/"),
+            ("Blocks", "/blocks"),
+            ("Transactions", "/transactions"),
+            ("Validators", "/validators"),
+        ])
         self.assertNotIn("NetworkIcon", self.sidebar)
         self.assertNotIn("MapIcon", self.sidebar)
         self.assertNotIn("is-disabled", self.sidebar)

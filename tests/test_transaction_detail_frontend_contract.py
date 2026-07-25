@@ -36,7 +36,9 @@ class TransactionDetailFrontendContractTests(unittest.TestCase):
         self.assertIn("aria-label={`Open transaction #${transaction.index} in block #${blockHeight}`}", block)
         self.assertIn("#{transaction.index}", block)
         self.assertNotIn(">Transaction #{transaction.index}</a>", block)
-        self.assertIn("href={canonicalBlockHref}", detail)
+        self.assertIn('<a className="transaction-detail__back" href="/transactions">← Back to Transactions</a>', detail)
+        self.assertNotIn('Back to Block', detail)
+        self.assertIn('className="transaction-detail__block-link accent-value mono" href={canonicalBlockHref}', detail)
         self.assertIn("<CopyButton value={transaction.raw_base64}", detail)
         self.assertIn("Transaction #{transaction.index}", detail)
         self.assertIn('<CopyButton value={transaction.tx_hash} label="transaction hash" />', detail)
@@ -182,7 +184,7 @@ class TransactionDetailFrontendContractTests(unittest.TestCase):
     def test_navigation_and_search_are_unchanged(self):
         sidebar = self.read("frontend/src/components/Sidebar.jsx")
         search = self.read("frontend/src/hooks/useGlobalSearch.js")
-        self.assertNotIn("/transactions", sidebar)
+        self.assertIn("href: '/transactions'", sidebar)
         self.assertNotIn("transaction", search.lower())
 
 

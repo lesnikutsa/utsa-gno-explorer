@@ -41,6 +41,18 @@ export const getBlocks = ({ limit, beforeHeight, hash } = {}) => {
   const queryString = query.toString()
   return request(`/blocks${queryString ? `?${queryString}` : ''}`)
 }
+export const getTransactions = ({ limit, beforeHeight, beforeTxIndex } = {}) => {
+  const query = new URLSearchParams()
+  if (limit !== undefined && limit !== null && limit !== '') query.set('limit', limit)
+  const hasCompleteCursor = beforeHeight !== undefined && beforeHeight !== null && beforeHeight !== ''
+    && beforeTxIndex !== undefined && beforeTxIndex !== null && beforeTxIndex !== ''
+  if (hasCompleteCursor) {
+    query.set('before_height', beforeHeight)
+    query.set('before_tx_index', beforeTxIndex)
+  }
+  const queryString = query.toString()
+  return request(`/transactions${queryString ? `?${queryString}` : ''}`)
+}
 export const getBlock = (height) => request(`/blocks/${encodeURIComponent(height)}`)
 export const getTransaction = (blockHeight, index) => request(`/blocks/${encodeURIComponent(blockHeight)}/transactions/${encodeURIComponent(index)}`)
 export const getValidators = () => request('/validators')

@@ -4,12 +4,14 @@ import { networkProfile } from './config/networkProfile'
 import { Blocks } from './pages/Blocks'
 import { BlockDetail } from './pages/BlockDetail'
 import { TransactionDetail } from './pages/TransactionDetail'
+import { Transactions } from './pages/Transactions'
 import { Overview } from './pages/Overview'
 import { ValidatorDetail } from './pages/ValidatorDetail'
 import { Validators } from './pages/Validators'
 import { useBlocksPage } from './hooks/useBlocksPage'
 import { useBlockDetail } from './hooks/useBlockDetail'
 import { useTransactionDetail } from './hooks/useTransactionDetail'
+import { useTransactionsPage } from './hooks/useTransactionsPage'
 import { useExplorerData } from './hooks/useExplorerData'
 import { useValidatorDetail } from './hooks/useValidatorDetail'
 import { useValidatorsPage } from './hooks/useValidatorsPage'
@@ -69,6 +71,16 @@ function TransactionDetailPage({ height, index }) {
   )
 }
 
+function TransactionsPage() {
+  const transactionsPage = useTransactionsPage()
+
+  return (
+    <ExplorerLayout healthState={transactionsPage.healthState} showRefreshCountdown={false}>
+      <Transactions transactionsPage={transactionsPage} />
+    </ExplorerLayout>
+  )
+}
+
 function ValidatorsPage() {
   const validatorsPage = useValidatorsPage()
 
@@ -104,6 +116,10 @@ export default function App() {
 
   if (path === '/validators' || path === '/validators/') {
     return <ValidatorsPage />
+  }
+
+  if (path === '/transactions' || path === '/transactions/') {
+    return <TransactionsPage />
   }
 
   const validatorDetailMatch = path.match(/^\/validators\/([^/]+)\/?$/)

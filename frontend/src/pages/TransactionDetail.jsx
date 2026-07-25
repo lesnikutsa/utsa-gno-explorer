@@ -6,8 +6,6 @@ import { TransactionDecodeBadge } from '../components/TransactionDecodeBadge'
 import { TransactionSummary } from '../components/TransactionSummary'
 import { relativeTime } from '../utils/time'
 
-const isValidHeight = (height) => /^[1-9]\d*$/.test(height)
-
 function RelativeTransactionTime({ value }) {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -17,33 +15,31 @@ function RelativeTransactionTime({ value }) {
   return <small>{relativeTime(value, now)}</small>
 }
 
-function StatePanel({ title, message, retry, blockHref }) {
+function StatePanel({ title, message, retry }) {
   return (
     <section className="panel transaction-detail__state">
       <h1>{title}</h1>
       {message && <p>{message}</p>}
       <div className="transaction-detail__state-actions">
-        <a className="transaction-detail__back" href="/blocks">← Back to Blocks</a>
-        {blockHref && <a className="transaction-detail__back" href={blockHref}>← Back to Block</a>}
+        <a className="transaction-detail__back" href="/transactions">← Back to Transactions</a>
         {retry && <button className="blocks-page__button blocks-page__button--accent" type="button" onClick={retry}>Retry</button>}
       </div>
     </section>
   )
 }
 
-export function TransactionDetail({ transactionDetail, routeHeight }) {
+export function TransactionDetail({ transactionDetail }) {
   const { transaction, loading, notFound, invalidRoute, error, retry } = transactionDetail
-  const blockHref = isValidHeight(routeHeight) ? `/blocks/${encodeURIComponent(routeHeight)}` : null
 
-  if (loading) return <StatePanel title="Loading transaction details…" blockHref={blockHref} />
-  if (invalidRoute) return <StatePanel title="Invalid transaction location" message="The block height and transaction index must be valid non-negative integers, and the block height must be positive." blockHref={blockHref} />
-  if (notFound) return <StatePanel title="Transaction not found" message="This transaction has not been indexed or does not exist." blockHref={blockHref} />
-  if (error) return <StatePanel title="Transaction details are currently unavailable" message="The Explorer API could not load this transaction." retry={retry} blockHref={blockHref} />
+  if (loading) return <StatePanel title="Loading transaction details…" />
+  if (invalidRoute) return <StatePanel title="Invalid transaction location" message="The block height and transaction index must be valid non-negative integers, and the block height must be positive." />
+  if (notFound) return <StatePanel title="Transaction not found" message="This transaction has not been indexed or does not exist." />
+  if (error) return <StatePanel title="Transaction details are currently unavailable" message="The Explorer API could not load this transaction." retry={retry} />
 
   const canonicalBlockHref = `/blocks/${transaction.block_height}`
   return (
     <article className="transaction-detail" aria-labelledby="transaction-detail-title">
-      <a className="transaction-detail__back" href={canonicalBlockHref}>← Back to Block #{transaction.block_height}</a>
+      <a className="transaction-detail__back" href="/transactions">← Back to Transactions</a>
       <header className="transaction-detail__header">
         {transaction.tx_hash ? <>
           <span className="transaction-detail__eyebrow">Transaction</span>
