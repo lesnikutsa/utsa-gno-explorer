@@ -182,7 +182,7 @@ class TransactionDetailFrontendContractTests(unittest.TestCase):
     def test_navigation_and_search_are_unchanged(self):
         sidebar = self.read("frontend/src/components/Sidebar.jsx")
         search = self.read("frontend/src/hooks/useGlobalSearch.js")
-        self.assertNotIn("/transactions", sidebar)
+        self.assertIn("href: '/transactions'", sidebar)
         self.assertNotIn("transaction", search.lower())
 
 

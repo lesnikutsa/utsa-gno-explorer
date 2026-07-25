@@ -163,6 +163,16 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .blocks-page__context { margin: 0 0 9px; color: var(--color-text-secondary); font-size: 10px; overflow-wrap: anywhere; }
 .blocks-page__table .data-table { min-width: 620px; }
 .blocks-page__table .data-table td { height: 34px; }
+.transactions-page { min-width: 0; }
+.transactions-page__table .data-table { min-width: 460px; table-layout: fixed; }
+.transactions-page__table .data-table th:nth-child(1) { width: 28%; }
+.transactions-page__table .data-table th:nth-child(2) { width: 20%; }
+.transactions-page__table .data-table th:nth-child(3) { width: 20%; }
+.transactions-page__table .data-table th:nth-child(4) { width: 32%; }
+.transactions-page__table td { overflow: hidden; text-overflow: ellipsis; }
+.transactions-table__hash, .transactions-table__operation { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.transactions-table__hash { color: var(--color-text); }
+.transactions-table__hash:hover { color: var(--color-text-bright); }
 .blocks-table__height { color: #dc795e; font-weight: 600; }
 .blocks-pagination { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; margin-top: 12px; }
 .blocks-pagination .blocks-page__button:first-child { justify-self: start; }
@@ -386,6 +396,12 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
   .topbar-block-time { display: none; }
   .main-content { padding: 12px; }.status-grid { grid-template-columns: 1fr 1fr; }.status-card__value { font-size: 16px; }
   .blocks-page__header { align-items: flex-start; }
+  .transactions-page__table .data-table { min-width: 0; }
+  .transactions-page__table .data-table th, .transactions-page__table .data-table td { padding-right: 7px; padding-left: 7px; }
+  .transactions-page__table .data-table th:nth-child(1) { width: 27%; }
+  .transactions-page__table .data-table th:nth-child(2) { width: 21%; }
+  .transactions-page__table .data-table th:nth-child(3) { width: 19%; }
+  .transactions-page__table .data-table th:nth-child(4) { width: 33%; }
   .validators-page__header { align-items: flex-start; flex-wrap: wrap; }
   .validators-page__summary { grid-template-columns: 1fr; }
   .blocks-search { flex-wrap: wrap; }
