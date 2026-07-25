@@ -224,11 +224,15 @@ class ParserTests(unittest.TestCase):
 
         empty = parse_tx(0, "")
         self.assertEqual(empty["decoded_bytes"], b"")
+        self.assertEqual(empty["payload_summary"]["parse_status"], "unparsed")
         self.assertEqual(empty["tx_hash_hex"], "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855")
         non_empty = parse_tx(1, "YWJj")
         self.assertEqual(non_empty["decoded_bytes"], b"abc")
         self.assertEqual(non_empty["tx_hash_hex"], "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD")
-        self.assertIsNone(parse_tx(2, "not base64!")["tx_hash_hex"])
+        invalid = parse_tx(2, "not base64!")
+        self.assertIsNone(invalid["tx_hash_hex"])
+        self.assertEqual(invalid["payload_summary"]["parse_status"], "invalid")
+        self.assertNotIn("not base64!", json.dumps(invalid["payload_summary"]))
 
     def statuses(self, commit_payload=None):
         block, base_commit, validators = payloads()
@@ -328,12 +332,16 @@ class ServiceAndDatabaseSemanticsTests(unittest.TestCase):
         decoded_sql, decoded_params = cursor.execute.call_args_list[0].args
         invalid_sql, invalid_params = cursor.execute.call_args_list[1].args
         self.assertIn("tx_hash_hex", decoded_sql)
-        self.assertEqual(decoded_params[-1], "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD")
-        self.assertIsNone(invalid_params[-1])
+        self.assertEqual(decoded_params[-2], "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD")
+        self.assertEqual(json.loads(decoded_params[-1])["schema_version"], 1)
+        self.assertIsNone(invalid_params[-2])
+        self.assertIn("DO UPDATE SET", decoded_sql)
+        self.assertIn("payload_summary = EXCLUDED.payload_summary", decoded_sql)
+        self.assertNotIn("raw_base64 = EXCLUDED", decoded_sql)
 
         cursor.reset_mock()
         cursor.fetchone.side_effect = [
-            ("YWJj", 4, 3, "decoded", decoded_params[-1]),
+            ("YWJj", 4, 3, "decoded", decoded_params[-2]),
             ("not base64!", 11, None, "invalid_base64", None),
         ]
         _verify_transaction_conflicts(cursor, parsed)

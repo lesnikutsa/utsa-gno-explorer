@@ -384,11 +384,12 @@ def _upsert_transactions(cursor, parsed) -> None:
     for transaction in parsed.transactions:
         cursor.execute(
             """
-            INSERT INTO transactions(block_height, tx_index, raw_base64, raw_base64_length, decoded_bytes, decoded_byte_length, decode_status, tx_hash_hex)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (block_height, tx_index) DO NOTHING
+            INSERT INTO transactions(block_height, tx_index, raw_base64, raw_base64_length, decoded_bytes, decoded_byte_length, decode_status, tx_hash_hex, payload_summary)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+            ON CONFLICT (block_height, tx_index) DO UPDATE SET
+                payload_summary = EXCLUDED.payload_summary
             """,
-            (parsed.height, transaction["index"], transaction["raw_base64"], transaction["raw_base64_length"], transaction["decoded_bytes"], transaction["decoded_byte_length"], transaction["decode_status"], transaction["tx_hash_hex"]),
+            (parsed.height, transaction["index"], transaction["raw_base64"], transaction["raw_base64_length"], transaction["decoded_bytes"], transaction["decoded_byte_length"], transaction["decode_status"], transaction["tx_hash_hex"], _json(transaction["payload_summary"])),
         )
 
 

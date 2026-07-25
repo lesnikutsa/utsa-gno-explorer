@@ -20,7 +20,8 @@ from api.database import (
     ApiDatabase,
     MissingIndexerStateError,
 )
-from indexer.database import PostgresDatabase
+from indexer.database import PostgresDatabase, _upsert_transactions
+from indexer.parsers import parse_tx
 from indexer.rpc import RpcProbeResult
 from indexer.valopers_parser import ValoperProfile
 from indexer.valopers_persistence import (
@@ -208,6 +209,32 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         verified = self.run_transaction_hash_migration(database_url)
         self.assertEqual(verified.returncode, 0, verified.stderr)
         self.assertEqual(verified.stdout, "Transaction hash schema is already compatible\n")
+
+    def test_transaction_payload_summary_persistence_and_refresh(self):
+        name = f"utsa_tx_summary_{os.getpid()}"
+        self.create_database(name)
+        database_url = self.database_url_for(name)
+        self.assertEqual(self.run_init(database_url).returncode, 0)
+        parsed = type("Parsed", (), {"height": 100, "transactions": [parse_tx(0, "YWJj")]})()
+
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO blocks (height, block_hash_base64, block_hash_hex, time_utc, tx_count) VALUES (100, 'ZA==', '64', now(), 1)"
+            )
+            _upsert_transactions(cursor, parsed)
+            cursor.execute("SELECT raw_base64, tx_hash_hex, payload_summary, pg_typeof(payload_summary)::text FROM transactions WHERE block_height = 100 AND tx_index = 0")
+            raw_base64, tx_hash, summary, value_type = cursor.fetchone()
+            self.assertEqual(summary["schema_version"], 1)
+            self.assertEqual(value_type, "jsonb")
+
+            parsed.transactions[0]["payload_summary"]["parse_status"] = "unsupported"
+            _upsert_transactions(cursor, parsed)
+            cursor.execute("SELECT count(*), min(raw_base64), min(tx_hash_hex), min(payload_summary->>'parse_status') FROM transactions WHERE block_height = 100")
+            self.assertEqual(cursor.fetchone(), (1, raw_base64, tx_hash, "unsupported"))
+
+            cursor.execute("UPDATE transactions SET payload_summary = NULL WHERE block_height = 100")
+            cursor.execute("SELECT payload_summary FROM transactions WHERE block_height = 100")
+            self.assertEqual(cursor.fetchone(), (None,))
 
     def prepare_legacy_database(self, name):
         self.create_database(name)
