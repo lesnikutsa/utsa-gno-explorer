@@ -321,6 +321,27 @@ class ParserTests(unittest.TestCase):
 
 
 class ServiceAndDatabaseSemanticsTests(unittest.TestCase):
+    def test_transaction_persistence_normalizes_summary_at_boundary(self):
+        decoded = parse_tx(0, "YWJj")
+        valid_summary = decoded["payload_summary"]
+        valid_summary["parse_status"] = "unsupported"
+        cases = [
+            ({key: value for key, value in decoded.items() if key != "payload_summary"}, "unparsed"),
+            ({**decoded, "payload_summary": {"messages": [{"signature": b"unsafe"}]}}, "unparsed"),
+            ({**parse_tx(1, "not base64!"), "payload_summary": {"invalid": b"unsafe"}}, "invalid"),
+            ({**decoded, "payload_summary": valid_summary}, "unsupported"),
+        ]
+
+        for transaction, expected_status in cases:
+            with self.subTest(expected_status=expected_status):
+                cursor = MagicMock()
+                parsed = type("Parsed", (), {"height": 7, "transactions": [transaction]})()
+                _upsert_transactions(cursor, parsed)
+                sql, params = cursor.execute.call_args.args
+                self.assertEqual(json.loads(params[-1])["parse_status"], expected_status)
+                self.assertIn("payload_summary = EXCLUDED.payload_summary", sql)
+                self.assertNotIn("raw_base64 = EXCLUDED", sql)
+
     def test_real_transaction_helpers_persist_and_compare_hash(self):
         parsed = type("Parsed", (), {
             "height": 7,

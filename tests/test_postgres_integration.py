@@ -22,6 +22,7 @@ from api.database import (
 )
 from indexer.database import PostgresDatabase, _upsert_transactions
 from indexer.parsers import parse_tx
+from indexer.transaction_summary import MAX_SUMMARY_BYTES, summary_size_bytes
 from indexer.rpc import RpcProbeResult
 from indexer.valopers_parser import ValoperProfile
 from indexer.valopers_persistence import (
@@ -216,6 +217,7 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         database_url = self.database_url_for(name)
         self.assertEqual(self.run_init(database_url).returncode, 0)
         parsed = type("Parsed", (), {"height": 100, "transactions": [parse_tx(0, "YWJj")]})()
+        parsed.transactions[0]["payload_summary"] = {"messages": [{"signature": b"unsafe"}]}
 
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
             cursor.execute(
@@ -225,15 +227,27 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             cursor.execute("SELECT raw_base64, tx_hash_hex, payload_summary, pg_typeof(payload_summary)::text FROM transactions WHERE block_height = 100 AND tx_index = 0")
             raw_base64, tx_hash, summary, value_type = cursor.fetchone()
             self.assertEqual(summary["schema_version"], 1)
+            self.assertEqual(summary["parse_status"], "unparsed")
             self.assertEqual(value_type, "jsonb")
 
+            parsed.transactions[0] = parse_tx(0, "YWJj")
             parsed.transactions[0]["payload_summary"]["parse_status"] = "unsupported"
             _upsert_transactions(cursor, parsed)
-            cursor.execute("SELECT count(*), min(raw_base64), min(tx_hash_hex), min(payload_summary->>'parse_status') FROM transactions WHERE block_height = 100")
-            self.assertEqual(cursor.fetchone(), (1, raw_base64, tx_hash, "unsupported"))
+            cursor.execute("SELECT count(*), min(raw_base64), min(tx_hash_hex), min(payload_summary->>'parse_status'), bool_and(payload_summary IS NOT NULL) FROM transactions WHERE block_height = 100")
+            self.assertEqual(cursor.fetchone(), (1, raw_base64, tx_hash, "unsupported", True))
+            cursor.execute("SELECT payload_summary, pg_typeof(payload_summary)::text FROM transactions WHERE block_height = 100 AND tx_index = 0")
+            refreshed, refreshed_type = cursor.fetchone()
+            self.assertEqual(refreshed_type, "jsonb")
+            self.assertLessEqual(summary_size_bytes(refreshed), MAX_SUMMARY_BYTES)
 
-            cursor.execute("UPDATE transactions SET payload_summary = NULL WHERE block_height = 100")
-            cursor.execute("SELECT payload_summary FROM transactions WHERE block_height = 100")
+            invalid = parse_tx(1, "not base64!")
+            invalid["payload_summary"] = {"raw_base64": b"unsafe"}
+            _upsert_transactions(cursor, type("Parsed", (), {"height": 100, "transactions": [invalid]})())
+            cursor.execute("SELECT payload_summary->>'parse_status' FROM transactions WHERE block_height = 100 AND tx_index = 1")
+            self.assertEqual(cursor.fetchone(), ("invalid",))
+
+            cursor.execute("UPDATE transactions SET payload_summary = NULL WHERE block_height = 100 AND tx_index = 0")
+            cursor.execute("SELECT payload_summary FROM transactions WHERE block_height = 100 AND tx_index = 0")
             self.assertEqual(cursor.fetchone(), (None,))
 
     def prepare_legacy_database(self, name):

@@ -3,10 +3,15 @@ import unittest
 
 from indexer.transaction_summary import (
     MAX_LABEL_LENGTH,
+    MAX_INTEGER_BITS,
+    MAX_MESSAGE_COUNT,
     MAX_MESSAGES,
+    MAX_SUMMARY_BYTES,
+    MAX_TOKEN_LENGTH,
     MAX_TYPE_LENGTH,
     generic_summary,
     normalize_summary,
+    summary_size_bytes,
 )
 
 
@@ -57,6 +62,48 @@ class TransactionSummaryTests(unittest.TestCase):
         self.assertEqual(len(summary["primary"]["type"]), MAX_TYPE_LENGTH)
         self.assertEqual(len(summary["primary"]["label"]), MAX_LABEL_LENGTH)
         self.assertEqual(len(summary["messages"][0]["type"]), MAX_TYPE_LENGTH)
+
+    def test_total_compact_utf8_size_removes_trailing_messages(self):
+        candidate = generic_summary("parsed")
+        candidate["message_count"] = MAX_MESSAGES
+        candidate["messages"] = [
+            {f"field_{field}": "界" * 160 for field in range(16)}
+            for _ in range(MAX_MESSAGES)
+        ]
+
+        summary = normalize_summary(candidate)
+
+        self.assertLess(len(summary["messages"]), MAX_MESSAGES)
+        self.assertTrue(summary["messages_truncated"])
+        self.assertLessEqual(summary_size_bytes(summary), MAX_SUMMARY_BYTES)
+        self.assertGreater(len(json.dumps(summary, ensure_ascii=False)), 0)
+
+    def test_message_count_controls_consistency_and_truncation(self):
+        omitted = generic_summary("parsed")
+        omitted["message_count"] = 25
+        omitted["messages"] = [{"type": "message"} for _ in range(MAX_MESSAGES)]
+        self.assertTrue(normalize_summary(omitted)["messages_truncated"])
+
+        impossible = generic_summary("parsed")
+        impossible["message_count"] = 1
+        impossible["messages"] = [{"type": "one"}, {"type": "two"}]
+        self.assertEqual(normalize_summary(impossible), generic_summary())
+
+        huge = generic_summary("parsed")
+        huge["message_count"] = MAX_MESSAGE_COUNT + 1
+        self.assertEqual(normalize_summary(huge), generic_summary())
+
+    def test_huge_integer_and_normalized_key_collision_fall_back(self):
+        huge_integer = generic_summary("parsed")
+        huge_integer["message_count"] = 1
+        huge_integer["messages"] = [{"height": 1 << MAX_INTEGER_BITS}]
+        self.assertEqual(normalize_summary(huge_integer), generic_summary())
+
+        prefix = "k" * MAX_TOKEN_LENGTH
+        collision = generic_summary("parsed")
+        collision["message_count"] = 1
+        collision["messages"] = [{prefix + "a": "one", prefix + "b": "two"}]
+        self.assertEqual(normalize_summary(collision), generic_summary())
 
     def test_malformed_or_sensitive_adapter_output_falls_back(self):
         malformed = normalize_summary({"messages": [{"raw_base64": b"payload"}]})

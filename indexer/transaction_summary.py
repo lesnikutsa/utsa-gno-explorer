@@ -1,6 +1,7 @@
 """Bounded, chain-neutral transaction summary contract."""
 from __future__ import annotations
 
+import json
 import math
 from typing import Any, Literal, TypedDict
 
@@ -11,6 +12,9 @@ MAX_TYPE_LENGTH = 160
 MAX_TOKEN_LENGTH = 64
 MAX_MESSAGE_FIELDS = 16
 MAX_VALUE_LENGTH = 160
+MAX_SUMMARY_BYTES = 16_384
+MAX_INTEGER_BITS = 256
+MAX_MESSAGE_COUNT = 100_000
 
 ParseStatus = Literal["unparsed", "parsed", "unsupported", "invalid"]
 PARSE_STATUSES = frozenset({"unparsed", "parsed", "unsupported", "invalid"})
@@ -66,7 +70,11 @@ def normalize_summary(candidate: Any, fallback_status: ParseStatus = "unparsed")
         if not isinstance(candidate["messages_truncated"], bool):
             raise ValueError("invalid truncation marker")
         count = candidate["message_count"]
-        if count is not None and (isinstance(count, bool) or not isinstance(count, int) or count < 0):
+        if count is not None and (
+            isinstance(count, bool)
+            or not isinstance(count, int)
+            or not 0 <= count <= MAX_MESSAGE_COUNT
+        ):
             raise ValueError("invalid message count")
         primary = candidate["primary"]
         if not isinstance(primary, dict) or not _REQUIRED_PRIMARY_FIELDS <= primary.keys():
@@ -74,14 +82,20 @@ def normalize_summary(candidate: Any, fallback_status: ParseStatus = "unparsed")
         messages = candidate["messages"]
         if not isinstance(messages, list):
             raise ValueError("invalid messages")
+        if count is not None and count < len(messages):
+            raise ValueError("message count is smaller than supplied messages")
 
         normalized_messages = [_normalize_message(message) for message in messages[:MAX_MESSAGES]]
-        return {
+        normalized: TransactionSummary = {
             "schema_version": SCHEMA_VERSION,
             "chain_family": _text(candidate["chain_family"], MAX_TOKEN_LENGTH),
             "parse_status": candidate["parse_status"],
             "message_count": count,
-            "messages_truncated": candidate["messages_truncated"] or len(messages) > MAX_MESSAGES,
+            "messages_truncated": (
+                candidate["messages_truncated"]
+                or len(messages) > MAX_MESSAGES
+                or (count is not None and count > len(normalized_messages))
+            ),
             "primary": {
                 "type": _text(primary["type"], MAX_TYPE_LENGTH),
                 "category": _text(primary["category"], MAX_TOKEN_LENGTH),
@@ -90,6 +104,12 @@ def normalize_summary(candidate: Any, fallback_status: ParseStatus = "unparsed")
             },
             "messages": normalized_messages,
         }
+        while normalized["messages"] and summary_size_bytes(normalized) > MAX_SUMMARY_BYTES:
+            normalized["messages"].pop()
+            normalized["messages_truncated"] = True
+        if summary_size_bytes(normalized) > MAX_SUMMARY_BYTES:
+            raise ValueError("summary exceeds total size limit")
+        return normalized
     except (KeyError, TypeError, ValueError):
         return generic_summary(fallback_status)
 
@@ -102,16 +122,32 @@ def _normalize_message(message: Any) -> dict[str, str | int | float | bool | Non
         if not isinstance(key, str) or any(part in key.lower() for part in _FORBIDDEN_KEY_PARTS):
             raise ValueError("unsafe message field")
         safe_key = _text(key, MAX_TOKEN_LENGTH)
+        if safe_key in result:
+            raise ValueError("message keys collide after normalization")
         if isinstance(value, str):
             limit = MAX_TYPE_LENGTH if safe_key == "type" else MAX_LABEL_LENGTH if safe_key == "label" else MAX_VALUE_LENGTH
             result[safe_key] = _text(value, limit)
-        elif value is None or isinstance(value, (bool, int)):
+        elif value is None or isinstance(value, bool):
+            result[safe_key] = value
+        elif isinstance(value, int):
+            if abs(value).bit_length() > MAX_INTEGER_BITS:
+                raise ValueError("message integer exceeds size limit")
             result[safe_key] = value
         elif isinstance(value, float) and math.isfinite(value):
             result[safe_key] = value
         else:
             raise ValueError("message values must be JSON-safe scalars")
     return result
+
+
+def summary_size_bytes(summary: Any) -> int:
+    """Return the deterministic compact UTF-8 JSON size of a summary."""
+    return len(json.dumps(
+        summary,
+        ensure_ascii=False,
+        allow_nan=False,
+        separators=(",", ":"),
+    ).encode("utf-8"))
 
 
 def _text(value: Any, limit: int) -> str:
