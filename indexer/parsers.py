@@ -8,6 +8,8 @@ import hashlib
 from dataclasses import dataclass
 from typing import Any
 
+from .transaction_summary import generic_summary
+
 from scripts.inspect_rpc import RpcError, decode_base64, parse_block as legacy_parse_block, parse_commit, parse_validators, signer_address, to_int
 
 ZERO_HASHES = {"", "AA==", "AAA=", "AAAA", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}
@@ -46,6 +48,7 @@ def parse_tx(index: int, tx: Any) -> dict[str, Any]:
             "decoded_byte_length": None,
             "decode_status": "invalid_base64",
             "tx_hash_hex": None,
+            "payload_summary": generic_summary("invalid"),
         }
     return {
         "index": index,
@@ -55,6 +58,7 @@ def parse_tx(index: int, tx: Any) -> dict[str, Any]:
         "decoded_byte_length": len(decoded),
         "decode_status": "decoded",
         "tx_hash_hex": hashlib.sha256(decoded).hexdigest().upper(),
+        "payload_summary": generic_summary(),
     }
 
 
