@@ -85,6 +85,16 @@ class TransactionHashLookupTests(unittest.TestCase):
         for forbidden in (" LIKE ", " ILIKE ", " COUNT", " OFFSET "):
             self.assertNotIn(forbidden, f" {normalized} ")
 
+    def test_endpoint_paths_coexist_and_lookup_response_scope_is_explicit(self):
+        from api.app import app
+
+        paths = {route.path for route in app.routes}
+        self.assertIn("/api/transactions", paths)
+        self.assertIn("/api/transactions/by-hash/{tx_hash}", paths)
+        self.assertIn("/api/blocks/{height}/transactions/{index}", paths)
+        response_fields = app.openapi()["components"]["schemas"]["TransactionHashLookupResponse"]["properties"]
+        self.assertEqual(set(response_fields), {"block_height", "index", "tx_hash"})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -28,7 +28,30 @@ class GlobalSearchFrontendContractTests(unittest.TestCase):
             "No matching block or transaction found.", "Search is currently unavailable.",
         ):
             self.assertIn(fragment, self.hook)
-        self.assertLess(self.hook.index("if (transaction?.block_height"), self.hook.index("else if (block)"))
+        self.assertLess(self.hook.index("if (transaction)"), self.hook.index("else if (block)"))
+
+    def test_malformed_transaction_response_is_a_lookup_failure(self):
+        for fragment in (
+            "isValidTransactionHashLookupResponse(transactionResponse)",
+            "transactionResult.status === 'fulfilled' && !transaction",
+            "Number.isInteger(response?.block_height)",
+            "response.block_height > 0",
+            "Number.isInteger(response?.index)",
+            "response.index >= 0",
+            "/^[0-9a-fA-F]{64}$/.test(response?.tx_hash ?? '')",
+        ):
+            self.assertIn(fragment, self.hook if "transactionResult" in fragment or "transactionResponse" in fragment else self.helpers)
+
+    def test_valid_fallback_wins_over_other_malformed_response(self):
+        self.assertLess(self.hook.index("if (transaction)"), self.hook.index("const transactionFailed"))
+        self.assertLess(self.hook.index("else if (block)"), self.hook.index("const transactionFailed"))
+        self.assertIn("const blockFailed = !blockLookupValid", self.hook)
+        self.assertIn("isValidBlockHashLookupResponse(blockResponse)", self.hook)
+
+    def test_two_normal_not_found_results_use_hash_not_found(self):
+        self.assertIn("transactionResult.reason?.status === 404", self.hook)
+        self.assertIn("const block = blockLookupValid ? blockResponse.items[0] : null", self.hook)
+        self.assertIn("setStatus(transactionFailed || blockFailed ? 'error' : 'hashNotFound')", self.hook)
 
     def test_hashes_do_not_trigger_validator_search(self):
         self.assertIn("!isExactBlockHash(trimmed)", self.helpers)

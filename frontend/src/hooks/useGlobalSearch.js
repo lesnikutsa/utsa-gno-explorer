@@ -6,6 +6,8 @@ import {
   isExactBlockHash,
   isExactTransactionHash,
   isPositiveBlockHeight,
+  isValidBlockHashLookupResponse,
+  isValidTransactionHashLookupResponse,
   shouldSearchValidators,
 } from '../utils/globalSearch'
 
@@ -120,17 +122,19 @@ export function useGlobalSearch() {
         getTransactionByHash(trimmed), getBlocks({ limit: 1, hash: trimmed }),
       ])
       if (!mounted.current || id !== requestId.current) return
-      const transaction = transactionResult.status === 'fulfilled' ? transactionResult.value : null
+      const transactionResponse = transactionResult.status === 'fulfilled' ? transactionResult.value : null
       const blockResponse = blockResult.status === 'fulfilled' ? blockResult.value : null
-      const block = Array.isArray(blockResponse?.items) ? blockResponse.items[0] : null
-      if (transaction?.block_height && Number.isInteger(transaction?.index)) {
+      const transaction = isValidTransactionHashLookupResponse(transactionResponse) ? transactionResponse : null
+      const blockLookupValid = blockResult.status === 'fulfilled' && isValidBlockHashLookupResponse(blockResponse)
+      const block = blockLookupValid ? blockResponse.items[0] : null
+      if (transaction) {
         window.location.assign(`/blocks/${transaction.block_height}/transactions/${transaction.index}`)
       } else if (block) window.location.assign(`/blocks/${block.height}`)
       else {
         const transactionNotFound = transactionResult.status === 'rejected' && transactionResult.reason?.status === 404
-        const transactionFailed = transactionResult.status === 'rejected' && !transactionNotFound
-        const blockFailed = blockResult.status === 'rejected'
-          || (blockResult.status === 'fulfilled' && !Array.isArray(blockResponse?.items))
+        const transactionFailed = (transactionResult.status === 'rejected' && !transactionNotFound)
+          || (transactionResult.status === 'fulfilled' && !transaction)
+        const blockFailed = !blockLookupValid
         setStatus(transactionFailed || blockFailed ? 'error' : 'hashNotFound')
       }
       return

@@ -307,17 +307,20 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         self.assertEqual(self.run_init(database_url).returncode, 0)
         tx_hash = "AB" * 32
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
-            cursor.execute(
+            cursor.executemany(
                 "INSERT INTO blocks (height, block_hash_base64, block_hash_hex, time_utc, tx_count) "
-                "VALUES (100, %s, %s, now(), 1), (101, %s, %s, now(), 1)",
-                ("YQ==", "AA" * 32, "Yg==", "BB" * 32),
+                "VALUES (%s, %s, %s, now(), %s)",
+                [(100, "YQ==", "AA" * 32, 1), (101, "Yg==", "BB" * 32, 1)],
             )
-            cursor.execute(
+            cursor.executemany(
                 "INSERT INTO transactions "
-                "(block_height, tx_index, raw_base64, raw_base64_length, decode_status, tx_hash_hex) "
-                "VALUES (100, 0, 'YQ==', 4, 'not_attempted', %s), "
-                "(101, 2, 'Yg==', 4, 'not_attempted', %s)",
-                (tx_hash, tx_hash),
+                "(block_height, tx_index, raw_base64, raw_base64_length, decoded_bytes, "
+                "decoded_byte_length, decode_status, tx_hash_hex) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                [
+                    (100, 0, "YQ==", 4, b"a", 1, "decoded", tx_hash),
+                    (101, 0, "YQ==", 4, b"a", 1, "decoded", tx_hash),
+                ],
             )
             cursor.execute("SELECT count(*) FROM transactions")
             before_count = cursor.fetchone()[0]
@@ -326,14 +329,14 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         database.open(ApiConfig(database_url=database_url))
         self.addCleanup(database.close)
         self.assertEqual(database.fetch_transaction_by_hash(tx_hash), {
-            "block_height": 101, "tx_index": 2, "tx_hash_hex": tx_hash,
+            "block_height": 101, "tx_index": 0, "tx_hash_hex": tx_hash,
         })
         self.assertIsNone(database.fetch_transaction_by_hash("CD" * 32))
         self.assertEqual(
             [(row["block_height"], row["tx_index"]) for row in database.fetch_transactions(
                 limit=20, before_height=None, before_tx_index=None,
             )],
-            [(101, 2), (100, 0)],
+            [(101, 0), (100, 0)],
         )
         self.assertEqual(database.fetch_transaction_detail(100, 0)["tx_hash_hex"], tx_hash)
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
