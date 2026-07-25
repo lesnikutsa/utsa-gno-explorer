@@ -228,6 +228,23 @@ WHERE transaction.block_height = %s
   AND transaction.tx_index = %s
 """
 
+TRANSACTIONS_SQL = """
+SELECT
+    transaction.block_height,
+    transaction.tx_index,
+    transaction.tx_hash_hex,
+    transaction.payload_summary,
+    block.time_utc
+FROM transactions transaction
+JOIN blocks block
+  ON block.height = transaction.block_height
+WHERE %s IS NULL
+   OR transaction.block_height < %s
+   OR (transaction.block_height = %s AND transaction.tx_index < %s)
+ORDER BY transaction.block_height DESC, transaction.tx_index DESC
+LIMIT %s
+"""
+
 VALIDATORS_CHECKPOINT_SQL = """
 SELECT
     s.last_finalized_height AS height,
@@ -566,6 +583,24 @@ class ApiDatabase:
                 cursor.execute(TRANSACTION_DETAIL_SQL, (block_height, tx_index))
                 row = cursor.fetchone()
         return None if row is None else dict(row)
+
+    def fetch_transactions(
+        self,
+        *,
+        limit: int,
+        before_height: int | None,
+        before_tx_index: int | None,
+    ) -> list[dict[str, Any]]:
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    TRANSACTIONS_SQL,
+                    (before_height, before_height, before_height, before_tx_index, limit + 1),
+                )
+                rows = cursor.fetchall()
+        return [dict(row) for row in rows]
 
     def fetch_active_validators(self) -> dict[str, Any]:
         """Return the checkpoint and its active validators using one pooled connection."""
