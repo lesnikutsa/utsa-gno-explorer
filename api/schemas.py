@@ -195,6 +195,26 @@ class BlocksResponse(BaseModel):
     pagination: BlocksPagination
 
 
+class TransactionListItem(BaseModel):
+    block_height: int = Field(ge=1)
+    index: int = Field(ge=0)
+    tx_hash: str | None = None
+    block_time: str
+    type: str = Field(min_length=1, max_length=160)
+    operation: str = Field(min_length=1, max_length=80)
+
+
+class TransactionsPagination(BaseModel):
+    limit: int
+    next_before_height: int | None
+    next_before_tx_index: int | None
+
+
+class TransactionsResponse(BaseModel):
+    items: list[TransactionListItem]
+    pagination: TransactionsPagination
+
+
 class ValidatorUptime(BaseModel):
     network_blocks: int = Field(ge=0)
     active_blocks: int = Field(ge=0)

@@ -182,9 +182,21 @@ curl 'http://127.0.0.1:8000/api/blocks?limit=20'
 curl 'http://127.0.0.1:8000/api/blocks?before_height=869000&limit=20'
 curl 'http://127.0.0.1:8000/api/blocks?hash=<exact-hash>'
 curl http://127.0.0.1:8000/api/blocks/870117
+curl 'http://127.0.0.1:8000/api/transactions?limit=20'
+curl 'http://127.0.0.1:8000/api/transactions?limit=25'
+curl 'http://127.0.0.1:8000/api/transactions?before_height=<height>&before_tx_index=<index>&limit=25'
 ```
 
 `GET /api/network` returns the completed indexer checkpoint, latest indexed block, validator-set aggregate, and selected RPC metadata using read-only PostgreSQL queries. `GET /api/blocks` returns descending block summaries with cursor pagination or exact hash lookup. `GET /api/blocks/{height}` returns a block summary, commit aggregate, and ordered transactions for one stored block.
+
+`GET /api/transactions` returns stored transactions in descending `(block_height, index)`
+order. Its read-only cursor consists of both `before_height` and `before_tx_index`; the
+response supplies both values from the final item whenever another page is available.
+The backend default is 20, and clients may explicitly request any supported page size from
+1 through 100. The future Explorer Transactions page will request 25 items to match the
+existing Blocks page without changing the general API default. Each item contains the
+block height, transaction index, nullable transaction hash, block time, canonical
+transaction type, and human-readable operation.
 
 `GET /api/network/distribution` returns the latest persisted observed network-distribution
 snapshot. It is not a complete network census. Coverage percentages use unique public IPs

@@ -34,7 +34,10 @@ from api.schemas import (
     NetworkValidators,
     SelectedRpc,
     TransactionDetailResponse,
+    TransactionListItem,
     TransactionSummaryResponse,
+    TransactionsPagination,
+    TransactionsResponse,
     ValidatorListItem,
     ValidatorSearchItem,
     ValidatorSearchResponse,
@@ -247,6 +250,18 @@ def _transaction_detail_from_row(row: dict) -> TransactionDetailResponse:
         decoded_byte_length=row["decoded_byte_length"],
         decode_status=row["decode_status"],
         summary=_public_transaction_summary(row.get("payload_summary")),
+    )
+
+
+def _transaction_list_item_from_row(row: dict) -> TransactionListItem:
+    summary = _public_transaction_summary(row.get("payload_summary"))
+    return TransactionListItem(
+        block_height=row["block_height"],
+        index=row["tx_index"],
+        tx_hash=_normalize_tx_hash(row.get("tx_hash_hex")),
+        block_time=isoformat_utc_z(row["time_utc"]),
+        type=summary.primary.type if summary is not None else "unknown",
+        operation=summary.primary.label if summary is not None else "Transaction",
     )
 
 
@@ -754,6 +769,40 @@ def get_transaction_detail(
     if row is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
     return _transaction_detail_from_row(row)
+
+
+@app.get("/api/transactions", response_model=TransactionsResponse)
+def get_transactions(
+    limit: int = Query(default=20, ge=1, le=100),
+    before_height: int | None = Query(default=None, gt=0),
+    before_tx_index: int | None = Query(default=None, ge=0),
+) -> TransactionsResponse:
+    if (before_height is None) != (before_tx_index is None):
+        raise HTTPException(
+            status_code=422,
+            detail="before_height and before_tx_index must be provided together",
+        )
+    try:
+        rows = database.fetch_transactions(
+            limit=limit,
+            before_height=before_height,
+            before_tx_index=before_tx_index,
+        )
+    except Exception:
+        LOGGER.error("Explorer database transactions query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+
+    page_rows = rows[:limit]
+    has_next_page = len(rows) > limit and bool(page_rows)
+    last_row = page_rows[-1] if has_next_page else None
+    return TransactionsResponse(
+        items=[_transaction_list_item_from_row(row) for row in page_rows],
+        pagination=TransactionsPagination(
+            limit=limit,
+            next_before_height=last_row["block_height"] if last_row else None,
+            next_before_tx_index=last_row["tx_index"] if last_row else None,
+        ),
+    )
 
 
 @app.get("/api/blocks/{height}", response_model=BlockDetailResponse)
