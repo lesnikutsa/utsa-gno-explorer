@@ -27,6 +27,15 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         self.assertEqual(sidebar.count("aria-current="), 1)
         self.assertIn("aria-current={active ? 'page' : undefined}", sidebar)
 
+    def test_transaction_detail_returns_to_transactions_and_keeps_block_link(self):
+        detail = self.read("frontend/src/pages/TransactionDetail.jsx")
+        app = self.read("frontend/src/App.jsx")
+        self.assertIn('href="/transactions">← Back to Transactions</a>', detail)
+        self.assertNotIn('Back to Block', detail)
+        self.assertIn('className="transaction-detail__block-link accent-value mono" href={canonicalBlockHref}', detail)
+        self.assertIn("href === '/transactions' && isTransactionDetail", self.read("frontend/src/components/Sidebar.jsx"))
+        self.assertIn("^\\/blocks\\/([^/]+)\\/transactions\\/([^/]+)\\/?$", app)
+
     def test_api_uses_limit_and_complete_composite_cursor(self):
         client = self.read("frontend/src/services/api.js")
         hook = self.read("frontend/src/hooks/useTransactionsPage.js")
