@@ -92,6 +92,82 @@ class DecoderTests(unittest.TestCase):
         self.assertIsNone(decoder.decode("YQ==", 4 * 1024 * 1024 + 1))
         self.assertIsNone(decoder._process)
 
+    def test_malformed_caller_input_is_total_and_does_not_serialize(self):
+        decoder = self.decoder("/definitely/missing")
+        invalid = ((None, 1), (b"YQ==", 1), ("YQ==", None), ("YQ==", "1"),
+                   ("YQ==", True), ("YQ==", -1), ("YQ==", 4 * 1024 * 1024 + 1))
+        with patch("indexer.transaction_decoder.json.dumps") as dumps:
+            for tx, size in invalid:
+                with self.subTest(tx_type=type(tx), size=size):
+                    self.assertIsNone(decoder.decode(tx, size))
+            dumps.assert_not_called()
+        self.assertEqual(decoder._request_number, 0)
+
+    def test_obvious_request_bound_and_cooldown_do_not_serialize_or_consume_id(self):
+        decoder = self.decoder("/definitely/missing")
+        with patch("indexer.transaction_decoder.json.dumps") as dumps:
+            self.assertIsNone(decoder.decode("x" * (8 * 1024 * 1024 + 1), 1))
+            dumps.assert_not_called()
+        decoder._retry_at = time.monotonic() + 10
+        with patch("indexer.transaction_decoder.json.dumps") as dumps:
+            self.assertIsNone(decoder.decode("YQ==", 1))
+            dumps.assert_not_called()
+        self.assertEqual(decoder._request_number, 0)
+
+    def test_write_timeout_is_bounded(self):
+        path = self.helper('''\
+            import time
+            time.sleep(10)
+        ''')
+        decoder = self.decoder(path, timeout=.05)
+        started = time.monotonic()
+        self.assertIsNone(decoder.decode("a" * 200_000, 150_000))
+        self.assertLess(time.monotonic() - started, .5)
+        self.assertIsNone(decoder._process)
+
+    def test_all_safe_errors_keep_same_process(self):
+        for code in ("invalid_base64", "input_too_large", "amino_decode_failed",
+                     "invalid_request", "missing_tx_base64"):
+            with self.subTest(code=code):
+                path = self.helper(f'''\
+                    import json,sys
+                    for number,line in enumerate(sys.stdin):
+                        request=json.loads(line)
+                        response={{"protocol_version":1,"id":request["id"],"ok":False,"error_code":{code!r}}} if number == 0 else {{"protocol_version":1,"id":request["id"],"ok":True,"summary":{SUMMARY!r}}}
+                        print(json.dumps(response),flush=True)
+                ''')
+                decoder = self.decoder(path)
+                self.assertIsNone(decoder.decode("YQ==", 1))
+                pid = decoder._process.pid
+                self.assertEqual(decoder._retry_at, 0)
+                self.assertEqual(decoder.decode("Yg==", 1)["parse_status"], "parsed")
+                self.assertEqual(decoder._process.pid, pid)
+                decoder.close()
+
+    def test_fake_clock_cooldown_and_restart(self):
+        starts = Path(tempfile.mktemp())
+        path = self.helper(f'''\
+            import json,sys
+            from pathlib import Path
+            p=Path({str(starts)!r}); n=int(p.read_text())+1 if p.exists() else 1; p.write_text(str(n))
+            for line in sys.stdin:
+                request=json.loads(line)
+                if n == 1: print("bad-json",flush=True)
+                else: print(json.dumps({{"protocol_version":1,"id":request["id"],"ok":True,"summary":{SUMMARY!r}}}),flush=True)
+        ''')
+        now = [100.0]
+        decoder = JsonlTransactionDecoder([path], "gno", .5, 30, monotonic=lambda: now[0])
+        self.addCleanup(decoder.close)
+        self.assertIsNone(decoder.decode("YQ==", 1))
+        self.assertEqual(starts.read_text(), "1")
+        self.assertIsNone(decoder.decode("YQ==", 1))
+        now[0] = 129.999
+        self.assertIsNone(decoder.decode("YQ==", 1))
+        self.assertEqual(starts.read_text(), "1")
+        now[0] = 130.0
+        self.assertEqual(decoder.decode("YQ==", 1)["parse_status"], "parsed")
+        self.assertEqual(starts.read_text(), "2")
+
     def test_close_is_idempotent(self):
         path = self.helper(f'''\
             import json,sys
@@ -103,6 +179,40 @@ class DecoderTests(unittest.TestCase):
         process = decoder._process
         decoder.close(); decoder.close()
         self.assertIsNotNone(process.poll())
+        self.assertTrue(process.stdin.closed)
+        self.assertTrue(process.stdout.closed)
+
+    def test_close_kills_child_ignoring_sigterm(self):
+        path = self.helper(f'''\
+            import json,signal,sys,time
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            for line in sys.stdin:
+                request=json.loads(line); print(json.dumps({{"protocol_version":1,"id":request["id"],"ok":True,"summary":{SUMMARY!r}}}),flush=True)
+                time.sleep(10)
+        ''')
+        decoder = self.decoder(path)
+        self.assertIsNotNone(decoder.decode("YQ==", 1))
+        process = decoder._process
+        decoder.close(); decoder.close()
+        self.assertIsNotNone(process.poll())
+        self.assertTrue(process.stdin.closed)
+        self.assertTrue(process.stdout.closed)
+
+    def test_stderr_and_payload_are_not_logged(self):
+        sentinel = "CHILD-SECRET-SENTINEL"
+        payload = "PRIVATE-BASE64"
+        path = self.helper(f'''\
+            import json,sys
+            for line in sys.stdin:
+                print({sentinel!r},file=sys.stderr,flush=True)
+                request=json.loads(line); print(json.dumps({{"protocol_version":1,"id":request["id"],"ok":True,"summary":{SUMMARY!r}}}),flush=True)
+        ''')
+        decoder = self.decoder(path)
+        with self.assertLogs("indexer.transaction_decoder", level="INFO") as logs:
+            self.assertIsNotNone(decoder.decode(payload, 1))
+        output = "\n".join(logs.output)
+        self.assertNotIn(sentinel, output)
+        self.assertNotIn(payload, output)
 
 
 class DecoderConfigTests(unittest.TestCase):
@@ -117,6 +227,13 @@ class DecoderConfigTests(unittest.TestCase):
         config = self.load(TRANSACTION_DECODER_ENABLED="YES", TRANSACTION_DECODER_PATH="/decoder")
         self.assertTrue(config.enabled)
 
+    def test_all_explicit_boolean_forms(self):
+        for raw, expected in (("true", True), ("false", False), ("1", True), ("0", False),
+                              ("yes", True), ("no", False), ("on", True), ("off", False),
+                              ("TRUE", True), ("OFF", False)):
+            with self.subTest(raw=raw):
+                self.assertEqual(self.load(TRANSACTION_DECODER_ENABLED=raw).enabled, expected)
+
     def test_invalid_values(self):
         for values in (
             {"TRANSACTION_DECODER_ENABLED":"maybe"},
@@ -126,5 +243,13 @@ class DecoderConfigTests(unittest.TestCase):
             {"TRANSACTION_DECODER_TIMEOUT_SECONDS":"31"},
             {"TRANSACTION_DECODER_RESTART_BACKOFF_SECONDS":"0"},
             {"TRANSACTION_DECODER_RESTART_BACKOFF_SECONDS":"3601"},
+            {"TRANSACTION_DECODER_ENABLED":"true", "TRANSACTION_DECODER_PATH":""},
+            {"TRANSACTION_DECODER_CHAIN_FAMILY":""},
+            {"TRANSACTION_DECODER_CHAIN_FAMILY":"a" * 65},
+            {"TRANSACTION_DECODER_CHAIN_FAMILY":"bad.family"},
+            {"TRANSACTION_DECODER_TIMEOUT_SECONDS":"nan"},
+            {"TRANSACTION_DECODER_TIMEOUT_SECONDS":"inf"},
+            {"TRANSACTION_DECODER_RESTART_BACKOFF_SECONDS":"nan"},
+            {"TRANSACTION_DECODER_RESTART_BACKOFF_SECONDS":"inf"},
         ):
             with self.subTest(values=values), self.assertRaises(ValueError): self.load(**values)

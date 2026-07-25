@@ -51,13 +51,32 @@ class JsonlTransactionDecoder:
         self._retry_at = 0.0
 
     def decode(self, tx_base64: str, decoded_byte_length: int) -> dict[str, Any] | None:
-        if decoded_byte_length > MAX_DECODED_BYTES or decoded_byte_length < 0 or not isinstance(tx_base64, str):
+        if not isinstance(tx_base64, str):
+            return None
+        if isinstance(decoded_byte_length, bool) or not isinstance(decoded_byte_length, int):
+            return None
+        if not 0 <= decoded_byte_length <= MAX_DECODED_BYTES:
+            return None
+        try:
+            if self._monotonic() < self._retry_at:
+                return None
+        except Exception:
+            return None
+        # JSON escaping can only increase this size, so this is a cheap allocation guard.
+        if len(tx_base64) > MAX_REQUEST_BYTES:
+            return None
+        request_id = f"tx-{self._request_number + 1}"
+        try:
+            request = json.dumps(
+                {"id": request_id, "tx_base64": tx_base64},
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode("utf-8") + b"\n"
+        except (TypeError, ValueError, UnicodeError, MemoryError):
+            return None
+        if len(request) > MAX_REQUEST_BYTES:
             return None
         self._request_number += 1
-        request_id = f"tx-{self._request_number}"
-        request = json.dumps({"id": request_id, "tx_base64": tx_base64}, separators=(",", ":")).encode() + b"\n"
-        if len(request) > MAX_REQUEST_BYTES or self._monotonic() < self._retry_at:
-            return None
         try:
             process = self._ensure_process()
             deadline = self._monotonic() + self.timeout_seconds
@@ -177,20 +196,33 @@ class JsonlTransactionDecoder:
         try:
             if process.stdin is not None:
                 process.stdin.close()
-        except OSError:
+        except Exception:
             pass
         try:
             if process.poll() is None:
                 process.terminate()
                 try:
                     process.wait(timeout=0.25)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=0.25)
+                except Exception:
+                    try:
+                        process.kill()
+                    except Exception:
+                        pass
+                    try:
+                        process.wait(timeout=0.25)
+                    except Exception:
+                        pass
             else:
                 process.wait(timeout=0.25)
-        except (OSError, subprocess.SubprocessError):
+        except Exception:
             pass
+        finally:
+            for pipe in (process.stdin, process.stdout, process.stderr):
+                if pipe is not None:
+                    try:
+                        pipe.close()
+                    except Exception:
+                        pass
 
 
 def build_transaction_decoder(config) -> TransactionDecoder | None:

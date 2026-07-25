@@ -219,6 +219,13 @@ class RangeTests(unittest.TestCase):
 
 
 class ParserTests(unittest.TestCase):
+    SUMMARY = {
+        "schema_version": 1, "chain_family": "gno", "parse_status": "parsed",
+        "message_count": 1, "messages_truncated": False,
+        "primary": {"type": "gno.vm.MsgCall", "category": "vm", "action": "call", "label": "Contract Call"},
+        "messages": [{"type": "gno.vm.MsgCall"}],
+    }
+
     def test_canonical_transaction_hash_known_vectors(self):
         from indexer.parsers import parse_tx
 
@@ -233,6 +240,37 @@ class ParserTests(unittest.TestCase):
         self.assertIsNone(invalid["tx_hash_hex"])
         self.assertEqual(invalid["payload_summary"]["parse_status"], "invalid")
         self.assertNotIn("not base64!", json.dumps(invalid["payload_summary"]))
+
+    def test_decoder_preserves_consensus_transaction_fields(self):
+        decoder = MagicMock()
+        decoder.decode.return_value = self.SUMMARY
+        parsed = parse_tx(0, "YWJj", decoder)
+        self.assertEqual(parsed["payload_summary"]["parse_status"], "parsed")
+        self.assertEqual(parsed["raw_base64"], "YWJj")
+        self.assertEqual(parsed["decoded_bytes"], b"abc")
+        self.assertEqual(parsed["tx_hash_hex"], "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD")
+        self.assertNotIn("YWJj", json.dumps(parsed["payload_summary"]))
+
+    def test_invalid_and_failed_decoders_fall_back_safely(self):
+        decoder = MagicMock()
+        invalid = parse_tx(0, "not base64!", decoder)
+        decoder.decode.assert_not_called()
+        self.assertEqual(invalid["payload_summary"]["parse_status"], "invalid")
+        for result, side_effect in ((None, None), ({"bad": "shape"}, None), (None, RuntimeError("boom"))):
+            with self.subTest(result=result, side_effect=side_effect):
+                decoder = MagicMock()
+                decoder.decode.return_value = result
+                decoder.decode.side_effect = side_effect
+                self.assertEqual(parse_tx(0, "YWJj", decoder)["payload_summary"]["parse_status"], "unparsed")
+
+    def test_parse_height_reuses_decoder_for_ordered_transactions(self):
+        block, commit, validators = payloads()
+        block["result"]["block"]["data"]["txs"] = ["YQ==", "Yg=="]
+        decoder = MagicMock()
+        decoder.decode.return_value = self.SUMMARY
+        parsed = parse_height(122, block, commit, validators, decoder)
+        self.assertEqual(decoder.decode.call_args_list, [unittest.mock.call("YQ==", 1), unittest.mock.call("Yg==", 1)])
+        self.assertEqual([tx["payload_summary"]["parse_status"] for tx in parsed.transactions], ["parsed", "parsed"])
 
     def statuses(self, commit_payload=None):
         block, base_commit, validators = payloads()
