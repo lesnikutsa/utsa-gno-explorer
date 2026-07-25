@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { getTransactions } from '../services/api'
 
 export const PAGE_SIZE = 25
-const MAX_CURSOR_HISTORY = 50
 
 export function useTransactionsPage() {
   const [transactions, setTransactions] = useState([])
@@ -14,8 +13,10 @@ export function useTransactionsPage() {
   const [pageIndex, setPageIndex] = useState(0)
   const mounted = useRef(false)
   const requestId = useRef(0)
+  const failedRequest = useRef(null)
 
   const loadPage = useCallback(async (cursor, targetIndex, history) => {
+    const attemptedRequest = { cursor, targetIndex, history }
     const id = ++requestId.current
     setLoading(true)
     setTransactions([])
@@ -40,9 +41,11 @@ export function useTransactionsPage() {
       } : null)
       setPageIndex(targetIndex)
       if (history) setCursorHistory(history)
+      failedRequest.current = null
       setHealthState('healthy')
     } catch {
       if (!mounted.current || id !== requestId.current) return
+      failedRequest.current = attemptedRequest
       setError(true)
       setHealthState('error')
     } finally {
@@ -50,9 +53,13 @@ export function useTransactionsPage() {
     }
   }, [])
 
-  const retry = useCallback(() => loadPage(cursorHistory[pageIndex] ?? null, pageIndex), [cursorHistory, loadPage, pageIndex])
+  const retry = useCallback(() => {
+    const request = failedRequest.current
+    if (!request) return
+    loadPage(request.cursor, request.targetIndex, request.history)
+  }, [loadPage])
   const loadOlder = useCallback(() => {
-    if (loading || !nextCursor || cursorHistory.length >= MAX_CURSOR_HISTORY) return
+    if (loading || !nextCursor) return
     const history = [...cursorHistory.slice(0, pageIndex + 1), nextCursor]
     loadPage(nextCursor, pageIndex + 1, history)
   }, [cursorHistory, loadPage, loading, nextCursor, pageIndex])
@@ -76,7 +83,7 @@ export function useTransactionsPage() {
     error,
     healthState,
     pageIndex,
-    canLoadOlder: nextCursor !== null && cursorHistory.length < MAX_CURSOR_HISTORY,
+    canLoadOlder: nextCursor !== null,
     retry,
     loadOlder,
     loadNewer,

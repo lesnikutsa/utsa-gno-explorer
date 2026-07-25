@@ -56,7 +56,7 @@ export function Transactions({ transactionsPage }) {
 
       <nav className="blocks-pagination" aria-label="Transactions pagination">
         <button className="blocks-page__button" type="button" onClick={loadNewer} disabled={loading || pageIndex === 0}>Newer transactions</button>
-        <span>{pageIndex === 0 ? 'Latest' : 'Older transactions'}</span>
+        <span>{pageIndex === 0 ? 'Latest' : `Page ${pageIndex + 1}`}</span>
         <button className="blocks-page__button" type="button" onClick={loadOlder} disabled={loading || !canLoadOlder}>Older transactions</button>
       </nav>
     </section>

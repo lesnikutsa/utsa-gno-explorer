@@ -31,14 +31,25 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         self.assertIn("beforeTxIndex: cursor?.txIndex", hook)
         self.assertIn(".slice(0, PAGE_SIZE)", hook)
 
-    def test_cursor_navigation_is_bounded_and_paired(self):
+    def test_cursor_navigation_is_unbounded_and_paired(self):
         hook = self.read("frontend/src/hooks/useTransactionsPage.js")
-        self.assertIn("MAX_CURSOR_HISTORY = 50", hook)
+        self.assertNotIn("MAX_CURSOR_HISTORY", hook)
+        self.assertNotIn("cursorHistory.length", hook)
         self.assertIn("next_before_height", hook)
         self.assertIn("next_before_tx_index", hook)
         self.assertIn("loadPage(nextCursor, pageIndex + 1, history)", hook)
         self.assertIn("loadPage(cursorHistory[pageIndex - 1], pageIndex - 1)", hook)
+        self.assertIn("[...cursorHistory.slice(0, pageIndex + 1), nextCursor]", hook)
+        self.assertIn("canLoadOlder: nextCursor !== null", hook)
         self.assertIn("pageIndex === 0", hook)
+
+    def test_retry_repeats_exact_failed_request(self):
+        hook = self.read("frontend/src/hooks/useTransactionsPage.js")
+        self.assertIn("const failedRequest = useRef(null)", hook)
+        self.assertIn("const attemptedRequest = { cursor, targetIndex, history }", hook)
+        self.assertIn("failedRequest.current = attemptedRequest", hook)
+        self.assertIn("loadPage(request.cursor, request.targetIndex, request.history)", hook)
+        self.assertIn("failedRequest.current = null", hook)
 
     def test_compact_four_column_table_and_links(self):
         page = self.read("frontend/src/pages/Transactions.jsx")
@@ -62,10 +73,21 @@ class TransactionsFrontendContractTests(unittest.TestCase):
             self.assertIn(text, page + self.read("frontend/src/components/DataTable.jsx"))
         self.assertIn("disabled={loading || pageIndex === 0}", page)
         self.assertIn("disabled={loading || !canLoadOlder}", page)
+        self.assertIn("pageIndex === 0 ? 'Latest' : `Page ${pageIndex + 1}`", page)
         self.assertIn("table-layout: fixed", styles)
         self.assertIn("text-overflow: ellipsis", styles)
         mobile = styles[styles.index("@media (max-width: 760px)"):]
         self.assertIn(".transactions-page__table .data-table { min-width: 0; }", mobile)
+
+    def test_existing_blocks_and_transaction_detail_routes_remain_intact(self):
+        blocks = self.read("frontend/src/pages/Blocks.jsx")
+        app = self.read("frontend/src/App.jsx")
+        self.assertIn("pageIndex === 0 ? 'Latest' : `Page ${pageIndex + 1}`", blocks)
+        self.assertIn("Newer blocks", blocks)
+        self.assertIn("Older blocks", blocks)
+        transaction_route = "^\\/blocks\\/([^/]+)\\/transactions\\/([^/]+)\\/?$"
+        self.assertIn(transaction_route, app)
+        self.assertLess(app.index("transactionDetailMatch"), app.index("path.startsWith('/blocks/')"))
 
 
 if __name__ == "__main__":
