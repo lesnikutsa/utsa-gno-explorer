@@ -15,7 +15,7 @@ When present, `message_count` cannot be smaller than the supplied or retained me
 
 The supervised decoder and JSONB persistence are active in production. The transaction-detail endpoint (`GET /api/blocks/{height}/transactions/{index}`) exposes a bounded public `summary`; the internal `payload_summary` column name is not part of the public contract. Only `type`, `category`, `action`, `label`, `sender`, `recipient`, `amount`, `send`, `package_path`, `package_name`, `function`, `args_count`, `file_count`, `expires_at`, `allow_paths_count`, `spend_limit`, and `spend_period` are copied from message objects. Unknown and unsafe fields are discarded. A malformed stored summary becomes `summary: null`, and historical SQL `NULL` values remain null without invented decoding.
 
-This exposure is limited to transaction detail. Block lists and the block-detail transaction rows remain compact. Frontend display and historical backfill remain deferred. A future Cosmos adapter will extend the public message allowlist deliberately rather than exposing arbitrary adapter output.
+This exposure is limited to transaction detail. Block lists and the block-detail transaction rows remain compact. The transaction-detail page now displays a compact public Transaction Summary using only this public API allowlist. Sender and recipient values are copyable but are not account links because account pages do not exist yet. The summary describes transaction content, not execution success, and Raw Transaction remains available. Gas, fee, execution result, and historical backfill remain deferred. Future Cosmos summaries will use the same generic component and extend the API allowlist deliberately rather than exposing arbitrary adapter output.
 
 ## Delivery stages
 
@@ -23,8 +23,9 @@ This exposure is limited to transaction detail. Block lists and the block-detail
 2. Completed: standalone official Gno Amino decoder.
 3. Completed: supervised Python subprocess client and production persistence.
 4. Completed: bounded transaction-detail API exposure.
-5. Deferred: controlled historical backfill and frontend display.
-6. Deferred: a Cosmos SDK adapter using the same generic client contract.
+5. Completed: compact allowlisted frontend summary display.
+6. Deferred: controlled historical backfill.
+7. Deferred: a Cosmos SDK adapter using the same generic client contract.
 
 ## Standalone Gno decoder
 
@@ -76,8 +77,7 @@ source code, raw Amino JSON, arbitrary transaction structs, or raw Go errors.
 This helper performs offline binary decoding only. It initializes no Gno
 application, VM keeper, node, database, RPC client, or other network client,
 and it neither validates nor executes transactions. The Python client described
-below connects it to the production indexer. Historical backfill and frontend
-display remain deferred.
+below connects it to the production indexer. Historical backfill remains deferred.
 
 ## Optional supervised indexer decoder
 
@@ -89,4 +89,4 @@ Child stderr is discarded and never enters indexer logs.
 
 Configuration defaults are `TRANSACTION_DECODER_ENABLED=false`, `TRANSACTION_DECODER_PATH=/opt/utsa-gno-explorer/bin/gno-tx-decoder`, `TRANSACTION_DECODER_CHAIN_FAMILY=gno`, `TRANSACTION_DECODER_TIMEOUT_SECONDS=2`, and `TRANSACTION_DECODER_RESTART_BACKOFF_SECONDS=30`.
 
-Any decoder failure falls back to the bounded generic `unparsed` summary and never blocks consensus indexing. Adapter output is normalized in Python and again at the database boundary. The API boundary independently rebuilds the public allowlisted summary rather than returning JSONB directly. Frontend display and historical backfill remain deferred. A future Cosmos adapter can use the same generic client by configuring another executable and expected chain family.
+Any decoder failure falls back to the bounded generic `unparsed` summary and never blocks consensus indexing. Adapter output is normalized in Python and again at the database boundary. The API boundary independently rebuilds the public allowlisted summary rather than returning JSONB directly. The generic frontend component displays that bounded contract; historical backfill remains deferred. A future Cosmos adapter can use the same generic client by configuring another executable and expected chain family, with deliberate public allowlist extensions as needed.
