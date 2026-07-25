@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from api.config import ApiConfig
 from api.database import TRANSACTION_BY_HASH_SQL
 
-HASH = "EEFE4028EC6357CD38A50CAC9DBB368297204DDC4A3C94198AB207668EDEE8042"
+HASH = "AB" * 32
 
 
 class FakeDatabase:
@@ -29,6 +29,10 @@ class FakeDatabase:
 
 
 class TransactionHashLookupTests(unittest.TestCase):
+    def test_hash_fixture_is_exactly_64_uppercase_hexadecimal_characters(self):
+        self.assertEqual(len(HASH), 64)
+        self.assertRegex(HASH, r"^[0-9A-F]{64}$")
+
     def make_client(self, fake):
         from api import app as app_module
         patches = [
