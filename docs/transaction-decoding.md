@@ -26,16 +26,19 @@ Frontend and API exposure are intentionally deferred until useful application-le
 
 The repository now contains an isolated Go command in `tools/gno-tx-decoder`.
 It uses Gno's official Amino implementation and concrete SDK message
-registrations rather than reimplementing Amino in Python. The
-`github.com/gnolang/gno` dependency is pinned to reviewed commit
-`d14a03770521051749c87364fa8f1b6aae61e508`.
+registrations rather than reimplementing Amino in Python. The reviewed
+dependency target is `github.com/gnolang/gno` commit
+`d14a03770521051749c87364fa8f1b6aae61e508`. The authoring environment could
+not download the required Go 1.25.9 toolchain, so canonical module resolution
+and generated `go.sum` must be completed on exp2 before merge; no replacement
+pseudo-version has been invented.
 
 The command is a long-lived JSONL filter. It reads one request per non-empty
 standard-input line and writes exactly one compact JSON response line:
 
 ```json
 {"id":"request-1","tx_base64":"<base64 transaction>"}
-{"protocol_version":1,"id":"request-1","ok":true,"summary":{"schema_version":1,"chain_family":"gno","parse_status":"parsed","message_count":1,"messages_truncated":false,"primary":{"type":"gno.vm.MsgCall","category":"contract","action":"call","label":"Contract Call"},"messages":[]}}
+{"protocol_version":1,"id":"request-1","ok":true,"summary":{"schema_version":1,"chain_family":"gno","parse_status":"parsed","message_count":1,"messages_truncated":false,"primary":{"type":"gno.vm.MsgCall","category":"contract","action":"call","label":"Contract Call"},"messages":[{"type":"gno.vm.MsgCall","category":"contract","action":"call","label":"Contract Call","sender":"g1...","package_path":"gno.land/r/demo/example","function":"Render","args_count":0,"send":""}]}}
 ```
 
 Errors use only the safe codes `invalid_json`, `invalid_request`,
@@ -43,6 +46,9 @@ Errors use only the safe codes `invalid_json`, `invalid_request`,
 `amino_decode_failed`, and `internal_error`. A bad line does not stop later
 requests. Request lines are limited to 8 MiB, decoded transactions to 4 MiB,
 and printable request IDs to 128 characters.
+Each request is protected by its own panic recovery boundary. A recovered panic
+returns `internal_error` without panic text or a stack trace and does not stop
+the process from accepting the next line.
 
 The decoder recognizes `vm.MsgCall`, `vm.MsgRun`, `vm.MsgAddPackage`,
 `bank.MsgSend`, `auth.MsgCreateSession`, `auth.MsgRevokeSession`, and
