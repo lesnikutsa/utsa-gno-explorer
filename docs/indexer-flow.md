@@ -143,3 +143,7 @@ Block, commit, and validators requests for one endpoint and one height remain co
 The initial endpoint selection is persisted once, and another selection check is written only for a real switch; selection is not persisted per height. Runtime-rejected endpoints are immediately persisted unhealthy and deselected with a bounded classified reason, so health does not wait for the next status probe. The actual successful endpoint is linked from the next `indexer_state` write; switch checks include a short non-secret reason. Global bounded backoff starts only after every candidate fails. With one URL, the same rule means no write and an unchanged checkpoint until that endpoint recovers. Existing API pages continue serving persisted data, while health becomes degraded once all enabled endpoints are unhealthy, checks are stale, or indexer lag is excessive. A failed backup alone does not degrade health when another enabled endpoint is healthy and lag is acceptable; disabled historical endpoints cannot mask an outage.
 
 Different networks must use separate PostgreSQL databases and runtime instances. This failover mechanism is intentionally not a multi-chain selector.
+
+### Optional derived transaction summary
+
+After canonical Base64 decoding and hashing, the parser may ask the command-owned supervised decoder for a bounded derived summary. Failure retains `unparsed`; this optional step does not participate in RPC failover, finalized-data checks, checkpoint advancement, or consensus continuity.

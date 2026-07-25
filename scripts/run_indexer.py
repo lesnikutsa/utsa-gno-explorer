@@ -12,7 +12,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from indexer.config import load_config, load_continuous_config
+from indexer.config import load_config, load_continuous_config, load_transaction_decoder_config
+from indexer.transaction_decoder import build_transaction_decoder
 from indexer.database import PostgresDatabase
 from indexer.runner import ContinuousConfig, StopController, install_signal_handlers, run_continuous
 
@@ -38,7 +39,10 @@ def build_parser(defaults: ContinuousConfig) -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s")
+    transaction_decoder = None
     try:
+        decoder_config = load_transaction_decoder_config()
+        transaction_decoder = build_transaction_decoder(decoder_config)
         defaults = load_continuous_config()
         args = build_parser(defaults).parse_args(argv)
         config = load_config()
@@ -54,10 +58,13 @@ def main(argv: list[str] | None = None) -> int:
         )
         stop = StopController()
         install_signal_handlers(stop)
-        return run_continuous(PostgresDatabase(config.database_url), config.chain_id, config.rpc_urls, config.max_height_lag, continuous, stop=stop)
+        return run_continuous(PostgresDatabase(config.database_url), config.chain_id, config.rpc_urls, config.max_height_lag, continuous, stop=stop, transaction_decoder=transaction_decoder)
     except (ValueError, RuntimeError) as exc:
         print(f"fatal configuration error: {exc}", file=sys.stderr)
         return 1
+    finally:
+        if transaction_decoder is not None:
+            transaction_decoder.close()
 
 
 if __name__ == "__main__":

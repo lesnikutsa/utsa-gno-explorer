@@ -1,6 +1,7 @@
 import signal
 import unittest
 import sys
+import copy
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -93,6 +94,43 @@ class ContinuousIndexerTests(unittest.TestCase):
         with self.patch_select(50):
             result = run_cycle(db, "test-13", ["x"], 10, self.config, StopController())
         self.assertEqual(result.processed, [10, 11, 12])
+
+    def test_decoder_success_and_fallback_do_not_affect_rpc(self):
+        summary = {
+            "schema_version": 1, "chain_family": "gno", "parse_status": "parsed",
+            "message_count": 1, "messages_truncated": False,
+            "primary": {"type": "gno.vm.MsgCall", "category": "vm", "action": "call", "label": "Contract Call"},
+            "messages": [{"type": "gno.vm.MsgCall"}],
+        }
+
+        class TransactionClient(FakeClient):
+            def get(self, method, **params):
+                value = super().get(method, **params)
+                if method == "block":
+                    value = copy.deepcopy(value)
+                    value["result"]["block"]["data"]["txs"] = ["YQ=="]
+                    value["result"]["block"]["header"]["num_txs"] = "1"
+                return value
+
+        class CapturingDb(SqlLikeDb):
+            def write_height(self, parsed, chain_id, finalized_tip):
+                self.last_parsed = parsed
+                super().write_height(parsed, chain_id, finalized_tip)
+
+        for result, error, expected in ((summary, None, "parsed"), (None, None, "unparsed"), (None, RuntimeError("decoder"), "unparsed")):
+            with self.subTest(expected=expected, error=error):
+                decoder = unittest.mock.MagicMock()
+                decoder.decode.return_value = result
+                decoder.decode.side_effect = error
+                db = CapturingDb(10)
+                probe = RpcProbeResult("https://example.test", True, True, "test-13", 12, 0, False, client=TransactionClient(12), status_payload={})
+                with patch("indexer.runner.probe_rpc_endpoints", return_value=[probe]):
+                    cycle = run_cycle(db, "test-13", ["x"], 10, ContinuousConfig(10, 1, 1, 1, 4), StopController(), decoder)
+                self.assertEqual(cycle.processed, [11])
+                self.assertEqual(db.checkpoint, 11)
+                self.assertEqual(db.last_parsed.transactions[0]["payload_summary"]["parse_status"], expected)
+                self.assertEqual(db.runtime_failures, [])
+                decoder.close.assert_not_called()
 
     def test_caught_up_cycle_writes_no_heights(self):
         db = SqlLikeDb(104)

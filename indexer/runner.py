@@ -10,6 +10,8 @@ import time
 import psycopg
 from dataclasses import dataclass
 from typing import Callable, Protocol
+
+from .transaction_decoder import TransactionDecoder
 from urllib.parse import urlsplit, urlunsplit
 
 from scripts.inspect_rpc import RpcError
@@ -213,7 +215,7 @@ def _activate_candidate(database, chain_id: str, probe: RpcProbeResult, anchor: 
         selector(chain_id, probe, reason)
 
 
-def run_cycle(database, chain_id: str, rpc_urls: list[str], max_height_lag: int, config: ContinuousConfig, stop: StopController) -> CycleResult:
+def run_cycle(database, chain_id: str, rpc_urls: list[str], max_height_lag: int, config: ContinuousConfig, stop: StopController, transaction_decoder: TransactionDecoder | None = None) -> CycleResult:
     anchor = _anchor(database, chain_id)
     checkpoint = anchor.height if anchor is not None else database.get_checkpoint(chain_id)
     if checkpoint is None and config.start_height is None:
@@ -282,7 +284,7 @@ def run_cycle(database, chain_id: str, rpc_urls: list[str], max_height_lag: int,
                 LOGGER.info("selected_rpc=%s latest_rpc_height=%s finalized_tip=%s checkpoint_before=%s", sanitized_url(probe.url), probe.latest_height, probe.latest_height - 1, checkpoint)
                 block_payload, commit_payload, validators_payload = fetch_height(probe.client, height)
                 block_hash = verify_parent_continuity(block_payload, expected_parent) if expected_parent is not None else canonical_block_hash_hex(block_payload)
-                parsed = parse_height(height, block_payload, commit_payload, validators_payload)
+                parsed = parse_height(height, block_payload, commit_payload, validators_payload, transaction_decoder)
                 database.write_height(parsed, chain_id, probe.latest_height - 1)
                 if transition_from is not None:
                     LOGGER.info("rpc_failover height=%s from=%s to=%s reason=%s", height, sanitized_url(transition_from), sanitized_url(probe.url), transition_reason)
@@ -307,7 +309,7 @@ def run_cycle(database, chain_id: str, rpc_urls: list[str], max_height_lag: int,
     return CycleResult(processed, checkpoint, checkpoint_after, finalized_tip, next_height, planned_end)
 
 
-def run_continuous(database: PostgresDatabase, chain_id: str, rpc_urls: list[str], max_height_lag: int, config: ContinuousConfig, stop: StopController | None = None, wait: Waiter = stop_aware_wait, lock_factory: Callable[[PostgresDatabase, str], AdvisoryLock] = AdvisoryLock) -> int:
+def run_continuous(database: PostgresDatabase, chain_id: str, rpc_urls: list[str], max_height_lag: int, config: ContinuousConfig, stop: StopController | None = None, wait: Waiter = stop_aware_wait, lock_factory: Callable[[PostgresDatabase, str], AdvisoryLock] = AdvisoryLock, transaction_decoder: TransactionDecoder | None = None) -> int:
     validate_continuous_config(config)
     if not rpc_urls:
         LOGGER.error("fatal continuous indexer error: GNO_RPC_URLS must contain at least one RPC endpoint")
@@ -332,7 +334,7 @@ def run_continuous(database: PostgresDatabase, chain_id: str, rpc_urls: list[str
             LOGGER.info("cycle=%s starting", cycle)
             cycle_started_at = time.perf_counter()
             try:
-                result = run_cycle(database, chain_id, rpc_urls, max_height_lag, config, stop)
+                result = run_cycle(database, chain_id, rpc_urls, max_height_lag, config, stop, transaction_decoder)
             except (FinalizedDataConflict, ChainIdentityError) as exc:
                 raise FatalIndexerError(str(exc)) from exc
             except Exception as exc:

@@ -10,7 +10,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from indexer.config import DEFAULT_MAX_HEIGHTS, load_config
+from indexer.config import DEFAULT_MAX_HEIGHTS, load_config, load_transaction_decoder_config
+from indexer.transaction_decoder import build_transaction_decoder
 from indexer.database import PostgresDatabase
 from indexer.rpc import select_rpc
 from indexer.service import IndexerService, plan_range
@@ -28,7 +29,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    transaction_decoder = None
     try:
+        decoder_config = load_transaction_decoder_config()
+        transaction_decoder = build_transaction_decoder(decoder_config)
         config = load_config()
         selected_rpc = select_rpc(config.rpc_urls, config.chain_id, config.max_height_lag)
         database = PostgresDatabase(config.database_url)
@@ -48,11 +52,15 @@ def main(argv: list[str] | None = None) -> int:
             chain_id=config.chain_id,
             finalized_tip=selected_rpc.finalized_tip,
             probes=selected_rpc.probes,
+            transaction_decoder=transaction_decoder,
         )
         summary = service.run(plan)
     except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
+    finally:
+        if transaction_decoder is not None:
+            transaction_decoder.close()
 
     mode = "dry-run" if summary.dry_run else "write"
     print("Bounded indexer summary")

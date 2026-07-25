@@ -1,8 +1,11 @@
 # Transaction decoding architecture
 
-## Current stage
+## Normalized summary foundation
 
-This stage defines version 1 of a normalized, chain-neutral transaction summary. It does not decode Gno Amino or Cosmos SDK application messages. Base64 decode status describes transport decoding only and must not be interpreted as blockchain execution success or failure.
+Version 1 defines a normalized, chain-neutral transaction summary. The optional
+Gno adapter can derive this summary from Amino transactions, while Base64 decode
+status still describes transport decoding only and must not be interpreted as
+blockchain execution success or failure.
 
 Raw consensus transaction fields remain immutable. `payload_summary` is derived parser metadata, is versioned independently, and may be refreshed when a height is reprocessed. Historical rows where `payload_summary` is `NULL` remain valid and require neither a migration nor a reindex.
 
@@ -12,15 +15,13 @@ When present, `message_count` cannot be smaller than the supplied or retained me
 
 Frontend and API exposure are intentionally deferred until useful application-level adapters exist. Gno and Cosmos SDK decoding will use separate adapters, but every adapter must produce the same normalized structure. Unknown message types and malformed adapter output must fall back safely to the generic summary. Adapter output is never trusted directly: persistence performs final normalization before serializing it into JSONB.
 
-## Planned stages
+## Delivery stages
 
-1. Normalized summary foundation.
-2. Gno decoder adapter.
-3. Controlled historical backfill.
-4. API exposure.
-5. Compact block-table transaction type.
-6. Expanded transaction-detail information.
-7. Cosmos SDK adapter.
+1. Completed: normalized summary foundation and JSONB persistence.
+2. Completed: standalone official Gno Amino decoder.
+3. Current: optional supervised Python subprocess client.
+4. Deferred: controlled historical backfill and API/frontend exposure.
+5. Deferred: a Cosmos SDK adapter using the same generic client contract.
 
 ## Standalone Gno decoder
 
@@ -28,10 +29,11 @@ The repository now contains an isolated Go command in `tools/gno-tx-decoder`.
 It uses Gno's official Amino implementation and concrete SDK message
 registrations rather than reimplementing Amino in Python. The reviewed
 dependency target is `github.com/gnolang/gno` commit
-`d14a03770521051749c87364fa8f1b6aae61e508`. The authoring environment could
-not download the required Go 1.25.9 toolchain, so canonical module resolution
-and generated `go.sum` must be completed on exp2 before merge; no replacement
-pseudo-version has been invented.
+`d14a03770521051749c87364fa8f1b6aae61e508`. The dependency is pinned and the
+canonical generated `go.sum` is committed. The helper was verified on exp2
+against Topaz block 192805, where it decoded the real transaction as
+`gno.vm.MsgCall` with the primary label `Contract Call` and a 445-byte compact
+summary.
 
 The command is a long-lived JSONL filter. It reads one request per non-empty
 standard-input line and writes exactly one compact JSON response line:
@@ -70,7 +72,18 @@ source code, raw Amino JSON, arbitrary transaction structs, or raw Go errors.
 
 This helper performs offline binary decoding only. It initializes no Gno
 application, VM keeper, node, database, RPC client, or other network client,
-and it neither validates nor executes transactions. It is not connected to the
-Python indexer, so production behavior is unchanged. A later stage will add a
-supervised long-lived Python adapter after verification against real Topaz
-transactions. Historical backfill remains deferred.
+and it neither validates nor executes transactions. The optional Python client
+described below now connects it to the indexer, but production decoding remains
+disabled. Historical backfill and API/frontend exposure remain deferred.
+
+## Optional supervised indexer decoder
+
+The Python indexer can now consume the standalone helper through a chain-neutral JSONL subprocess client. The feature remains disabled by default. When enabled, each indexer command lazily starts one long-lived child and reuses it for every transaction. Both writing a request and reading its response share the configured non-blocking deadline. A timeout or protocol/process failure terminates the child and prevents another start until the restart cooldown expires; transaction-specific input and Amino errors leave the child healthy.
+
+The child receives only a sanitized `PATH`, `LANG`, and `LC_ALL`; database and
+RPC credentials and other indexer environment variables are not inherited.
+Child stderr is discarded and never enters indexer logs.
+
+Configuration defaults are `TRANSACTION_DECODER_ENABLED=false`, `TRANSACTION_DECODER_PATH=/opt/utsa-gno-explorer/bin/gno-tx-decoder`, `TRANSACTION_DECODER_CHAIN_FAMILY=gno`, `TRANSACTION_DECODER_TIMEOUT_SECONDS=2`, and `TRANSACTION_DECODER_RESTART_BACKOFF_SECONDS=30`.
+
+Any decoder failure falls back to the bounded generic `unparsed` summary and never blocks consensus indexing. Adapter output is normalized in Python and again at the database boundary. API and frontend exposure and historical backfill remain deferred. A future Cosmos adapter can use the same generic client by configuring another executable and expected chain family.

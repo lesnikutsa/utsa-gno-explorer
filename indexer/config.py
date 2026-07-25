@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import os
+import re
+import math
 from dataclasses import dataclass
 
 from scripts.inspect_rpc import configured_chain_id, configured_max_height_lag, configured_rpc_urls, load_dotenv
@@ -21,6 +23,39 @@ class IndexerConfig:
     chain_id: str
     max_height_lag: int
     hard_max_heights: int
+
+
+@dataclass(frozen=True)
+class TransactionDecoderConfig:
+    enabled: bool
+    executable_path: str
+    expected_chain_family: str
+    timeout_seconds: float
+    restart_backoff_seconds: float
+
+
+def load_transaction_decoder_config() -> TransactionDecoderConfig:
+    load_dotenv()
+    raw_enabled = os.environ.get("TRANSACTION_DECODER_ENABLED", "false").strip().lower()
+    booleans = {"true": True, "false": False, "1": True, "0": False, "yes": True, "no": False, "on": True, "off": False}
+    if raw_enabled not in booleans:
+        raise ValueError("TRANSACTION_DECODER_ENABLED must be an explicit boolean")
+    path = os.environ.get("TRANSACTION_DECODER_PATH", "/opt/utsa-gno-explorer/bin/gno-tx-decoder").strip()
+    family = os.environ.get("TRANSACTION_DECODER_CHAIN_FAMILY", "gno").strip()
+    if booleans[raw_enabled] and not os.path.isabs(path):
+        raise ValueError("TRANSACTION_DECODER_PATH must be absolute when enabled")
+    if not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", family):
+        raise ValueError("TRANSACTION_DECODER_CHAIN_FAMILY must be a bounded lowercase token")
+    try:
+        timeout = float(os.environ.get("TRANSACTION_DECODER_TIMEOUT_SECONDS", "2").strip())
+        backoff = float(os.environ.get("TRANSACTION_DECODER_RESTART_BACKOFF_SECONDS", "30").strip())
+    except ValueError as exc:
+        raise ValueError("transaction decoder timeout and backoff must be numbers") from exc
+    if not math.isfinite(timeout) or not 0 < timeout <= 30:
+        raise ValueError("TRANSACTION_DECODER_TIMEOUT_SECONDS must be greater than 0 and at most 30")
+    if not math.isfinite(backoff) or not 1 <= backoff <= 3600:
+        raise ValueError("TRANSACTION_DECODER_RESTART_BACKOFF_SECONDS must be between 1 and 3600")
+    return TransactionDecoderConfig(booleans[raw_enabled], path, family, timeout, backoff)
 
 
 def configured_hard_max_heights() -> int:
