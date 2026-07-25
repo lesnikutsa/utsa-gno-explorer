@@ -4,6 +4,7 @@ const BASE64_HASH_PATTERN = /^[A-Za-z0-9+/]{43}=$/
 
 export const isPositiveBlockHeight = (query) => HEIGHT_PATTERN.test(query.trim())
 export const isExactHexBlockHash = (query) => HEX_HASH_PATTERN.test(query.trim())
+export const isExactTransactionHash = (query) => HEX_HASH_PATTERN.test(query.trim())
 export const isExactBase64BlockHash = (query) => BASE64_HASH_PATTERN.test(query.trim())
 export const isExactBlockHash = (query) => isExactHexBlockHash(query) || isExactBase64BlockHash(query)
 

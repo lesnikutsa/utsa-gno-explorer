@@ -173,6 +173,12 @@ class TransactionDetailResponse(BaseModel):
     summary: TransactionSummaryResponse | None = None
 
 
+class TransactionHashLookupResponse(BaseModel):
+    block_height: int = Field(ge=1)
+    index: int = Field(ge=0)
+    tx_hash: str = Field(pattern=r"^[0-9A-F]{64}$")
+
+
 class BlockDetailResponse(BaseModel):
     height: int
     block_hash: str

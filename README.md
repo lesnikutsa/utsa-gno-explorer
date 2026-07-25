@@ -113,6 +113,11 @@ separate service.
 
 ## Read-only API foundation
 
+Global search supports block height, exact block hash, exact transaction hash,
+validator moniker, validator signing address, and validator operator address.
+Partial transaction hash search is not supported. A matching transaction opens
+the existing `/blocks/:block_height/transactions/:index` detail route.
+
 The read-only API contract is version 0.8.0.
 
 ### API installation

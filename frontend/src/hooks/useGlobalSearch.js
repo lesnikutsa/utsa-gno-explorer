@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { getBlocks, searchValidators } from '../services/api'
+import { getBlocks, getTransactionByHash, searchValidators } from '../services/api'
 import {
   chooseValidatorResult,
   isExactBlockHash,
+  isExactTransactionHash,
   isPositiveBlockHeight,
   shouldSearchValidators,
 } from '../utils/globalSearch'
 
 const messages = {
   searching: 'Searching…',
-  invalid: 'Enter a block height, block hash, validator moniker, or validator address.',
-  blockNotFound: 'No matching block found.',
+  invalid: 'Enter a block height, block hash, transaction hash, validator moniker, or validator address.',
+  hashNotFound: 'No matching block or transaction found.',
   validatorNotFound: 'No matching validator found.',
   error: 'Search is currently unavailable.',
   select: 'Select a validator from the results.',
@@ -112,6 +113,28 @@ export function useGlobalSearch() {
       window.location.assign(`/blocks/${trimmed}`)
       return
     }
+    if (isExactTransactionHash(trimmed)) {
+      const id = ++requestId.current
+      setStatus('searching')
+      const [transactionResult, blockResult] = await Promise.allSettled([
+        getTransactionByHash(trimmed), getBlocks({ limit: 1, hash: trimmed }),
+      ])
+      if (!mounted.current || id !== requestId.current) return
+      const transaction = transactionResult.status === 'fulfilled' ? transactionResult.value : null
+      const blockResponse = blockResult.status === 'fulfilled' ? blockResult.value : null
+      const block = Array.isArray(blockResponse?.items) ? blockResponse.items[0] : null
+      if (transaction?.block_height && Number.isInteger(transaction?.index)) {
+        window.location.assign(`/blocks/${transaction.block_height}/transactions/${transaction.index}`)
+      } else if (block) window.location.assign(`/blocks/${block.height}`)
+      else {
+        const transactionNotFound = transactionResult.status === 'rejected' && transactionResult.reason?.status === 404
+        const transactionFailed = transactionResult.status === 'rejected' && !transactionNotFound
+        const blockFailed = blockResult.status === 'rejected'
+          || (blockResult.status === 'fulfilled' && !Array.isArray(blockResponse?.items))
+        setStatus(transactionFailed || blockFailed ? 'error' : 'hashNotFound')
+      }
+      return
+    }
     if (isExactBlockHash(trimmed)) {
       const id = ++requestId.current
       setStatus('searching')
@@ -120,7 +143,7 @@ export function useGlobalSearch() {
         if (!mounted.current || id !== requestId.current) return
         if (!Array.isArray(response?.items)) throw new Error('Unexpected block search response')
         const block = response.items[0]
-        if (!block) setStatus('blockNotFound')
+        if (!block) setStatus('hashNotFound')
         else window.location.assign(`/blocks/${block.height}`)
       } catch {
         if (mounted.current && id === requestId.current) setStatus('error')

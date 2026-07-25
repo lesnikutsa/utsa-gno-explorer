@@ -102,8 +102,8 @@ export function TopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefres
             value={query}
             onChange={(event) => updateQuery(event.target.value)}
             onKeyDown={handleSearchKeyDown}
-            placeholder="Search blocks or validators..."
-            aria-label="Search by block height, block hash, validator moniker, signing address, or operator address"
+            placeholder="Search blocks, transactions, or validators..."
+            aria-label="Search by block height, block hash, transaction hash, validator moniker, signing address, or operator address"
             aria-expanded={dropdownOpen}
             aria-controls="global-search-results"
             aria-activedescendant={highlightedIndex >= 0 ? `global-search-result-${highlightedIndex}` : undefined}

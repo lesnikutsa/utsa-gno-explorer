@@ -228,6 +228,17 @@ WHERE transaction.block_height = %s
   AND transaction.tx_index = %s
 """
 
+TRANSACTION_BY_HASH_SQL = """
+SELECT
+    block_height,
+    tx_index,
+    tx_hash_hex
+FROM transactions
+WHERE tx_hash_hex = %s
+ORDER BY block_height DESC, tx_index DESC
+LIMIT 1
+"""
+
 TRANSACTIONS_SQL = """
 SELECT
     transaction.block_height,
@@ -586,6 +597,15 @@ class ApiDatabase:
         with self.pool.connection(timeout=2.0) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(TRANSACTION_DETAIL_SQL, (block_height, tx_index))
+                row = cursor.fetchone()
+        return None if row is None else dict(row)
+
+    def fetch_transaction_by_hash(self, tx_hash: str) -> dict[str, Any] | None:
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(TRANSACTION_BY_HASH_SQL, (tx_hash,))
                 row = cursor.fetchone()
         return None if row is None else dict(row)
 

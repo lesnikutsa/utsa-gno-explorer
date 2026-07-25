@@ -300,6 +300,46 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         )
         self.assertEqual([(item["block_height"], item["tx_index"]) for item in list_rows], [(100, 0)])
 
+    def test_exact_transaction_hash_lookup_is_read_only_and_deterministic(self):
+        name = f"utsa_api_tx_hash_lookup_{os.getpid()}"
+        self.create_database(name)
+        database_url = self.database_url_for(name)
+        self.assertEqual(self.run_init(database_url).returncode, 0)
+        tx_hash = "AB" * 32
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO blocks (height, block_hash_base64, block_hash_hex, time_utc, tx_count) "
+                "VALUES (100, %s, %s, now(), 1), (101, %s, %s, now(), 1)",
+                ("YQ==", "AA" * 32, "Yg==", "BB" * 32),
+            )
+            cursor.execute(
+                "INSERT INTO transactions "
+                "(block_height, tx_index, raw_base64, raw_base64_length, decode_status, tx_hash_hex) "
+                "VALUES (100, 0, 'YQ==', 4, 'not_attempted', %s), "
+                "(101, 2, 'Yg==', 4, 'not_attempted', %s)",
+                (tx_hash, tx_hash),
+            )
+            cursor.execute("SELECT count(*) FROM transactions")
+            before_count = cursor.fetchone()[0]
+
+        database = ApiDatabase()
+        database.open(ApiConfig(database_url=database_url))
+        self.addCleanup(database.close)
+        self.assertEqual(database.fetch_transaction_by_hash(tx_hash), {
+            "block_height": 101, "tx_index": 2, "tx_hash_hex": tx_hash,
+        })
+        self.assertIsNone(database.fetch_transaction_by_hash("CD" * 32))
+        self.assertEqual(
+            [(row["block_height"], row["tx_index"]) for row in database.fetch_transactions(
+                limit=20, before_height=None, before_tx_index=None,
+            )],
+            [(101, 2), (100, 0)],
+        )
+        self.assertEqual(database.fetch_transaction_detail(100, 0)["tx_hash_hex"], tx_hash)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT count(*) FROM transactions")
+            self.assertEqual(cursor.fetchone()[0], before_count)
+
     def prepare_legacy_database(self, name):
         self.create_database(name)
         database_url = self.database_url_for(name)

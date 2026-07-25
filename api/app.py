@@ -34,6 +34,7 @@ from api.schemas import (
     NetworkValidators,
     SelectedRpc,
     TransactionDetailResponse,
+    TransactionHashLookupResponse,
     TransactionListItem,
     TransactionSummaryResponse,
     TransactionsPagination,
@@ -769,6 +770,25 @@ def get_transaction_detail(
     if row is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
     return _transaction_detail_from_row(row)
+
+
+@app.get("/api/transactions/by-hash/{tx_hash}", response_model=TransactionHashLookupResponse)
+def get_transaction_by_hash(tx_hash: str) -> TransactionHashLookupResponse:
+    match = HEX_HASH_RE.fullmatch(tx_hash)
+    if match is None:
+        raise HTTPException(status_code=422, detail="Invalid transaction hash")
+    normalized_hash = match.group(1).upper()
+    try:
+        row = database.fetch_transaction_by_hash(normalized_hash)
+    except Exception:
+        LOGGER.error("Explorer database transaction hash query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+    if row is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return TransactionHashLookupResponse(
+        block_height=row["block_height"], index=row["tx_index"],
+        tx_hash=str(row["tx_hash_hex"]).upper(),
+    )
 
 
 @app.get("/api/transactions", response_model=TransactionsResponse)
