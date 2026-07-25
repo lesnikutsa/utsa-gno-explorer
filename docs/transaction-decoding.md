@@ -24,7 +24,7 @@ This exposure is limited to transaction detail. Block lists and the block-detail
 3. Completed: supervised Python subprocess client and production persistence.
 4. Completed: bounded transaction-detail API exposure.
 5. Completed: compact allowlisted frontend summary display.
-6. Deferred: controlled historical backfill.
+6. Completed: bounded, operator-controlled historical summary backfill.
 7. Deferred: a Cosmos SDK adapter using the same generic client contract.
 
 ## Standalone Gno decoder
@@ -77,7 +77,7 @@ source code, raw Amino JSON, arbitrary transaction structs, or raw Go errors.
 This helper performs offline binary decoding only. It initializes no Gno
 application, VM keeper, node, database, RPC client, or other network client,
 and it neither validates nor executes transactions. The Python client described
-below connects it to the production indexer. Historical backfill remains deferred.
+below connects it to the production indexer and the manual backfill command.
 
 ## Optional supervised indexer decoder
 
@@ -89,4 +89,18 @@ Child stderr is discarded and never enters indexer logs.
 
 Configuration defaults are `TRANSACTION_DECODER_ENABLED=false`, `TRANSACTION_DECODER_PATH=/opt/utsa-gno-explorer/bin/gno-tx-decoder`, `TRANSACTION_DECODER_CHAIN_FAMILY=gno`, `TRANSACTION_DECODER_TIMEOUT_SECONDS=2`, and `TRANSACTION_DECODER_RESTART_BACKOFF_SECONDS=30`.
 
-Any decoder failure falls back to the bounded generic `unparsed` summary and never blocks consensus indexing. Adapter output is normalized in Python and again at the database boundary. The API boundary independently rebuilds the public allowlisted summary rather than returning JSONB directly. The generic frontend component displays that bounded contract; historical backfill remains deferred. A future Cosmos adapter can use the same generic client by configuring another executable and expected chain family, with deliberate public allowlist extensions as needed.
+Any decoder failure falls back to the bounded generic `unparsed` summary and never blocks consensus indexing. Adapter output is normalized in Python and again at the database boundary. The API boundary independently rebuilds the public allowlisted summary rather than returning JSONB directly. The generic frontend component displays that bounded contract. Historical repair is available only through the bounded manual backfill below. A future Cosmos adapter can use the same generic client by configuring another executable and expected chain family, with deliberate public allowlist extensions as needed.
+
+## Manual historical summary backfill
+
+`scripts/backfill_transaction_summaries.py` is a manual, bounded maintenance
+command, not a daemon, timer, full reindex, or RPC backfill. It reads only the
+already-persisted transaction Base64 and reuses one long-lived decoder process.
+The API and continuous indexer do not need to be stopped.
+
+The default dry run selects at most 25 newest eligible rows and pauses 250 ms
+between them. `--apply` is required to write summaries, and the hard maximum is
+100 rows per invocation. Repeating the command continues with the next rows
+whose summary is still null or the exact version 1 unknown/unparsed fallback;
+parsed and unsupported results are terminal. A dedicated session advisory lock
+prevents two copies of this maintenance command from running concurrently.

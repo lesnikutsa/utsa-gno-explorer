@@ -223,6 +223,31 @@ compatible Valopers tables and API-role privilege, must first follow the existin
 operator-controlled Valopers schema migration and API-role grant procedure in the production
 deployment guide. No migration is automatic.
 
+## Manual transaction-summary backfill
+
+This maintenance command is manual and bounded. It is not a daemon, timer,
+full reindex, or RPC backfill, and it does not require stopping the API or
+indexer. Load the real indexer environment file so `DATABASE_URL` uses the
+indexer write role and the existing decoder path, family, timeout, and restart
+backoff settings:
+
+```bash
+source /etc/utsa-gno-explorer/indexer.env
+python scripts/backfill_transaction_summaries.py --dry-run
+python scripts/backfill_transaction_summaries.py \
+  --apply \
+  --limit 25 \
+  --sleep-ms 250
+```
+
+Dry-run is the default. Each invocation selects 25 rows by default, sleeps 250
+ms between rows, and can never select more than 100 rows. It uses saved
+`raw_base64` only and performs no RPC calls. In apply mode, each stable decoded
+summary is written with a separate short conditional update, so a concurrently
+changed row is not overwritten. Run the command again to continue with the next
+newest unknown rows. A dedicated advisory lock rejects a concurrent backfill
+without blocking ordinary Explorer services.
+
 ## Network distribution collector
 
 The collector measures peers visible through one or more healthy Tendermint `/net_info` RPC sources. It is an observed sample, not a complete network census. It reuses persisted `rpc_endpoints` health, preferring the selected endpoint, then greatest observed height, then endpoint ID. The default limit is one; `NETWORK_DISTRIBUTION_RPC_LIMIT` supports 1–20 without requiring that all requested sources exist. Node IDs are deduplicated by source priority and conflicting later IPs are counted but discarded. Country, region, and provider rankings count unique public IPs.
