@@ -30,8 +30,48 @@ const STATUS_EXPLANATIONS = {
   invalid: 'The transaction payload could not be decoded.',
 }
 
-const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
-const isScalar = (value) => typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+const CORE_FIELDS = ['type', 'category', 'action', 'label']
+const STRING_DETAIL_FIELDS = [
+  'sender', 'recipient', 'amount', 'send', 'package_path', 'package_name', 'function',
+  'expires_at', 'spend_limit', 'spend_period',
+]
+const COUNT_DETAIL_FIELDS = ['args_count', 'file_count', 'allow_paths_count']
+
+const isPlainObject = (value) => {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+  const prototype = Object.getPrototypeOf(value)
+  return prototype === Object.prototype || prototype === null
+}
+const isNonEmptyString = (value) => typeof value === 'string' && value.trim().length > 0
+const isNonNegativeInteger = (value) => Number.isInteger(value) && value >= 0
+const isScalar = (value) => typeof value === 'string'
+  || typeof value === 'boolean'
+  || (typeof value === 'number' && Number.isFinite(value))
+
+const hasValidDetails = (message) => STRING_DETAIL_FIELDS.every((key) => (
+  message[key] === undefined || message[key] === null || typeof message[key] === 'string'
+)) && COUNT_DETAIL_FIELDS.every((key) => (
+  message[key] === undefined || message[key] === null || isNonNegativeInteger(message[key])
+))
+
+const hasValidCore = (value) => isPlainObject(value)
+  && CORE_FIELDS.every((key) => isNonEmptyString(value[key]))
+
+const isValidSummary = (summary) => {
+  if (!isPlainObject(summary) || !Object.hasOwn(STATUS_PRESENTATION, summary.parse_status)) return false
+  if (!isNonEmptyString(summary.chain_family) || !hasValidCore(summary.primary)) return false
+  if (!Array.isArray(summary.messages) || summary.messages.length > 20) return false
+  if (!summary.messages.every((message) => hasValidCore(message) && hasValidDetails(message))) return false
+  if (summary.message_count !== null && !isNonNegativeInteger(summary.message_count)) return false
+  if (typeof summary.messages_truncated !== 'boolean') return false
+  if (summary.message_count !== null && summary.message_count < summary.messages.length) return false
+  if (summary.message_count !== null
+    && summary.message_count > summary.messages.length
+    && summary.messages_truncated !== true) return false
+  if (summary.messages.length > 0
+    && !CORE_FIELDS.every((key) => summary.messages[0][key] === summary.primary[key])) return false
+  return true
+}
 
 const displayValue = (value) => typeof value === 'boolean' ? (value ? 'Yes' : 'No') : value
 const humanize = (value) => typeof value === 'string'
@@ -49,7 +89,7 @@ function DetailFields({ message }) {
           <dt>{label}</dt>
           <dd className={mono ? 'mono' : undefined}>
             <span>{displayValue(message[key])}</span>
-            {copyLabel && <CopyButton value={message[key]} label={copyLabel} />}
+            {copyLabel && typeof message[key] === 'string' && <CopyButton value={message[key]} label={copyLabel} />}
           </dd>
         </div>
       ))}
@@ -62,13 +102,7 @@ function UnavailableSummary() {
 }
 
 export function TransactionSummary({ summary }) {
-  const valid = isRecord(summary)
-    && isRecord(summary.primary)
-    && Array.isArray(summary.messages)
-    && summary.messages.every(isRecord)
-    && Object.hasOwn(STATUS_PRESENTATION, summary.parse_status)
-
-  if (!valid) {
+  if (!isValidSummary(summary)) {
     return (
       <section className="panel transaction-detail__section transaction-summary" aria-labelledby="transaction-summary-title">
         <div className="panel__heading"><h2 id="transaction-summary-title">Transaction Summary</h2></div>

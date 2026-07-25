@@ -138,8 +138,26 @@ class TransactionDetailFrontendContractTests(unittest.TestCase):
         self.assertIn("This transaction type is recognized, but detailed decoding is not supported yet.", summary)
         self.assertIn("Transaction content is stored, but no supported message summary is available.", summary)
         self.assertIn("The transaction payload could not be decoded.", summary)
-        self.assertIn("isRecord(summary)", summary)
-        self.assertIn("summary.messages.every(isRecord)", summary)
+        self.assertIn("isValidSummary(summary)", summary)
+
+    def test_transaction_summary_strictly_validates_contract_shapes(self):
+        summary = self.read("frontend/src/components/TransactionSummary.jsx")
+        self.assertIn("const isPlainObject", summary)
+        self.assertIn("const isNonEmptyString", summary)
+        self.assertIn("CORE_FIELDS.every((key) => isNonEmptyString(value[key]))", summary)
+        self.assertIn("summary.messages.every((message) => hasValidCore(message) && hasValidDetails(message))", summary)
+        self.assertIn("summary.messages.length > 20", summary)
+        self.assertIn("summary.message_count !== null && !isNonNegativeInteger(summary.message_count)", summary)
+        self.assertIn("typeof summary.messages_truncated !== 'boolean'", summary)
+        self.assertIn("summary.message_count < summary.messages.length", summary)
+        self.assertIn("summary.message_count > summary.messages.length", summary)
+        self.assertIn("summary.messages[0][key] === summary.primary[key]", summary)
+        self.assertIn("Number.isFinite(value)", summary)
+        self.assertIn("Number.isInteger(value) && value >= 0", summary)
+        self.assertIn("typeof message[key] === 'string' && <CopyButton", summary)
+        self.assertNotIn("if (message[key])", summary)
+        self.assertIn("if (!isValidSummary(summary))", summary)
+        self.assertIn("<UnavailableSummary />", summary)
 
     def test_transaction_summary_accessibility_and_responsive_styles(self):
         summary = self.read("frontend/src/components/TransactionSummary.jsx")
