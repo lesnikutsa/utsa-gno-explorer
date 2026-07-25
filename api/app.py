@@ -4,6 +4,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import logging
 import re
+import json
+import math
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import FastAPI, HTTPException, Path, Query
@@ -32,6 +34,7 @@ from api.schemas import (
     NetworkValidators,
     SelectedRpc,
     TransactionDetailResponse,
+    TransactionSummaryResponse,
     ValidatorListItem,
     ValidatorSearchItem,
     ValidatorSearchResponse,
@@ -49,6 +52,16 @@ from api.schemas import (
 LOGGER = logging.getLogger(__name__)
 UNAVAILABLE_DETAIL = "Explorer database is unavailable"
 HEX_HASH_RE = re.compile(r"^(?:0[xX])?([0-9a-fA-F]{64})$")
+SUMMARY_CORE_FIELDS = ("type", "category", "action", "label")
+SUMMARY_FIELD_LIMITS = {"type": 160, "category": 64, "action": 64, "label": 80}
+SUMMARY_MESSAGE_FIELDS = SUMMARY_CORE_FIELDS + (
+    "sender", "recipient", "amount", "send", "package_path", "package_name",
+    "function", "args_count", "file_count", "expires_at", "allow_paths_count",
+    "spend_limit", "spend_period",
+)
+SUMMARY_SCALAR_STRING_LIMIT = 160
+SUMMARY_INTEGER_LIMIT = (1 << 255) - 1
+SUMMARY_MAX_BYTES = 16384
 
 
 @asynccontextmanager
@@ -88,6 +101,91 @@ def _normalize_tx_hash(tx_hash_hex: str | None) -> str | None:
     normalized = tx_hash_hex[2:] if tx_hash_hex.startswith(("0x", "0X")) else tx_hash_hex
     normalized = normalized.upper()
     return normalized if re.fullmatch(r"[0-9A-F]{64}", normalized) else None
+
+
+def _public_summary_string(value, maximum: int) -> bool:
+    return isinstance(value, str) and 0 < len(value) <= maximum and value.isprintable()
+
+
+def _public_summary_scalar(value) -> bool:
+    if value is None or type(value) is bool:
+        return True
+    if type(value) is str:
+        return len(value) <= SUMMARY_SCALAR_STRING_LIMIT and value.isprintable()
+    if type(value) is int:
+        return -SUMMARY_INTEGER_LIMIT <= value <= SUMMARY_INTEGER_LIMIT
+    return type(value) is float and math.isfinite(value)
+
+
+def _public_transaction_summary(value) -> TransactionSummaryResponse | None:
+    if value is None:
+        return None
+    try:
+        if not isinstance(value, dict) or set((
+            "schema_version", "chain_family", "parse_status", "message_count",
+            "messages_truncated", "primary", "messages",
+        )) - value.keys():
+            raise ValueError
+        if type(value["schema_version"]) is not int or value["schema_version"] != 1:
+            raise ValueError
+        chain_family = value["chain_family"]
+        if not _public_summary_string(chain_family, 64) or not re.fullmatch(r"[a-z][a-z0-9_-]*", chain_family):
+            raise ValueError
+        if value["parse_status"] not in ("unparsed", "parsed", "unsupported", "invalid"):
+            raise ValueError
+        count = value["message_count"]
+        if count is not None and (type(count) is not int or not 0 <= count <= 100000):
+            raise ValueError
+        truncated = value["messages_truncated"]
+        if type(truncated) is not bool:
+            raise ValueError
+        primary_value = value["primary"]
+        if not isinstance(primary_value, dict):
+            raise ValueError
+        primary = {}
+        for field in SUMMARY_CORE_FIELDS:
+            item = primary_value.get(field)
+            if not _public_summary_string(item, SUMMARY_FIELD_LIMITS[field]):
+                raise ValueError
+            primary[field] = item
+        stored_messages = value["messages"]
+        if not isinstance(stored_messages, list) or len(stored_messages) > 20:
+            raise ValueError
+        messages = []
+        for stored_message in stored_messages:
+            if not isinstance(stored_message, dict):
+                raise ValueError
+            message = {}
+            for field in SUMMARY_MESSAGE_FIELDS:
+                if field not in stored_message:
+                    continue
+                item = stored_message[field]
+                if field in SUMMARY_CORE_FIELDS:
+                    if not _public_summary_string(item, SUMMARY_FIELD_LIMITS[field]):
+                        raise ValueError
+                elif not _public_summary_scalar(item):
+                    raise ValueError
+                message[field] = item
+            if any(field not in message for field in SUMMARY_CORE_FIELDS):
+                raise ValueError
+            messages.append(message)
+        if count is not None and count < len(messages):
+            raise ValueError
+        if count is not None and count > len(messages) and not truncated:
+            raise ValueError
+        if messages and any(messages[0][field] != primary[field] for field in SUMMARY_CORE_FIELDS):
+            raise ValueError
+        public = {
+            "schema_version": 1, "chain_family": chain_family,
+            "parse_status": value["parse_status"], "message_count": count,
+            "messages_truncated": truncated, "primary": primary, "messages": messages,
+        }
+        if len(json.dumps(public, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) > SUMMARY_MAX_BYTES:
+            raise ValueError
+        return TransactionSummaryResponse.model_validate(public)
+    except (TypeError, ValueError):
+        LOGGER.warning("Stored transaction summary failed public validation")
+        return None
 
 
 def _block_summary_from_row(row: dict) -> BlockSummary:
@@ -148,6 +246,7 @@ def _transaction_detail_from_row(row: dict) -> TransactionDetailResponse:
         raw_base64_length=row["raw_base64_length"],
         decoded_byte_length=row["decoded_byte_length"],
         decode_status=row["decode_status"],
+        summary=_public_transaction_summary(row.get("payload_summary")),
     )
 
 
@@ -638,7 +737,11 @@ def get_blocks(
     )
 
 
-@app.get("/api/blocks/{height}/transactions/{index}", response_model=TransactionDetailResponse)
+@app.get(
+    "/api/blocks/{height}/transactions/{index}",
+    response_model=TransactionDetailResponse,
+    response_model_exclude_unset=True,
+)
 def get_transaction_detail(
     height: int = Path(gt=0),
     index: int = Path(ge=0),

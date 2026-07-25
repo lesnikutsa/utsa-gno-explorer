@@ -5,6 +5,9 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+JsonSafeScalar = str | int | float | bool | None
+
+
 class HealthResponse(BaseModel):
     status: str
     database: str
@@ -122,6 +125,39 @@ class BlockTransactionSummary(BaseModel):
     decode_status: str
 
 
+class TransactionSummaryPrimary(BaseModel):
+    type: str = Field(min_length=1, max_length=160)
+    category: str = Field(min_length=1, max_length=64)
+    action: str = Field(min_length=1, max_length=64)
+    label: str = Field(min_length=1, max_length=80)
+
+
+class TransactionSummaryMessage(TransactionSummaryPrimary):
+    sender: JsonSafeScalar = None
+    recipient: JsonSafeScalar = None
+    amount: JsonSafeScalar = None
+    send: JsonSafeScalar = None
+    package_path: JsonSafeScalar = None
+    package_name: JsonSafeScalar = None
+    function: JsonSafeScalar = None
+    args_count: JsonSafeScalar = None
+    file_count: JsonSafeScalar = None
+    expires_at: JsonSafeScalar = None
+    allow_paths_count: JsonSafeScalar = None
+    spend_limit: JsonSafeScalar = None
+    spend_period: JsonSafeScalar = None
+
+
+class TransactionSummaryResponse(BaseModel):
+    schema_version: Literal[1]
+    chain_family: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_-]*$")
+    parse_status: Literal["unparsed", "parsed", "unsupported", "invalid"]
+    message_count: int | None = Field(default=None, ge=0, le=100000)
+    messages_truncated: bool
+    primary: TransactionSummaryPrimary
+    messages: list[TransactionSummaryMessage] = Field(max_length=20)
+
+
 class TransactionDetailResponse(BaseModel):
     block_height: int = Field(ge=1)
     block_hash: str
@@ -134,6 +170,7 @@ class TransactionDetailResponse(BaseModel):
     raw_base64_length: int = Field(ge=0)
     decoded_byte_length: int | None = Field(default=None, ge=0)
     decode_status: str
+    summary: TransactionSummaryResponse | None = None
 
 
 class BlockDetailResponse(BaseModel):

@@ -1,6 +1,7 @@
 import json
 import unittest
 
+from api.app import _public_transaction_summary
 from indexer.transaction_summary import (
     MAX_LABEL_LENGTH,
     MAX_INTEGER_BITS,
@@ -117,6 +118,42 @@ class TransactionSummaryTests(unittest.TestCase):
         serialized = json.dumps(generic_summary()).lower()
         for network_field in ("package_path", "function_name", "gpub", "type_url", "denom", "valoper", "ibc_channel", "proposal_id"):
             self.assertNotIn(network_field, serialized)
+
+
+PRIMARY = {
+    "type": "gno.bank.MsgSend",
+    "category": "bank",
+    "action": "send",
+    "label": "Send Tokens",
+}
+
+
+class PublicTransactionSummaryTests(unittest.TestCase):
+    def test_sanitizer_builds_a_compact_allowlisted_copy(self):
+        stored = {
+            "schema_version": 1, "chain_family": "gno", "parse_status": "parsed",
+            "message_count": 1, "messages_truncated": False, "primary": dict(PRIMARY),
+            "messages": [{**PRIMARY, "sender": "g1sender", "memo": "secret"}],
+            "internal_error": "secret",
+        }
+        public = _public_transaction_summary(stored)
+        self.assertIsNotNone(public)
+        self.assertEqual(public.model_dump(exclude_unset=True)["messages"], [{**PRIMARY, "sender": "g1sender"}])
+
+    def test_sanitizer_rejects_an_oversized_compact_summary(self):
+        detail_fields = {
+            key: "x" * 160
+            for key in (
+                "sender", "recipient", "amount", "send", "package_path",
+                "package_name", "function", "spend_limit", "spend_period",
+            )
+        }
+        stored = {
+            "schema_version": 1, "chain_family": "gno", "parse_status": "parsed",
+            "message_count": 20, "messages_truncated": False, "primary": dict(PRIMARY),
+            "messages": [{**PRIMARY, **detail_fields} for _ in range(20)],
+        }
+        self.assertIsNone(_public_transaction_summary(stored))
 
 
 if __name__ == "__main__":

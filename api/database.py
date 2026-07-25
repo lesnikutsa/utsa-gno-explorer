@@ -214,6 +214,7 @@ SELECT
     transaction.raw_base64_length,
     transaction.decoded_byte_length,
     transaction.decode_status,
+    transaction.payload_summary,
     block.block_hash_hex,
     block.time_utc,
     block.proposer_address,

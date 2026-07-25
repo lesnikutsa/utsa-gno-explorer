@@ -18,7 +18,7 @@ class TransactionDetailContractTests(unittest.TestCase):
         self.assertIn("transaction.tx_index = %s", normalized)
         self.assertEqual(TRANSACTION_DETAIL_SQL.count("%s"), 2)
         self.assertNotIn("decoded_bytes", normalized)
-        self.assertNotIn("payload_summary", normalized)
+        self.assertIn("transaction.payload_summary", normalized)
 
     def test_fetch_uses_pair_and_returns_one_row(self):
         cursor = MagicMock()

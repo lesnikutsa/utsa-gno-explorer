@@ -10,6 +10,17 @@ from api.config import ApiConfig
 
 SECRET_URL = "postgresql://api_user:super-secret-password@db.internal:5432/explorer"
 BLOCK_TIME = datetime(2026, 7, 16, 15, 0, 2, 313877, tzinfo=timezone.utc)
+PRIMARY = {"type": "gno.bank.MsgSend", "category": "bank", "action": "send", "label": "Send Tokens"}
+
+
+def valid_summary(**overrides):
+    summary = {
+        "schema_version": 1, "chain_family": "gno", "parse_status": "parsed",
+        "message_count": 1, "messages_truncated": False, "primary": dict(PRIMARY),
+        "messages": [{**PRIMARY, "sender": "g1sender", "recipient": "g1recipient", "amount": "5000000ugnot"}],
+    }
+    summary.update(overrides)
+    return summary
 
 
 class FakeDatabase:
@@ -44,7 +55,7 @@ def transaction_row(**overrides):
         "proposer_address": "g1proposer",
         "proposer_moniker": "UTSA",
         "decoded_bytes": b"secret",
-        "payload_summary": {"secret": SECRET_URL},
+        "payload_summary": valid_summary(),
         "inserted_at": BLOCK_TIME,
         "updated_at": BLOCK_TIME,
     }
@@ -82,6 +93,7 @@ class ApiTransactionDetailTests(unittest.TestCase):
             "raw_base64_length": 17,
             "decoded_byte_length": 10,
             "decode_status": "decoded",
+            "summary": valid_summary(),
         })
 
     def test_nullable_fields_are_preserved(self):
@@ -134,6 +146,73 @@ class ApiTransactionDetailTests(unittest.TestCase):
         for field in ("decoded_bytes", "payload_summary", "tx_hash_hex", '"id"', "inserted_at", "updated_at"):
             self.assertNotIn(field, text)
         self.assertNotIn(SECRET_URL, text)
+
+    def test_contract_call_keeps_only_safe_details(self):
+        primary = {"type": "gno.vm.MsgCall", "category": "contract", "action": "call", "label": "Contract Call"}
+        message = {**primary, "sender": "g1sender", "package_path": "gno.land/r/demo", "function": "Render", "args_count": 2, "send": "1ugnot", "args": [SECRET_URL]}
+        fake = FakeDatabase()
+        fake.details[(984383, 0)] = transaction_row(payload_summary=valid_summary(primary=primary, messages=[message]))
+        with self.make_client(fake) as client:
+            summary = client.get("/api/blocks/984383/transactions/0").json()["summary"]
+        self.assertEqual(summary["messages"], [{key: value for key, value in message.items() if key != "args"}])
+
+    def test_supported_fallback_statuses_and_null(self):
+        for status, family in (("unsupported", "gno"), ("unparsed", "unknown"), ("invalid", "unknown")):
+            fake = FakeDatabase()
+            fake.details[(984383, 0)] = transaction_row(payload_summary=valid_summary(parse_status=status, chain_family=family))
+            with self.make_client(fake) as client:
+                summary = client.get("/api/blocks/984383/transactions/0").json()["summary"]
+            self.assertEqual((summary["parse_status"], summary["chain_family"]), (status, family))
+        fake = FakeDatabase()
+        fake.details[(984383, 0)] = transaction_row(payload_summary=None)
+        with self.make_client(fake) as client:
+            self.assertIsNone(client.get("/api/blocks/984383/transactions/0").json()["summary"])
+
+    def test_unknown_and_sensitive_message_fields_are_discarded(self):
+        unsafe = ("memo", "args", "signature", "public_key", "source_code", "internal_error", "stack_trace", "arbitrary")
+        message = {**valid_summary()["messages"][0], **{key: f"secret-{key}" for key in unsafe}}
+        fake = FakeDatabase()
+        fake.details[(984383, 0)] = transaction_row(payload_summary=valid_summary(messages=[message]))
+        with self.make_client(fake) as client:
+            text = client.get("/api/blocks/984383/transactions/0").text
+        for key in unsafe:
+            self.assertNotIn(key, text)
+            self.assertNotIn(f"secret-{key}", text)
+
+    def test_malformed_summaries_become_null_without_payload_logging(self):
+        malformed = [
+            "secret-non-object", {}, valid_summary(schema_version=2),
+            valid_summary(parse_status="secret-status"), valid_summary(chain_family="GNO"),
+            valid_summary(messages_truncated=1), valid_summary(message_count=-1),
+            valid_summary(message_count=100001), valid_summary(messages={}),
+            valid_summary(messages=["secret-message"]),
+            valid_summary(messages=[{"type": "x"}]),
+            valid_summary(messages=[{**PRIMARY, "sender": {"secret": True}}]),
+            valid_summary(messages=[dict(PRIMARY)] * 21, message_count=21),
+            valid_summary(message_count=0),
+            valid_summary(primary={**PRIMARY, "label": "Mismatch"}),
+            valid_summary(messages=[{**PRIMARY, "sender": float("inf")}]),
+            valid_summary(messages=[{**PRIMARY, "sender": "x" * 161}]),
+        ]
+        for stored in malformed:
+            fake = FakeDatabase()
+            fake.details[(984383, 0)] = transaction_row(payload_summary=stored)
+            with self.assertLogs(logging.getLogger("api.app"), level="WARNING") as captured:
+                with self.make_client(fake) as client:
+                    response = client.get("/api/blocks/984383/transactions/0")
+            self.assertEqual(response.status_code, 200)
+            self.assertIsNone(response.json()["summary"])
+            self.assertNotIn("secret", "\n".join(captured.output) + response.text)
+
+    def test_openapi_uses_public_summary_and_scalar_message_fields(self):
+        with self.make_client(FakeDatabase()) as client:
+            schemas = client.get("/openapi.json").json()["components"]["schemas"]
+        detail = schemas["TransactionDetailResponse"]["properties"]
+        self.assertIn("summary", detail)
+        self.assertNotIn("payload_summary", detail)
+        message = schemas["TransactionSummaryMessage"]
+        self.assertNotIn("additionalProperties", message)
+        self.assertNotIn("object", str(message["properties"]["sender"]))
 
 
 if __name__ == "__main__":
