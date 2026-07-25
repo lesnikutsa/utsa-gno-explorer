@@ -94,12 +94,82 @@ class TransactionDetailFrontendContractTests(unittest.TestCase):
         self.assertIn("{ label: 'Invalid Base64', tone: 'error' }", badge)
         self.assertIn("This is not transaction execution status", badge)
 
-    def test_future_fields_are_notice_only(self):
+    def test_execution_fields_are_notice_only(self):
         block = self.read("frontend/src/pages/BlockDetail.jsx")
         detail = self.read("frontend/src/pages/TransactionDetail.jsx")
-        self.assertIn("Transaction type, sender, execution result, gas, fee", detail)
+        self.assertIn("The summary describes transaction contents only. Execution result, gas used, and fee are not indexed yet.", detail)
+        self.assertNotIn("Transaction type, sender, execution result, gas, fee", detail)
         self.assertNotIn("label: 'Type'", block)
         self.assertNotIn("Transaction Hash</span>", detail)
+
+    def test_transaction_summary_placement_and_existing_data_flow(self):
+        detail = self.read("frontend/src/pages/TransactionDetail.jsx")
+        information = detail.index("Transaction Information")
+        summary = detail.index("<TransactionSummary summary={transaction.summary} />")
+        size = detail.index("Transaction Size")
+        raw = detail.index("Raw Transaction")
+        self.assertLess(information, summary)
+        self.assertLess(summary, size)
+        self.assertLess(size, raw)
+
+    def test_transaction_summary_uses_explicit_safe_fields(self):
+        summary = self.read("frontend/src/components/TransactionSummary.jsx")
+        for key in (
+            "sender", "recipient", "amount", "send", "package_path", "package_name",
+            "function", "args_count", "file_count", "expires_at", "allow_paths_count",
+            "spend_limit", "spend_period",
+        ):
+            self.assertIn(f"key: '{key}'", summary)
+        self.assertNotIn("Object.entries", summary)
+        for unsafe in ("dangerouslySetInnerHTML", "JSON.stringify(summary)", "source_code"):
+            self.assertNotIn(unsafe, summary)
+        for gno_type in ("gno.bank.MsgSend", "gno.vm.MsgCall"):
+            self.assertNotIn(gno_type, summary)
+
+    def test_transaction_summary_states_and_status_semantics(self):
+        summary = self.read("frontend/src/components/TransactionSummary.jsx")
+        self.assertIn("parsed: { label: 'Decoded Content', tone: 'neutral' }", summary)
+        self.assertIn("unsupported: { label: 'Unsupported Type', tone: 'warning' }", summary)
+        self.assertIn("unparsed: { label: 'Not Classified', tone: 'neutral' }", summary)
+        self.assertIn("invalid: { label: 'Invalid Payload', tone: 'error' }", summary)
+        self.assertNotIn("parsed: { label: 'Decoded Content', tone: 'success' }", summary)
+        self.assertIn("This is not transaction execution status", summary)
+        self.assertIn("Human-readable summary was not indexed for this transaction.", summary)
+        self.assertIn("This transaction type is recognized, but detailed decoding is not supported yet.", summary)
+        self.assertIn("Transaction content is stored, but no supported message summary is available.", summary)
+        self.assertIn("The transaction payload could not be decoded.", summary)
+        self.assertIn("isValidSummary(summary)", summary)
+
+    def test_transaction_summary_strictly_validates_contract_shapes(self):
+        summary = self.read("frontend/src/components/TransactionSummary.jsx")
+        self.assertIn("const isPlainObject", summary)
+        self.assertIn("const isNonEmptyString", summary)
+        self.assertIn("CORE_FIELDS.every((key) => isNonEmptyString(value[key]))", summary)
+        self.assertIn("summary.messages.every((message) => hasValidCore(message) && hasValidDetails(message))", summary)
+        self.assertIn("summary.messages.length > 20", summary)
+        self.assertIn("summary.message_count !== null && !isNonNegativeInteger(summary.message_count)", summary)
+        self.assertIn("typeof summary.messages_truncated !== 'boolean'", summary)
+        self.assertIn("summary.message_count < summary.messages.length", summary)
+        self.assertIn("summary.message_count > summary.messages.length", summary)
+        self.assertIn("summary.messages[0][key] === summary.primary[key]", summary)
+        self.assertIn("Number.isFinite(value)", summary)
+        self.assertIn("Number.isInteger(value) && value >= 0", summary)
+        self.assertIn("typeof message[key] === 'string' && <CopyButton", summary)
+        self.assertNotIn("if (message[key])", summary)
+        self.assertIn("if (!isValidSummary(summary))", summary)
+        self.assertIn("<UnavailableSummary />", summary)
+
+    def test_transaction_summary_accessibility_and_responsive_styles(self):
+        summary = self.read("frontend/src/components/TransactionSummary.jsx")
+        styles = self.read("frontend/src/styles/app.css")
+        self.assertIn('aria-labelledby="transaction-summary-title"', summary)
+        self.assertIn("copyLabel: 'sender address'", summary)
+        self.assertIn("copyLabel: 'recipient address'", summary)
+        self.assertIn("<h3 id=", summary)
+        self.assertIn(".transaction-summary { min-width: 0; }", styles)
+        self.assertIn("overflow-wrap: anywhere", styles)
+        mobile = styles[styles.index("@media (max-width: 760px)"):]
+        self.assertIn(".transaction-summary__overview, .transaction-summary__details { grid-template-columns: 1fr; }", mobile)
 
     def test_transaction_spacing_remains_scoped(self):
         styles = self.read("frontend/src/styles/app.css")

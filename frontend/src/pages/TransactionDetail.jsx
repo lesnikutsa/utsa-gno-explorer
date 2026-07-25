@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { CopyButton } from '../components/CopyButton'
 import { ProposerIdentity } from '../components/ProposerIdentity'
 import { TransactionDecodeBadge } from '../components/TransactionDecodeBadge'
+import { TransactionSummary } from '../components/TransactionSummary'
 import { relativeTime } from '../utils/time'
 
 const isValidHeight = (height) => /^[1-9]\d*$/.test(height)
@@ -66,6 +67,8 @@ export function TransactionDetail({ transactionDetail, routeHeight }) {
         </div>
       </section>
 
+      <TransactionSummary summary={transaction.summary} />
+
       <section className="panel transaction-detail__section" aria-labelledby="transaction-size-title">
         <div className="panel__heading"><h2 id="transaction-size-title">Transaction Size</h2></div>
         <div className="transaction-detail__size-grid">
@@ -79,7 +82,7 @@ export function TransactionDetail({ transactionDetail, routeHeight }) {
         <pre className="transaction-detail__raw-value mono">{transaction.raw_base64}</pre>
       </section>
 
-      <p className="transaction-detail__notice">Transaction type, sender, execution result, gas, fee, and human-readable message details are not indexed by this Explorer yet.</p>
+      <p className="transaction-detail__notice">The summary describes transaction contents only. Execution result, gas used, and fee are not indexed yet.</p>
     </article>
   )
 }

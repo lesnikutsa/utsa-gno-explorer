@@ -239,6 +239,26 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .transaction-detail__raw .panel__heading { align-items: center; }
 .transaction-detail__raw-value { max-width: 100%; margin: 0; padding: 13px; overflow: visible; color: var(--color-text); font-size: 11px; line-height: 1.65; overflow-wrap: anywhere; user-select: text; white-space: pre-wrap; word-break: break-word; }
 .transaction-detail__notice { margin: 0; padding: 10px 12px; border: 1px solid var(--color-border-soft); border-radius: 5px; background: rgba(9,24,39,.45); color: var(--color-text-secondary); font-size: 10px; line-height: 1.5; }
+.transaction-summary { min-width: 0; }
+.transaction-summary__heading small { display: block; margin-top: 3px; color: var(--color-text-secondary); font-size: 9px; }
+.transaction-summary__overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin: 0; }
+.transaction-summary__overview-field { min-width: 0; padding: 10px 13px; border-right: 1px solid var(--color-border-soft); }
+.transaction-summary__overview-field:last-child { border-right: 0; }
+.transaction-summary__overview-field dt, .transaction-summary__detail dt { margin-bottom: 5px; color: var(--color-text-secondary); font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.transaction-summary__overview-field dd, .transaction-summary__detail dd { min-width: 0; margin: 0; color: var(--color-text); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.transaction-summary__details { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin: 0; border-top: 1px solid var(--color-border-soft); }
+.transaction-summary__detail { min-width: 0; padding: 10px 13px; border-right: 1px solid var(--color-border-soft); border-bottom: 1px solid var(--color-border-soft); }
+.transaction-summary__detail dd { display: flex; align-items: flex-start; gap: 8px; }
+.transaction-summary__detail dd span { min-width: 0; flex: 1 1 auto; overflow-wrap: anywhere; }
+.transaction-summary__messages { padding: 10px; border-top: 1px solid var(--color-border-soft); }
+.transaction-summary__message { min-width: 0; border: 1px solid var(--color-border-soft); border-radius: 5px; overflow: hidden; }
+.transaction-summary__message + .transaction-summary__message { margin-top: 8px; }
+.transaction-summary__message h3 { margin: 0; padding: 8px 10px; border-bottom: 1px solid var(--color-border-soft); color: var(--color-text-bright); font-size: 11px; }
+.transaction-summary__message-core { display: flex; min-width: 0; justify-content: space-between; gap: 12px; padding: 8px 10px; color: var(--color-text); font-size: 11px; }
+.transaction-summary__message-core > * { min-width: 0; overflow-wrap: anywhere; }
+.transaction-summary__message-core span { color: var(--color-text-secondary); }
+.transaction-summary__notice { padding: 9px 13px; border-top: 1px solid var(--color-border-soft); color: var(--color-text-secondary); font-size: 10px; line-height: 1.5; }
+.transaction-summary__notice--error { color: var(--color-error); }
 .transaction-detail__state { padding: 18px; }
 .transaction-detail__state-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 14px; }
 .transaction-detail__state .transaction-detail__back { margin: 0; }
@@ -378,6 +398,11 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
   .block-detail__grid .block-detail__field:nth-child(odd) { border-right: 0; }
   .block-detail__grid .block-detail__field + .block-detail__field { border-top: 1px solid var(--color-border-soft); }
   .transaction-detail__grid, .transaction-detail__size-grid { grid-template-columns: 1fr; }
+  .transaction-summary__overview, .transaction-summary__details { grid-template-columns: 1fr; }
+  .transaction-summary__overview-field { border-right: 0; border-bottom: 1px solid var(--color-border-soft); }
+  .transaction-summary__overview-field:last-child { border-bottom: 0; }
+  .transaction-summary__detail { border-right: 0; }
+  .transaction-summary__message-core { flex-direction: column; gap: 3px; }
   .transaction-detail__grid .transaction-detail__field:nth-child(odd), .transaction-detail__size-grid .transaction-detail__field:first-child { border-right: 0; }
   .transaction-detail__grid .transaction-detail__field + .transaction-detail__field, .transaction-detail__size-grid .transaction-detail__field + .transaction-detail__field { border-top: 1px solid var(--color-border-soft); }
   .validator-detail__grid { grid-template-columns: 1fr; }
