@@ -16,6 +16,15 @@ MAX_REQUEST_BYTES = 8 * 1024 * 1024
 MAX_DECODED_BYTES = 4 * 1024 * 1024
 MAX_RESPONSE_BYTES = 32 * 1024
 SAFE_ERROR_CODES = frozenset({"invalid_base64", "input_too_large", "amino_decode_failed", "invalid_request", "missing_tx_base64"})
+SAFE_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+
+def _child_environment() -> dict[str, str]:
+    """Return the intentionally small, non-secret helper environment."""
+    path = os.environ.get("PATH", SAFE_PATH)
+    if not path or len(path) > 4096 or "\x00" in path:
+        path = SAFE_PATH
+    return {"PATH": path, "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"}
 
 
 class TransactionDecoder(Protocol):
@@ -98,6 +107,7 @@ class JsonlTransactionDecoder:
             process = self._popen_factory(
                 list(self.command), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL, bufsize=0, close_fds=True, shell=False,
+                env=_child_environment(),
             )
         except Exception as exc:
             raise _DecoderFailure("start_failed", "unavailable") from exc
@@ -199,30 +209,37 @@ class JsonlTransactionDecoder:
         except Exception:
             pass
         try:
-            if process.poll() is None:
-                process.terminate()
-                try:
-                    process.wait(timeout=0.25)
-                except Exception:
-                    try:
-                        process.kill()
-                    except Exception:
-                        pass
-                    try:
-                        process.wait(timeout=0.25)
-                    except Exception:
-                        pass
-            else:
-                process.wait(timeout=0.25)
+            alive = process.poll() is None
         except Exception:
-            pass
-        finally:
-            for pipe in (process.stdin, process.stdout, process.stderr):
-                if pipe is not None:
-                    try:
-                        pipe.close()
-                    except Exception:
-                        pass
+            alive = True
+        if alive:
+            try:
+                process.terminate()
+            except Exception:
+                pass
+            try:
+                process.wait(timeout=0.25)
+            except Exception:
+                pass
+        try:
+            alive = process.poll() is None
+        except Exception:
+            alive = True
+        if alive:
+            try:
+                process.kill()
+            except Exception:
+                pass
+            try:
+                process.wait(timeout=0.25)
+            except Exception:
+                pass
+        for pipe in (process.stdin, process.stdout, process.stderr):
+            if pipe is not None:
+                try:
+                    pipe.close()
+                except Exception:
+                    pass
 
 
 def build_transaction_decoder(config) -> TransactionDecoder | None:

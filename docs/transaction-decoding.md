@@ -80,6 +80,10 @@ disabled. Historical backfill and API/frontend exposure remain deferred.
 
 The Python indexer can now consume the standalone helper through a chain-neutral JSONL subprocess client. The feature remains disabled by default. When enabled, each indexer command lazily starts one long-lived child and reuses it for every transaction. Both writing a request and reading its response share the configured non-blocking deadline. A timeout or protocol/process failure terminates the child and prevents another start until the restart cooldown expires; transaction-specific input and Amino errors leave the child healthy.
 
+The child receives only a sanitized `PATH`, `LANG`, and `LC_ALL`; database and
+RPC credentials and other indexer environment variables are not inherited.
+Child stderr is discarded and never enters indexer logs.
+
 Configuration defaults are `TRANSACTION_DECODER_ENABLED=false`, `TRANSACTION_DECODER_PATH=/opt/utsa-gno-explorer/bin/gno-tx-decoder`, `TRANSACTION_DECODER_CHAIN_FAMILY=gno`, `TRANSACTION_DECODER_TIMEOUT_SECONDS=2`, and `TRANSACTION_DECODER_RESTART_BACKOFF_SECONDS=30`.
 
 Any decoder failure falls back to the bounded generic `unparsed` summary and never blocks consensus indexing. Adapter output is normalized in Python and again at the database boundary. API and frontend exposure and historical backfill remain deferred. A future Cosmos adapter can use the same generic client by configuring another executable and expected chain family.

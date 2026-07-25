@@ -40,18 +40,49 @@ class DecoderTests(unittest.TestCase):
 
     def test_reuses_process_and_orders_ids(self):
         count = Path(tempfile.mktemp())
+        ids = Path(tempfile.mktemp())
         path = self.helper(f'''\
             import json
             from pathlib import Path
             p=Path({str(count)!r}); p.write_text(str(int(p.read_text())+1) if p.exists() else "1")
             for line in __import__("sys").stdin:
                 request=json.loads(line)
+                q=Path({str(ids)!r}); q.write_text(q.read_text()+request["id"]+"\\n" if q.exists() else request["id"]+"\\n")
                 print(json.dumps({{"protocol_version":1,"id":request["id"],"ok":True,"summary":{SUMMARY!r}}}), flush=True)
         ''')
         decoder = self.decoder(path)
+        self.assertIsNone(decoder.decode(None, 1))
         self.assertEqual(decoder.decode(base64.b64encode(b"a").decode(), 1)["parse_status"], "parsed")
         self.assertEqual(decoder.decode(base64.b64encode(b"b").decode(), 1)["parse_status"], "parsed")
         self.assertEqual(count.read_text(), "1")
+        self.assertEqual(ids.read_text().splitlines(), ["tx-1", "tx-2"])
+
+    def test_unsupported_summary_is_successful(self):
+        unsupported = {**SUMMARY, "parse_status": "unsupported"}
+        path = self.helper(f'''\
+            import json,sys
+            for line in sys.stdin:
+                request=json.loads(line); print(json.dumps({{"protocol_version":1,"id":request["id"],"ok":True,"summary":{unsupported!r}}}),flush=True)
+        ''')
+        decoder = self.decoder(path)
+        self.assertEqual(decoder.decode("YQ==", 1)["parse_status"], "unsupported")
+        self.assertEqual(decoder._retry_at, 0)
+
+    def test_child_environment_excludes_secrets_and_preserves_env_shebang(self):
+        observed = Path(tempfile.mktemp())
+        path = self.helper(f'''\
+            import json,os,sys
+            from pathlib import Path
+            Path({str(observed)!r}).write_text(json.dumps(dict(os.environ),sort_keys=True))
+            for line in sys.stdin:
+                request=json.loads(line); print(json.dumps({{"protocol_version":1,"id":request["id"],"ok":True,"summary":{SUMMARY!r}}}),flush=True)
+        ''')
+        with patch.dict(os.environ, {"DATABASE_URL": "SECRET-DB", "GNO_RPC_URLS": "SECRET-RPC", "API_TOKEN": "SECRET-TOKEN"}):
+            decoder = self.decoder(path)
+            self.assertIsNotNone(decoder.decode("YQ==", 1))
+        environment = json.loads(observed.read_text())
+        self.assertEqual(set(environment), {"PATH", "LANG", "LC_ALL"})
+        self.assertNotIn("SECRET", json.dumps(environment))
 
     def test_safe_error_keeps_process(self):
         path = self.helper(f'''\
@@ -86,6 +117,45 @@ class DecoderTests(unittest.TestCase):
         self.assertIsNone(decoder.decode("YQ==", 1))
         missing = self.decoder("/definitely/missing")
         self.assertIsNone(missing.decode("YQ==", 1))
+
+    def test_protocol_failure_matrix_enters_cooldown(self):
+        cases = {
+            "internal_error": '{"protocol_version":1,"id":"tx-1","ok":false,"error_code":"internal_error"}',
+            "invalid_json_code": '{"protocol_version":1,"id":"tx-1","ok":false,"error_code":"invalid_json"}',
+            "malformed_json": 'not-json',
+            "not_object": '[]',
+            "wrong_version": '{"protocol_version":2,"id":"tx-1","ok":true}',
+            "wrong_id": '{"protocol_version":1,"id":"other","ok":true}',
+            "missing_ok": '{"protocol_version":1,"id":"tx-1"}',
+            "non_boolean_ok": '{"protocol_version":1,"id":"tx-1","ok":1}',
+            "missing_summary": '{"protocol_version":1,"id":"tx-1","ok":true}',
+            "unexpected_code": '{"protocol_version":1,"id":"tx-1","ok":false,"error_code":"other"}',
+            "wrong_family": json.dumps({"protocol_version": 1, "id": "tx-1", "ok": True, "summary": {**SUMMARY, "chain_family": "cosmos"}}),
+            "malformed_summary": '{"protocol_version":1,"id":"tx-1","ok":true,"summary":{"bad":true}}',
+        }
+        for name, response in cases.items():
+            with self.subTest(name=name):
+                count = Path(tempfile.mktemp())
+                path = self.helper(f'''\
+                    from pathlib import Path
+                    p=Path({str(count)!r}); p.write_text(str(int(p.read_text())+1) if p.exists() else "1")
+                    for line in __import__("sys").stdin: print({response!r},flush=True)
+                ''')
+                decoder = self.decoder(path)
+                self.assertIsNone(decoder.decode("YQ==", 1))
+                self.assertIsNone(decoder._process)
+                self.assertGreater(decoder._retry_at, 0)
+                self.assertIsNone(decoder.decode("YQ==", 1))
+                self.assertEqual(count.read_text(), "1")
+
+    def test_oversized_response_and_eof_enter_cooldown(self):
+        for body in ('for line in __import__("sys").stdin: print("x"*32769,flush=True)',
+                     'for line in __import__("sys").stdin: break'):
+            with self.subTest(body=body):
+                decoder = self.decoder(self.helper(body))
+                self.assertIsNone(decoder.decode("YQ==", 1))
+                self.assertIsNone(decoder._process)
+                self.assertGreater(decoder._retry_at, 0)
 
     def test_input_bounds_do_not_start_process(self):
         decoder = self.decoder("/definitely/missing")
@@ -198,6 +268,27 @@ class DecoderTests(unittest.TestCase):
         self.assertTrue(process.stdin.closed)
         self.assertTrue(process.stdout.closed)
 
+    def test_close_kills_when_terminate_raises(self):
+        class Pipe:
+            closed = False
+            def close(self): self.closed = True
+        class Process:
+            def __init__(self):
+                self.stdin, self.stdout, self.stderr = Pipe(), Pipe(), Pipe()
+                self.killed = False
+            def poll(self): return 0 if self.killed else None
+            def terminate(self): raise OSError("terminate failed")
+            def wait(self, timeout):
+                if not self.killed: raise TimeoutError
+                return 0
+            def kill(self): self.killed = True
+        decoder = self.decoder("/unused")
+        process = Process()
+        decoder._process = process
+        decoder.close(); decoder.close()
+        self.assertTrue(process.killed)
+        self.assertTrue(all(pipe.closed for pipe in (process.stdin, process.stdout, process.stderr)))
+
     def test_stderr_and_payload_are_not_logged(self):
         sentinel = "CHILD-SECRET-SENTINEL"
         payload = "PRIVATE-BASE64"
@@ -221,7 +312,18 @@ class DecoderConfigTests(unittest.TestCase):
             return load_transaction_decoder_config()
 
     def test_defaults(self):
-        self.assertFalse(self.load().enabled)
+        config = self.load()
+        self.assertEqual(config, TransactionDecoderConfig(False, "/opt/utsa-gno-explorer/bin/gno-tx-decoder", "gno", 2, 30))
+        expected = {
+            "TRANSACTION_DECODER_ENABLED": "false",
+            "TRANSACTION_DECODER_PATH": "/opt/utsa-gno-explorer/bin/gno-tx-decoder",
+            "TRANSACTION_DECODER_CHAIN_FAMILY": "gno",
+            "TRANSACTION_DECODER_TIMEOUT_SECONDS": "2",
+            "TRANSACTION_DECODER_RESTART_BACKOFF_SECONDS": "30",
+        }
+        for filename in (".env.example", "deploy/systemd/indexer.env.example"):
+            values = dict(line.split("=", 1) for line in Path(filename).read_text().splitlines() if line.startswith("TRANSACTION_DECODER_"))
+            self.assertEqual(values, expected)
 
     def test_enabled(self):
         config = self.load(TRANSACTION_DECODER_ENABLED="YES", TRANSACTION_DECODER_PATH="/decoder")
