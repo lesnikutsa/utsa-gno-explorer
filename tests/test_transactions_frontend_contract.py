@@ -18,6 +18,15 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         self.assertIn("<TransactionsPage />", app)
         self.assertIn("transactionDetailMatch", app)
 
+    def test_sidebar_assigns_transaction_detail_to_transactions(self):
+        sidebar = self.read("frontend/src/components/Sidebar.jsx")
+        self.assertIn("/^\\/blocks\\/[^/]+\\/transactions\\/[^/]+\\/?$/.test(pathname)", sidebar)
+        self.assertIn("href === '/transactions' && isTransactionDetail", sidebar)
+        self.assertIn("href === '/blocks' && isTransactionDetail", sidebar)
+        self.assertIn("return pathname === href || pathname.startsWith(`${href}/`)", sidebar)
+        self.assertEqual(sidebar.count("aria-current="), 1)
+        self.assertIn("aria-current={active ? 'page' : undefined}", sidebar)
+
     def test_api_uses_limit_and_complete_composite_cursor(self):
         client = self.read("frontend/src/services/api.js")
         hook = self.read("frontend/src/hooks/useTransactionsPage.js")

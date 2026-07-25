@@ -11,9 +11,12 @@ const items = [
 
 export function Sidebar({ open, onClose, chainId }) {
   const pathname = window.location.pathname
+  const isTransactionDetail = /^\/blocks\/[^/]+\/transactions\/[^/]+\/?$/.test(pathname)
   const chainLabel = chainId ? `${networkProfile.projectName} · ${chainId}` : `${networkProfile.projectName} network`
   const isActive = (href) => {
     if (href === '/') return pathname === '/'
+    if (href === '/transactions' && isTransactionDetail) return true
+    if (href === '/blocks' && isTransactionDetail) return false
     return pathname === href || pathname.startsWith(`${href}/`)
   }
 
