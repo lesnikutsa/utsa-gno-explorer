@@ -11,6 +11,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from api.app import _transaction_detail_from_row
 from api.config import ApiConfig
 from api.database import (
     ACTIVE_VALIDATORS_SQL,
@@ -249,6 +250,46 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             cursor.execute("UPDATE transactions SET payload_summary = NULL WHERE block_height = 100 AND tx_index = 0")
             cursor.execute("SELECT payload_summary FROM transactions WHERE block_height = 100 AND tx_index = 0")
             self.assertEqual(cursor.fetchone(), (None,))
+
+    def test_transaction_detail_public_summary(self):
+        name = f"utsa_api_tx_summary_{os.getpid()}"
+        self.create_database(name)
+        database_url = self.database_url_for(name)
+        self.assertEqual(self.run_init(database_url).returncode, 0)
+        primary = {"type": "gno.bank.MsgSend", "category": "bank", "action": "send", "label": "Send Tokens"}
+        summary = {
+            "schema_version": 1, "chain_family": "gno", "parse_status": "parsed",
+            "message_count": 1, "messages_truncated": False, "primary": primary,
+            "messages": [{**primary, "sender": "g1sender", "recipient": "g1recipient", "amount": "5000000ugnot"}],
+        }
+        raw_base64 = "YWJj"
+        tx_hash = hashlib.sha256(b"abc").hexdigest().upper()
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("INSERT INTO blocks (height, block_hash_base64, block_hash_hex, time_utc, tx_count) VALUES (100, 'ZA==', '64', now(), 1)")
+            cursor.execute(
+                "INSERT INTO transactions (block_height, tx_index, raw_base64, raw_base64_length, decoded_bytes, decoded_byte_length, decode_status, tx_hash_hex, payload_summary) VALUES (100, 0, %s, 4, %s, 3, 'decoded', %s, %s)",
+                (raw_base64, b"abc", tx_hash, psycopg.types.json.Jsonb(summary)),
+            )
+        database = ApiDatabase()
+        database.open(ApiConfig(database_url=database_url))
+        self.addCleanup(database.close)
+        row = database.fetch_transaction_detail(100, 0)
+        self.assertEqual(row["payload_summary"], summary)
+        self.assertNotIn("decoded_bytes", row)
+        public = _transaction_detail_from_row(row).model_dump()
+        self.assertEqual(public["raw_base64"], raw_base64)
+        self.assertEqual(public["tx_hash"], tx_hash)
+        self.assertNotIn("payload_summary", public)
+        self.assertEqual(public["summary"]["schema_version"], 1)
+        self.assertEqual(public["summary"]["chain_family"], "gno")
+        self.assertEqual(public["summary"]["parse_status"], "parsed")
+        self.assertEqual(
+            {key: public["summary"]["messages"][0][key] for key in ("sender", "recipient", "amount")},
+            {"sender": "g1sender", "recipient": "g1recipient", "amount": "5000000ugnot"},
+        )
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("UPDATE transactions SET payload_summary = NULL WHERE block_height = 100 AND tx_index = 0")
+        self.assertIsNone(_transaction_detail_from_row(database.fetch_transaction_detail(100, 0)).summary)
 
     def prepare_legacy_database(self, name):
         self.create_database(name)
