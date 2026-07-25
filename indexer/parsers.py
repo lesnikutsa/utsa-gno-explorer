@@ -8,7 +8,8 @@ import hashlib
 from dataclasses import dataclass
 from typing import Any
 
-from .transaction_summary import generic_summary
+from .transaction_summary import generic_summary, normalize_summary
+from .transaction_decoder import TransactionDecoder
 
 from scripts.inspect_rpc import RpcError, decode_base64, parse_block as legacy_parse_block, parse_commit, parse_validators, signer_address, to_int
 
@@ -35,7 +36,7 @@ class ParsedHeight:
     raw_block: dict[str, Any]
 
 
-def parse_tx(index: int, tx: Any) -> dict[str, Any]:
+def parse_tx(index: int, tx: Any, transaction_decoder: TransactionDecoder | None = None) -> dict[str, Any]:
     raw_base64 = tx if isinstance(tx, str) else json.dumps(tx, sort_keys=True)
     try:
         decoded = base64.b64decode(raw_base64, validate=True)
@@ -50,6 +51,16 @@ def parse_tx(index: int, tx: Any) -> dict[str, Any]:
             "tx_hash_hex": None,
             "payload_summary": generic_summary("invalid"),
         }
+    payload_summary = generic_summary()
+    if transaction_decoder is not None:
+        try:
+            candidate = transaction_decoder.decode(raw_base64, len(decoded))
+            if candidate is not None:
+                normalized = normalize_summary(candidate)
+                if normalized["parse_status"] in {"parsed", "unsupported"}:
+                    payload_summary = normalized
+        except Exception:
+            pass
     return {
         "index": index,
         "raw_base64": raw_base64,
@@ -58,14 +69,14 @@ def parse_tx(index: int, tx: Any) -> dict[str, Any]:
         "decoded_byte_length": len(decoded),
         "decode_status": "decoded",
         "tx_hash_hex": hashlib.sha256(decoded).hexdigest().upper(),
-        "payload_summary": generic_summary(),
+        "payload_summary": payload_summary,
     }
 
 
-def parse_block(payload: dict[str, Any]) -> dict[str, Any]:
+def parse_block(payload: dict[str, Any], transaction_decoder: TransactionDecoder | None = None) -> dict[str, Any]:
     parsed = legacy_parse_block(payload)
     txs = (((payload.get("result") or {}).get("block") or {}).get("data") or {}).get("txs") or []
-    parsed["transactions"] = [parse_tx(index, tx) for index, tx in enumerate(txs)]
+    parsed["transactions"] = [parse_tx(index, tx, transaction_decoder) for index, tx in enumerate(txs)]
     return parsed
 
 
@@ -244,8 +255,8 @@ def _signature_row(
     }
 
 
-def parse_height(height: int, block_payload: dict[str, Any], commit_payload: dict[str, Any], validators_payload: dict[str, Any]) -> ParsedHeight:
-    block = parse_block(block_payload)
+def parse_height(height: int, block_payload: dict[str, Any], commit_payload: dict[str, Any], validators_payload: dict[str, Any], transaction_decoder: TransactionDecoder | None = None) -> ParsedHeight:
+    block = parse_block(block_payload, transaction_decoder)
     commit = parse_commit(commit_payload)
     commit["raw"] = commit_payload
     validators_data = parse_validators(validators_payload)

@@ -8,6 +8,7 @@ from scripts.inspect_rpc import RpcError
 from .config import DEFAULT_MAX_HEIGHTS
 from .parsers import parse_height
 from .rpc import RpcProbeResult, fetch_height
+from .transaction_decoder import TransactionDecoder
 
 
 @dataclass(frozen=True)
@@ -62,12 +63,13 @@ def plan_range(
 
 
 class IndexerService:
-    def __init__(self, rpc_client, db, chain_id: str, finalized_tip: int, probes: list[RpcProbeResult] | None = None) -> None:
+    def __init__(self, rpc_client, db, chain_id: str, finalized_tip: int, probes: list[RpcProbeResult] | None = None, transaction_decoder: TransactionDecoder | None = None) -> None:
         self.rpc_client = rpc_client
         self.db = db
         self.chain_id = chain_id
         self.finalized_tip = finalized_tip
         self.probes = probes or []
+        self.transaction_decoder = transaction_decoder
 
     def run(self, plan: RangePlan, fail_after_parse_height: int | None = None) -> RunSummary:
         if not plan.dry_run and self.probes:
@@ -79,7 +81,7 @@ class IndexerService:
             if height != expected_height:
                 raise RpcError("non-sequential height plan")
             block_payload, commit_payload, validators_payload = fetch_height(self.rpc_client, height)
-            parsed = parse_height(height, block_payload, commit_payload, validators_payload)
+            parsed = parse_height(height, block_payload, commit_payload, validators_payload, self.transaction_decoder)
             if fail_after_parse_height == height:
                 raise RuntimeError("injected failure after parse")
             if not plan.dry_run:
