@@ -1,5 +1,5 @@
 import { DataTable } from '../components/DataTable'
-import { shortAddress } from '../utils/address'
+import { CopyButton } from '../components/CopyButton'
 import { relativeTime } from '../utils/time'
 
 const transactionHref = (transaction) => `/blocks/${encodeURIComponent(transaction.block_height)}/transactions/${encodeURIComponent(transaction.index)}`
@@ -9,25 +9,28 @@ const columns = [
     key: 'tx_hash',
     label: 'TX Hash',
     render: (transaction) => (
-      <a
-        className="transactions-table__hash table-link mono"
-        href={transactionHref(transaction)}
-        title={transaction.tx_hash || undefined}
-        aria-label={`Open transaction ${transaction.tx_hash || 'with unavailable hash'} in block #${transaction.block_height}`}
-      >
-        {transaction.tx_hash ? shortAddress(transaction.tx_hash) : 'Unavailable'}
-      </a>
+      <div className="transactions-table__hash-cell">
+        <a
+          className="transactions-table__hash table-link mono"
+          href={transactionHref(transaction)}
+          title={transaction.tx_hash || undefined}
+          aria-label={`Open transaction ${transaction.tx_hash || 'with unavailable hash'} in block #${transaction.block_height}`}
+        >
+          {transaction.tx_hash || 'Unavailable'}
+        </a>
+        {transaction.tx_hash && <CopyButton value={transaction.tx_hash} label="transaction hash" />}
+      </div>
     ),
-  },
-  {
-    key: 'block_height',
-    label: 'Height',
-    render: (transaction) => <a className="table-link" href={`/blocks/${encodeURIComponent(transaction.block_height)}`} aria-label={`Open block #${transaction.block_height}`}><span className="blocks-table__height accent-value mono">#{transaction.block_height.toLocaleString()}</span></a>,
   },
   {
     key: 'block_time',
     label: 'Time',
     render: (transaction) => <time dateTime={transaction.block_time} title={transaction.block_time}>{relativeTime(transaction.block_time)}</time>,
+  },
+  {
+    key: 'block_height',
+    label: 'Block',
+    render: (transaction) => <a className="table-link" href={`/blocks/${encodeURIComponent(transaction.block_height)}`} aria-label={`Open block #${transaction.block_height}`}><span className="blocks-table__height accent-value mono">#{transaction.block_height.toLocaleString()}</span></a>,
   },
   {
     key: 'operation',

@@ -69,12 +69,19 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         self.assertIn("loadPage(request.cursor, request.targetIndex, request.history)", hook)
         self.assertIn("failedRequest.current = null", hook)
 
-    def test_compact_four_column_table_and_links(self):
+    def test_aligned_four_column_table_and_links(self):
         page = self.read("frontend/src/pages/Transactions.jsx")
-        for label in ("label: 'TX Hash'", "label: 'Height'", "label: 'Time'", "label: 'Type'"):
+        labels = ("label: 'TX Hash'", "label: 'Time'", "label: 'Block'", "label: 'Type'")
+        for label in labels:
             self.assertIn(label, page)
+        self.assertEqual([page.index(label) for label in labels], sorted(page.index(label) for label in labels))
+        self.assertNotIn("label: 'Height'", page)
         self.assertEqual(page.count("label: '"), 4)
-        self.assertIn("shortAddress(transaction.tx_hash)", page)
+        self.assertNotIn("shortAddress", page)
+        self.assertIn("{transaction.tx_hash || 'Unavailable'}", page)
+        self.assertIn("<CopyButton value={transaction.tx_hash} label=\"transaction hash\" />", page)
+        self.assertIn("{transaction.tx_hash && <CopyButton", page)
+        self.assertLess(page.index('</a>'), page.index('<CopyButton'))
         self.assertIn("/transactions/${encodeURIComponent(transaction.index)}", page)
         self.assertIn("/blocks/${encodeURIComponent(transaction.block_height)}", page)
         self.assertIn("{transaction.operation}", page)
@@ -93,9 +100,42 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         self.assertIn("disabled={loading || !canLoadOlder}", page)
         self.assertIn("pageIndex === 0 ? 'Latest' : `Page ${pageIndex + 1}`", page)
         self.assertIn("table-layout: fixed", styles)
-        self.assertIn("text-overflow: ellipsis", styles)
+        self.assertIn("min-width: 1050px", styles)
+        transactions_rules = styles[styles.index(".transactions-page {"):styles.index(".blocks-table__height")]
+        column_widths = (50, 14, 12, 24)
+        for column, width in enumerate(column_widths, start=1):
+            self.assertIn(f"th:nth-child({column}) {{ width: {width}%; }}", transactions_rules)
+        self.assertEqual(sum(column_widths), 100)
+        for old_width in ("width: 1%", "width: 145px", "width: 125px"):
+            self.assertNotIn(old_width, transactions_rules)
+        self.assertNotIn(".transactions-page__table td {", transactions_rules)
+        self.assertIn(".transactions-table__hash-cell { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; vertical-align: middle; }", styles)
+        self.assertIn(".transactions-table__hash { flex: 0 0 auto; color: var(--color-text-bright); font-weight: 600; white-space: nowrap; }", styles)
+        self.assertNotIn("flex: 1 1 auto", transactions_rules)
+        self.assertIn(".transactions-table__hash:hover { color: var(--color-accent); }", styles)
+        self.assertIn(".transactions-table__operation { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }", styles)
+        hash_rule = styles[styles.index(".transactions-table__hash {"):styles.index(".transactions-table__hash:hover")]
+        self.assertNotIn("text-overflow", hash_rule)
         mobile = styles[styles.index("@media (max-width: 760px)"):]
-        self.assertIn(".transactions-page__table .data-table { min-width: 0; }", mobile)
+        self.assertIn(".transactions-page__table .data-table { min-width: 1050px; }", mobile)
+
+    def test_blocks_local_search_removed_without_changing_pagination_or_polling(self):
+        page = self.read("frontend/src/pages/Blocks.jsx")
+        hook = self.read("frontend/src/hooks/useBlocksPage.js")
+        styles = self.read("frontend/src/styles/app.css")
+        for fragment in ('className="blocks-search"', 'type="search"', "submitSearch", "resetSearch", "searchInput", "searchMode", "searchNotFound"):
+            self.assertNotIn(fragment, page)
+        for fragment in ("getBlock,", "HEX_HASH_PATTERN", "HEIGHT_PATTERN", "searchInput", "searchQuery", "searchNotFound", "submitSearch", "resetSearch"):
+            self.assertNotIn(fragment, hook)
+        self.assertIn("const PAGE_SIZE = 25", hook)
+        self.assertIn("export const BLOCKS_POLL_MS = 5_000", hook)
+        self.assertIn("pageIndexRef.current !== 0", hook)
+        self.assertIn("pageIndexRef.current === 0", hook)
+        self.assertIn("Blocks are currently unavailable.", page)
+        self.assertIn("No blocks have been indexed yet.", page)
+        self.assertIn("pageIndex === 0", page)
+        self.assertNotIn(".blocks-search", styles)
+        self.assertIn(".validators-search", styles)
 
     def test_existing_blocks_and_transaction_detail_routes_remain_intact(self):
         blocks = self.read("frontend/src/pages/Blocks.jsx")

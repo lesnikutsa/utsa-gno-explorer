@@ -66,8 +66,9 @@ class BlockProposerFrontendContractTests(unittest.TestCase):
         self.assertIn('value={block.proposer_address} label="proposer"', self.detail)
 
     def test_blocks_controls_remain_present(self):
-        for control in ("submitSearch", "loadOlder", "loadNewer", "refresh"):
+        for control in ("loadOlder", "loadNewer", "refresh"):
             self.assertIn(control, self.blocks)
+        self.assertNotIn("submitSearch", self.blocks)
 
 
 if __name__ == "__main__":

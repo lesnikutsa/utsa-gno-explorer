@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getBlock, getBlocks } from '../services/api'
+import { getBlocks } from '../services/api'
 
 export const BLOCKS_POLL_MS = 5_000
 const PAGE_SIZE = 25
-const HEX_HASH_PATTERN = /^(?:0x)?[0-9a-fA-F]{64}$/
-const HEIGHT_PATTERN = /^[0-9]+$/
 
 export function useBlocksPage() {
   const [blocks, setBlocks] = useState([])
@@ -16,9 +14,6 @@ export function useBlocksPage() {
   const [nextBeforeHeight, setNextBeforeHeight] = useState(null)
   const [cursorHistory, setCursorHistory] = useState([null])
   const [pageIndex, setPageIndex] = useState(0)
-  const [searchInput, setSearchInput] = useState('')
-  const [searchQuery, setSearchQuery] = useState('')
-  const [searchNotFound, setSearchNotFound] = useState(false)
   const [nextRefreshAt, setNextRefreshAt] = useState(null)
   const mounted = useRef(false)
   const inFlight = useRef(false)
@@ -26,7 +21,6 @@ export function useBlocksPage() {
   const timerId = useRef(null)
   const blocksRef = useRef([])
   const pageIndexRef = useRef(0)
-  const searchQueryRef = useRef('')
 
   const clearRefreshTimer = useCallback(() => {
     if (timerId.current !== null) window.clearTimeout(timerId.current)
@@ -35,7 +29,7 @@ export function useBlocksPage() {
   }, [])
 
   const scheduleRefresh = useCallback(() => {
-    if (!mounted.current || pageIndexRef.current !== 0 || searchQueryRef.current) return
+    if (!mounted.current || pageIndexRef.current !== 0) return
     setNextRefreshAt(Date.now() + BLOCKS_POLL_MS)
   }, [])
 
@@ -76,13 +70,13 @@ export function useBlocksPage() {
         setLoading(false)
         setManualRefreshing(false)
         inFlight.current = false
-        if (pageIndexRef.current === 0 && !searchQueryRef.current) scheduleRefresh()
+        if (pageIndexRef.current === 0) scheduleRefresh()
       }
     }
   }, [clearRefreshTimer, scheduleRefresh])
 
   const refreshLatestInBackground = useCallback(async () => {
-    if (inFlight.current || pageIndexRef.current !== 0 || searchQueryRef.current) return false
+    if (inFlight.current || pageIndexRef.current !== 0) return false
     inFlight.current = true
     setBackgroundRefreshing(true)
     setNextRefreshAt(null)
@@ -126,62 +120,6 @@ export function useBlocksPage() {
     await loadPage(cursorHistory[targetIndex], { targetIndex })
   }, [cursorHistory, loadPage, pageIndex])
 
-  const submitSearch = useCallback(async (event) => {
-    event?.preventDefault()
-    const query = searchInput.trim()
-    if (!query || inFlight.current) return
-
-    clearRefreshTimer()
-    searchQueryRef.current = query
-    setSearchQuery(query)
-    setSearchNotFound(false)
-    setError(false)
-    setLoading(true)
-    setBlocks([])
-    blocksRef.current = []
-    inFlight.current = true
-    const id = ++requestId.current
-
-    try {
-      let rows
-      if (!HEX_HASH_PATTERN.test(query) && HEIGHT_PATTERN.test(query) && Number(query) > 0) {
-        rows = [await getBlock(query)]
-      } else {
-        const response = await getBlocks({ limit: PAGE_SIZE, hash: query })
-        rows = (response.items ?? []).slice(0, 1)
-      }
-      if (!mounted.current || id !== requestId.current) return
-      setBlocks(rows)
-      blocksRef.current = rows
-      setSearchNotFound(rows.length === 0)
-      setHealthState('healthy')
-    } catch (requestError) {
-      if (!mounted.current || id !== requestId.current) return
-      if (requestError.status === 404) {
-        setSearchNotFound(true)
-        setHealthState('healthy')
-      } else {
-        setError(true)
-        setHealthState('error')
-      }
-    } finally {
-      if (mounted.current && id === requestId.current) {
-        setLoading(false)
-        inFlight.current = false
-      }
-    }
-  }, [clearRefreshTimer, searchInput])
-
-  const resetSearch = useCallback(() => {
-    if (inFlight.current) return
-    searchQueryRef.current = ''
-    setSearchInput('')
-    setSearchQuery('')
-    setSearchNotFound(false)
-    setCursorHistory([null])
-    loadPage(null, { targetIndex: 0, history: [null] })
-  }, [loadPage])
-
   useEffect(() => {
     mounted.current = true
     loadPage(null)
@@ -194,7 +132,7 @@ export function useBlocksPage() {
   }, [loadPage])
 
   useEffect(() => {
-    if (!nextRefreshAt || pageIndex !== 0 || searchQuery) return undefined
+    if (!nextRefreshAt || pageIndex !== 0) return undefined
     timerId.current = window.setTimeout(() => {
       timerId.current = null
       refreshLatestInBackground()
@@ -203,9 +141,8 @@ export function useBlocksPage() {
       if (timerId.current !== null) window.clearTimeout(timerId.current)
       timerId.current = null
     }
-  }, [nextRefreshAt, pageIndex, refreshLatestInBackground, searchQuery])
+  }, [nextRefreshAt, pageIndex, refreshLatestInBackground])
 
-  const searchMode = Boolean(searchQuery)
   return {
     blocks,
     loading,
@@ -216,16 +153,9 @@ export function useBlocksPage() {
     nextBeforeHeight,
     pageIndex,
     currentCursor: cursorHistory[pageIndex] ?? null,
-    searchInput,
-    setSearchInput,
-    searchQuery,
-    searchMode,
-    searchNotFound,
     nextRefreshAt,
     loadOlder,
     loadNewer,
     refresh,
-    submitSearch,
-    resetSearch,
   }
 }
