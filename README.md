@@ -95,21 +95,36 @@ python -m unittest discover -s tests
 ```
 
 
-## v0.8.0 Validator Profiles
+## v0.10.0 Transactions List and Global Search
 
-This release completes the validator detail page with a responsive profile layout, live
-100-block signing history, official Valopers monikers and profiles, local validator search,
-Overview-to-profile navigation, the official `gpub1...` signing public key, and a
-network-specific Telegram monitoring deep link.
+This release adds the cursor-paginated transaction list API, a dedicated **Transactions**
+sidebar page, and exact transaction-hash lookup in the global search. Transaction rows expose
+the block time, full 64-character hash when available, canonical type, and human-readable
+operation through a minimal public response. The sidebar order is **Overview**, **Blocks**, **Transactions**,
+then **Validators**. The page presents **TX HASH**, **TIME**, **BLOCK**, and **TYPE**, requests
+25 rows, labels its position as **Latest** or **Page N**, provides newer/older pagination,
+links hashes to the existing
+`/blocks/:block_height/transactions/:index` detail route, links block heights to their blocks,
+and places a copy action beside each available hash. Rows without a hash remain available
+through their block-height/index detail route.
 
-This release-preparation PR introduces no new database schema, migration, or indexer
-changes. Deployments already running the compatible pre-release `main`, including production
-at commit `818cee6a5d0dc8c8817e8ef3fc03af97d35aeeab`, need no database migration or indexer
-restart for the 0.8.0 metadata update. Deployments upgrading from the last published tag,
-`v0.5.0-production-runtime`, must first follow the existing operator-controlled Valopers
-schema migration and API-role grant procedure; a v0.5.0 database must not be assumed to be
-compatible. No migration or profile updater runs automatically. The Telegram bot remains a
-separate service.
+Global search now accepts block height, exact block hash, exact transaction hash, validator
+moniker, validator signing address, and validator operator address. Transaction hashes are
+case-insensitive and may include a `0x` or `0X` prefix; partial transaction hash search is not
+supported. Blocks no longer have a redundant local exact-search field, while the Validators
+table retains its local filter. Transaction detail navigation identifies **Transactions** as
+the active section and links back to the transaction list.
+
+Transaction-list pagination uses the paired `block_height`/`tx_index` cursor, with
+explicitly typed PostgreSQL parameters for the first page. Exact transaction-hash lookup uses
+the existing transaction-hash index with exact equality and `LIMIT 1`. Invalid, missing, and
+unavailable lookups return safe 422, 404, and 503 responses, while malformed frontend lookup
+responses do not produce unsafe navigation.
+
+Execution result/status, gas wanted/used, transaction fee, and mempool/pending transactions
+are not indexed yet. Historical rows without a structured payload summary may appear as a
+generic **Transaction**. This release-preparation change updates documentation only and does
+not change runtime code, the database schema, migrations, or deployment configuration.
 
 ## Read-only API foundation
 
@@ -190,6 +205,7 @@ curl http://127.0.0.1:8000/api/blocks/870117
 curl 'http://127.0.0.1:8000/api/transactions?limit=20'
 curl 'http://127.0.0.1:8000/api/transactions?limit=25'
 curl 'http://127.0.0.1:8000/api/transactions?before_height=<height>&before_tx_index=<index>&limit=25'
+curl 'http://127.0.0.1:8000/api/transactions/by-hash/<exact-transaction-hash>'
 ```
 
 `GET /api/network` returns the completed indexer checkpoint, latest indexed block, validator-set aggregate, and selected RPC metadata using read-only PostgreSQL queries. `GET /api/blocks` returns descending block summaries with cursor pagination or exact hash lookup. `GET /api/blocks/{height}` returns a block summary, commit aggregate, and ordered transactions for one stored block.
@@ -198,10 +214,15 @@ curl 'http://127.0.0.1:8000/api/transactions?before_height=<height>&before_tx_in
 order. Its read-only cursor consists of both `before_height` and `before_tx_index`; the
 response supplies both values from the final item whenever another page is available.
 The backend default is 20, and clients may explicitly request any supported page size from
-1 through 100. The future Explorer Transactions page will request 25 items to match the
-existing Blocks page without changing the general API default. Each item contains the
+1 through 100. The Explorer **Transactions** page requests 25 items to match the existing
+Blocks page without changing the general API default. Each item contains the
 block height, transaction index, nullable transaction hash, block time, canonical
 transaction type, and human-readable operation.
+
+`GET /api/transactions/by-hash/{tx_hash}` performs an exact transaction lookup. It accepts
+uppercase or lowercase hashes with an optional `0x` or `0X` prefix, but does not support
+partial hashes. A match supplies the block height and transaction index used by the existing
+`/blocks/:block_height/transactions/:index` frontend detail route.
 
 `GET /api/network/distribution` returns the latest persisted observed network-distribution
 snapshot. It is not a complete network census. Coverage percentages use unique public IPs
