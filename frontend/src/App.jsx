@@ -38,7 +38,7 @@ function OverviewPage() {
 
 function BlocksPage() {
   const blocksPage = useBlocksPage()
-  const showRefreshCountdown = !blocksPage.searchMode && blocksPage.pageIndex === 0 && Boolean(blocksPage.nextRefreshAt)
+  const showRefreshCountdown = blocksPage.pageIndex === 0 && Boolean(blocksPage.nextRefreshAt)
 
   return (
     <ExplorerLayout

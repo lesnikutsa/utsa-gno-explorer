@@ -71,6 +71,16 @@ class GlobalSearchFrontendContractTests(unittest.TestCase):
         self.assertNotIn('type="search"', self.blocks)
         self.assertIn('placeholder="Search by moniker or signing address"', self.validators)
 
+    def test_blocks_refresh_countdown_has_no_local_search_dependency(self):
+        blocks_hook = (ROOT / "frontend/src/hooks/useBlocksPage.js").read_text()
+        self.assertNotIn("blocksPage.searchMode", self.app)
+        self.assertIn(
+            "const showRefreshCountdown = blocksPage.pageIndex === 0 && Boolean(blocksPage.nextRefreshAt)",
+            self.app,
+        )
+        self.assertNotIn("searchMode", blocks_hook)
+        self.assertNotIn('className="blocks-search"', self.blocks)
+
 
 if __name__ == "__main__":
     unittest.main()
