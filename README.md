@@ -99,13 +99,14 @@ python -m unittest discover -s tests
 
 This release adds the cursor-paginated transaction list API, a dedicated **Transactions**
 sidebar page, and exact transaction-hash lookup in the global search. Transaction rows expose
-the block time, full 64-character hash, canonical type, and human-readable operation through
-a minimal public response. The sidebar order is **Overview**, **Blocks**, **Transactions**,
+the block time, full 64-character hash when available, canonical type, and human-readable
+operation through a minimal public response. The sidebar order is **Overview**, **Blocks**, **Transactions**,
 then **Validators**. The page presents **TX HASH**, **TIME**, **BLOCK**, and **TYPE**, requests
 25 rows, labels its position as **Latest** or **Page N**, provides newer/older pagination,
 links hashes to the existing
 `/blocks/:block_height/transactions/:index` detail route, links block heights to their blocks,
-and places a copy action beside each full hash.
+and places a copy action beside each available hash. Rows without a hash remain available
+through their block-height/index detail route.
 
 Global search now accepts block height, exact block hash, exact transaction hash, validator
 moniker, validator signing address, and validator operator address. Transaction hashes are
@@ -113,6 +114,12 @@ case-insensitive and may include a `0x` or `0X` prefix; partial transaction hash
 supported. Blocks no longer have a redundant local exact-search field, while the Validators
 table retains its local filter. Transaction detail navigation identifies **Transactions** as
 the active section and links back to the transaction list.
+
+Transaction-list pagination uses the paired `block_height`/`tx_index` cursor, with
+explicitly typed PostgreSQL parameters for the first page. Exact transaction-hash lookup uses
+the existing transaction-hash index with exact equality and `LIMIT 1`. Invalid, missing, and
+unavailable lookups return safe 422, 404, and 503 responses, while malformed frontend lookup
+responses do not produce unsafe navigation.
 
 Execution result/status, gas wanted/used, transaction fee, and mempool/pending transactions
 are not indexed yet. Historical rows without a structured payload summary may appear as a
