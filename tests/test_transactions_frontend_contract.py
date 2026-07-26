@@ -99,11 +99,18 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         self.assertIn("disabled={loading || pageIndex === 0}", page)
         self.assertIn("disabled={loading || !canLoadOlder}", page)
         self.assertIn("pageIndex === 0 ? 'Latest' : `Page ${pageIndex + 1}`", page)
-        self.assertIn("table-layout: fixed", styles)
-        self.assertIn("text-overflow: ellipsis", styles)
+        self.assertIn("table-layout: auto", styles)
         self.assertIn("min-width: 1050px", styles)
+        self.assertIn("td:nth-child(1) { width: 1%; white-space: nowrap; }", styles)
+        self.assertIn("td:nth-child(2) { width: 145px; white-space: nowrap; }", styles)
+        self.assertIn("td:nth-child(3) { width: 125px; white-space: nowrap; }", styles)
+        transactions_rules = styles[styles.index(".transactions-page {"):styles.index(".blocks-table__height")]
+        for old_width in ("width: 58%", "width: 14%", "width: 13%", "width: 15%"):
+            self.assertNotIn(old_width, transactions_rules)
+        self.assertNotIn(".transactions-page__table td {", transactions_rules)
         self.assertIn(".transactions-table__hash { flex: 1 1 auto; color: var(--color-text-bright); font-weight: 600; white-space: nowrap; }", styles)
         self.assertIn(".transactions-table__hash:hover { color: var(--color-accent); }", styles)
+        self.assertIn(".transactions-table__operation { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }", styles)
         hash_rule = styles[styles.index(".transactions-table__hash {"):styles.index(".transactions-table__hash:hover")]
         self.assertNotIn("text-overflow", hash_rule)
         mobile = styles[styles.index("@media (max-width: 760px)"):]
