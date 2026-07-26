@@ -67,7 +67,8 @@ class GlobalSearchFrontendContractTests(unittest.TestCase):
         self.assertIn("transactionDetailMatch", self.app)
         self.assertNotRegex(self.app, r"transactions/by-hash")
         self.assertNotIn('type="search"', self.transactions)
-        self.assertIn('className="blocks-search"', self.blocks)
+        self.assertNotIn('className="blocks-search"', self.blocks)
+        self.assertNotIn('type="search"', self.blocks)
         self.assertIn('placeholder="Search by moniker or signing address"', self.validators)
 
 
