@@ -55,6 +55,7 @@ export const getTransactions = ({ limit, beforeHeight, beforeTxIndex } = {}) => 
 }
 export const getBlock = (height) => request(`/blocks/${encodeURIComponent(height)}`)
 export const getTransaction = (blockHeight, index) => request(`/blocks/${encodeURIComponent(blockHeight)}/transactions/${encodeURIComponent(index)}`)
+export const getTransactionByHash = (txHash) => request(`/transactions/by-hash/${encodeURIComponent(txHash)}`)
 export const getValidators = () => request('/validators')
 export const searchValidators = ({ query, limit = 6 }) => {
   const params = new URLSearchParams()

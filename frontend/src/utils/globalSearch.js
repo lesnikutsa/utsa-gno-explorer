@@ -4,8 +4,23 @@ const BASE64_HASH_PATTERN = /^[A-Za-z0-9+/]{43}=$/
 
 export const isPositiveBlockHeight = (query) => HEIGHT_PATTERN.test(query.trim())
 export const isExactHexBlockHash = (query) => HEX_HASH_PATTERN.test(query.trim())
+export const isExactTransactionHash = (query) => HEX_HASH_PATTERN.test(query.trim())
 export const isExactBase64BlockHash = (query) => BASE64_HASH_PATTERN.test(query.trim())
 export const isExactBlockHash = (query) => isExactHexBlockHash(query) || isExactBase64BlockHash(query)
+
+export const isValidTransactionHashLookupResponse = (response) => (
+  Number.isInteger(response?.block_height)
+  && response.block_height > 0
+  && Number.isInteger(response?.index)
+  && response.index >= 0
+  && /^[0-9a-fA-F]{64}$/.test(response?.tx_hash ?? '')
+)
+
+export const isValidBlockHashLookupResponse = (response) => (
+  Array.isArray(response?.items)
+  && response.items.length <= 1
+  && response.items.every((block) => Number.isInteger(block?.height) && block.height > 0)
+)
 
 export const shouldSearchValidators = (query) => {
   const trimmed = query.trim()
