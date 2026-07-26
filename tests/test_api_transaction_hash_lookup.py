@@ -37,7 +37,13 @@ class TransactionHashLookupTests(unittest.TestCase):
         from api import app as app_module
         patches = [
             patch.object(app_module, "database", fake),
-            patch.object(app_module, "load_config", return_value=ApiConfig(database_url="postgresql://u:p@db/x")),
+            patch.object(
+                app_module,
+                "load_config",
+                return_value=ApiConfig(
+                    database_url="postgresql://user:password@localhost/test_database",
+                ),
+            ),
         ]
         for active in patches:
             active.start()
