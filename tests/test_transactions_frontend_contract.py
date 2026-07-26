@@ -109,7 +109,9 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         for old_width in ("width: 1%", "width: 145px", "width: 125px"):
             self.assertNotIn(old_width, transactions_rules)
         self.assertNotIn(".transactions-page__table td {", transactions_rules)
-        self.assertIn(".transactions-table__hash { flex: 1 1 auto; color: var(--color-text-bright); font-weight: 600; white-space: nowrap; }", styles)
+        self.assertIn(".transactions-table__hash-cell { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; vertical-align: middle; }", styles)
+        self.assertIn(".transactions-table__hash { flex: 0 0 auto; color: var(--color-text-bright); font-weight: 600; white-space: nowrap; }", styles)
+        self.assertNotIn("flex: 1 1 auto", transactions_rules)
         self.assertIn(".transactions-table__hash:hover { color: var(--color-accent); }", styles)
         self.assertIn(".transactions-table__operation { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }", styles)
         hash_rule = styles[styles.index(".transactions-table__hash {"):styles.index(".transactions-table__hash:hover")]
