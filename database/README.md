@@ -149,7 +149,10 @@ The persistence command is one-shot; this repository installs no governance
 service, timer, or cron job and exposes no governance API or frontend yet. Full
 sequential discovery may take approximately one minute. It includes proposal
 `#0`, treats `proposal_count` independently from `latest_proposal_id`, and stores
-bounded unmodified detail and vote renders.
+bounded unmodified detail and vote renders. A complete empty realm records the
+root list page (`page_count >= 1`) with zero proposals and null first/latest IDs.
+The writer rejects the entire snapshot when any vote render is unparsed; only a
+confirmed `empty` vote render may remove previously stored current votes.
 
 Migration has no destructive down migration. Restore the verified pre-migration
 backup for a complete schema rollback. Removing governance rows must be a

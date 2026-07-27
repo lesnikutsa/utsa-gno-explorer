@@ -207,7 +207,7 @@ EXPECTED_FOREIGN_KEYS.add(("governance_votes",("chain_id","realm_path","proposal
 EXPECTED_CHECKS.update({
  "governance_proposals_chain_id_check": "CHECK (char_length(chain_id) BETWEEN 1 AND 128)", "governance_proposals_realm_path_check": "CHECK (char_length(realm_path) BETWEEN 1 AND 512)", "governance_proposals_proposal_id_check": "CHECK (proposal_id >= 0)", "governance_proposals_title_check": "CHECK (char_length(title) BETWEEN 1 AND 1000)", "governance_proposals_author_display_check": "CHECK (author_display IS NULL OR char_length(author_display) <= 1000)", "governance_proposals_author_address_check": "CHECK (author_address IS NULL OR author_address ~ '^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$')", "governance_proposals_status_check": "CHECK (status IN ('ACTIVE', 'ACCEPTED', 'REJECTED', 'UNKNOWN'))", "governance_proposals_eligible_tiers_check": "CHECK (jsonb_typeof(eligible_tiers) = 'array')", "governance_proposals_description_check": "CHECK (char_length(description) <= 100000)", "governance_proposals_executor_text_check": "CHECK (executor_text IS NULL OR char_length(executor_text) <= 100000)", "governance_proposals_executor_creation_realm_check": "CHECK (executor_creation_realm IS NULL OR char_length(executor_creation_realm) <= 1000)", "governance_proposals_rejection_reason_check": "CHECK (rejection_reason IS NULL OR char_length(rejection_reason) <= 10000)", "governance_proposals_detail_parse_status_check": "CHECK (detail_parse_status IN ('parsed', 'partial'))", "governance_proposals_votes_parse_status_check": "CHECK (votes_parse_status IN ('parsed', 'empty', 'unparsed'))", "governance_proposals_parse_warnings_check": "CHECK (jsonb_typeof(parse_warnings) = 'array')", "governance_proposals_percentages_check": "CHECK ((yes_percent IS NULL OR yes_percent BETWEEN 0 AND 100) AND (no_percent IS NULL OR no_percent BETWEEN 0 AND 100) AND (abstain_percent IS NULL OR abstain_percent BETWEEN 0 AND 100))", "governance_proposals_raw_size_check": "CHECK ((raw_detail_render IS NULL OR octet_length(raw_detail_render) <= 1048576) AND (raw_votes_render IS NULL OR octet_length(raw_votes_render) <= 1048576))", "governance_proposals_heights_check": "CHECK (first_observed_height >= 1 AND last_observed_height >= first_observed_height)", "governance_proposals_times_check": "CHECK (last_observed_at >= first_observed_at)",
  "governance_votes_voter_key_check": "CHECK (char_length(voter_key) BETWEEN 1 AND 1100)", "governance_votes_voter_display_check": "CHECK (char_length(voter_display) BETWEEN 1 AND 1000)", "governance_votes_voter_address_check": "CHECK (voter_address IS NULL OR voter_address ~ '^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$')", "governance_votes_option_check": "CHECK (option IN ('YES', 'NO', 'ABSTAIN'))", "governance_votes_tier_check": "CHECK (char_length(tier) BETWEEN 1 AND 64)", "governance_votes_voting_power_check": "CHECK (voting_power >= 0)", "governance_votes_heights_check": "CHECK (first_observed_height >= 1 AND last_observed_height >= first_observed_height)", "governance_votes_times_check": "CHECK (last_observed_at >= first_observed_at)",
- "governance_sync_state_chain_id_check": "CHECK (char_length(chain_id) BETWEEN 1 AND 128)", "governance_sync_state_realm_path_check": "CHECK (char_length(realm_path) BETWEEN 1 AND 512)", "governance_sync_state_source_height_check": "CHECK (source_height >= 1)", "governance_sync_state_page_count_check": "CHECK (page_count BETWEEN 0 AND 100)", "governance_sync_state_proposal_count_check": "CHECK (proposal_count BETWEEN 0 AND 1000)", "governance_sync_state_counts_check": "CHECK ((proposal_count = 0 AND first_proposal_id IS NULL AND latest_proposal_id IS NULL AND page_count = 0) OR (proposal_count > 0 AND first_proposal_id >= 0 AND latest_proposal_id >= first_proposal_id AND page_count >= 1))"})
+ "governance_sync_state_chain_id_check": "CHECK (char_length(chain_id) BETWEEN 1 AND 128)", "governance_sync_state_realm_path_check": "CHECK (char_length(realm_path) BETWEEN 1 AND 512)", "governance_sync_state_source_height_check": "CHECK (source_height >= 1)", "governance_sync_state_page_count_check": "CHECK (page_count BETWEEN 1 AND 100)", "governance_sync_state_proposal_count_check": "CHECK (proposal_count BETWEEN 0 AND 1000)", "governance_sync_state_counts_check": "CHECK ((proposal_count = 0 AND first_proposal_id IS NULL AND latest_proposal_id IS NULL AND page_count >= 1) OR (proposal_count > 0 AND first_proposal_id IS NOT NULL AND latest_proposal_id IS NOT NULL AND first_proposal_id >= 0 AND latest_proposal_id >= first_proposal_id AND page_count >= 1))"})
 EXPECTED_INDEXES.update({"governance_proposals_realm_id_idx": ("governance_proposals",False,(("chain_id","ASC"),("realm_path","ASC"),("proposal_id","DESC")),None), "governance_proposals_realm_status_id_idx": ("governance_proposals",False,(("chain_id","ASC"),("realm_path","ASC"),("status","ASC"),("proposal_id","DESC")),None), "governance_votes_voter_address_idx": ("governance_votes",False,(("voter_address","ASC"),),"voter_address IS NOT NULL")})
 FINAL_SCHEMA_EXPECTATIONS = schema_expectations()
 
@@ -222,30 +222,7 @@ TRANSACTION_HASH_CHECKS = {"transactions_tx_hash_hex_format", "transactions_tx_h
 TRANSACTION_HASH_INDEXES = {"transactions_tx_hash_hex_idx"}
 
 
-def schema_expectations(*, excluded_tables: set[str] | None = None,
-                        include_transaction_hash: bool = True) -> dict[str, Any]:
-    """Derive an exact historical stage without mutating final expectations."""
-    excluded_tables = excluded_tables or set()
-    result = {
-        "tables": EXPECTED_TABLES - excluded_tables,
-        "columns": {name: copy.deepcopy(value) for name, value in EXPECTED_COLUMNS.items() if name not in excluded_tables},
-        "primary_keys": {name: value for name, value in EXPECTED_PRIMARY_KEYS.items() if name not in excluded_tables},
-        "unique_constraints": {value for value in EXPECTED_UNIQUES if value[0] not in excluded_tables},
-        "foreign_keys": {value for value in EXPECTED_FOREIGN_KEYS if value[0] not in excluded_tables and value[2] not in excluded_tables},
-        "check_constraints": {name: value for name, value in EXPECTED_CHECKS.items()
-                              if not any(name.startswith(f"{table}_") for table in excluded_tables)},
-        "indexes": {name: value for name, value in EXPECTED_INDEXES.items() if value[0] not in excluded_tables},
-    }
-    if not include_transaction_hash:
-        result["columns"]["transactions"].pop(TRANSACTION_HASH_COLUMN)
-        for name in TRANSACTION_HASH_CHECKS:
-            result["check_constraints"].pop(name)
-        for name in TRANSACTION_HASH_INDEXES:
-            result["indexes"].pop(name)
-    return result
 
-
-FINAL_SCHEMA_EXPECTATIONS = schema_expectations()
 PRE_NETWORK_DISTRIBUTION_EXPECTATIONS = schema_expectations(excluded_tables=NETWORK_DISTRIBUTION_TABLES | GOVERNANCE_TABLES)
 VALOPERS_ONLY_EXPECTATIONS = schema_expectations(
     excluded_tables=NETWORK_DISTRIBUTION_TABLES | GOVERNANCE_TABLES, include_transaction_hash=False)

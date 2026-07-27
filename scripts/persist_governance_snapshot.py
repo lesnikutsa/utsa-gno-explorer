@@ -29,8 +29,10 @@ def run(args):
 def main(argv=None):
     args=parser().parse_args(argv)
     try: return run(args)
-    except (GovernancePersistenceError,GovernanceParseError,RpcError,ValueError,OSError) as exc:
-        print(f"Governance persistence failed: {exc}",file=sys.stderr); return 1
+    except (RpcError, OSError):
+        print("Governance persistence failed: rpc_error", file=sys.stderr); return 1
+    except (GovernancePersistenceError, GovernanceParseError, ValueError) as exc:
+        print(f"Governance persistence failed: {exc}", file=sys.stderr); return 1
     except Exception:
         print("Governance persistence failed: internal_error",file=sys.stderr); return 1
 if __name__=="__main__": raise SystemExit(main())

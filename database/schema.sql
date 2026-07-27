@@ -365,12 +365,12 @@ CREATE TABLE governance_sync_state (
     chain_id TEXT NOT NULL CONSTRAINT governance_sync_state_chain_id_check CHECK (char_length(chain_id) BETWEEN 1 AND 128),
     realm_path TEXT NOT NULL CONSTRAINT governance_sync_state_realm_path_check CHECK (char_length(realm_path) BETWEEN 1 AND 512),
     source_height BIGINT NOT NULL CONSTRAINT governance_sync_state_source_height_check CHECK (source_height >= 1),
-    page_count INTEGER NOT NULL CONSTRAINT governance_sync_state_page_count_check CHECK (page_count BETWEEN 0 AND 100),
+    page_count INTEGER NOT NULL CONSTRAINT governance_sync_state_page_count_check CHECK (page_count BETWEEN 1 AND 100),
     proposal_count INTEGER NOT NULL CONSTRAINT governance_sync_state_proposal_count_check CHECK (proposal_count BETWEEN 0 AND 1000),
     first_proposal_id BIGINT, latest_proposal_id BIGINT,
     last_success_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (chain_id, realm_path),
-    CONSTRAINT governance_sync_state_counts_check CHECK ((proposal_count = 0 AND first_proposal_id IS NULL AND latest_proposal_id IS NULL AND page_count = 0) OR (proposal_count > 0 AND first_proposal_id >= 0 AND latest_proposal_id >= first_proposal_id AND page_count >= 1))
+    CONSTRAINT governance_sync_state_counts_check CHECK ((proposal_count = 0 AND first_proposal_id IS NULL AND latest_proposal_id IS NULL AND page_count >= 1) OR (proposal_count > 0 AND first_proposal_id IS NOT NULL AND latest_proposal_id IS NOT NULL AND first_proposal_id >= 0 AND latest_proposal_id >= first_proposal_id AND page_count >= 1))
 );
 
 CREATE TABLE valoper_profiles (
