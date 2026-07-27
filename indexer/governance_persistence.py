@@ -6,7 +6,7 @@ import math
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
 
 from governance.gno import (
@@ -50,6 +50,9 @@ class GovernancePersistenceResult:
 @dataclass(frozen=True)
 class _NormalizedProposal:
     proposal: GovernanceProposalDetail
+    yes_percent: Decimal | None
+    no_percent: Decimal | None
+    abstain_percent: Decimal | None
     raw_detail: str
     raw_votes: str
     votes: tuple[tuple[str, str, str | None, str, str, Decimal], ...]
@@ -84,7 +87,9 @@ def _percentage(value: Any) -> Decimal | None:
     except (InvalidOperation, ValueError) as exc:
         raise GovernancePersistenceError("invalid percentage") from exc
     _raise_if(not result.is_finite() or result < 0 or result > 100, "invalid percentage")
-    return result
+    canonical = result.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    _raise_if(canonical < 0 or canonical > 100, "invalid percentage")
+    return canonical
 
 
 def normalize_discovery(
@@ -127,8 +132,8 @@ def normalize_discovery(
         _raise_if(not _bounded_text(proposal.executor_text, MAX_TEXT_CHARS, nullable=True), "invalid executor text")
         _raise_if(not _bounded_text(proposal.executor_creation_realm, 1000, nullable=True), "invalid executor realm")
         _raise_if(not _bounded_text(proposal.rejection_reason, 10_000, nullable=True), "invalid rejection reason")
-        for value in (proposal.yes_percent, proposal.no_percent, proposal.abstain_percent):
-            _percentage(value)
+        percentages = tuple(_percentage(value) for value in
+                            (proposal.yes_percent, proposal.no_percent, proposal.abstain_percent))
         _raise_if(proposal.detail_parse_status not in _DETAIL_STATUSES, "invalid detail parse status")
         _raise_if(proposal.votes_parse_status not in _VOTE_STATUSES, "invalid votes parse status")
         _raise_if(proposal.votes_parse_status == "unparsed", "unparsed votes make the snapshot incomplete", IncompleteGovernanceSnapshot)
@@ -143,6 +148,7 @@ def normalize_discovery(
         keys: set[str] = set()
         _raise_if(not isinstance(proposal.votes, (tuple, list)), "invalid vote collection")
         _raise_if(proposal.votes_parse_status == "empty" and bool(proposal.votes), "empty vote status contains votes")
+        _raise_if(proposal.votes_parse_status == "parsed" and not proposal.votes, "parsed vote status requires votes")
         for vote in proposal.votes:
             _raise_if(not isinstance(vote, GovernanceVote), "invalid vote type")
             display = " ".join(vote.voter_display.split()) if isinstance(vote.voter_display, str) else ""
@@ -156,7 +162,7 @@ def normalize_discovery(
             keys.add(key)
             votes.append((key, vote.voter_display, vote.voter_address, vote.option, vote.tier, Decimal(vote.voting_power)))
         votes.sort(key=lambda item: item[0])
-        normalized.append(_NormalizedProposal(proposal, raw_detail, raw_votes, tuple(votes)))
+        normalized.append(_NormalizedProposal(proposal, *percentages, raw_detail, raw_votes, tuple(votes)))
     normalized.sort(key=lambda item: item.proposal.proposal_id)
     return tuple(normalized)
 
@@ -192,6 +198,9 @@ def _load(cursor, chain: str, realm: str):
     _raise_if(not valid_state, "stored governance sync state is inconsistent", GovernanceStoredStateError)
     raw_total = 0
     proposal_id_set = set(ids)
+    stored_vote_counts: dict[int, int] = {}
+    for vote_row in votes:
+        stored_vote_counts[vote_row[0]] = stored_vote_counts.get(vote_row[0], 0) + 1
     for row in proposals:
         (proposal_id, title, author_display, author_address, status, tiers, description,
          executor_text, executor_realm, rejection_reason, yes, no, abstain,
@@ -207,16 +216,19 @@ def _load(cursor, chain: str, realm: str):
             and _valid_stored_text(executor_realm, 1000, nullable=True)
             and _valid_stored_text(rejection_reason, 10_000, nullable=True)
             and all(value is None or isinstance(value, Decimal) and value.is_finite() and 0 <= value <= 100 for value in (yes, no, abstain))
-            and detail_status in _DETAIL_STATUSES and votes_status in _VOTE_STATUSES
+            and detail_status in _DETAIL_STATUSES
+            and votes_status in {"parsed", "empty"}
+            and ((votes_status == "parsed" and stored_vote_counts.get(proposal_id, 0) > 0)
+                 or (votes_status == "empty" and stored_vote_counts.get(proposal_id, 0) == 0))
             and isinstance(warnings, list) and all(_valid_stored_text(w, 1000) for w in warnings)
-            and (raw_detail is None or isinstance(raw_detail, str) and len(raw_detail.encode()) <= MAX_RENDER_BYTES)
-            and (raw_votes is None or isinstance(raw_votes, str) and len(raw_votes.encode()) <= MAX_RENDER_BYTES)
+            and isinstance(raw_detail, str) and len(raw_detail.encode()) <= MAX_RENDER_BYTES
+            and isinstance(raw_votes, str) and len(raw_votes.encode()) <= MAX_RENDER_BYTES
             and _integer(first_height, 1) and _integer(last_height, first_height) and last_height <= source_height
             and isinstance(first_at, datetime) and isinstance(last_at, datetime) and last_at >= first_at
         )
         _raise_if(not valid, "stored governance proposal is inconsistent", GovernanceStoredStateError)
-        raw_total += len(raw_detail.encode()) if raw_detail else 0
-        raw_total += len(raw_votes.encode()) if raw_votes else 0
+        raw_total += len(raw_detail.encode())
+        raw_total += len(raw_votes.encode())
     _raise_if(raw_total > MAX_TOTAL_RAW_BYTES, "stored governance raw total exceeds limit", GovernanceStoredStateError)
     seen_votes: set[tuple[int, str]] = set()
     for row in votes:
@@ -241,10 +253,10 @@ def _content(rows: tuple[_NormalizedProposal, ...]):
     votes = []
     for row in rows:
         p = row.proposal
-        percentages = tuple(_percentage(value) for value in (p.yes_percent, p.no_percent, p.abstain_percent))
         proposals.append((p.proposal_id, p.title, p.author_display, p.author_address, p.status,
             tuple(p.eligible_tiers), p.description, p.executor_text, p.executor_creation_realm,
-            p.rejection_reason, *percentages, p.detail_parse_status, p.votes_parse_status,
+            p.rejection_reason, row.yes_percent, row.no_percent, row.abstain_percent,
+            p.detail_parse_status, p.votes_parse_status,
             tuple(p.parse_warnings), row.raw_detail, row.raw_votes))
         votes.extend((p.proposal_id,) + vote for vote in row.votes)
     return proposals, votes
@@ -279,7 +291,7 @@ def persist_governance_snapshot_cursor(cursor, discovery, configured_chain_id):
         p = row.proposal
         if p.proposal_id in old and old[p.proposal_id][4] != p.status:
             _raise_if(p.status not in _TRANSITIONS.get(old[p.proposal_id][4], set()), "invalid governance status transition", GovernanceSnapshotConflict)
-        cursor.execute("""INSERT INTO governance_proposals(chain_id,realm_path,proposal_id,title,author_display,author_address,status,eligible_tiers,description,executor_text,executor_creation_realm,rejection_reason,yes_percent,no_percent,abstain_percent,detail_parse_status,votes_parse_status,parse_warnings,raw_detail_render,raw_votes_render,first_observed_height,last_observed_height) VALUES (%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s) ON CONFLICT(chain_id,realm_path,proposal_id) DO UPDATE SET title=EXCLUDED.title,author_display=EXCLUDED.author_display,author_address=EXCLUDED.author_address,status=EXCLUDED.status,eligible_tiers=EXCLUDED.eligible_tiers,description=EXCLUDED.description,executor_text=EXCLUDED.executor_text,executor_creation_realm=EXCLUDED.executor_creation_realm,rejection_reason=EXCLUDED.rejection_reason,yes_percent=EXCLUDED.yes_percent,no_percent=EXCLUDED.no_percent,abstain_percent=EXCLUDED.abstain_percent,detail_parse_status=EXCLUDED.detail_parse_status,votes_parse_status=EXCLUDED.votes_parse_status,parse_warnings=EXCLUDED.parse_warnings,raw_detail_render=EXCLUDED.raw_detail_render,raw_votes_render=EXCLUDED.raw_votes_render,last_observed_height=EXCLUDED.last_observed_height,last_observed_at=now(),updated_at=now()""", (chain, realm, p.proposal_id, p.title, p.author_display, p.author_address, p.status, json.dumps(list(p.eligible_tiers)), p.description, p.executor_text, p.executor_creation_realm, p.rejection_reason, p.yes_percent, p.no_percent, p.abstain_percent, p.detail_parse_status, p.votes_parse_status, json.dumps(list(p.parse_warnings)), row.raw_detail, row.raw_votes, height, height))
+        cursor.execute("""INSERT INTO governance_proposals(chain_id,realm_path,proposal_id,title,author_display,author_address,status,eligible_tiers,description,executor_text,executor_creation_realm,rejection_reason,yes_percent,no_percent,abstain_percent,detail_parse_status,votes_parse_status,parse_warnings,raw_detail_render,raw_votes_render,first_observed_height,last_observed_height) VALUES (%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s) ON CONFLICT(chain_id,realm_path,proposal_id) DO UPDATE SET title=EXCLUDED.title,author_display=EXCLUDED.author_display,author_address=EXCLUDED.author_address,status=EXCLUDED.status,eligible_tiers=EXCLUDED.eligible_tiers,description=EXCLUDED.description,executor_text=EXCLUDED.executor_text,executor_creation_realm=EXCLUDED.executor_creation_realm,rejection_reason=EXCLUDED.rejection_reason,yes_percent=EXCLUDED.yes_percent,no_percent=EXCLUDED.no_percent,abstain_percent=EXCLUDED.abstain_percent,detail_parse_status=EXCLUDED.detail_parse_status,votes_parse_status=EXCLUDED.votes_parse_status,parse_warnings=EXCLUDED.parse_warnings,raw_detail_render=EXCLUDED.raw_detail_render,raw_votes_render=EXCLUDED.raw_votes_render,last_observed_height=EXCLUDED.last_observed_height,last_observed_at=now(),updated_at=now()""", (chain, realm, p.proposal_id, p.title, p.author_display, p.author_address, p.status, json.dumps(list(p.eligible_tiers)), p.description, p.executor_text, p.executor_creation_realm, p.rejection_reason, row.yes_percent, row.no_percent, row.abstain_percent, p.detail_parse_status, p.votes_parse_status, json.dumps(list(p.parse_warnings)), row.raw_detail, row.raw_votes, height, height))
         keys = [vote[0] for vote in row.votes]
         if keys:
             cursor.execute("DELETE FROM governance_votes WHERE chain_id=%s AND realm_path=%s AND proposal_id=%s AND NOT (voter_key=ANY(%s::text[]))", (chain, realm, p.proposal_id, keys))

@@ -8,6 +8,7 @@ import tempfile
 import threading
 import time
 import unittest
+from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -23,7 +24,9 @@ from api.database import (
 )
 from indexer.database import PostgresDatabase, _upsert_transactions
 from governance.gno import GovernanceDiscovery, GovernanceProposalDetail, GovernanceSource, GovernanceVote
-from indexer.governance_persistence import GovernanceSnapshotConflict, StaleGovernanceSnapshot
+from indexer.governance_persistence import (
+    GovernancePersistenceError, GovernanceSnapshotConflict, StaleGovernanceSnapshot,
+)
 from indexer.parsers import parse_tx
 from indexer.transaction_summary import MAX_SUMMARY_BYTES, summary_size_bytes
 from indexer.rpc import RpcProbeResult
@@ -1180,20 +1183,33 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
             cursor.execute("SELECT to_regclass('public.governance_proposals'),to_regclass('public.governance_votes'),to_regclass('public.governance_sync_state')")
             self.assertEqual(cursor.fetchone(), (None, None, None))
+        invalid_catalog_migration = Path(self.temp.name) / "invalid-catalog-governance-migration.sql"
+        invalid_catalog_migration.write_text(
+            (ROOT / "database/migrations/0004_add_governance_persistence.sql").read_text()
+            + "\nCREATE TABLE unexpected_governance_test_table(value integer);\n"
+        )
+        with self.assertRaises(Exception):
+            migrate_governance_schema(database_url, invalid_catalog_migration)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT to_regclass('public.governance_proposals'),to_regclass('public.unexpected_governance_test_table')")
+            self.assertEqual(cursor.fetchone(), (None, None))
         self.assertEqual(migrate_governance_schema(database_url), "applied")
         self.assertEqual(migrate_governance_schema(database_url), "already-compatible")
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
             init_database.validate_schema_snapshot(init_database.fetch_schema_snapshot(cursor))
 
-        def make_snapshot(height=100, count=21, status="ACTIVE", empty_votes=False):
+        def make_snapshot(height=100, count=21, status="ACTIVE", empty_votes=False,
+                          parsed_empty=False, yes_percent=33.33333):
             proposals = []
             raw = {}
             for proposal_id in range(count - 1, -1, -1):
                 votes = () if empty_votes else (GovernanceVote(f"Voter {proposal_id}", None, "YES", "CORE", str(proposal_id + 1)),)
                 vote_status = "empty" if empty_votes else "parsed"
+                if parsed_empty:
+                    votes = ()
                 proposals.append(GovernanceProposalDetail(
                     proposal_id, f"Proposal {proposal_id}", None, None, status, ("CORE",),
-                    f"Description {proposal_id}", None, None, None, 50.0, 25.0, 25.0,
+                    f"Description {proposal_id}", None, None, None, yes_percent, 25.0, 25.0,
                     "parsed", vote_status, votes, (),
                 ))
                 raw[f"proposal/{proposal_id}"] = f"raw detail {proposal_id}\n"
@@ -1208,6 +1224,10 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         self.assertEqual((first.action, first.proposal_count, first.vote_count), ("applied", 21, 21))
         self.assertEqual(database.persist_governance_snapshot(make_snapshot(), "integration-chain").action, "unchanged")
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT yes_percent,first_observed_height,last_observed_height,first_observed_at,last_observed_at FROM governance_proposals WHERE proposal_id=0")
+            percentage, first_height, last_height, first_at, last_at = cursor.fetchone()
+            self.assertEqual(percentage, Decimal("33.3333"))
+            self.assertEqual((first_height, last_height), (100, 100))
             cursor.execute("INSERT INTO blocks(height,block_hash_base64,block_hash_hex,time_utc,tx_count) VALUES (1,'AA==','AA',now(),0)")
             cursor.execute("DELETE FROM blocks WHERE height=1")
             cursor.execute("SELECT (SELECT count(*) FROM governance_proposals),(SELECT count(*) FROM governance_votes),(SELECT count(*) FROM governance_sync_state)")
@@ -1217,7 +1237,24 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             database.persist_governance_snapshot(make_snapshot(height=99), "integration-chain")
         with self.assertRaises(GovernanceSnapshotConflict):
             database.persist_governance_snapshot(make_snapshot(height=101, count=20), "integration-chain")
-        emptied = database.persist_governance_snapshot(make_snapshot(height=101, empty_votes=True), "integration-chain")
+        with self.assertRaises(GovernancePersistenceError):
+            database.persist_governance_snapshot(make_snapshot(height=101, parsed_empty=True), "integration-chain")
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT source_height,(SELECT count(*) FROM governance_votes) FROM governance_sync_state WHERE chain_id='integration-chain'")
+            self.assertEqual(cursor.fetchone(), (100, 21))
+        accepted = database.persist_governance_snapshot(make_snapshot(height=101, status="ACCEPTED"), "integration-chain")
+        self.assertEqual(accepted.action, "applied")
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT first_observed_height,last_observed_height,first_observed_at,last_observed_at FROM governance_proposals WHERE proposal_id=0")
+            new_first_height, new_last_height, new_first_at, new_last_at = cursor.fetchone()
+            self.assertEqual((new_first_height, new_last_height), (100, 101))
+            self.assertEqual(new_first_at, first_at)
+            self.assertGreaterEqual(new_last_at, last_at)
+        with self.assertRaises(GovernanceSnapshotConflict):
+            database.persist_governance_snapshot(make_snapshot(height=102, status="ACTIVE"), "integration-chain")
+        with self.assertRaises(GovernanceSnapshotConflict):
+            database.persist_governance_snapshot(make_snapshot(height=102, status="REJECTED"), "integration-chain")
+        emptied = database.persist_governance_snapshot(make_snapshot(height=102, status="ACCEPTED", empty_votes=True), "integration-chain")
         self.assertEqual(emptied.vote_count, 0)
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
             cursor.execute("SELECT raw_detail_render,raw_votes_render FROM governance_proposals WHERE proposal_id=0")
