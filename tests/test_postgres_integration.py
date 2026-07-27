@@ -109,6 +109,29 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             command += ["--schema", str(schema_path)]
         return subprocess.run(command, cwd=ROOT, env=env, text=True, capture_output=True, check=False)
 
+    def assert_governance_migration_required_then_apply(self, database_url):
+        """Validate the explicit pre-governance to final-schema operator contract."""
+        before_guidance = self.table_names_and_counts(database_url)
+        guidance = self.run_init(database_url)
+        self.assertEqual(guidance.returncode, 1)
+        self.assertIn("python scripts/migrate_governance_schema.py", guidance.stderr)
+        self.assertNotIn(database_url, guidance.stdout + guidance.stderr)
+        self.assertNotIn(self.password, guidance.stdout + guidance.stderr)
+        self.assertEqual(self.table_names_and_counts(database_url), before_guidance)
+        self.assertEqual(migrate_governance_schema(database_url), "applied")
+        self.assertEqual(migrate_governance_schema(database_url), "already-compatible")
+        validated = self.run_init(database_url)
+        self.assertEqual(validated.returncode, 0, validated.stderr)
+        self.assertNotIn(database_url, validated.stdout + validated.stderr)
+        self.assertNotIn(self.password, validated.stdout + validated.stderr)
+        return guidance, validated
+
+    def assert_empty_governance_tables(self, database_url):
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            for table in ("governance_proposals", "governance_votes", "governance_sync_state"):
+                cursor.execute(f"SELECT count(*) FROM {table}")
+                self.assertEqual(cursor.fetchone()[0], 0)
+
     def run_migration(self, database_url, migration_path=None):
         env = dict(os.environ, DATABASE_URL=database_url)
         command = [sys.executable, "scripts/migrate_valopers_schema.py"]
@@ -528,8 +551,12 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         self.assertEqual(network_migration.returncode, 0, network_migration.stderr)
         network_rerun = self.run_network_distribution_migration(database_url)
         self.assertEqual(network_rerun.returncode, 0, network_rerun.stderr)
-        validated = self.run_init(database_url)
-        self.assertEqual(validated.returncode, 0, validated.stderr)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            init_database.validate_schema_snapshot(
+                init_database.fetch_schema_snapshot(cursor),
+                init_database.PRE_GOVERNANCE_SCHEMA_EXPECTATIONS,
+            )
+        governance_guidance, validated = self.assert_governance_migration_required_then_apply(database_url)
 
         post_network_valopers = self.run_migration(database_url)
         self.assertEqual(post_network_valopers.returncode, 0, post_network_valopers.stderr)
@@ -537,9 +564,12 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         post_network_transactions = self.run_transaction_hash_migration(database_url)
         self.assertEqual(post_network_transactions.returncode, 0, post_network_transactions.stderr)
         self.assertIn("already compatible", post_network_transactions.stdout)
+        post_governance_network = self.run_network_distribution_migration(database_url)
+        self.assertEqual(post_governance_network.returncode, 0, post_governance_network.stderr)
 
         outputs = [migrated, rerun, transaction_migration, transaction_rerun, guidance, network_migration,
-                   network_rerun, validated, post_network_valopers, post_network_transactions]
+                   network_rerun, governance_guidance, validated, post_network_valopers,
+                   post_network_transactions, post_governance_network]
         for result in outputs:
             self.assertNotIn(self.password, result.stdout + result.stderr)
             self.assertNotIn(database_url, result.stdout + result.stderr)
@@ -553,6 +583,7 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         for table in ("network_distribution_geo_cache", "network_distribution_snapshots",
                       "network_distribution_snapshot_sources"):
             self.assertEqual(after_counts[table], 0)
+        self.assert_empty_governance_tables(database_url)
 
     def test_post_ddl_incompatibility_rolls_back_migration(self):
         database_url = self.prepare_legacy_database(f"utsa_migration_rollback_{os.getpid()}")
@@ -599,8 +630,12 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         self.assertIn("python scripts/migrate_network_distribution_schema.py", guidance.stderr)
         network = self.run_network_distribution_migration(database_url)
         self.assertEqual(network.returncode, 0, network.stderr)
-        final_init = self.run_init(database_url)
-        self.assertEqual(final_init.returncode, 0, final_init.stderr)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            init_database.validate_schema_snapshot(
+                init_database.fetch_schema_snapshot(cursor),
+                init_database.PRE_GOVERNANCE_SCHEMA_EXPECTATIONS,
+            )
+        governance_guidance, final_init = self.assert_governance_migration_required_then_apply(database_url)
         final_valopers = self.run_migration(database_url)
         final_transactions = self.run_transaction_hash_migration(database_url)
         final_network = self.run_network_distribution_migration(database_url)
@@ -609,7 +644,8 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         self.assertEqual(final_network.returncode, 0, final_network.stderr)
 
         outputs = (transaction, transaction_rerun, valopers, valopers_rerun, guidance,
-                   network, final_init, final_valopers, final_transactions, final_network)
+                   network, governance_guidance, final_init, final_valopers,
+                   final_transactions, final_network)
         for result in outputs:
             self.assertNotIn(self.password, result.stdout + result.stderr)
             self.assertNotIn(database_url, result.stdout + result.stderr)
@@ -621,6 +657,7 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                       "network_distribution_geo_cache", "network_distribution_snapshots",
                       "network_distribution_snapshot_sources"):
             self.assertEqual(counts[table], 0)
+        self.assert_empty_governance_tables(database_url)
 
     def test_atomic_valopers_snapshot_lifecycle(self):
         name = f"utsa_valopers_persistence_{os.getpid()}"
@@ -1041,11 +1078,25 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             cursor.execute("INSERT INTO valoper_profiles (operator_address,moniker,description,server_type,signing_address,signing_pubkey,source_height,list_position) VALUES (%s,'m','d','cloud',%s,%s,1,0)", ('g1'+'2'*38,'g1'+'3'*38,'gpub1'+'2'*86))
         self.assertEqual(self.run_network_distribution_migration(database_url).returncode, 0)
         self.assertEqual(self.run_network_distribution_migration(database_url).returncode, 0)
-        self.assertEqual(self.run_init(database_url).returncode, 0)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("INSERT INTO network_distribution_geo_cache(ip,lookup_success,lookup_provider,fetched_at,expires_at,error_code) VALUES ('192.0.2.1',false,'integration',now(),now()+interval '1 hour','not_found')")
+            init_database.validate_schema_snapshot(
+                init_database.fetch_schema_snapshot(cursor),
+                init_database.PRE_GOVERNANCE_SCHEMA_EXPECTATIONS,
+            )
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
             for table in ('blocks','transactions','validators','rpc_endpoints','valoper_profiles'):
                 cursor.execute(f"SELECT count(*) FROM {table}")
                 self.assertEqual(cursor.fetchone()[0], 1)
+            cursor.execute("SELECT count(*) FROM network_distribution_geo_cache")
+            self.assertEqual(cursor.fetchone()[0], 1)
+        self.assert_governance_migration_required_then_apply(database_url)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            for table in ('blocks','transactions','validators','rpc_endpoints','valoper_profiles',
+                          'network_distribution_geo_cache'):
+                cursor.execute(f"SELECT count(*) FROM {table}")
+                self.assertEqual(cursor.fetchone()[0], 1)
+        self.assert_empty_governance_tables(database_url)
 
     def test_network_distribution_cache_snapshots_retention_and_sources(self):
         name = f"utsa_distribution_storage_{os.getpid()}"
