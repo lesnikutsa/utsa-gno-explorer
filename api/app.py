@@ -25,6 +25,14 @@ from api.schemas import (
     BlockTransactionSummary,
     BlocksResponse,
     HealthResponse,
+    GovernanceProposalDetail,
+    GovernanceProposalDetailResponse,
+    GovernanceProposalListItem,
+    GovernanceProposalsPagination,
+    GovernanceProposalsResponse,
+    GovernanceSourceResponse,
+    GovernanceStatusCounts,
+    GovernanceVoteResponse,
     NetworkResponse,
     NetworkDistributionCountry,
     NetworkDistributionProvider,
@@ -299,6 +307,107 @@ def _health_response_from_row(row: dict, config) -> HealthResponse:
         rpc_last_checked_at=isoformat_utc_z(rpc_last_checked_at),
         api_version=config.api_version,
     )
+
+
+def _governance_datetime(value) -> datetime:
+    if not isinstance(value, datetime):
+        raise ValueError("Invalid stored timestamp")
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
+def _governance_source(row: dict, realm_path: str) -> GovernanceSourceResponse:
+    count = row["proposal_count"]
+    first = row["first_proposal_id"]
+    latest = row["latest_proposal_id"]
+    if (
+        row["chain_id"] != row["current_chain_id"]
+        or row["realm_path"] != realm_path
+        or type(count) is not int
+        or (count == 0 and (first is not None or latest is not None))
+        or (count > 0 and (type(first) is not int or type(latest) is not int or first < 0 or latest < first))
+        or row["actual_proposal_count"] != count
+        or row["actual_first_proposal_id"] != first
+        or row["actual_latest_proposal_id"] != latest
+    ):
+        raise ValueError("Inconsistent governance source")
+    return GovernanceSourceResponse(
+        chain_id=row["chain_id"], realm_path=row["realm_path"],
+        source_height=row["source_height"], page_count=row["page_count"],
+        proposal_count=count, first_proposal_id=first, latest_proposal_id=latest,
+        last_success_at=isoformat_utc_z(_governance_datetime(row["last_success_at"])),
+    )
+
+
+def _governance_status_counts(row: dict, proposal_count: int) -> GovernanceStatusCounts:
+    values = {name: row[f"{name}_count"] for name in ("active", "accepted", "rejected", "unknown")}
+    if any(type(value) is not int or value < 0 for value in values.values()) or sum(values.values()) != proposal_count:
+        raise ValueError("Inconsistent governance status counts")
+    return GovernanceStatusCounts(**values)
+
+
+def _governance_tiers(value) -> list[str]:
+    if not isinstance(value, list) or any(
+        not isinstance(tier, str) or not 1 <= len(tier) <= 64 or not tier.isprintable()
+        for tier in value
+    ):
+        raise ValueError("Invalid eligible tiers")
+    return value
+
+
+def _governance_list_item(row: dict) -> GovernanceProposalListItem:
+    data = {key: row.get(key) for key in (
+        "proposal_id", "title", "author_display", "author_address", "status",
+        "yes_percent", "no_percent", "abstain_percent", "voter_count",
+    )}
+    data["eligible_tiers"] = _governance_tiers(row.get("eligible_tiers"))
+    for key in ("yes_percent", "no_percent", "abstain_percent"):
+        value = data[key]
+        data[key] = None if value is None else float(value)
+        if data[key] is not None and not math.isfinite(data[key]):
+            raise ValueError("Invalid percentage")
+    return GovernanceProposalListItem.model_validate(data, strict=True)
+
+
+def _governance_vote(row: dict, source_height: int) -> GovernanceVoteResponse:
+    first, last = row["first_observed_height"], row["last_observed_height"]
+    first_at, last_at = _governance_datetime(row["first_observed_at"]), _governance_datetime(row["last_observed_at"])
+    if type(first) is not int or type(last) is not int or first < 1 or last < first or last > source_height or last_at < first_at:
+        raise ValueError("Invalid vote observations")
+    return GovernanceVoteResponse.model_validate({
+        "voter_display": row["voter_display"], "voter_address": row["voter_address"],
+        "option": row["option"], "tier": row["tier"], "voting_power": row["voting_power"],
+        "first_observed_height": first, "last_observed_height": last,
+    }, strict=True)
+
+
+def _governance_detail(result: dict, realm_path: str) -> GovernanceProposalDetailResponse:
+    source = _governance_source(result["source"], realm_path)
+    _governance_status_counts(result["source"], source.proposal_count)
+    proposal = result["proposal"]
+    votes = result["votes"]
+    if len(votes) > 1000:
+        raise ValueError("Too many votes")
+    public_votes = [_governance_vote(row, source.source_height) for row in votes]
+    identities = [(vote.voter_address or vote.voter_display) for vote in public_votes]
+    first, last = proposal["first_observed_height"], proposal["last_observed_height"]
+    first_at, last_at = _governance_datetime(proposal["first_observed_at"]), _governance_datetime(proposal["last_observed_at"])
+    if (
+        len(identities) != len(set(identities)) or type(first) is not int or type(last) is not int
+        or first < 1 or last < first or last > source.source_height or last_at < first_at
+        or proposal["voter_count"] != len(votes)
+        or proposal["votes_parse_status"] == "unparsed"
+        or (proposal["votes_parse_status"] == "parsed") != bool(votes)
+    ):
+        raise ValueError("Inconsistent governance detail")
+    base = _governance_list_item(proposal).model_dump()
+    base.update({key: proposal[key] for key in (
+        "description", "executor_text", "executor_creation_realm", "rejection_reason",
+        "detail_parse_status", "votes_parse_status",
+    )})
+    base.update(first_observed_height=first, last_observed_height=last,
+                first_observed_at=isoformat_utc_z(first_at), last_observed_at=isoformat_utc_z(last_at),
+                votes=public_votes)
+    return GovernanceProposalDetailResponse(source=source, proposal=GovernanceProposalDetail.model_validate(base, strict=True))
 
 
 def _network_response_from_row(row: dict) -> NetworkResponse:
@@ -714,6 +823,62 @@ def get_validator_detail(address: str = Path(min_length=1, max_length=128)) -> V
         raise
     except Exception:
         LOGGER.error("Explorer database validator detail query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+
+
+@app.get("/api/governance/proposals", response_model=GovernanceProposalsResponse)
+def get_governance_proposals(
+    limit: int = Query(default=20, ge=1, le=100),
+    before_proposal_id: int | None = Query(default=None, ge=0),
+) -> GovernanceProposalsResponse:
+    realm_path = app.state.api_config.governance_realm
+    try:
+        result = database.fetch_governance_proposals(
+            realm_path=realm_path, limit=limit, before_proposal_id=before_proposal_id,
+        )
+        if result is None:
+            raise HTTPException(status_code=404, detail="Governance snapshot not found")
+        source = _governance_source(result["source"], realm_path)
+        counts = _governance_status_counts(result["source"], source.proposal_count)
+        rows = result["items"]
+        page_rows = rows[:limit]
+        items = [_governance_list_item(row) for row in page_rows]
+        if [item.proposal_id for item in items] != sorted(
+            (item.proposal_id for item in items), reverse=True
+        ):
+            raise ValueError("Invalid proposal ordering")
+        next_cursor = items[-1].proposal_id if len(rows) > limit and items else None
+        return GovernanceProposalsResponse(
+            source=source, status_counts=counts, items=items,
+            pagination=GovernanceProposalsPagination(
+                limit=limit, next_before_proposal_id=next_cursor,
+            ),
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.error("Explorer database governance list query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+
+
+@app.get("/api/governance/proposals/{proposal_id}", response_model=GovernanceProposalDetailResponse)
+def get_governance_proposal(proposal_id: int = Path(ge=0)) -> GovernanceProposalDetailResponse:
+    realm_path = app.state.api_config.governance_realm
+    try:
+        result = database.fetch_governance_proposal_detail(
+            realm_path=realm_path, proposal_id=proposal_id,
+        )
+        if result is None:
+            raise HTTPException(status_code=404, detail="Governance snapshot not found")
+        if result["proposal"] is None:
+            source = _governance_source(result["source"], realm_path)
+            _governance_status_counts(result["source"], source.proposal_count)
+            raise HTTPException(status_code=404, detail="Governance proposal not found")
+        return _governance_detail(result, realm_path)
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.error("Explorer database governance detail query failed")
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
 
 

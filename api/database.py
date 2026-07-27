@@ -477,6 +477,74 @@ LEFT JOIN validator_signatures signature
 ORDER BY current.voting_power DESC, current.signing_address ASC, recent.height ASC
 """
 
+GOVERNANCE_SOURCE_SQL = """
+SELECT s.chain_id AS current_chain_id, sync.chain_id, sync.realm_path,
+       sync.source_height, sync.page_count, sync.proposal_count,
+       sync.first_proposal_id, sync.latest_proposal_id, sync.last_success_at,
+       stats.actual_proposal_count, stats.actual_first_proposal_id,
+       stats.actual_latest_proposal_id, stats.active_count, stats.accepted_count,
+       stats.rejected_count, stats.unknown_count
+FROM indexer_state s
+LEFT JOIN governance_sync_state sync
+  ON sync.chain_id = s.chain_id AND sync.realm_path = %s
+LEFT JOIN LATERAL (
+    SELECT count(*)::bigint AS actual_proposal_count,
+           min(proposal_id) AS actual_first_proposal_id,
+           max(proposal_id) AS actual_latest_proposal_id,
+           count(*) FILTER (WHERE status = 'ACTIVE')::bigint AS active_count,
+           count(*) FILTER (WHERE status = 'ACCEPTED')::bigint AS accepted_count,
+           count(*) FILTER (WHERE status = 'REJECTED')::bigint AS rejected_count,
+           count(*) FILTER (WHERE status = 'UNKNOWN')::bigint AS unknown_count
+    FROM governance_proposals
+    WHERE chain_id = s.chain_id AND realm_path = %s
+) stats ON sync.chain_id IS NOT NULL
+WHERE s.state_key = %s
+"""
+
+GOVERNANCE_PROPOSALS_SQL = """
+SELECT proposal.proposal_id, proposal.title, proposal.author_display,
+       proposal.author_address, proposal.status, proposal.eligible_tiers,
+       proposal.yes_percent, proposal.no_percent, proposal.abstain_percent,
+       (SELECT count(*)::bigint FROM (
+            SELECT 1 FROM governance_votes vote
+            WHERE vote.chain_id = proposal.chain_id
+              AND vote.realm_path = proposal.realm_path
+              AND vote.proposal_id = proposal.proposal_id
+            LIMIT 1001
+        ) bounded_votes) AS voter_count
+FROM governance_proposals proposal
+WHERE proposal.chain_id = %s AND proposal.realm_path = %s
+  AND (%s::bigint IS NULL OR proposal.proposal_id < %s::bigint)
+ORDER BY proposal.proposal_id DESC
+LIMIT %s
+"""
+
+GOVERNANCE_PROPOSAL_DETAIL_SQL = """
+SELECT proposal.proposal_id, proposal.title, proposal.author_display,
+       proposal.author_address, proposal.status, proposal.eligible_tiers,
+       proposal.description, proposal.executor_text,
+       proposal.executor_creation_realm, proposal.rejection_reason,
+       proposal.yes_percent, proposal.no_percent, proposal.abstain_percent,
+       proposal.detail_parse_status, proposal.votes_parse_status,
+       proposal.first_observed_height, proposal.last_observed_height,
+       proposal.first_observed_at, proposal.last_observed_at,
+       (SELECT count(*)::bigint FROM governance_votes vote
+        WHERE vote.chain_id = proposal.chain_id AND vote.realm_path = proposal.realm_path
+          AND vote.proposal_id = proposal.proposal_id) AS voter_count
+FROM governance_proposals proposal
+WHERE proposal.chain_id = %s AND proposal.realm_path = %s
+  AND proposal.proposal_id = %s
+"""
+
+GOVERNANCE_VOTES_SQL = """
+SELECT voter_display, voter_address, option, tier, voting_power::text AS voting_power,
+       first_observed_height, last_observed_height, first_observed_at, last_observed_at
+FROM governance_votes
+WHERE chain_id = %s AND realm_path = %s AND proposal_id = %s
+ORDER BY tier ASC, voter_key ASC
+LIMIT 1001
+"""
+
 
 class MissingIndexerStateError(RuntimeError):
     """Raised when the singleton indexer state row is missing."""
@@ -522,6 +590,54 @@ class ApiDatabase:
         if row is None:
             raise MissingIndexerStateError("Default indexer state is missing")
         return dict(row)
+
+    def _fetch_governance_source(self, cursor: Any, realm_path: str) -> dict[str, Any] | None:
+        cursor.execute(GOVERNANCE_SOURCE_SQL, (realm_path, realm_path, "default"))
+        row = cursor.fetchone()
+        if row is None:
+            raise MissingIndexerStateError("Default indexer state is missing")
+        result = dict(row)
+        return None if result["chain_id"] is None else result
+
+    def fetch_governance_proposals(
+        self, *, realm_path: str, limit: int, before_proposal_id: int | None
+    ) -> dict[str, Any] | None:
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection:
+            with connection.cursor() as cursor:
+                source = self._fetch_governance_source(cursor, realm_path)
+                if source is None:
+                    return None
+                cursor.execute(GOVERNANCE_PROPOSALS_SQL, (
+                    source["chain_id"], realm_path, before_proposal_id,
+                    before_proposal_id, limit + 1,
+                ))
+                rows = cursor.fetchall()
+        return {"source": source, "items": [dict(row) for row in rows]}
+
+    def fetch_governance_proposal_detail(
+        self, *, realm_path: str, proposal_id: int
+    ) -> dict[str, Any] | None:
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection:
+            with connection.cursor() as cursor:
+                source = self._fetch_governance_source(cursor, realm_path)
+                if source is None:
+                    return None
+                identity = (source["chain_id"], realm_path, proposal_id)
+                cursor.execute(GOVERNANCE_PROPOSAL_DETAIL_SQL, identity)
+                proposal = cursor.fetchone()
+                if proposal is None:
+                    return {"source": source, "proposal": None, "votes": []}
+                cursor.execute(GOVERNANCE_VOTES_SQL, identity)
+                votes = cursor.fetchall()
+        return {
+            "source": source,
+            "proposal": dict(proposal),
+            "votes": [dict(row) for row in votes],
+        }
 
     def fetch_network_overview(self) -> dict[str, Any]:
         if self.pool is None:
