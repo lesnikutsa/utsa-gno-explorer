@@ -19,7 +19,7 @@ const formatPercent = (value) => {
   return Number.isFinite(number) ? `${number.toFixed(2)}%` : '—'
 }
 
-const missedSeverity = (missed) => missed >= 10 ? 'high' : missed >= 2 ? 'medium' : 'low'
+const missedSeverity = (missed) => missed >= 50 ? 'high' : missed >= 10 ? 'medium' : 'low'
 const formatHeight = (height) => height === null ? '—' : `#${height.toLocaleString()}`
 
 const healthBadge = (uptime) => {
@@ -28,9 +28,9 @@ const healthBadge = (uptime) => {
 }
 
 const legend = [
-  { label: 'Healthy', tone: 'success', detail: 'less than 10% missed' },
-  { label: 'Degraded', tone: 'warning', detail: '10–49% missed' },
-  { label: 'Critical', tone: 'error', detail: '50–99% missed' },
+  { label: 'Healthy', tone: 'success', detail: 'less than 1% missed' },
+  { label: 'Degraded', tone: 'warning', detail: '1–4.99% missed' },
+  { label: 'Critical', tone: 'error', detail: '5–99.99% missed' },
   { label: 'No signatures', tone: 'error', detail: 'all active blocks missed' },
   { label: 'Unknown / No data', tone: 'neutral', detail: 'incomplete or unavailable signing history' },
 ]
@@ -58,13 +58,13 @@ export function Validators({ validatorsPage }) {
       </a>
     ) },
     { key: 'voting_power', label: 'Voting Power', sortable: true, defaultSortDirection: 'descending', render: (row) => <span className="validator-power mono"><span>{formatIntegerString(row.voting_power)}</span><span className="validator-power__percent">{formatPercent(row.percent)}</span></span> },
-    { key: 'uptime_100', label: 'Uptime (100)', sortable: true, defaultSortDirection: 'descending', render: (row) => <span className="mono">{formatPercent(row.uptime_100?.uptime_percent)}</span> },
-    { key: 'missed_100', label: 'Signing (100)', sortable: true, defaultSortDirection: 'descending', render: (row) => {
-      const missed = getMissedBlocks(row.uptime_100)
+    { key: 'uptime_1000', label: 'Uptime (1000)', sortable: true, defaultSortDirection: 'descending', render: (row) => <span className="mono">{formatPercent(row.uptime_1000?.uptime_percent)}</span> },
+    { key: 'missed_1000', label: 'Signing (1000)', sortable: true, defaultSortDirection: 'descending', render: (row) => {
+      const missed = getMissedBlocks(row.uptime_1000)
       const history = row.address ? historyMap.get(row.address) : null
-      return <span className="validator-signing-cell"><strong className={`missed-value missed-value--${missedSeverity(missed)}`} title={getValidatorMissedBreakdown(row.uptime_100)}>{missed} missed</strong><ValidatorSigningStrip blocks={historyBlocks} statuses={history?.statuses} address={row.address} /></span>
+      return <span className="validator-signing-cell"><strong className={`missed-value missed-value--${missedSeverity(missed)}`} title={getValidatorMissedBreakdown(row.uptime_1000)}>{missed} missed</strong><ValidatorSigningStrip blocks={historyBlocks} statuses={history?.statuses} address={row.address} /></span>
     } },
-    { key: 'health_100', label: 'Health (100)', sortable: true, defaultSortDirection: 'descending', render: (row) => healthBadge(row.uptime_100) },
+    { key: 'health_1000', label: 'Health (1000)', sortable: true, defaultSortDirection: 'descending', render: (row) => healthBadge(row.uptime_1000) },
     { key: 'proposer_priority', label: 'Proposer Priority', sortable: true, defaultSortDirection: 'descending', headerTitle: 'Consensus proposer-selection priority. A higher current value generally means the validator is closer to proposing. This is not a performance or health score.', render: (row) => <span className="mono">{formatIntegerString(row.proposer_priority)}</span> },
   ], [historyBlocks, historyMap])
   const rows = useMemo(() => validators.map((validator, index) => ({ ...validator, powerRank: index + 1 })), [validators])
@@ -73,9 +73,9 @@ export function Validators({ validatorsPage }) {
     let comparison = 0
     if (sort.key === 'address') comparison = compareValidatorIdentity(left, right)
     if (sort.key === 'voting_power') comparison = compareIntegerStrings(left.voting_power, right.voting_power)
-    if (sort.key === 'uptime_100') comparison = (left.uptime_100?.uptime_percent ?? 0) - (right.uptime_100?.uptime_percent ?? 0)
-    if (sort.key === 'missed_100') comparison = getMissedBlocks(left.uptime_100) - getMissedBlocks(right.uptime_100)
-    if (sort.key === 'health_100') comparison = compareValidatorHealth(getValidatorHealth(left.uptime_100).key, getValidatorHealth(right.uptime_100).key)
+    if (sort.key === 'uptime_1000') comparison = (left.uptime_1000?.uptime_percent ?? 0) - (right.uptime_1000?.uptime_percent ?? 0)
+    if (sort.key === 'missed_1000') comparison = getMissedBlocks(left.uptime_1000) - getMissedBlocks(right.uptime_1000)
+    if (sort.key === 'health_1000') comparison = compareValidatorHealth(getValidatorHealth(left.uptime_1000).key, getValidatorHealth(right.uptime_1000).key)
     if (sort.key === 'proposer_priority') comparison = compareIntegerStrings(left.proposer_priority, right.proposer_priority)
     if (comparison === 0) return left.powerRank - right.powerRank
     return sort.direction === 'ascending' ? comparison : -comparison
@@ -99,7 +99,7 @@ export function Validators({ validatorsPage }) {
         </button>
       </header>
 
-      <p className="validators-page__notice">All validators shown are members of the current active set. Health reflects signing performance across the latest window of up to 100 network blocks, considering only blocks where the validator was active. It is not a protocol slashing status.</p>
+      <p className="validators-page__notice">All validators shown are members of the current active set. Health reflects signing performance across the latest window of up to 1000 network blocks, considering only blocks where the validator was active. It is not a protocol slashing status.</p>
 
       <div className="validators-page__summary" aria-label="Validator set summary">
         <div className="validators-page__metric"><span>Active Validators</span><strong>{hasSuccessfulResponse ? response.total.toLocaleString() : '—'}</strong></div>

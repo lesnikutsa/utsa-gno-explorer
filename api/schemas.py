@@ -246,7 +246,7 @@ class ValidatorListItem(BaseModel):
     server_type: ValoperServerType | None = None
     valoper_source_height: int | None = Field(default=None, ge=1)
     uptime_20: ValidatorUptime
-    uptime_100: ValidatorUptime
+    uptime_1000: ValidatorUptime
 
 
 class ValidatorsResponse(BaseModel):
@@ -323,5 +323,5 @@ class ValidatorDetailResponse(BaseModel):
     valoper_source_height: int | None = Field(default=None, ge=1)
     current: ValidatorCurrentStatus
     uptime_20: ValidatorUptime
-    uptime_100: ValidatorUptime
+    uptime_1000: ValidatorUptime
     signing_history: ValidatorSigningHistory

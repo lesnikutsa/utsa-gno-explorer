@@ -17,8 +17,8 @@ def active_row(address=ADDRESS, **profile):
         "voting_power": Decimal("10"), "proposer_priority": Decimal("-2"),
         "active_blocks_20": 1, "signed_blocks_20": 1, "nil_blocks_20": 0,
         "absent_blocks_20": 0, "invalid_blocks_20": 0, "unknown_blocks_20": 0,
-        "active_blocks_100": 1, "signed_blocks_100": 1, "nil_blocks_100": 0,
-        "absent_blocks_100": 0, "invalid_blocks_100": 0, "unknown_blocks_100": 0,
+        "active_blocks_1000": 1, "signed_blocks_1000": 1, "nil_blocks_1000": 0,
+        "absent_blocks_1000": 0, "invalid_blocks_1000": 0, "unknown_blocks_1000": 0,
         "moniker": None, "operator_address": None, "server_type": None,
         "valoper_source_height": None,
     }
@@ -51,7 +51,7 @@ class ValoperIdentityTests(unittest.TestCase):
                            signing_pubkey="hidden", description="hidden", inserted_at="hidden"),
                 active_row("g1" + "4" * 38, voting_power=Decimal("5"))]
         response = _validators_response_from_rows({
-            "checkpoint": {"height": 2, "network_blocks_20": 1, "network_blocks_100": 1},
+            "checkpoint": {"height": 2, "network_blocks_20": 1, "network_blocks_1000": 1},
             "items": rows,
         })
         data = response.model_dump()
@@ -77,7 +77,7 @@ class ValoperIdentityTests(unittest.TestCase):
                          ["Official", OPERATOR, "Profile", "data-center", 947852])
         self.assertTrue(matched["current"]["active"])
         self.assertEqual(matched["signing_pubkey"], SIGNING_PUBKEY)
-        self.assertEqual(matched["uptime_100"]["uptime_percent"], 100.0)
+        self.assertEqual(matched["uptime_1000"]["uptime_percent"], 100.0)
         self.assertEqual(matched["signing_history"]["items"][0]["status"], "commit")
         self.assertTrue({"list_position", "inserted_at", "updated_at"}.isdisjoint(matched))
         unmatched = detail({})

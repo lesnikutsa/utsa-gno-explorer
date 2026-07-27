@@ -480,7 +480,7 @@ def _validators_response_from_rows(result: dict) -> ValidatorsResponse:
     items = []
     for row in rows:
         uptimes = {}
-        for window in (20, 100):
+        for window in (20, 1000):
             active = int(row[f"active_blocks_{window}"])
             signed = int(row[f"signed_blocks_{window}"])
             uptimes[window] = ValidatorUptime(
@@ -504,7 +504,7 @@ def _validators_response_from_rows(result: dict) -> ValidatorsResponse:
             server_type=row.get("server_type"),
             valoper_source_height=row.get("valoper_source_height"),
             uptime_20=uptimes[20],
-            uptime_100=uptimes[100],
+            uptime_1000=uptimes[1000],
         ))
     return ValidatorsResponse(
         height=checkpoint["height"], total=len(items),
@@ -544,13 +544,14 @@ def _validator_detail_from_rows(result: dict) -> ValidatorDetailResponse:
     identity = result["identity"]
     current_row = result["current"]
     active = current_row["voting_power"] is not None
-    history_items = [
+    all_history_items = [
         ValidatorSigningHistoryItem(
             height=row["height"], time=isoformat_utc_z(row["time_utc"]), status=_history_status(row)
         )
         for row in result["history"]
     ]
-    heights = [item.height for item in history_items]
+    visible_history_items = all_history_items[-100:]
+    heights = [item.height for item in visible_history_items]
     current_power = current_row["voting_power"]
     return ValidatorDetailResponse(
         address=identity["address"],
@@ -572,13 +573,13 @@ def _validator_detail_from_rows(result: dict) -> ValidatorDetailResponse:
             proposer_priority=(None if not active or current_row["proposer_priority"] is None
                                else str(current_row["proposer_priority"])),
         ),
-        uptime_20=_uptime_from_history(history_items[-20:]),
-        uptime_100=_uptime_from_history(history_items),
+        uptime_20=_uptime_from_history(all_history_items[-20:]),
+        uptime_1000=_uptime_from_history(all_history_items),
         signing_history=ValidatorSigningHistory(
-            network_blocks=len(history_items),
+            network_blocks=len(visible_history_items),
             start_height=min(heights) if heights else None,
             end_height=max(heights) if heights else None,
-            items=history_items,
+            items=visible_history_items,
         ),
     )
 

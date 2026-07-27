@@ -154,14 +154,14 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
     def test_signing_history_contains_uptime_and_health_without_performance_card(self):
         self.assertLess(self.page.index("Current Status"), self.page.index("<SigningHistory validator={validator} />"))
         self.assertLess(self.page.index("<SigningHistory validator={validator} />"), self.page.index("Validator Identity"))
-        self.assertIn("const uptime = validator.uptime_100", self.page)
-        self.assertIn('<Field label="Uptime" mono>{formatPercent(uptime.uptime_percent)}</Field>', self.page)
+        self.assertIn("const uptime = validator.uptime_1000", self.page)
+        self.assertIn('<Field label="Uptime (1000)" mono>{formatPercent(uptime.uptime_percent)}</Field>', self.page)
         self.assertIn("getValidatorHealth(uptime)", self.page)
         self.assertIn("<StatusBadge tone={health.tone}>{health.label}</StatusBadge>", self.page)
         self.assertEqual(self.page.count("<StatusBadge"), 1)
         self.assertNotIn('className="signing-history__summary"', self.page)
         metadata = self.page[self.page.index('className="signing-history__range"'):self.page.index('className="signing-history__strip"')]
-        labels = ["From Block", "To Block", "Network Blocks", "Uptime", "Health"]
+        labels = ["From Block", "To Block", "Visible Blocks", "Uptime (1000)", "Health (1000)"]
         self.assertEqual(sorted(labels, key=metadata.index), labels)
         self.assertNotIn("Signing Performance", self.page)
         self.assertNotIn("PerformanceCard", self.page)
@@ -169,6 +169,20 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
         self.assertNotIn("getMissedBlocks", self.page)
         for metric in ('label="Active Blocks"', 'label="Signed"', 'label="Missed"'):
             self.assertNotIn(metric, self.page)
+
+    def test_list_pages_use_1000_block_contract_and_keep_visual_history_at_50(self):
+        for source in (self.overview, self.validators):
+            self.assertIn("uptime_1000", source)
+            self.assertNotIn("uptime_100.", source)
+            self.assertIn("missed >= 50 ? 'high' : missed >= 10", source)
+        self.assertIn("label: 'Signing (1000)'", self.overview)
+        self.assertIn("No validator misses in the last 1000 blocks.", self.overview)
+        for label in ("Uptime (1000)", "Signing (1000)", "Health (1000)"):
+            self.assertIn(label, self.validators)
+        self.assertIn("less than 1% missed", self.validators)
+        self.assertIn("1–4.99% missed", self.validators)
+        self.assertIn("5–99.99% missed", self.validators)
+        self.assertIn("Latest 50 signing blocks", self.overview)
 
     def test_incomplete_uptime_data_has_neutral_health(self):
         self.assertIn("const requiredCounters =", self.page)
@@ -207,7 +221,7 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
 
     def test_overview_links_exact_signing_identity_without_row_navigation(self):
         identity = self.overview.split("label: 'Validator'", 1)[1].split(
-            "label: 'Signing (last 100)'", 1
+            "label: 'Signing (1000)'", 1
         )[0]
         self.assertIn(
             'className="validator-identity validator-identity--link"', identity

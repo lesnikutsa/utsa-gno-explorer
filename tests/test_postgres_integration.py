@@ -785,10 +785,23 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         pubkeys = ["gpub1" + char * 86 for char in "acde"]
         with psycopg.connect(database_url, row_factory=psycopg.rows.dict_row) as connection:
             with connection.cursor() as cursor:
-                cursor.execute("INSERT INTO blocks (height, block_hash_base64, block_hash_hex, time_utc, tx_count) VALUES (10, 'Cg==', '0A', now(), 0)")
+                cursor.executemany("INSERT INTO blocks (height, block_hash_base64, block_hash_hex, time_utc, tx_count) VALUES (%s, %s, %s, now(), 0)", [(height, f'hash-{height}', f'{height:02X}') for height in range(6, 11)])
                 cursor.execute("INSERT INTO indexer_state (state_key, chain_id, last_finalized_height) VALUES ('default', 'test-13', 10)")
                 cursor.executemany("INSERT INTO validators (signing_address, public_key_type, public_key_value, first_seen_height, last_seen_height) VALUES (%s, '/tm.PubKeyEd25519', %s, 1, 10)", [(matched, 'key1'), (unmatched, 'key2'), (historical, 'key3')])
-                cursor.executemany("INSERT INTO validator_set_members (height, signing_address, voting_power, proposer_priority) VALUES (10, %s, %s, 0)", [(matched, 20), (unmatched, 10)])
+                cursor.executemany("INSERT INTO validator_set_members (height, signing_address, voting_power, proposer_priority) VALUES (%s, %s, %s, 0)", [
+                    *((height, matched, 20) for height in range(6, 11)),
+                    *((height, unmatched, 10) for height in range(9, 11)),
+                    *((height, historical, 5) for height in range(6, 10)),
+                ])
+                cursor.executemany("INSERT INTO validator_signatures (height, signing_address, signed, vote_status, vote_block_id_is_zero, block_id_matches_commit) VALUES (%s, %s, false, %s, %s, false)", [
+                    (7, matched, 'nil', True),
+                    (8, matched, 'absent', False),
+                    (9, matched, 'invalid', False),
+                ])
+                cursor.executemany("INSERT INTO validator_signatures (height, signing_address, signed, vote_status, vote_block_id_hash_base64, vote_block_id_hash_hex, vote_block_id_parts_total, vote_block_id_parts_hash_base64, vote_block_id_parts_hash_hex, block_id_matches_commit, signature_base64) VALUES (%s, %s, true, 'commit', 'AQ==', '01', 1, 'AQ==', '01', true, 'signature')", [
+                    (6, matched),
+                    (9, unmatched),
+                ])
                 cursor.executemany("INSERT INTO valoper_profiles (operator_address, moniker, description, server_type, signing_address, signing_pubkey, source_height, list_position) VALUES (%s, %s, 'Profile', %s, %s, %s, %s, %s)", [
                     (operators[0], 'Active Official', 'cloud', matched, pubkeys[0], 947852, 0),
                     (operators[1], 'Historical Official', 'on-prem', historical, pubkeys[1], 947852, 1),
@@ -799,6 +812,25 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                 self.assertEqual([row['address'] for row in active], [matched, unmatched])
                 self.assertEqual(len({row['address'] for row in active}), 2)
                 self.assertEqual(sum(row['voting_power'] for row in active), 30)
+                self.assertEqual(active[0]['active_blocks_1000'], 5)
+                self.assertEqual(active[0]['signed_blocks_1000'], 1)
+                self.assertEqual(active[0]['nil_blocks_1000'], 1)
+                self.assertEqual(active[0]['absent_blocks_1000'], 1)
+                self.assertEqual(active[0]['invalid_blocks_1000'], 1)
+                self.assertEqual(active[0]['unknown_blocks_1000'], 1)
+                self.assertEqual(active[1]['active_blocks_1000'], 2)
+                self.assertEqual(active[1]['signed_blocks_1000'], 1)
+                self.assertEqual(active[1]['unknown_blocks_1000'], 1)
+                self.assertNotIn(historical, [row['address'] for row in active])
+                expected = [
+                    (5, 1, 1, 1, 1, 1),
+                    (2, 1, 0, 0, 0, 1),
+                ]
+                for row, counters in zip(active, expected):
+                    for window in (20, 1000):
+                        actual = tuple(row[f'{name}_blocks_{window}'] for name in ('active', 'signed', 'nil', 'absent', 'invalid', 'unknown'))
+                        self.assertEqual(actual, counters)
+                        self.assertEqual(actual[0], sum(actual[1:]))
                 self.assertEqual((active[0]['moniker'], active[0]['operator_address'], active[0]['server_type'], active[0]['valoper_source_height']), ('Active Official', operators[0], 'cloud', 947852))
                 self.assertTrue(all(active[1][key] is None for key in ('moniker', 'operator_address', 'server_type', 'valoper_source_height')))
                 identities = {}

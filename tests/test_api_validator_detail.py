@@ -141,11 +141,11 @@ class ApiValidatorDetailTests(unittest.TestCase):
                 rows.append(history_row(height, signed=(height % 3 == 0)))
         data = self.get(detail_result(history=rows)).json()
         self.assertEqual(data["uptime_20"]["network_blocks"], 20)
-        self.assertEqual(data["uptime_100"]["network_blocks"], 25)
+        self.assertEqual(data["uptime_1000"]["network_blocks"], 25)
         self.assertEqual(data["uptime_20"]["active_blocks"], 19)
         self.assertEqual(data["uptime_20"]["unknown_blocks"], 1)
         self.assertEqual(data["uptime_20"]["uptime_percent"], 31.58)
-        for name in ("uptime_20", "uptime_100"):
+        for name in ("uptime_20", "uptime_1000"):
             uptime = data[name]
             classified = sum(uptime[key] for key in (
                 "signed_blocks", "nil_blocks", "absent_blocks", "invalid_blocks", "unknown_blocks"
@@ -154,13 +154,27 @@ class ApiValidatorDetailTests(unittest.TestCase):
 
     def test_zero_active_blocks(self):
         rows = [history_row(height, membership=False, signature=False) for height in (4, 8)]
-        uptime = self.get(detail_result(history=rows)).json()["uptime_100"]
+        uptime = self.get(detail_result(history=rows)).json()["uptime_1000"]
         self.assertEqual(uptime["active_blocks"], 0)
         self.assertEqual(uptime["uptime_percent"], 0.0)
 
     def test_empty_history_is_defensive(self):
         history = self.get(detail_result(history=[])).json()["signing_history"]
         self.assertEqual(history, {"network_blocks": 0, "start_height": None, "end_height": None, "items": []})
+
+    def test_full_uptime_window_returns_only_latest_100_history_items(self):
+        rows = [history_row(height, signed=height % 10 != 0) for height in range(1, 1001)]
+        data = self.get(detail_result(history=rows)).json()
+
+        self.assertEqual(data["uptime_1000"]["network_blocks"], 1000)
+        self.assertEqual(data["uptime_1000"]["active_blocks"], 1000)
+        self.assertEqual(data["uptime_1000"]["signed_blocks"], 900)
+        self.assertEqual(data["uptime_20"]["signed_blocks"], 18)
+        history = data["signing_history"]
+        self.assertEqual(history["network_blocks"], 100)
+        self.assertEqual((history["start_height"], history["end_height"]), (901, 1000))
+        self.assertEqual([item["height"] for item in history["items"]], list(range(901, 1001)))
+        self.assertNotIn("uptime_100", data)
 
     def test_unknown_exact_address_returns_404(self):
         response = self.get(None)
@@ -197,7 +211,7 @@ class ApiValidatorDetailTests(unittest.TestCase):
             data,
             data["current"],
             data["uptime_20"],
-            data["uptime_100"],
+            data["uptime_1000"],
             data["signing_history"],
             *data["signing_history"]["items"],
         ]
@@ -208,7 +222,7 @@ class ApiValidatorDetailTests(unittest.TestCase):
         }
         self.assertTrue(forbidden_keys.isdisjoint(exposed_keys))
         self.assertIn("signed_blocks", data["uptime_20"])
-        self.assertIn("signed_blocks", data["uptime_100"])
+        self.assertIn("signed_blocks", data["uptime_1000"])
         for item in data["signing_history"]["items"]:
             self.assertEqual(set(item), {"height", "time", "status"})
 
@@ -217,7 +231,7 @@ class ApiValidatorDetailTests(unittest.TestCase):
 
         self.assertIn("WHERE validator.signing_address = %s", VALIDATOR_IDENTITY_SQL)
         self.assertIn("s.last_finalized_height", VALIDATOR_CURRENT_SQL)
-        self.assertIn("LIMIT 100", VALIDATOR_HISTORY_SQL)
+        self.assertIn("LIMIT 1000", VALIDATOR_HISTORY_SQL)
         self.assertIn("ORDER BY recent.height ASC", VALIDATOR_HISTORY_SQL)
         self.assertNotIn("max(", VALIDATOR_HISTORY_SQL.lower())
 
