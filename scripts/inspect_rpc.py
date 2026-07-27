@@ -15,6 +15,9 @@ from urllib.parse import urlencode, urljoin
 from urllib.request import urlopen
 
 DEFAULT_TIMEOUT = 10
+MAX_ABCI_RESPONSE_BYTES = 1024 * 1024
+
+
 class RpcError(RuntimeError):
     """Raised when an RPC endpoint cannot be queried or parsed safely."""
 
@@ -69,6 +72,41 @@ class GnoRpcClient:
         except json.JSONDecodeError as exc:
             raise RpcError(f"RPC response for {method} was not valid JSON") from exc
         return validate_payload(method, payload)
+
+    def abci_query(self, path: str, data: str, height: int | None = None) -> str:
+        """Run a TM2 ABCI query and return its bounded UTF-8 response data."""
+        if not path or not isinstance(data, str):
+            raise RpcError("ABCI query path and string data are required")
+        encoded = base64.b64encode(data.encode("utf-8")).decode("ascii")
+        params: dict[str, Any] = {
+            "path": json.dumps(path),
+            "data": json.dumps(encoded),
+            "prove": "false",
+        }
+        if height is not None:
+            params["height"] = height
+        payload = self.get("abci_query", **params)
+        try:
+            response = payload["result"]["response"]
+            response_base = response["ResponseBase"]
+            error = response_base["Error"]
+            value = response_base["Data"]
+        except (KeyError, TypeError) as exc:
+            raise RpcError("Malformed ABCI response") from exc
+        if error not in (None, ""):
+            raise RpcError("ABCI query returned an application error")
+        if not isinstance(value, str) or len(value) > 4 * ((MAX_ABCI_RESPONSE_BYTES + 2) // 3):
+            raise RpcError("Malformed or oversized ABCI response data")
+        try:
+            decoded = base64.b64decode(value, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise RpcError("Malformed ABCI response data") from exc
+        if len(decoded) > MAX_ABCI_RESPONSE_BYTES:
+            raise RpcError("ABCI response exceeds size limit")
+        try:
+            return decoded.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise RpcError("ABCI response data is not UTF-8") from exc
 
     def _get_with_urllib(self, url: str, method: str, params: dict[str, Any]) -> dict[str, Any]:
         query = urlencode({key: value for key, value in params.items() if value is not None})
