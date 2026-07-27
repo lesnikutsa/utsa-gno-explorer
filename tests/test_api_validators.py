@@ -133,16 +133,26 @@ class ApiValidatorsTests(unittest.TestCase):
 
         self.assertIn("ORDER BY current.voting_power DESC, current.signing_address ASC", ACTIVE_VALIDATORS_SQL)
         self.assertNotIn("CROSS JOIN recent_blocks", ACTIVE_VALIDATORS_SQL)
-        self.assertIn("uptime_by_validator AS (", ACTIVE_VALIDATORS_SQL)
-        self.assertIn("GROUP BY membership.signing_address", ACTIVE_VALIDATORS_SQL)
-        self.assertIn("LEFT JOIN uptime_by_validator uptime", ACTIVE_VALIDATORS_SQL)
+        self.assertIn("membership_by_validator AS (", ACTIVE_VALIDATORS_SQL)
+        self.assertIn("signatures_by_validator AS (", ACTIVE_VALIDATORS_SQL)
+        membership_cte = ACTIVE_VALIDATORS_SQL.split("membership_by_validator AS (", 1)[1].split("signatures_by_validator AS (", 1)[0]
+        signatures_cte = ACTIVE_VALIDATORS_SQL.split("signatures_by_validator AS (", 1)[1].split(")\nSELECT", 1)[0]
+        self.assertIn("JOIN current_validators current", membership_cte)
+        self.assertIn("JOIN current_validators current", signatures_cte)
+        self.assertNotIn("validator_signatures", membership_cte)
+        self.assertNotIn("validator_set_members", signatures_cte)
+        self.assertIn("observed_signatures_20", ACTIVE_VALIDATORS_SQL)
+        self.assertIn("observed_signatures_1000", ACTIVE_VALIDATORS_SQL)
+        self.assertIn("GREATEST(", ACTIVE_VALIDATORS_SQL)
+        self.assertIn("LEFT JOIN membership_by_validator membership", ACTIVE_VALIDATORS_SQL)
+        self.assertIn("LEFT JOIN signatures_by_validator signatures", ACTIVE_VALIDATORS_SQL)
         self.assertIn("LIMIT 1000", ACTIVE_VALIDATORS_SQL)
         self.assertIn("network_blocks_1000", VALIDATORS_CHECKPOINT_SQL)
         for counter in ("active", "signed", "nil", "absent", "invalid", "unknown"):
             self.assertIn(f"{counter}_blocks_20", ACTIVE_VALIDATORS_SQL)
             self.assertIn(f"{counter}_blocks_1000", ACTIVE_VALIDATORS_SQL)
-            self.assertIn(f"COALESCE(uptime.{counter}_blocks_20, 0)", ACTIVE_VALIDATORS_SQL)
-            self.assertIn(f"COALESCE(uptime.{counter}_blocks_1000, 0)", ACTIVE_VALIDATORS_SQL)
+        self.assertIn("membership.active_blocks_20, 0) - COALESCE(signatures.observed_signatures_20, 0)", ACTIVE_VALIDATORS_SQL)
+        self.assertIn("membership.active_blocks_1000, 0) - COALESCE(signatures.observed_signatures_1000, 0)", ACTIVE_VALIDATORS_SQL)
 
 
 if __name__ == "__main__":

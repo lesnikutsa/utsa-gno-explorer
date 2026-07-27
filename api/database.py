@@ -282,59 +282,55 @@ WITH recent_blocks AS MATERIALIZED (
     FROM (
         SELECT height FROM blocks WHERE height <= %s ORDER BY height DESC LIMIT 1000
     ) bounded_blocks
-), current_validators AS (
-    SELECT vsm.signing_address, vsm.voting_power, vsm.proposer_priority, v.public_key_type
+), current_validators AS MATERIALIZED (
+    SELECT vsm.signing_address, vsm.voting_power, vsm.proposer_priority, validator.public_key_type
     FROM validator_set_members vsm
-    LEFT JOIN validators v ON v.signing_address = vsm.signing_address
+    LEFT JOIN validators validator ON validator.signing_address = vsm.signing_address
     WHERE vsm.height = %s
-), uptime_by_validator AS (
-    SELECT
-        membership.signing_address,
-        count(*) FILTER (WHERE recent.position <= 20)::bigint AS active_blocks_20,
-        count(*) FILTER (WHERE recent.position <= 20 AND signature.signed = true)::bigint AS signed_blocks_20,
-        count(*) FILTER (WHERE recent.position <= 20 AND signature.vote_status = 'nil')::bigint AS nil_blocks_20,
-        count(*) FILTER (WHERE recent.position <= 20 AND signature.vote_status = 'absent')::bigint AS absent_blocks_20,
-        count(*) FILTER (WHERE recent.position <= 20 AND signature.vote_status = 'invalid')::bigint AS invalid_blocks_20,
-        count(*) FILTER (WHERE recent.position <= 20 AND signature.signing_address IS NULL)::bigint AS unknown_blocks_20,
-        count(*)::bigint AS active_blocks_1000,
-        count(*) FILTER (WHERE signature.signed = true)::bigint AS signed_blocks_1000,
-        count(*) FILTER (WHERE signature.vote_status = 'nil')::bigint AS nil_blocks_1000,
-        count(*) FILTER (WHERE signature.vote_status = 'absent')::bigint AS absent_blocks_1000,
-        count(*) FILTER (WHERE signature.vote_status = 'invalid')::bigint AS invalid_blocks_1000,
-        count(*) FILTER (WHERE signature.signing_address IS NULL)::bigint AS unknown_blocks_1000
+), membership_by_validator AS (
+    SELECT membership.signing_address,
+           count(*) FILTER (WHERE recent.position <= 20)::bigint AS active_blocks_20,
+           count(*)::bigint AS active_blocks_1000
     FROM recent_blocks recent
-    JOIN validator_set_members membership
-      ON membership.height = recent.height
-    LEFT JOIN validator_signatures signature
-      ON signature.height = membership.height AND signature.signing_address = membership.signing_address
+    JOIN validator_set_members membership ON membership.height = recent.height
+    JOIN current_validators current ON current.signing_address = membership.signing_address
     GROUP BY membership.signing_address
+), signatures_by_validator AS (
+    SELECT signature.signing_address,
+           count(*) FILTER (WHERE recent.position <= 20)::bigint AS observed_signatures_20,
+           count(*) FILTER (WHERE recent.position <= 20 AND signature.signed = true)::bigint AS signed_blocks_20,
+           count(*) FILTER (WHERE recent.position <= 20 AND signature.vote_status = 'nil')::bigint AS nil_blocks_20,
+           count(*) FILTER (WHERE recent.position <= 20 AND signature.vote_status = 'absent')::bigint AS absent_blocks_20,
+           count(*) FILTER (WHERE recent.position <= 20 AND signature.vote_status = 'invalid')::bigint AS invalid_blocks_20,
+           count(*)::bigint AS observed_signatures_1000,
+           count(*) FILTER (WHERE signature.signed = true)::bigint AS signed_blocks_1000,
+           count(*) FILTER (WHERE signature.vote_status = 'nil')::bigint AS nil_blocks_1000,
+           count(*) FILTER (WHERE signature.vote_status = 'absent')::bigint AS absent_blocks_1000,
+           count(*) FILTER (WHERE signature.vote_status = 'invalid')::bigint AS invalid_blocks_1000
+    FROM recent_blocks recent
+    JOIN validator_signatures signature ON signature.height = recent.height
+    JOIN current_validators current ON current.signing_address = signature.signing_address
+    GROUP BY signature.signing_address
 )
-SELECT
-    current.signing_address AS address,
-    current.public_key_type,
-    current.voting_power,
-    current.proposer_priority,
-    profile.moniker,
-    profile.operator_address,
-    profile.server_type,
-    profile.source_height AS valoper_source_height,
-    COALESCE(uptime.active_blocks_20, 0)::bigint AS active_blocks_20,
-    COALESCE(uptime.signed_blocks_20, 0)::bigint AS signed_blocks_20,
-    COALESCE(uptime.nil_blocks_20, 0)::bigint AS nil_blocks_20,
-    COALESCE(uptime.absent_blocks_20, 0)::bigint AS absent_blocks_20,
-    COALESCE(uptime.invalid_blocks_20, 0)::bigint AS invalid_blocks_20,
-    COALESCE(uptime.unknown_blocks_20, 0)::bigint AS unknown_blocks_20,
-    COALESCE(uptime.active_blocks_1000, 0)::bigint AS active_blocks_1000,
-    COALESCE(uptime.signed_blocks_1000, 0)::bigint AS signed_blocks_1000,
-    COALESCE(uptime.nil_blocks_1000, 0)::bigint AS nil_blocks_1000,
-    COALESCE(uptime.absent_blocks_1000, 0)::bigint AS absent_blocks_1000,
-    COALESCE(uptime.invalid_blocks_1000, 0)::bigint AS invalid_blocks_1000,
-    COALESCE(uptime.unknown_blocks_1000, 0)::bigint AS unknown_blocks_1000
+SELECT current.signing_address AS address, current.public_key_type, current.voting_power,
+       current.proposer_priority, profile.moniker, profile.operator_address, profile.server_type,
+       profile.source_height AS valoper_source_height,
+       COALESCE(membership.active_blocks_20, 0)::bigint AS active_blocks_20,
+       COALESCE(signatures.signed_blocks_20, 0)::bigint AS signed_blocks_20,
+       COALESCE(signatures.nil_blocks_20, 0)::bigint AS nil_blocks_20,
+       COALESCE(signatures.absent_blocks_20, 0)::bigint AS absent_blocks_20,
+       COALESCE(signatures.invalid_blocks_20, 0)::bigint AS invalid_blocks_20,
+       GREATEST(COALESCE(membership.active_blocks_20, 0) - COALESCE(signatures.observed_signatures_20, 0), 0)::bigint AS unknown_blocks_20,
+       COALESCE(membership.active_blocks_1000, 0)::bigint AS active_blocks_1000,
+       COALESCE(signatures.signed_blocks_1000, 0)::bigint AS signed_blocks_1000,
+       COALESCE(signatures.nil_blocks_1000, 0)::bigint AS nil_blocks_1000,
+       COALESCE(signatures.absent_blocks_1000, 0)::bigint AS absent_blocks_1000,
+       COALESCE(signatures.invalid_blocks_1000, 0)::bigint AS invalid_blocks_1000,
+       GREATEST(COALESCE(membership.active_blocks_1000, 0) - COALESCE(signatures.observed_signatures_1000, 0), 0)::bigint AS unknown_blocks_1000
 FROM current_validators current
-LEFT JOIN uptime_by_validator uptime
-  ON uptime.signing_address = current.signing_address
-LEFT JOIN valoper_profiles profile
-  ON profile.signing_address = current.signing_address
+LEFT JOIN membership_by_validator membership ON membership.signing_address = current.signing_address
+LEFT JOIN signatures_by_validator signatures ON signatures.signing_address = current.signing_address
+LEFT JOIN valoper_profiles profile ON profile.signing_address = current.signing_address
 ORDER BY current.voting_power DESC, current.signing_address ASC
 """
 
