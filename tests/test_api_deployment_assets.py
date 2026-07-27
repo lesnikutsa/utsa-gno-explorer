@@ -121,8 +121,29 @@ class ApiDeploymentAssetTests(unittest.TestCase):
 
     def network_distribution_prerequisite_section(self):
         start = self.documentation.index("#### Network distribution API access prerequisite")
+        end = self.documentation.index("#### Governance API access prerequisite", start)
+        return self.documentation[start:end]
+
+    def governance_prerequisite_section(self):
+        start = self.documentation.index("#### Governance API access prerequisite")
         end = self.documentation.index("For API-only changes", start)
         return self.documentation[start:end]
+
+    def test_governance_prerequisite_documents_least_privilege_access(self):
+        section = self.governance_prerequisite_section()
+        normalized = " ".join(section.split())
+        for table in (
+            "governance_sync_state", "governance_proposals", "governance_votes",
+        ):
+            self.assertIn(table, section)
+        self.assertIn("GRANT SELECT ON TABLE", normalized)
+        self.assertIn("TO utsa_gno_api;", normalized)
+        self.assertIn("/api/governance/proposals?limit=20", section)
+        self.assertIn("/api/governance/proposals/0", section)
+        self.assertIn("automatic default privileges", normalized)
+        self.assertIn("no write privileges", normalized)
+        for privilege in ("INSERT", "UPDATE", "DELETE", "TRUNCATE"):
+            self.assertNotIn(f"GRANT {privilege}", section)
 
     def test_network_distribution_prerequisite_is_least_privilege_and_ordered(self):
         section = self.network_distribution_prerequisite_section()

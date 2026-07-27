@@ -581,6 +581,108 @@ The indexer, collector timer, and PostgreSQL remain running throughout this proc
      http://127.0.0.1:18180/api/network/distribution
    ```
 
+#### Governance API access prerequisite
+
+Migration `0004_add_governance_persistence.sql` creates the Governance tables after the
+read-only API role may already have been created. The initial
+`GRANT SELECT ON ALL TABLES IN SCHEMA public` remains correct for a fresh role setup, but
+it grants access only to tables that exist when the statement runs. Consequently, later
+Valopers, Network Distribution, and Governance migrations require explicit, reviewed
+grants for the tables their public APIs read. Do not configure automatic default
+privileges, transfer table ownership to the API role, or grant any write privilege. The
+`utsa_gno_api` role must remain read-only.
+
+Perform this operator-controlled prerequisite in order:
+
+1. Confirm that the Governance migration has already been applied:
+
+   ```bash
+   python scripts/migrate_governance_schema.py
+   ```
+
+2. Confirm that exact final-schema validation succeeds:
+
+   ```bash
+   python scripts/init_database.py
+   ```
+
+3. As the database owner, verify that all three tables exist. Every returned value must
+   be `true`:
+
+   ```sql
+   SELECT
+       to_regclass('public.governance_sync_state') IS NOT NULL,
+       to_regclass('public.governance_proposals') IS NOT NULL,
+       to_regclass('public.governance_votes') IS NOT NULL;
+   ```
+
+4. Grant only `SELECT` on the three Governance tables:
+
+   ```sql
+   GRANT SELECT ON TABLE
+       public.governance_sync_state,
+       public.governance_proposals,
+       public.governance_votes
+   TO utsa_gno_api;
+   ```
+
+5. Verify the effective grants:
+
+   ```sql
+   SELECT
+       table_name,
+       privilege_type
+   FROM information_schema.role_table_grants
+   WHERE grantee = 'utsa_gno_api'
+     AND table_schema = 'public'
+     AND table_name IN (
+         'governance_sync_state',
+         'governance_proposals',
+         'governance_votes'
+     )
+   ORDER BY table_name, privilege_type;
+   ```
+
+   Exactly three rows are expected, and each `privilege_type` must be `SELECT`.
+
+6. Independently verify that no write privileges were granted. Every returned boolean
+   must be `false`:
+
+   ```sql
+   SELECT
+       table_name,
+       privilege,
+       has_table_privilege(
+           'utsa_gno_api',
+           'public.' || table_name,
+           privilege
+       )
+   FROM unnest(
+       ARRAY[
+           'governance_sync_state',
+           'governance_proposals',
+           'governance_votes'
+       ]
+   ) AS tables(table_name)
+   CROSS JOIN unnest(
+       ARRAY['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE']
+   ) AS privileges(privilege)
+   ORDER BY table_name, privilege;
+   ```
+
+7. After deploying the API, run read-only smoke checks:
+
+   ```bash
+   curl --fail --silent --show-error \
+     'http://127.0.0.1:18180/api/governance/proposals?limit=20'
+   curl --fail --silent --show-error \
+     'http://127.0.0.1:18180/api/governance/proposals/0'
+   ```
+
+Proposal ID `0` is valid. These endpoints read the saved PostgreSQL Governance snapshot
+and never call RPC. A missing `SELECT` grant produces the API's safe generic HTTP 503;
+fix that prerequisite with the narrow grant above, never with ownership or write access.
+
 For API-only changes, do not stop PostgreSQL or the indexer. Create an isolated Git worktree for PR validation, validate there, and merge only after validation. Then explicitly fast-forward the production checkout and restart only the API:
 
 ```bash
