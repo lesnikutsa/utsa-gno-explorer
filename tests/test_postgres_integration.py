@@ -1067,10 +1067,21 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         self.create_database(name)
         database_url = self.database_url_for(name)
         schema = (ROOT / "database/schema.sql").read_text()
-        migration = (ROOT / "database/migrations/0003_add_network_distribution.sql").read_text()
-        pre_schema = schema.replace(migration, "")
+        network_migration = (ROOT / "database/migrations/0003_add_network_distribution.sql").read_text()
+        governance_migration = (ROOT / "database/migrations/0004_add_governance_persistence.sql").read_text()
+        pre_schema = schema.replace(network_migration, "").replace(governance_migration, "")
+        for table in (
+            "network_distribution_geo_cache", "network_distribution_snapshots",
+            "network_distribution_snapshot_sources", "governance_proposals",
+            "governance_votes", "governance_sync_state",
+        ):
+            self.assertNotIn(f"CREATE TABLE {table}", pre_schema)
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
             cursor.execute(pre_schema)
+            init_database.validate_schema_snapshot(
+                init_database.fetch_schema_snapshot(cursor),
+                init_database.PRE_NETWORK_DISTRIBUTION_EXPECTATIONS,
+            )
             cursor.execute("INSERT INTO blocks (height,block_hash_base64,block_hash_hex,time_utc,tx_count) VALUES (1,'h',%s,now(),1)", ('A'*64,))
             cursor.execute("INSERT INTO transactions (block_height,tx_index,raw_base64,raw_base64_length,decode_status) VALUES (1,0,'x',1,'not_attempted')")
             cursor.execute("INSERT INTO validators (signing_address,public_key_type,public_key_value,first_seen_height,last_seen_height) VALUES ('validator','type','key',1,1)")
