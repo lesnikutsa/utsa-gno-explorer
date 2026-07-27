@@ -108,6 +108,14 @@ class GovernanceDiscovery:
         return output
 
 
+def proposal_raw_renders(discovery: GovernanceDiscovery, proposal_id: int) -> tuple[str | None, str | None]:
+    """Return the unmodified bounded detail and vote renders for one proposal."""
+    return (
+        discovery.raw_renders.get(f"proposal/{proposal_id}"),
+        discovery.raw_renders.get(f"proposal/{proposal_id}/votes"),
+    )
+
+
 def _text(value: str, limit: int = MAX_TEXT_CHARS) -> str:
     return value.replace("\r\n", "\n").replace("\r", "\n").replace("\x00", "").strip()[:limit]
 

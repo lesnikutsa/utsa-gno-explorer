@@ -10,6 +10,8 @@ from .rpc import RpcProbeResult
 from .transaction_summary import normalize_summary
 from .valopers_persistence import ValopersPersistenceResult, replace_valopers_snapshot_cursor
 from .valopers_snapshot import ValopersSnapshot
+from .governance_persistence import GovernancePersistenceResult, persist_governance_snapshot_cursor
+from governance.gno import GovernanceDiscovery
 
 
 class DatabaseError(RuntimeError):
@@ -86,6 +88,16 @@ class PostgresDatabase:
         with self.connect() as connection:
             with connection.cursor() as cursor:
                 result = replace_valopers_snapshot_cursor(cursor, snapshot, chain_id)
+            connection.commit()
+        return result
+
+    def persist_governance_snapshot(
+        self, discovery: GovernanceDiscovery, chain_id: str
+    ) -> GovernancePersistenceResult:
+        """Atomically persist one complete fixed-height governance snapshot."""
+        with self.connect() as connection:
+            with connection.cursor() as cursor:
+                result = persist_governance_snapshot_cursor(cursor, discovery, chain_id)
             connection.commit()
         return result
 
