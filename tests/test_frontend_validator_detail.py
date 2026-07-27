@@ -15,6 +15,7 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
         cls.validators = (ROOT / "frontend/src/pages/Validators.jsx").read_text()
         cls.overview = (ROOT / "frontend/src/pages/Overview.jsx").read_text()
         cls.telegram = (ROOT / "frontend/src/utils/telegram.js").read_text()
+        cls.description = (ROOT / "frontend/src/components/ValidatorDescription.jsx").read_text()
         cls.styles = (ROOT / "frontend/src/styles/app.css").read_text()
 
     def test_api_client_encodes_address_with_existing_request(self):
@@ -138,6 +139,17 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
         self.assertNotIn("Public Key", profile)
         self.assertNotIn("First Seen Height", self.page)
         self.assertNotIn("Last Seen Height", self.page)
+
+    def test_profile_uses_safe_structured_description_component(self):
+        self.assertIn("import { ValidatorDescription }", self.page)
+        self.assertIn("<ValidatorDescription description={validator.description} />", self.page)
+        self.assertNotIn('<Field label="Description">', self.page)
+        self.assertNotIn("dangerouslySetInnerHTML", self.description)
+        self.assertNotIn("<strong", self.description)
+        self.assertIn('target="_blank"', self.description)
+        self.assertIn('rel="noopener noreferrer"', self.description)
+        self.assertIn("font-weight: 400", self.styles)
+        self.assertIn("line-height: 1.65", self.styles)
 
     def test_signing_history_contains_uptime_and_health_without_performance_card(self):
         self.assertLess(self.page.index("Current Status"), self.page.index("<SigningHistory validator={validator} />"))

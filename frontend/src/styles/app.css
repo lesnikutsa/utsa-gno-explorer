@@ -303,6 +303,14 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .validator-detail__state-actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
 .validator-detail__state .validator-detail__back { margin: 0; }
 .validator-detail__grid--profile .validator-detail__field:first-child { grid-column: 1 / -1; border-right: 0; }
+.validator-description__structured { display: grid; gap: 12px; }
+.validator-description { display: grid; gap: 12px; margin: 0; }
+.validator-description__section { min-width: 0; }
+.validator-description__heading { margin-bottom: 5px; color: var(--color-text-secondary); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.validator-description__content, .validator-description__empty { margin: 0; color: var(--color-text); font-size: 11px; font-weight: 400; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.validator-description__link { color: var(--color-accent); text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 2px; transition: color .15s ease, text-decoration-color .15s ease; }
+.validator-description__link:hover { color: var(--color-text-bright); text-decoration-color: currentColor; }
+.validator-description__link:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
 .signing-history__range { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .signing-history__range .validator-detail__field + .validator-detail__field { border-left: 1px solid var(--color-border-soft); }
 .signing-history__strip { min-width: 0; overflow-x: auto; padding: 13px; border-top: 1px solid var(--color-border-soft); }
