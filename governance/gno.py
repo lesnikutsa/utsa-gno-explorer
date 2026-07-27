@@ -23,6 +23,7 @@ _LINK = re.compile(r"\[[^]]*\]\(([^)]+)\)")
 _ADDRESS = re.compile(r"\bg1[023456789ac-hj-np-z]{38}\b")
 _VOTE_GROUP = re.compile(r"^(YES|NO|ABSTAIN)\s+from\s+([^\s]+)\s+\(VPPM\s+([^()]+)\):\s*$", re.I)
 _PERCENT = re.compile(r"^(?:[-*]\s+)?(YES|NO|ABSTAIN)\s+PERCENT:\s*(.*?)\s*$", re.I)
+_MARKDOWN_ESCAPABLE = frozenset(r"\`*_{}[]()#+-.!|>~")
 
 
 class GovernanceParseError(ValueError):
@@ -89,12 +90,15 @@ class GovernanceDiscovery:
 
     def to_dict(self, include_raw: bool = False) -> dict:
         proposals = [asdict(item) for item in self.proposals]
+        proposal_ids = [item.proposal_id for item in self.proposals]
         counts = Counter(item.status.lower() for item in self.proposals)
         output = {
             "source": asdict(self.source),
             "complete": self.complete,
             "page_count": self.page_count,
             "proposal_count": len(proposals),
+            "first_proposal_id": min(proposal_ids) if proposal_ids else None,
+            "latest_proposal_id": max(proposal_ids) if proposal_ids else None,
             "status_counts": {name: counts[name] for name in ("active", "accepted", "rejected", "unknown")},
             "proposals": proposals,
             "warnings": list(self.warnings),
@@ -106,6 +110,20 @@ class GovernanceDiscovery:
 
 def _text(value: str, limit: int = MAX_TEXT_CHARS) -> str:
     return value.replace("\r\n", "\n").replace("\r", "\n").replace("\x00", "").strip()[:limit]
+
+
+def _unescape_markdown_text(value: str) -> str:
+    """Remove backslashes only before bounded ASCII Markdown punctuation."""
+    normalized = _text(value, 1000)
+    result: list[str] = []
+    index = 0
+    while index < len(normalized):
+        if (normalized[index] == "\\" and index + 1 < len(normalized)
+                and normalized[index + 1] in _MARKDOWN_ESCAPABLE):
+            index += 1
+        result.append(normalized[index])
+        index += 1
+    return _text("".join(result), 1000)
 
 
 def _display(value: str) -> tuple[str | None, str | None]:
@@ -142,7 +160,7 @@ def parse_proposal_list(render: str) -> tuple[list[GovernanceProposalSummary], l
         author, address = _display(values.get("author", ""))
         tiers = _tiers(values.get("tiers eligible to vote", ""))
         proposals.append(GovernanceProposalSummary(
-            int(match.group(1)), _text(match.group(2), 1000), author, address,
+            int(match.group(1)), _unescape_markdown_text(match.group(2)), author, address,
             status, tiers, (warning,) if warning else (),
         ))
     seen: dict[int, GovernanceProposalSummary] = {}
@@ -257,7 +275,7 @@ def parse_detail(render: str, requested_id: int) -> dict:
                 warnings.append(f"Invalid {match.group(1).upper()} percentage")
     return {
         "proposal_id": requested_id,
-        "title": _text(header.group(2), 1000),
+        "title": _unescape_markdown_text(header.group(2)),
         "author_display": author,
         "author_address": address,
         "status": status,
@@ -372,7 +390,8 @@ def discover_governance(
         vote_status, votes, vote_warnings = parse_votes(fetch(f"proposal/{proposal_id_value}/votes", f"{proposal_id_value}/votes"))
         detail_warnings = list(detail["warnings"]) + vote_warnings
         if summary:
-            if _text(summary.title).casefold() != _text(detail["title"]).casefold():
+            if (_unescape_markdown_text(summary.title).casefold()
+                    != _unescape_markdown_text(detail["title"]).casefold()):
                 detail_warnings.append("Proposal title differs between list and detail renders")
             if detail["status"] == "UNKNOWN":
                 detail["status"] = summary.status

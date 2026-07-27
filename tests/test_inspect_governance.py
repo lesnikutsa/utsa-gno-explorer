@@ -6,11 +6,18 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from governance.gno import GovernanceDiscovery, GovernanceSource
+from governance.gno import GovernanceDiscovery, GovernanceProposalDetail, GovernanceSource
 from scripts.inspect_governance import main
 
 
 class InspectGovernanceTests(unittest.TestCase):
+    @staticmethod
+    def proposal(proposal_id):
+        return GovernanceProposalDetail(
+            proposal_id, "Clean title", None, None, "ACCEPTED", (), "", None, None, None,
+            None, None, None, "parsed", "empty", (), (),
+        )
+
     @patch("scripts.inspect_governance.discover_governance")
     @patch("scripts.inspect_governance.select_rpc")
     @patch("scripts.inspect_governance.configured_rpc_urls", return_value=["https://rpc"])
@@ -25,6 +32,26 @@ class InspectGovernanceTests(unittest.TestCase):
         self.assertEqual(json.loads(stdout.getvalue())["proposal_count"], 0)
         self.assertEqual(stderr.getvalue(), "")
         self.assertTrue(discover.call_args.kwargs["capture_raw"])
+
+    @patch("scripts.inspect_governance.discover_governance")
+    @patch("scripts.inspect_governance.select_rpc")
+    @patch("scripts.inspect_governance.configured_rpc_urls", return_value=["https://rpc"])
+    def test_human_summary_separates_count_first_and_latest_id(self, _urls, select, discover):
+        select.return_value.client.base_url = "https://rpc/"
+        select.return_value.latest_height = 42
+        source = GovernanceSource("topaz-1", "https://rpc", 42, "gno.land/r/gov/dao")
+        discover.return_value = GovernanceDiscovery(source, True, 5, (self.proposal(20), self.proposal(0)))
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            self.assertEqual(main([]), 0)
+        self.assertIn("Chain: topaz-1", stdout.getvalue())
+        self.assertIn("Proposals: 2; first: #0; latest: #20; pages: 5; complete: true", stdout.getvalue())
+
+        discover.return_value = GovernanceDiscovery(source, True, 1, ())
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            self.assertEqual(main([]), 0)
+        self.assertIn("Proposals: 0; first: none; latest: none", stdout.getvalue())
 
     @patch("scripts.inspect_governance.discover_governance")
     @patch("scripts.inspect_governance.select_rpc")

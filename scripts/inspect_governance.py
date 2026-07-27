@@ -69,8 +69,15 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(discovery.to_dict(args.include_raw), ensure_ascii=False, sort_keys=True))
         else:
             print(f"Governance realm: {realm}")
+            print(f"Chain: {source.chain_id}")
             print(f"RPC: {source.rpc_url} (height {source.observed_height})")
-            print(f"Proposals: {len(discovery.proposals)}; pages: {discovery.page_count}; complete: {str(discovery.complete).lower()}")
+            proposal_ids = [proposal.proposal_id for proposal in discovery.proposals]
+            first = f"#{min(proposal_ids)}" if proposal_ids else "none"
+            latest = f"#{max(proposal_ids)}" if proposal_ids else "none"
+            print(
+                f"Proposals: {len(discovery.proposals)}; first: {first}; latest: {latest}; "
+                f"pages: {discovery.page_count}; complete: {str(discovery.complete).lower()}"
+            )
             for proposal in discovery.proposals:
                 print(f"#{proposal.proposal_id} [{proposal.status}] {proposal.title}")
         for warning in discovery.warnings:

@@ -1,6 +1,13 @@
 import unittest
 
-from governance.gno import GovernanceParseError, pager_paths, parse_detail, parse_proposal_list, parse_votes
+from governance.gno import (
+    GovernanceParseError,
+    _unescape_markdown_text,
+    pager_paths,
+    parse_detail,
+    parse_proposal_list,
+    parse_votes,
+)
 
 ADDRESS = "g1" + "a" * 38
 OFFICIAL_LIST = f"""# GovDAO
@@ -69,6 +76,15 @@ Do not include this action.
 
 
 class GovernanceParserTests(unittest.TestCase):
+    def test_title_markdown_unescape_is_bounded_to_known_punctuation(self):
+        self.assertEqual(
+            _unescape_markdown_text(r"Add 6 validator\(s\) to the valset"),
+            "Add 6 validator(s) to the valset",
+        )
+        self.assertEqual(_unescape_markdown_text(r"onbloc\-val\-01"), "onbloc-val-01")
+        self.assertEqual(_unescape_markdown_text(r"\[Fix\] \#1 \_now\_ \*safe\*"), "[Fix] #1 _now_ *safe*")
+        self.assertEqual(_unescape_markdown_text(r"value\q"), r"value\q")
+
     def test_official_list_shape_and_picker(self):
         proposals, warnings = parse_proposal_list(OFFICIAL_LIST.replace("\n", "\r\n"))
         self.assertEqual([(p.proposal_id, p.status) for p in proposals], [(20, "ACCEPTED"), (19, "ACTIVE")])

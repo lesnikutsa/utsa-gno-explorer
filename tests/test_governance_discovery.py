@@ -1,7 +1,8 @@
 import unittest
+from dataclasses import replace
 from unittest.mock import patch
 
-from governance.gno import GovernanceParseError, GovernanceSource, discover_governance
+from governance.gno import GovernanceDiscovery, GovernanceParseError, GovernanceSource, discover_governance
 from tests.test_governance_parser import ADDRESS, detail
 
 
@@ -43,12 +44,47 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(result.raw_renders, {})
 
     def test_capture_raw_and_total_limit(self):
-        client = FakeClient({"20": detail(), "20/votes": "No votes"})
+        raw_detail = detail().replace("Add validators", r"Add 6 validator\(s\) to the valset")
+        client = FakeClient({"20": raw_detail, "20/votes": "No votes"})
         result = discover_governance(client, GovernanceSource("topaz-1", "rpc", 88, "gno.land/r/gov/dao"), proposal_id=20, capture_raw=True)
         self.assertEqual(set(result.raw_renders), {"proposal/20", "proposal/20/votes"})
+        self.assertEqual(result.raw_renders["proposal/20"], raw_detail)
+        self.assertIn(r"validator\(s\)", result.raw_renders["proposal/20"])
+        self.assertEqual(result.proposals[0].title, "Add 6 validator(s) to the valset")
+        self.assertEqual(result.to_dict(include_raw=True)["proposals"][0]["title"], "Add 6 validator(s) to the valset")
         with patch("governance.gno.MAX_TOTAL_RAW_BYTES", 10):
             with self.assertRaisesRegex(GovernanceParseError, "total size"):
                 discover_governance(client, GovernanceSource("topaz-1", "rpc", 88, "gno.land/r/gov/dao"), proposal_id=20, capture_raw=True)
+
+    def test_escaped_and_unescaped_titles_compare_equal_but_real_difference_warns(self):
+        renders = {
+            "": r"# GovDAO\n## Proposals\n### Prop #20 - Add 6 validator\(s\)\nStatus: ACCEPTED",
+            "20": detail().replace("Add validators", "Add 6 validator(s)"),
+            "20/votes": "No votes",
+        }
+        renders[""] = renders[""].replace(r"\n", "\n")
+        result = discover_governance(FakeClient(renders), GovernanceSource("topaz-1", "rpc", 1, "gno.land/r/gov/dao"))
+        self.assertFalse(any("title differs" in warning for warning in result.proposals[0].parse_warnings))
+        renders["20"] = detail().replace("Add validators", "A genuinely different title")
+        result = discover_governance(FakeClient(renders), GovernanceSource("topaz-1", "rpc", 1, "gno.land/r/gov/dao"))
+        self.assertTrue(any("title differs" in warning for warning in result.proposals[0].parse_warnings))
+
+    def test_proposal_count_is_independent_from_first_and_latest_ids(self):
+        template = discover_governance(
+            FakeClient({"20": detail(), "20/votes": "No votes"}),
+            GovernanceSource("topaz-1", "rpc", 1, "gno.land/r/gov/dao"),
+            proposal_id=20,
+        ).proposals[0]
+        source = GovernanceSource("topaz-1", "rpc", 1, "gno.land/r/gov/dao")
+        topaz_like = GovernanceDiscovery(source, True, 5, tuple(replace(template, proposal_id=value) for value in range(21)))
+        self.assertEqual(
+            {key: topaz_like.to_dict()[key] for key in ("proposal_count", "first_proposal_id", "latest_proposal_id")},
+            {"proposal_count": 21, "first_proposal_id": 0, "latest_proposal_id": 20},
+        )
+        sparse = GovernanceDiscovery(source, True, 1, (replace(template, proposal_id=10), replace(template, proposal_id=5)))
+        self.assertEqual((sparse.to_dict()["proposal_count"], sparse.to_dict()["first_proposal_id"], sparse.to_dict()["latest_proposal_id"]), (2, 5, 10))
+        empty = GovernanceDiscovery(source, True, 1, ()).to_dict()
+        self.assertEqual((empty["proposal_count"], empty["first_proposal_id"], empty["latest_proposal_id"]), (0, None, None))
 
 
 if __name__ == "__main__":
