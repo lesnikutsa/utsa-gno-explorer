@@ -132,10 +132,17 @@ class ApiValidatorsTests(unittest.TestCase):
         from api.database import ACTIVE_VALIDATORS_SQL, VALIDATORS_CHECKPOINT_SQL
 
         self.assertIn("ORDER BY current.voting_power DESC, current.signing_address ASC", ACTIVE_VALIDATORS_SQL)
+        self.assertNotIn("CROSS JOIN recent_blocks", ACTIVE_VALIDATORS_SQL)
+        self.assertIn("uptime_by_validator AS (", ACTIVE_VALIDATORS_SQL)
+        self.assertIn("GROUP BY membership.signing_address", ACTIVE_VALIDATORS_SQL)
+        self.assertIn("LEFT JOIN uptime_by_validator uptime", ACTIVE_VALIDATORS_SQL)
         self.assertIn("LIMIT 1000", ACTIVE_VALIDATORS_SQL)
         self.assertIn("network_blocks_1000", VALIDATORS_CHECKPOINT_SQL)
         for counter in ("active", "signed", "nil", "absent", "invalid", "unknown"):
+            self.assertIn(f"{counter}_blocks_20", ACTIVE_VALIDATORS_SQL)
             self.assertIn(f"{counter}_blocks_1000", ACTIVE_VALIDATORS_SQL)
+            self.assertIn(f"COALESCE(uptime.{counter}_blocks_20, 0)", ACTIVE_VALIDATORS_SQL)
+            self.assertIn(f"COALESCE(uptime.{counter}_blocks_1000, 0)", ACTIVE_VALIDATORS_SQL)
 
 
 if __name__ == "__main__":
