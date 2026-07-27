@@ -8,6 +8,7 @@ import tempfile
 import threading
 import time
 import unittest
+from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -22,6 +23,10 @@ from api.database import (
     MissingIndexerStateError,
 )
 from indexer.database import PostgresDatabase, _upsert_transactions
+from governance.gno import GovernanceDiscovery, GovernanceProposalDetail, GovernanceSource, GovernanceVote
+from indexer.governance_persistence import (
+    GovernancePersistenceError, GovernanceSnapshotConflict, StaleGovernanceSnapshot,
+)
 from indexer.parsers import parse_tx
 from indexer.transaction_summary import MAX_SUMMARY_BYTES, summary_size_bytes
 from indexer.rpc import RpcProbeResult
@@ -36,6 +41,7 @@ from network_distribution.persistence import (
 )
 from scripts import init_database
 from scripts.migrate_network_distribution_schema import migrate as migrate_network_distribution_schema
+from scripts.migrate_governance_schema import migrate as migrate_governance_schema
 
 try:
     import psycopg
@@ -102,6 +108,29 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         if schema_path is not None:
             command += ["--schema", str(schema_path)]
         return subprocess.run(command, cwd=ROOT, env=env, text=True, capture_output=True, check=False)
+
+    def assert_governance_migration_required_then_apply(self, database_url):
+        """Validate the explicit pre-governance to final-schema operator contract."""
+        before_guidance = self.table_names_and_counts(database_url)
+        guidance = self.run_init(database_url)
+        self.assertEqual(guidance.returncode, 1)
+        self.assertIn("python scripts/migrate_governance_schema.py", guidance.stderr)
+        self.assertNotIn(database_url, guidance.stdout + guidance.stderr)
+        self.assertNotIn(self.password, guidance.stdout + guidance.stderr)
+        self.assertEqual(self.table_names_and_counts(database_url), before_guidance)
+        self.assertEqual(migrate_governance_schema(database_url), "applied")
+        self.assertEqual(migrate_governance_schema(database_url), "already-compatible")
+        validated = self.run_init(database_url)
+        self.assertEqual(validated.returncode, 0, validated.stderr)
+        self.assertNotIn(database_url, validated.stdout + validated.stderr)
+        self.assertNotIn(self.password, validated.stdout + validated.stderr)
+        return guidance, validated
+
+    def assert_empty_governance_tables(self, database_url):
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            for table in ("governance_proposals", "governance_votes", "governance_sync_state"):
+                cursor.execute(f"SELECT count(*) FROM {table}")
+                self.assertEqual(cursor.fetchone()[0], 0)
 
     def run_migration(self, database_url, migration_path=None):
         env = dict(os.environ, DATABASE_URL=database_url)
@@ -522,8 +551,12 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         self.assertEqual(network_migration.returncode, 0, network_migration.stderr)
         network_rerun = self.run_network_distribution_migration(database_url)
         self.assertEqual(network_rerun.returncode, 0, network_rerun.stderr)
-        validated = self.run_init(database_url)
-        self.assertEqual(validated.returncode, 0, validated.stderr)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            init_database.validate_schema_snapshot(
+                init_database.fetch_schema_snapshot(cursor),
+                init_database.PRE_GOVERNANCE_SCHEMA_EXPECTATIONS,
+            )
+        governance_guidance, validated = self.assert_governance_migration_required_then_apply(database_url)
 
         post_network_valopers = self.run_migration(database_url)
         self.assertEqual(post_network_valopers.returncode, 0, post_network_valopers.stderr)
@@ -531,9 +564,12 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         post_network_transactions = self.run_transaction_hash_migration(database_url)
         self.assertEqual(post_network_transactions.returncode, 0, post_network_transactions.stderr)
         self.assertIn("already compatible", post_network_transactions.stdout)
+        post_governance_network = self.run_network_distribution_migration(database_url)
+        self.assertEqual(post_governance_network.returncode, 0, post_governance_network.stderr)
 
         outputs = [migrated, rerun, transaction_migration, transaction_rerun, guidance, network_migration,
-                   network_rerun, validated, post_network_valopers, post_network_transactions]
+                   network_rerun, governance_guidance, validated, post_network_valopers,
+                   post_network_transactions, post_governance_network]
         for result in outputs:
             self.assertNotIn(self.password, result.stdout + result.stderr)
             self.assertNotIn(database_url, result.stdout + result.stderr)
@@ -547,6 +583,7 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         for table in ("network_distribution_geo_cache", "network_distribution_snapshots",
                       "network_distribution_snapshot_sources"):
             self.assertEqual(after_counts[table], 0)
+        self.assert_empty_governance_tables(database_url)
 
     def test_post_ddl_incompatibility_rolls_back_migration(self):
         database_url = self.prepare_legacy_database(f"utsa_migration_rollback_{os.getpid()}")
@@ -593,8 +630,12 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         self.assertIn("python scripts/migrate_network_distribution_schema.py", guidance.stderr)
         network = self.run_network_distribution_migration(database_url)
         self.assertEqual(network.returncode, 0, network.stderr)
-        final_init = self.run_init(database_url)
-        self.assertEqual(final_init.returncode, 0, final_init.stderr)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            init_database.validate_schema_snapshot(
+                init_database.fetch_schema_snapshot(cursor),
+                init_database.PRE_GOVERNANCE_SCHEMA_EXPECTATIONS,
+            )
+        governance_guidance, final_init = self.assert_governance_migration_required_then_apply(database_url)
         final_valopers = self.run_migration(database_url)
         final_transactions = self.run_transaction_hash_migration(database_url)
         final_network = self.run_network_distribution_migration(database_url)
@@ -603,7 +644,8 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         self.assertEqual(final_network.returncode, 0, final_network.stderr)
 
         outputs = (transaction, transaction_rerun, valopers, valopers_rerun, guidance,
-                   network, final_init, final_valopers, final_transactions, final_network)
+                   network, governance_guidance, final_init, final_valopers,
+                   final_transactions, final_network)
         for result in outputs:
             self.assertNotIn(self.password, result.stdout + result.stderr)
             self.assertNotIn(database_url, result.stdout + result.stderr)
@@ -615,6 +657,7 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                       "network_distribution_geo_cache", "network_distribution_snapshots",
                       "network_distribution_snapshot_sources"):
             self.assertEqual(counts[table], 0)
+        self.assert_empty_governance_tables(database_url)
 
     def test_atomic_valopers_snapshot_lifecycle(self):
         name = f"utsa_valopers_persistence_{os.getpid()}"
@@ -1024,10 +1067,21 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         self.create_database(name)
         database_url = self.database_url_for(name)
         schema = (ROOT / "database/schema.sql").read_text()
-        migration = (ROOT / "database/migrations/0003_add_network_distribution.sql").read_text()
-        pre_schema = schema.replace(migration, "")
+        network_migration = (ROOT / "database/migrations/0003_add_network_distribution.sql").read_text()
+        governance_migration = (ROOT / "database/migrations/0004_add_governance_persistence.sql").read_text()
+        pre_schema = schema.replace(network_migration, "").replace(governance_migration, "")
+        for table in (
+            "network_distribution_geo_cache", "network_distribution_snapshots",
+            "network_distribution_snapshot_sources", "governance_proposals",
+            "governance_votes", "governance_sync_state",
+        ):
+            self.assertNotIn(f"CREATE TABLE {table}", pre_schema)
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
             cursor.execute(pre_schema)
+            init_database.validate_schema_snapshot(
+                init_database.fetch_schema_snapshot(cursor),
+                init_database.PRE_NETWORK_DISTRIBUTION_EXPECTATIONS,
+            )
             cursor.execute("INSERT INTO blocks (height,block_hash_base64,block_hash_hex,time_utc,tx_count) VALUES (1,'h',%s,now(),1)", ('A'*64,))
             cursor.execute("INSERT INTO transactions (block_height,tx_index,raw_base64,raw_base64_length,decode_status) VALUES (1,0,'x',1,'not_attempted')")
             cursor.execute("INSERT INTO validators (signing_address,public_key_type,public_key_value,first_seen_height,last_seen_height) VALUES ('validator','type','key',1,1)")
@@ -1035,11 +1089,25 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             cursor.execute("INSERT INTO valoper_profiles (operator_address,moniker,description,server_type,signing_address,signing_pubkey,source_height,list_position) VALUES (%s,'m','d','cloud',%s,%s,1,0)", ('g1'+'2'*38,'g1'+'3'*38,'gpub1'+'2'*86))
         self.assertEqual(self.run_network_distribution_migration(database_url).returncode, 0)
         self.assertEqual(self.run_network_distribution_migration(database_url).returncode, 0)
-        self.assertEqual(self.run_init(database_url).returncode, 0)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("INSERT INTO network_distribution_geo_cache(ip,lookup_success,lookup_provider,fetched_at,expires_at,error_code) VALUES ('192.0.2.1',false,'integration',now(),now()+interval '1 hour','not_found')")
+            init_database.validate_schema_snapshot(
+                init_database.fetch_schema_snapshot(cursor),
+                init_database.PRE_GOVERNANCE_SCHEMA_EXPECTATIONS,
+            )
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
             for table in ('blocks','transactions','validators','rpc_endpoints','valoper_profiles'):
                 cursor.execute(f"SELECT count(*) FROM {table}")
                 self.assertEqual(cursor.fetchone()[0], 1)
+            cursor.execute("SELECT count(*) FROM network_distribution_geo_cache")
+            self.assertEqual(cursor.fetchone()[0], 1)
+        self.assert_governance_migration_required_then_apply(database_url)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            for table in ('blocks','transactions','validators','rpc_endpoints','valoper_profiles',
+                          'network_distribution_geo_cache'):
+                cursor.execute(f"SELECT count(*) FROM {table}")
+                self.assertEqual(cursor.fetchone()[0], 1)
+        self.assert_empty_governance_tables(database_url)
 
     def test_network_distribution_cache_snapshots_retention_and_sources(self):
         name = f"utsa_distribution_storage_{os.getpid()}"
@@ -1154,6 +1222,116 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             save_snapshot(connection, result('chain', epoch + timedelta(seconds=2), 1), 10)
             save_snapshot(connection, result('chain', epoch + timedelta(seconds=3), 0), 10)
             self.assertTrue(has_geolocated_snapshot(connection, 'chain'))
+
+
+    def test_governance_persistence_migration_and_constraints(self):
+        name = f"utsa_governance_{os.getpid()}"
+        self.create_database(name)
+        database_url = self.database_url_for(name)
+        schema = (ROOT / "database/schema.sql").read_text()
+        start = schema.index("CREATE TABLE governance_proposals")
+        end = schema.index("CREATE TABLE valoper_profiles")
+        pre_governance_sql = schema[:start] + schema[end:]
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute(pre_governance_sql)
+            connection.commit()
+        failing_migration = Path(self.temp.name) / "failing-governance-migration.sql"
+        failing_migration.write_text(
+            (ROOT / "database/migrations/0004_add_governance_persistence.sql").read_text()
+            + "\nSELECT missing_governance_migration_function();\n"
+        )
+        with self.assertRaises(Exception):
+            migrate_governance_schema(database_url, failing_migration)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT to_regclass('public.governance_proposals'),to_regclass('public.governance_votes'),to_regclass('public.governance_sync_state')")
+            self.assertEqual(cursor.fetchone(), (None, None, None))
+        invalid_catalog_migration = Path(self.temp.name) / "invalid-catalog-governance-migration.sql"
+        invalid_catalog_migration.write_text(
+            (ROOT / "database/migrations/0004_add_governance_persistence.sql").read_text()
+            + "\nCREATE TABLE unexpected_governance_test_table(value integer);\n"
+        )
+        with self.assertRaises(Exception):
+            migrate_governance_schema(database_url, invalid_catalog_migration)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT to_regclass('public.governance_proposals'),to_regclass('public.unexpected_governance_test_table')")
+            self.assertEqual(cursor.fetchone(), (None, None))
+        self.assertEqual(migrate_governance_schema(database_url), "applied")
+        self.assertEqual(migrate_governance_schema(database_url), "already-compatible")
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            init_database.validate_schema_snapshot(init_database.fetch_schema_snapshot(cursor))
+
+        def make_snapshot(height=100, count=21, status="ACTIVE", empty_votes=False,
+                          parsed_empty=False, yes_percent=33.33333):
+            proposals = []
+            raw = {}
+            for proposal_id in range(count - 1, -1, -1):
+                votes = () if empty_votes else (GovernanceVote(f"Voter {proposal_id}", None, "YES", "CORE", str(proposal_id + 1)),)
+                vote_status = "empty" if empty_votes else "parsed"
+                if parsed_empty:
+                    votes = ()
+                proposals.append(GovernanceProposalDetail(
+                    proposal_id, f"Proposal {proposal_id}", None, None, status, ("CORE",),
+                    f"Description {proposal_id}", None, None, None, yes_percent, 25.0, 25.0,
+                    "parsed", vote_status, votes, (),
+                ))
+                raw[f"proposal/{proposal_id}"] = f"raw detail {proposal_id}\n"
+                raw[f"proposal/{proposal_id}/votes"] = f"raw votes {proposal_id}\n"
+            return GovernanceDiscovery(
+                GovernanceSource("integration-chain", "redacted", height, "gno.land/r/gov/dao"),
+                True, 5 if count else 1, tuple(proposals), (), raw,
+            )
+
+        database = PostgresDatabase(database_url)
+        first = database.persist_governance_snapshot(make_snapshot(), "integration-chain")
+        self.assertEqual((first.action, first.proposal_count, first.vote_count), ("applied", 21, 21))
+        self.assertEqual(database.persist_governance_snapshot(make_snapshot(), "integration-chain").action, "unchanged")
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT yes_percent,first_observed_height,last_observed_height,first_observed_at,last_observed_at FROM governance_proposals WHERE proposal_id=0")
+            percentage, first_height, last_height, first_at, last_at = cursor.fetchone()
+            self.assertEqual(percentage, Decimal("33.3333"))
+            self.assertEqual((first_height, last_height), (100, 100))
+            cursor.execute("INSERT INTO blocks(height,block_hash_base64,block_hash_hex,time_utc,tx_count) VALUES (1,'AA==','AA',now(),0)")
+            cursor.execute("DELETE FROM blocks WHERE height=1")
+            cursor.execute("SELECT (SELECT count(*) FROM governance_proposals),(SELECT count(*) FROM governance_votes),(SELECT count(*) FROM governance_sync_state)")
+            self.assertEqual(cursor.fetchone(), (21, 21, 1))
+            connection.commit()
+        with self.assertRaises(StaleGovernanceSnapshot):
+            database.persist_governance_snapshot(make_snapshot(height=99), "integration-chain")
+        with self.assertRaises(GovernanceSnapshotConflict):
+            database.persist_governance_snapshot(make_snapshot(height=101, count=20), "integration-chain")
+        with self.assertRaises(GovernancePersistenceError):
+            database.persist_governance_snapshot(make_snapshot(height=101, parsed_empty=True), "integration-chain")
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT source_height,(SELECT count(*) FROM governance_votes) FROM governance_sync_state WHERE chain_id='integration-chain'")
+            self.assertEqual(cursor.fetchone(), (100, 21))
+        accepted = database.persist_governance_snapshot(make_snapshot(height=101, status="ACCEPTED"), "integration-chain")
+        self.assertEqual(accepted.action, "applied")
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT first_observed_height,last_observed_height,first_observed_at,last_observed_at FROM governance_proposals WHERE proposal_id=0")
+            new_first_height, new_last_height, new_first_at, new_last_at = cursor.fetchone()
+            self.assertEqual((new_first_height, new_last_height), (100, 101))
+            self.assertEqual(new_first_at, first_at)
+            self.assertGreaterEqual(new_last_at, last_at)
+        with self.assertRaises(GovernanceSnapshotConflict):
+            database.persist_governance_snapshot(make_snapshot(height=102, status="ACTIVE"), "integration-chain")
+        with self.assertRaises(GovernanceSnapshotConflict):
+            database.persist_governance_snapshot(make_snapshot(height=102, status="REJECTED"), "integration-chain")
+        emptied = database.persist_governance_snapshot(make_snapshot(height=102, status="ACCEPTED", empty_votes=True), "integration-chain")
+        self.assertEqual(emptied.vote_count, 0)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT raw_detail_render,raw_votes_render FROM governance_proposals WHERE proposal_id=0")
+            self.assertEqual(cursor.fetchone(), ("raw detail 0\n", "raw votes 0\n"))
+            cursor.execute("SELECT count(*) FROM governance_votes")
+            self.assertEqual(cursor.fetchone()[0], 0)
+            for first_id, latest_id in ((None, 20), (0, None)):
+                with self.assertRaises(Exception):
+                    cursor.execute("INSERT INTO governance_sync_state(chain_id,realm_path,source_height,page_count,proposal_count,first_proposal_id,latest_proposal_id) VALUES ('bad','bad',1,1,21,%s,%s)", (first_id, latest_id))
+                connection.rollback()
+            with self.assertRaises(Exception):
+                cursor.execute("INSERT INTO governance_sync_state(chain_id,realm_path,source_height,page_count,proposal_count,first_proposal_id,latest_proposal_id) VALUES ('bad','bad',1,1,0,0,NULL)")
+            connection.rollback()
+            cursor.execute("INSERT INTO governance_sync_state(chain_id,realm_path,source_height,page_count,proposal_count,first_proposal_id,latest_proposal_id) VALUES ('empty','empty',1,1,0,NULL,NULL)")
+            connection.rollback()
 
 
 if __name__ == "__main__":

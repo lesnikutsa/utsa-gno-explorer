@@ -167,16 +167,6 @@ EXPECTED_INDEXES.update({
  "network_distribution_geo_cache_asn_idx": ("network_distribution_geo_cache",False,(("asn","ASC"),("provider_name","ASC")),"lookup_success AND asn IS NOT NULL"),
  "network_distribution_snapshots_chain_latest_idx": ("network_distribution_snapshots",False,(("chain_id","ASC"),("scanned_at","DESC"),("id","DESC")),None)})
 
-NETWORK_DISTRIBUTION_TABLES = {
-    "network_distribution_geo_cache",
-    "network_distribution_snapshots",
-    "network_distribution_snapshot_sources",
-}
-VALOPERS_TABLES = {"valoper_profiles", "valopers_snapshot_state"}
-TRANSACTION_HASH_COLUMN = "tx_hash_hex"
-TRANSACTION_HASH_CHECKS = {"transactions_tx_hash_hex_format", "transactions_tx_hash_consistent"}
-TRANSACTION_HASH_INDEXES = {"transactions_tx_hash_hex_idx"}
-
 
 def schema_expectations(*, excluded_tables: set[str] | None = None,
                         include_transaction_hash: bool = True) -> dict[str, Any]:
@@ -193,22 +183,53 @@ def schema_expectations(*, excluded_tables: set[str] | None = None,
         "indexes": {name: value for name, value in EXPECTED_INDEXES.items() if value[0] not in excluded_tables},
     }
     if not include_transaction_hash:
-        result["columns"]["transactions"].pop(TRANSACTION_HASH_COLUMN)
-        for name in TRANSACTION_HASH_CHECKS:
+        result["columns"]["transactions"].pop("tx_hash_hex")
+        for name in {"transactions_tx_hash_hex_format", "transactions_tx_hash_consistent"}:
             result["check_constraints"].pop(name)
-        for name in TRANSACTION_HASH_INDEXES:
-            result["indexes"].pop(name)
+        result["indexes"].pop("transactions_tx_hash_hex_idx")
     return result
 
 
+# Governance is the final (0004) catalog; the previous final catalog remains the
+# exact source stage accepted by the explicit governance migration.
+PRE_GOVERNANCE_SCHEMA_EXPECTATIONS = schema_expectations()
+GOVERNANCE_TABLES = {"governance_proposals", "governance_votes", "governance_sync_state"}
+EXPECTED_TABLES.update(GOVERNANCE_TABLES)
+EXPECTED_COLUMNS.update({
+ "governance_proposals": {
+  "chain_id": ("text","NO","",None), "realm_path": ("text","NO","",None), "proposal_id": ("bigint","NO","",None), "title": ("text","NO","",None), "author_display": ("text","YES","",None), "author_address": ("text","YES","",None), "status": ("text","NO","",None), "eligible_tiers": ("jsonb","NO","",None), "description": ("text","NO","",None), "executor_text": ("text","YES","",None), "executor_creation_realm": ("text","YES","",None), "rejection_reason": ("text","YES","",None), "yes_percent": ("numeric(7,4)","YES","",None), "no_percent": ("numeric(7,4)","YES","",None), "abstain_percent": ("numeric(7,4)","YES","",None), "detail_parse_status": ("text","NO","",None), "votes_parse_status": ("text","NO","",None), "parse_warnings": ("jsonb","NO","",None), "raw_detail_render": ("text","YES","",None), "raw_votes_render": ("text","YES","",None), "first_observed_height": ("bigint","NO","",None), "last_observed_height": ("bigint","NO","",None), "first_observed_at": ("timestamp with time zone","NO","","now()"), "last_observed_at": ("timestamp with time zone","NO","","now()"), "inserted_at": ("timestamp with time zone","NO","","now()"), "updated_at": ("timestamp with time zone","NO","","now()")},
+ "governance_votes": {
+  "chain_id": ("text","NO","",None), "realm_path": ("text","NO","",None), "proposal_id": ("bigint","NO","",None), "voter_key": ("text","NO","",None), "voter_display": ("text","NO","",None), "voter_address": ("text","YES","",None), "option": ("text","NO","",None), "tier": ("text","NO","",None), "voting_power": ("numeric(78,0)","NO","",None), "first_observed_height": ("bigint","NO","",None), "last_observed_height": ("bigint","NO","",None), "first_observed_at": ("timestamp with time zone","NO","","now()"), "last_observed_at": ("timestamp with time zone","NO","","now()"), "inserted_at": ("timestamp with time zone","NO","","now()"), "updated_at": ("timestamp with time zone","NO","","now()")},
+ "governance_sync_state": {
+  "chain_id": ("text","NO","",None), "realm_path": ("text","NO","",None), "source_height": ("bigint","NO","",None), "page_count": ("integer","NO","",None), "proposal_count": ("integer","NO","",None), "first_proposal_id": ("bigint","YES","",None), "latest_proposal_id": ("bigint","YES","",None), "last_success_at": ("timestamp with time zone","NO","","now()"), "updated_at": ("timestamp with time zone","NO","","now()")}})
+EXPECTED_PRIMARY_KEYS.update({"governance_proposals": ("chain_id","realm_path","proposal_id"), "governance_votes": ("chain_id","realm_path","proposal_id","voter_key"), "governance_sync_state": ("chain_id","realm_path")})
+EXPECTED_FOREIGN_KEYS.add(("governance_votes",("chain_id","realm_path","proposal_id"),"governance_proposals",("chain_id","realm_path","proposal_id"),"c"))
+EXPECTED_CHECKS.update({
+ "governance_proposals_chain_id_check": "CHECK (char_length(chain_id) BETWEEN 1 AND 128)", "governance_proposals_realm_path_check": "CHECK (char_length(realm_path) BETWEEN 1 AND 512)", "governance_proposals_proposal_id_check": "CHECK (proposal_id >= 0)", "governance_proposals_title_check": "CHECK (char_length(title) BETWEEN 1 AND 1000)", "governance_proposals_author_display_check": "CHECK (author_display IS NULL OR char_length(author_display) <= 1000)", "governance_proposals_author_address_check": "CHECK (author_address IS NULL OR author_address ~ '^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$')", "governance_proposals_status_check": "CHECK (status IN ('ACTIVE', 'ACCEPTED', 'REJECTED', 'UNKNOWN'))", "governance_proposals_eligible_tiers_check": "CHECK (jsonb_typeof(eligible_tiers) = 'array')", "governance_proposals_description_check": "CHECK (char_length(description) <= 100000)", "governance_proposals_executor_text_check": "CHECK (executor_text IS NULL OR char_length(executor_text) <= 100000)", "governance_proposals_executor_creation_realm_check": "CHECK (executor_creation_realm IS NULL OR char_length(executor_creation_realm) <= 1000)", "governance_proposals_rejection_reason_check": "CHECK (rejection_reason IS NULL OR char_length(rejection_reason) <= 10000)", "governance_proposals_detail_parse_status_check": "CHECK (detail_parse_status IN ('parsed', 'partial'))", "governance_proposals_votes_parse_status_check": "CHECK (votes_parse_status IN ('parsed', 'empty', 'unparsed'))", "governance_proposals_parse_warnings_check": "CHECK (jsonb_typeof(parse_warnings) = 'array')", "governance_proposals_percentages_check": "CHECK ((yes_percent IS NULL OR yes_percent BETWEEN 0 AND 100) AND (no_percent IS NULL OR no_percent BETWEEN 0 AND 100) AND (abstain_percent IS NULL OR abstain_percent BETWEEN 0 AND 100))", "governance_proposals_raw_size_check": "CHECK ((raw_detail_render IS NULL OR octet_length(raw_detail_render) <= 1048576) AND (raw_votes_render IS NULL OR octet_length(raw_votes_render) <= 1048576))", "governance_proposals_heights_check": "CHECK (first_observed_height >= 1 AND last_observed_height >= first_observed_height)", "governance_proposals_times_check": "CHECK (last_observed_at >= first_observed_at)",
+ "governance_votes_voter_key_check": "CHECK (char_length(voter_key) BETWEEN 1 AND 1100)", "governance_votes_voter_display_check": "CHECK (char_length(voter_display) BETWEEN 1 AND 1000)", "governance_votes_voter_address_check": "CHECK (voter_address IS NULL OR voter_address ~ '^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$')", "governance_votes_option_check": "CHECK (option IN ('YES', 'NO', 'ABSTAIN'))", "governance_votes_tier_check": "CHECK (char_length(tier) BETWEEN 1 AND 64)", "governance_votes_voting_power_check": "CHECK (voting_power >= 0)", "governance_votes_heights_check": "CHECK (first_observed_height >= 1 AND last_observed_height >= first_observed_height)", "governance_votes_times_check": "CHECK (last_observed_at >= first_observed_at)",
+ "governance_sync_state_chain_id_check": "CHECK (char_length(chain_id) BETWEEN 1 AND 128)", "governance_sync_state_realm_path_check": "CHECK (char_length(realm_path) BETWEEN 1 AND 512)", "governance_sync_state_source_height_check": "CHECK (source_height >= 1)", "governance_sync_state_page_count_check": "CHECK (page_count BETWEEN 1 AND 100)", "governance_sync_state_proposal_count_check": "CHECK (proposal_count BETWEEN 0 AND 1000)", "governance_sync_state_counts_check": "CHECK ((proposal_count = 0 AND first_proposal_id IS NULL AND latest_proposal_id IS NULL AND page_count >= 1) OR (proposal_count > 0 AND first_proposal_id IS NOT NULL AND latest_proposal_id IS NOT NULL AND first_proposal_id >= 0 AND latest_proposal_id >= first_proposal_id AND page_count >= 1))"})
+EXPECTED_INDEXES.update({"governance_proposals_realm_id_idx": ("governance_proposals",False,(("chain_id","ASC"),("realm_path","ASC"),("proposal_id","DESC")),None), "governance_proposals_realm_status_id_idx": ("governance_proposals",False,(("chain_id","ASC"),("realm_path","ASC"),("status","ASC"),("proposal_id","DESC")),None), "governance_votes_voter_address_idx": ("governance_votes",False,(("voter_address","ASC"),),"voter_address IS NOT NULL")})
 FINAL_SCHEMA_EXPECTATIONS = schema_expectations()
-PRE_NETWORK_DISTRIBUTION_EXPECTATIONS = schema_expectations(excluded_tables=NETWORK_DISTRIBUTION_TABLES)
+
+NETWORK_DISTRIBUTION_TABLES = {
+    "network_distribution_geo_cache",
+    "network_distribution_snapshots",
+    "network_distribution_snapshot_sources",
+}
+VALOPERS_TABLES = {"valoper_profiles", "valopers_snapshot_state"}
+TRANSACTION_HASH_COLUMN = "tx_hash_hex"
+TRANSACTION_HASH_CHECKS = {"transactions_tx_hash_hex_format", "transactions_tx_hash_consistent"}
+TRANSACTION_HASH_INDEXES = {"transactions_tx_hash_hex_idx"}
+
+
+
+PRE_NETWORK_DISTRIBUTION_EXPECTATIONS = schema_expectations(excluded_tables=NETWORK_DISTRIBUTION_TABLES | GOVERNANCE_TABLES)
 VALOPERS_ONLY_EXPECTATIONS = schema_expectations(
-    excluded_tables=NETWORK_DISTRIBUTION_TABLES, include_transaction_hash=False)
+    excluded_tables=NETWORK_DISTRIBUTION_TABLES | GOVERNANCE_TABLES, include_transaction_hash=False)
 TRANSACTION_HASH_ONLY_EXPECTATIONS = schema_expectations(
-    excluded_tables=NETWORK_DISTRIBUTION_TABLES | VALOPERS_TABLES)
+    excluded_tables=NETWORK_DISTRIBUTION_TABLES | VALOPERS_TABLES | GOVERNANCE_TABLES)
 BASE_LEGACY_EXPECTATIONS = schema_expectations(
-    excluded_tables=NETWORK_DISTRIBUTION_TABLES | VALOPERS_TABLES,
+    excluded_tables=NETWORK_DISTRIBUTION_TABLES | VALOPERS_TABLES | GOVERNANCE_TABLES,
     include_transaction_hash=False)
 
 
@@ -353,6 +374,25 @@ def _remove_atomic_parentheses(value: str) -> str:
             index += 1
     return value
 
+
+_NUMERIC_BOUND = r"-?\d+(?:\.\d+)?"
+_BOUNDED_EXPRESSION = r"[a-z_][a-z0-9_]*(?:\s*\(\s*[a-z_][a-z0-9_]*\s*\))?"
+_NUMERIC_BETWEEN = re.compile(
+    rf"(?P<expression>\b{_BOUNDED_EXPRESSION})\s+between\s+"
+    rf"(?P<lower>{_NUMERIC_BOUND})\s+and\s+(?P<upper>{_NUMERIC_BOUND})\b"
+)
+
+
+def _normalize_numeric_between(value: str) -> str:
+    """Expand bounded numeric BETWEEN expressions to PostgreSQL's canonical form."""
+    return _NUMERIC_BETWEEN.sub(
+        lambda match: (
+            f"({match.group('expression')} >= {match.group('lower')} and "
+            f"{match.group('expression')} <= {match.group('upper')})"
+        ),
+        value,
+    )
+
 def _norm(value: str | None) -> str | None:
     if value is None:
         return None
@@ -363,6 +403,7 @@ def _norm(value: str | None) -> str | None:
     normalized = re.sub(r"::(?:text|numeric|bigint|integer|boolean)", "", normalized)
     normalized = re.sub(r"([a-z_]+) = any \(array\[(.*?)\]\)", r"\1 in (\2)", normalized)
     normalized = re.sub(r"\s+", " ", normalized).strip()
+    normalized = _normalize_numeric_between(normalized)
     normalized = _strip_outer_parentheses(normalized)
     normalized = _remove_atomic_parentheses(normalized)
     normalized = re.sub(r"\s+", " ", normalized).strip()
@@ -568,6 +609,16 @@ def initialize_or_validate(database_url: str, schema_path: Path = SCHEMA, connec
                 validate_schema_snapshot(fetch_schema_snapshot(cursor))
             else:
                 snapshot = fetch_schema_snapshot(cursor)
+                if existing == PRE_GOVERNANCE_SCHEMA_EXPECTATIONS["tables"]:
+                    try:
+                        validate_schema_snapshot(snapshot, PRE_GOVERNANCE_SCHEMA_EXPECTATIONS)
+                    except SchemaCompatibilityError:
+                        pass
+                    else:
+                        raise SchemaCompatibilityError(
+                            "Governance schema is missing; run:\n"
+                            "python scripts/migrate_governance_schema.py"
+                        )
                 if existing == PRE_NETWORK_DISTRIBUTION_EXPECTATIONS["tables"]:
                     try:
                         validate_schema_snapshot(snapshot, PRE_NETWORK_DISTRIBUTION_EXPECTATIONS)

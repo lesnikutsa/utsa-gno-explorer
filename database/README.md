@@ -120,3 +120,40 @@ snapshot row or profile data.
 ## Network distribution schema
 
 Migration `0003_add_network_distribution.sql` adds an INET-keyed GeoIP cache, aggregated snapshots, and per-RPC snapshot results. Existing databases must run `python scripts/migrate_network_distribution_schema.py`; fresh databases receive the same objects through `python scripts/init_database.py`. The migration is additive, transactional and preserves existing history. Restore the pre-migration backup to roll back the schema because no destructive down migration is supplied.
+
+## Governance persistence
+
+Fresh databases receive `governance_proposals`, `governance_votes`, and
+`governance_sync_state` from `database/schema.sql`. Governance source heights are
+historical metadata: these tables have no foreign keys to blocks or transactions,
+so future block pruning cannot remove governance records.
+
+For an existing production schema, first stop the indexer and take and verify a
+backup. Then apply the additive, operator-controlled migration explicitly:
+
+```sh
+set -a
+source /etc/utsa-gno-explorer/indexer.env
+set +a
+python scripts/migrate_governance_schema.py
+python scripts/init_database.py
+```
+
+After migration and indexer restart, capture one complete fixed-height snapshot:
+
+```sh
+python scripts/persist_governance_snapshot.py
+```
+
+The persistence command is one-shot; this repository installs no governance
+service, timer, or cron job and exposes no governance API or frontend yet. Full
+sequential discovery may take approximately one minute. It includes proposal
+`#0`, treats `proposal_count` independently from `latest_proposal_id`, and stores
+bounded unmodified detail and vote renders. A complete empty realm records the
+root list page (`page_count >= 1`) with zero proposals and null first/latest IDs.
+The writer rejects the entire snapshot when any vote render is unparsed; only a
+confirmed `empty` vote render may remove previously stored current votes.
+
+Migration has no destructive down migration. Restore the verified pre-migration
+backup for a complete schema rollback. Removing governance rows must be a
+separate, deliberate operator action.
