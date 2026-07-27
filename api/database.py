@@ -269,8 +269,8 @@ SELECT
         SELECT height FROM blocks WHERE height <= s.last_finalized_height ORDER BY height DESC LIMIT 20
     ) recent_20) AS network_blocks_20,
     (SELECT count(*) FROM (
-        SELECT height FROM blocks WHERE height <= s.last_finalized_height ORDER BY height DESC LIMIT 100
-    ) recent_100) AS network_blocks_100
+        SELECT height FROM blocks WHERE height <= s.last_finalized_height ORDER BY height DESC LIMIT 1000
+    ) recent_1000) AS network_blocks_1000
 FROM indexer_state s
 LEFT JOIN blocks b ON b.height = s.last_finalized_height
 WHERE s.state_key = %s
@@ -280,7 +280,7 @@ ACTIVE_VALIDATORS_SQL = """
 WITH recent_blocks AS (
     SELECT height, row_number() OVER (ORDER BY height DESC) AS position
     FROM (
-        SELECT height FROM blocks WHERE height <= %s ORDER BY height DESC LIMIT 100
+        SELECT height FROM blocks WHERE height <= %s ORDER BY height DESC LIMIT 1000
     ) bounded_blocks
 ), current_validators AS (
     SELECT vsm.signing_address, vsm.voting_power, vsm.proposer_priority, v.public_key_type
@@ -303,12 +303,12 @@ SELECT
     count(signature.signing_address) FILTER (WHERE recent.position <= 20 AND signature.vote_status = 'absent')::bigint AS absent_blocks_20,
     count(signature.signing_address) FILTER (WHERE recent.position <= 20 AND signature.vote_status = 'invalid')::bigint AS invalid_blocks_20,
     count(membership.signing_address) FILTER (WHERE recent.position <= 20 AND signature.signing_address IS NULL)::bigint AS unknown_blocks_20,
-    count(membership.signing_address)::bigint AS active_blocks_100,
-    count(signature.signing_address) FILTER (WHERE signature.signed = true)::bigint AS signed_blocks_100,
-    count(signature.signing_address) FILTER (WHERE signature.vote_status = 'nil')::bigint AS nil_blocks_100,
-    count(signature.signing_address) FILTER (WHERE signature.vote_status = 'absent')::bigint AS absent_blocks_100,
-    count(signature.signing_address) FILTER (WHERE signature.vote_status = 'invalid')::bigint AS invalid_blocks_100,
-    count(membership.signing_address) FILTER (WHERE signature.signing_address IS NULL)::bigint AS unknown_blocks_100
+    count(membership.signing_address)::bigint AS active_blocks_1000,
+    count(signature.signing_address) FILTER (WHERE signature.signed = true)::bigint AS signed_blocks_1000,
+    count(signature.signing_address) FILTER (WHERE signature.vote_status = 'nil')::bigint AS nil_blocks_1000,
+    count(signature.signing_address) FILTER (WHERE signature.vote_status = 'absent')::bigint AS absent_blocks_1000,
+    count(signature.signing_address) FILTER (WHERE signature.vote_status = 'invalid')::bigint AS invalid_blocks_1000,
+    count(membership.signing_address) FILTER (WHERE signature.signing_address IS NULL)::bigint AS unknown_blocks_1000
 FROM current_validators current
 CROSS JOIN recent_blocks recent
 LEFT JOIN validator_set_members membership
@@ -388,7 +388,7 @@ WITH recent_blocks AS (
     FROM blocks
     WHERE height <= %s
     ORDER BY height DESC
-    LIMIT 100
+    LIMIT 1000
 )
 SELECT recent.height, recent.time_utc,
        membership.signing_address AS membership_address,

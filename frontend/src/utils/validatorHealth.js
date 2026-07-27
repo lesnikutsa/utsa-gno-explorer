@@ -17,8 +17,8 @@ export function getValidatorHealth(uptime = {}) {
   if (missedBlocks === activeBlocks) return { key: 'no-signatures', label: 'No signatures', tone: 'error' }
 
   const missedRate = missedBlocks / activeBlocks
-  if (missedRate >= 0.5) return { key: 'critical', label: 'Critical', tone: 'error' }
-  if (missedRate >= 0.1) return { key: 'degraded', label: 'Degraded', tone: 'warning' }
+  if (missedRate >= 0.05) return { key: 'critical', label: 'Critical', tone: 'error' }
+  if (missedRate >= 0.01) return { key: 'degraded', label: 'Degraded', tone: 'warning' }
   return { key: 'healthy', label: 'Healthy', tone: 'success' }
 }
 

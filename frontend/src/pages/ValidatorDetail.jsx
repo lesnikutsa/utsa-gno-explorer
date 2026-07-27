@@ -133,7 +133,7 @@ export function ValidatorDetail({ validatorDetail }) {
 
 function SigningHistory({ validator }) {
   const history = validator.signing_history && typeof validator.signing_history === 'object' ? validator.signing_history : {}
-  const uptime = validator.uptime_100 && typeof validator.uptime_100 === 'object' ? validator.uptime_100 : {}
+  const uptime = validator.uptime_1000 && typeof validator.uptime_1000 === 'object' ? validator.uptime_1000 : {}
   const requiredCounters = ['active_blocks', 'signed_blocks', 'nil_blocks', 'absent_blocks', 'invalid_blocks', 'unknown_blocks']
   const hasCompleteCounters = requiredCounters.every((counter) => present(uptime[counter]) && Number.isFinite(Number(uptime[counter])))
   const health = hasCompleteCounters
@@ -148,14 +148,14 @@ function SigningHistory({ validator }) {
 
   return (
     <section className="panel validator-detail__section" aria-labelledby="validator-signing-history-title">
-      <div className="panel__heading"><h2 id="validator-signing-history-title">Signing History</h2></div>
+      <div className="panel__heading"><h2 id="validator-signing-history-title">Signing History</h2><span className="panel__meta">Latest 100 signing blocks</span></div>
       <div className="signing-history__range">
         <HeightField label="From Block" value={history.start_height} />
         <HeightField label="To Block" value={history.end_height} />
-        <Field label="Network Blocks" mono>{formatCount(history.network_blocks)}</Field>
-        <Field label="Uptime" mono>{formatPercent(uptime.uptime_percent)}</Field>
+        <Field label="Visible Blocks" mono>{formatCount(history.network_blocks)}</Field>
+        <Field label="Uptime (1000)" mono>{formatPercent(uptime.uptime_percent)}</Field>
         <div className="validator-detail__field">
-          <span className="validator-detail__label">Health</span>
+          <span className="validator-detail__label">Health (1000)</span>
           <StatusBadge tone={health.tone}>{health.label}</StatusBadge>
         </div>
       </div>

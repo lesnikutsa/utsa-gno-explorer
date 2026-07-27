@@ -23,12 +23,12 @@ def validator(address, voting_power, priority, active_20=3, signed_20=2, **overr
         "absent_blocks_20": 0,
         "invalid_blocks_20": 0,
         "unknown_blocks_20": active_20 - signed_20,
-        "active_blocks_100": 3,
-        "signed_blocks_100": 2,
-        "nil_blocks_100": 0,
-        "absent_blocks_100": 1,
-        "invalid_blocks_100": 0,
-        "unknown_blocks_100": 0,
+        "active_blocks_1000": 3,
+        "signed_blocks_1000": 2,
+        "nil_blocks_1000": 0,
+        "absent_blocks_1000": 1,
+        "invalid_blocks_1000": 0,
+        "unknown_blocks_1000": 0,
         "public_key_value": "forbidden",
         "moniker": None,
         "operator_address": None,
@@ -71,7 +71,7 @@ class ApiValidatorsTests(unittest.TestCase):
 
     def result(self, items):
         return {
-            "checkpoint": {"height": 870394, "network_blocks_20": 3, "network_blocks_100": 3},
+            "checkpoint": {"height": 870394, "network_blocks_20": 3, "network_blocks_1000": 3},
             "items": items,
         }
 
@@ -94,8 +94,9 @@ class ApiValidatorsTests(unittest.TestCase):
         self.assertEqual(data["items"][0]["uptime_20"]["network_blocks"], 3)
         self.assertEqual(data["items"][0]["uptime_20"]["uptime_percent"], 66.67)
         self.assertEqual(data["items"][1]["uptime_20"]["uptime_percent"], 0.0)
-        self.assertEqual(data["items"][0]["uptime_100"]["uptime_percent"], 66.67)
-        self.assertEqual(data["items"][0]["uptime_100"]["absent_blocks"], 1)
+        self.assertEqual(data["items"][0]["uptime_1000"]["uptime_percent"], 66.67)
+        self.assertEqual(data["items"][0]["uptime_1000"]["absent_blocks"], 1)
+        self.assertNotIn("uptime_100", data["items"][0])
         self.assertEqual(data["items"][0]["uptime_20"]["unknown_blocks"], 1)
         self.assertNotIn("public_key_value", response.text)
         self.assertEqual(data["items"][0]["moniker"], "Official")
@@ -128,9 +129,13 @@ class ApiValidatorsTests(unittest.TestCase):
                 self.assertNotIn("db.internal", combined)
 
     def test_database_query_orders_by_power_then_address(self):
-        from api.database import ACTIVE_VALIDATORS_SQL
+        from api.database import ACTIVE_VALIDATORS_SQL, VALIDATORS_CHECKPOINT_SQL
 
         self.assertIn("ORDER BY current.voting_power DESC, current.signing_address ASC", ACTIVE_VALIDATORS_SQL)
+        self.assertIn("LIMIT 1000", ACTIVE_VALIDATORS_SQL)
+        self.assertIn("network_blocks_1000", VALIDATORS_CHECKPOINT_SQL)
+        for counter in ("active", "signed", "nil", "absent", "invalid", "unknown"):
+            self.assertIn(f"{counter}_blocks_1000", ACTIVE_VALIDATORS_SQL)
 
 
 if __name__ == "__main__":

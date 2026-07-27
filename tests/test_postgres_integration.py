@@ -799,6 +799,8 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                 self.assertEqual([row['address'] for row in active], [matched, unmatched])
                 self.assertEqual(len({row['address'] for row in active}), 2)
                 self.assertEqual(sum(row['voting_power'] for row in active), 30)
+                self.assertEqual(active[0]['active_blocks_1000'], 1)
+                self.assertEqual(active[0]['unknown_blocks_1000'], 1)
                 self.assertEqual((active[0]['moniker'], active[0]['operator_address'], active[0]['server_type'], active[0]['valoper_source_height']), ('Active Official', operators[0], 'cloud', 947852))
                 self.assertTrue(all(active[1][key] is None for key in ('moniker', 'operator_address', 'server_type', 'valoper_source_height')))
                 identities = {}

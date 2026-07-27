@@ -49,7 +49,7 @@ class OverviewValidatorIdentitySourceContractTests(unittest.TestCase):
         cls.source = (ROOT / "frontend/src/pages/Overview.jsx").read_text()
         cls.styles = (ROOT / "frontend/src/styles/app.css").read_text()
         cls.identity_render = cls.source.split("label: 'Validator'", 1)[1].split(
-            "label: 'Signing (last 100)'", 1
+            "label: 'Signing (1000)'", 1
         )[0]
         cls.ranking = cls.source.split("const validatorsByMisses", 1)[1].split(
             "useEffect", 1
