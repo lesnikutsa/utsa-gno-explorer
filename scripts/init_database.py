@@ -374,6 +374,25 @@ def _remove_atomic_parentheses(value: str) -> str:
             index += 1
     return value
 
+
+_NUMERIC_BOUND = r"-?\d+(?:\.\d+)?"
+_BOUNDED_EXPRESSION = r"[a-z_][a-z0-9_]*(?:\s*\(\s*[a-z_][a-z0-9_]*\s*\))?"
+_NUMERIC_BETWEEN = re.compile(
+    rf"(?P<expression>\b{_BOUNDED_EXPRESSION})\s+between\s+"
+    rf"(?P<lower>{_NUMERIC_BOUND})\s+and\s+(?P<upper>{_NUMERIC_BOUND})\b"
+)
+
+
+def _normalize_numeric_between(value: str) -> str:
+    """Expand bounded numeric BETWEEN expressions to PostgreSQL's canonical form."""
+    return _NUMERIC_BETWEEN.sub(
+        lambda match: (
+            f"({match.group('expression')} >= {match.group('lower')} and "
+            f"{match.group('expression')} <= {match.group('upper')})"
+        ),
+        value,
+    )
+
 def _norm(value: str | None) -> str | None:
     if value is None:
         return None
@@ -384,6 +403,7 @@ def _norm(value: str | None) -> str | None:
     normalized = re.sub(r"::(?:text|numeric|bigint|integer|boolean)", "", normalized)
     normalized = re.sub(r"([a-z_]+) = any \(array\[(.*?)\]\)", r"\1 in (\2)", normalized)
     normalized = re.sub(r"\s+", " ", normalized).strip()
+    normalized = _normalize_numeric_between(normalized)
     normalized = _strip_outer_parentheses(normalized)
     normalized = _remove_atomic_parentheses(normalized)
     normalized = re.sub(r"\s+", " ", normalized).strip()
