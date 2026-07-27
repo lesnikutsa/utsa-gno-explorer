@@ -1,5 +1,6 @@
 import { CopyButton } from '../components/CopyButton'
 import { StatusBadge } from '../components/StatusBadge'
+import { ValidatorDescription } from '../components/ValidatorDescription'
 import {
   SIGNING_STATUSES,
   ValidatorSigningStrip,
@@ -119,7 +120,10 @@ export function ValidatorDetail({ validatorDetail }) {
       <section className="panel validator-detail__section" aria-labelledby="validator-profile-title">
         <div className="panel__heading"><h2 id="validator-profile-title">Validator Profile</h2></div>
         <div className="validator-detail__grid validator-detail__grid--profile">
-          <Field label="Description">{present(validator.description) ? validator.description : '—'}</Field>
+          <div className="validator-detail__field validator-detail__description-field">
+            <span className="validator-detail__label">Description</span>
+            <ValidatorDescription description={validator.description} />
+          </div>
         </div>
       </section>
 
