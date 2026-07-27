@@ -398,3 +398,22 @@ production databases require the explicit additive migration documented in
 [`database/README.md`](database/README.md). The migration is transactional,
 preserves indexed data, is safe to rerun after success, and is never run by an
 application, service, container, or Compose startup path.
+
+## Governance discovery
+
+`scripts/inspect_governance.py` is a read-only diagnostic tool that discovers proposals
+from the configurable `gno.land/r/gov/dao` proxy realm through `vm/qrender`. It selects a
+healthy configured RPC, follows bounded internal list pagination, and retrieves proposal
+detail and vote renders. It does not modify the database, schema, API, frontend, or
+production environment.
+
+```bash
+python3 scripts/inspect_governance.py --json
+python3 scripts/inspect_governance.py --proposal 20 --raw-dir /tmp/gno-governance-raw
+```
+
+Use `--realm` or `GNO_GOVERNANCE_REALM` to override the proxy realm; the CLI option takes
+precedence. Raw renders are written only when `--raw-dir` is supplied (or embedded in JSON
+only with `--include-raw`). Discovery is parser-based and deliberately reports unknown
+formats and ambiguous pagination as incomplete instead of inferring data. This diagnostic
+tool is not a production Governance API or a completed Explorer user feature.
