@@ -1,8 +1,10 @@
+from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime, timezone
 from decimal import Decimal
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from api.config import ApiConfig
@@ -56,24 +58,17 @@ class FakeDatabase:
         return result
 
 
-def client(fake):
-    stack = patch.object(module, "database", fake)
-    config = patch.object(module, "load_config", return_value=ApiConfig(database_url="postgresql://secret"))
-    stack.start(); config.start()
-    test_client = TestClient(module.app)
-    test_client.__enter__()
-    test_client._patches = (stack, config)
-    return test_client
-
-
-def close(c):
-    c.__exit__(None, None, None)
-    for p in c._patches: p.stop()
-
+@contextmanager
+def make_client(fake):
+    with patch.object(module, "database", fake), patch.object(
+        module, "load_config", return_value=ApiConfig(database_url="postgresql://secret")
+    ):
+        with TestClient(module.app) as test_client:
+            yield test_client
 
 def test_list_cursor_limits_zero_and_public_boundary():
-    fake = FakeDatabase(); c = client(fake)
-    try:
+    fake = FakeDatabase()
+    with make_client(fake) as c:
         first = c.get("/api/governance/proposals?limit=20")
         assert first.status_code == 200
         body = first.json()
@@ -87,12 +82,11 @@ def test_list_cursor_limits_zero_and_public_boundary():
         assert c.get("/api/governance/proposals?before_proposal_id=0").json()["items"] == []
         for value in (1, 100): assert c.get(f"/api/governance/proposals?limit={value}").status_code == 200
         for value in (0, 101): assert c.get(f"/api/governance/proposals?limit={value}").status_code == 422
-    finally: close(c)
 
 
 def test_detail_zero_votes_and_safe_errors():
-    fake = FakeDatabase(); c = client(fake)
-    try:
+    fake = FakeDatabase()
+    with make_client(fake) as c:
         for proposal_id in (0, 20):
             response = c.get(f"/api/governance/proposals/{proposal_id}")
             assert response.status_code == 200
@@ -103,20 +97,180 @@ def test_detail_zero_votes_and_safe_errors():
         fake.fail = True
         response = c.get("/api/governance/proposals")
         assert response.status_code == 503 and "postgresql://secret" not in response.text
-    finally: close(c)
 
 
 def test_inconsistent_state_and_vote_contract_are_rejected():
     fake = FakeDatabase()
     original = fake.fetch_governance_proposals
     fake.fetch_governance_proposals = lambda **kw: {**original(**kw), "source": {**source(fake.items), "accepted_count": 20}}
-    c = client(fake)
-    try: assert c.get("/api/governance/proposals").status_code == 503
-    finally: close(c)
+    with make_client(fake) as c:
+        assert c.get("/api/governance/proposals").status_code == 503
     fake = FakeDatabase(); original_detail = fake.fetch_governance_proposal_detail
     def malformed(**kw):
         value = original_detail(**kw); value["votes"] = []; value["proposal"]["voter_count"] = 0; return value
     fake.fetch_governance_proposal_detail = malformed
-    c = client(fake)
-    try: assert c.get("/api/governance/proposals/20").status_code == 503
-    finally: close(c)
+    with make_client(fake) as c:
+        assert c.get("/api/governance/proposals/20").status_code == 503
+
+
+def test_public_governance_sql_contracts():
+    from api.database import (GOVERNANCE_SOURCE_SQL, GOVERNANCE_PROPOSALS_SQL,
+        GOVERNANCE_PROPOSAL_DETAIL_SQL, GOVERNANCE_VOTES_SQL)
+    source_sql = " ".join(GOVERNANCE_SOURCE_SQL.lower().split())
+    list_sql = " ".join(GOVERNANCE_PROPOSALS_SQL.lower().split())
+    detail_sql = " ".join(GOVERNANCE_PROPOSAL_DETAIL_SQL.lower().split())
+    votes_sql = " ".join(GOVERNANCE_VOTES_SQL.lower().split())
+    assert "from indexer_state s" in source_sql and "sync.chain_id = s.chain_id" in source_sql
+    assert "s.state_key = %s" in source_sql and "sync.realm_path = %s" in source_sql
+    assert "proposal.proposal_id < %s::bigint" in list_sql
+    assert "order by proposal.proposal_id desc" in list_sql and "limit %s" in list_sql
+    assert "limit 1001" in list_sql and "select *" not in list_sql
+    assert "proposal.chain_id = %s" in detail_sql and "proposal.realm_path = %s" in detail_sql
+    assert "proposal.proposal_id = %s" in detail_sql
+    assert "voting_power::text" in votes_sql and "order by tier asc, voter_key asc" in votes_sql
+    assert "limit 1001" in votes_sql
+    assert "voter_key" not in votes_sql.split("from governance_votes", 1)[0]
+    public_sql = " ".join((source_sql, list_sql, detail_sql, votes_sql))
+    for private in ("raw_detail_render", "raw_votes_render", "parse_warnings", "inserted_at", "updated_at", "rpc_url"):
+        assert private not in public_sql
+
+
+def test_governance_database_uses_repeatable_read_read_only_transaction():
+    from contextlib import contextmanager
+    from api.database import ApiDatabase, GOVERNANCE_TRANSACTION_SQL
+
+    source_row = source([proposal(0)])
+    class Cursor:
+        def __init__(self): self.statements = []; self.result = None
+        def execute(self, sql, parameters=None):
+            self.statements.append(sql)
+            if "FROM indexer_state" in sql: self.result = source_row
+            elif "FROM governance_proposals proposal" in sql: self.result = None
+        def fetchone(self): return self.result
+        def fetchall(self): return []
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+    class Connection:
+        def __init__(self): self.cursor_value = Cursor(); self.transaction_count = 0
+        @contextmanager
+        def transaction(self):
+            self.transaction_count += 1
+            yield
+        def cursor(self): return self.cursor_value
+    class Pool:
+        def __init__(self): self.connection_value = Connection()
+        @contextmanager
+        def connection(self, timeout):
+            assert timeout == 2.0
+            yield self.connection_value
+    database = ApiDatabase(); database.pool = Pool()
+    database.fetch_governance_proposals(realm_path=REALM, limit=20, before_proposal_id=None)
+    connection = database.pool.connection_value
+    assert connection.transaction_count == 1
+    assert connection.cursor_value.statements[0] == GOVERNANCE_TRANSACTION_SQL
+    connection.cursor_value.statements.clear()
+    database.fetch_governance_proposal_detail(realm_path=REALM, proposal_id=0)
+    assert connection.transaction_count == 2
+    assert connection.cursor_value.statements[0] == GOVERNANCE_TRANSACTION_SQL
+
+
+def test_missing_snapshot_returns_404_for_both_endpoints():
+    fake = FakeDatabase()
+    fake.fetch_governance_proposals = lambda **kwargs: None
+    fake.fetch_governance_proposal_detail = lambda **kwargs: None
+    with make_client(fake) as client:
+        assert client.get("/api/governance/proposals").status_code == 404
+        assert client.get("/api/governance/proposals/0").status_code == 404
+
+
+@pytest.mark.parametrize("source_field,bad_value", [
+    ("source_height", "243022"), ("source_height", True), ("page_count", "5"),
+    ("proposal_count", "21"), ("actual_proposal_count", True),
+])
+def test_source_numeric_types_are_strict(source_field, bad_value):
+    fake = FakeDatabase(); original = fake.fetch_governance_proposals
+    def malformed(**kwargs):
+        result = original(**kwargs); result["source"][source_field] = bad_value; return result
+    fake.fetch_governance_proposals = malformed
+    with make_client(fake) as client:
+        assert client.get("/api/governance/proposals").status_code == 503
+
+
+@pytest.mark.parametrize("tiers", ["T1", ["T1", "T1"], [" T1"], [""], ["T1"] * 101])
+def test_malformed_eligible_tiers_return_503(tiers):
+    fake = FakeDatabase(); fake.items[0]["eligible_tiers"] = tiers
+    with make_client(fake) as client:
+        assert client.get("/api/governance/proposals").status_code == 503
+
+
+@pytest.mark.parametrize("value", [Decimal("101"), Decimal("NaN"), "50"])
+def test_invalid_percentages_return_503(value):
+    fake = FakeDatabase(); fake.items[0]["yes_percent"] = value
+    with make_client(fake) as client:
+        assert client.get("/api/governance/proposals").status_code == 503
+
+
+@pytest.mark.parametrize("ids,cursor", [([20, 20], None), ([19, 20], None), ([20], 20)])
+def test_invalid_list_page_identity_returns_503(ids, cursor):
+    fake = FakeDatabase(); original = fake.fetch_governance_proposals
+    def malformed(**kwargs):
+        result = original(**kwargs); result["items"] = [proposal(value) for value in ids]; return result
+    fake.fetch_governance_proposals = malformed
+    query = "/api/governance/proposals" + (f"?before_proposal_id={cursor}" if cursor is not None else "")
+    with make_client(fake) as client:
+        assert client.get(query).status_code == 503
+
+
+def detail_mutation_response(mutate):
+    fake = FakeDatabase(); original = fake.fetch_governance_proposal_detail
+    def malformed(**kwargs):
+        result = original(**kwargs); mutate(result); return result
+    fake.fetch_governance_proposal_detail = malformed
+    with make_client(fake) as client:
+        return client.get("/api/governance/proposals/20")
+
+
+def test_detail_returned_proposal_identity_is_checked():
+    assert detail_mutation_response(lambda result: result["proposal"].update(proposal_id=19)).status_code == 503
+
+
+@pytest.mark.parametrize("status,remove_votes,expected", [
+    ("parsed", True, 503), ("empty", True, 200), ("empty", False, 503), ("unparsed", False, 503),
+])
+def test_detail_vote_parse_contract(status, remove_votes, expected):
+    def mutate(result):
+        result["proposal"]["votes_parse_status"] = status
+        if remove_votes:
+            result["votes"] = []; result["proposal"]["voter_count"] = 0
+    assert detail_mutation_response(mutate).status_code == expected
+
+
+@pytest.mark.parametrize("field,value", [
+    ("voting_power", "-1"), ("voting_power", "1.0"), ("option", "MAYBE"),
+    ("tier", " T1"), ("last_observed_height", 243023),
+])
+def test_invalid_vote_fields_are_rejected(field, value):
+    def mutate(result): result["votes"][0][field] = value
+    assert detail_mutation_response(mutate).status_code == 503
+
+
+def test_duplicate_canonical_display_voters_are_rejected():
+    def mutate(result):
+        first = result["votes"][0]
+        first["voter_address"] = None; first["voter_display"] = " Alice  Smith "
+        second = deepcopy(first); second["voter_display"] = "alice smith"
+        result["votes"] = [first, second]; result["proposal"]["voter_count"] = 2
+    assert detail_mutation_response(mutate).status_code == 503
+
+
+def test_vote_count_and_timestamp_order_are_checked():
+    assert detail_mutation_response(lambda result: result["proposal"].update(voter_count=2)).status_code == 503
+    def reverse_time(result): result["votes"][0]["first_observed_at"] = NOW.replace(year=2027)
+    assert detail_mutation_response(reverse_time).status_code == 503
+
+
+def test_more_than_1000_votes_are_rejected():
+    def mutate(result):
+        result["votes"] = [deepcopy(result["votes"][0]) for _ in range(1001)]
+        result["proposal"]["voter_count"] = 1001
+    assert detail_mutation_response(mutate).status_code == 503

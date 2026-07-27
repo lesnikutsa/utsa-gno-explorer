@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 import os
+import unicodedata
 
 
 DEFAULT_API_VERSION = "0.8.0"
@@ -27,7 +28,7 @@ def _read_governance_realm() -> str:
     value = os.environ.get("GNO_GOVERNANCE_REALM", DEFAULT_GOVERNANCE_REALM)
     if not isinstance(value, str):
         raise ConfigError("GNO_GOVERNANCE_REALM must be a string")
-    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+    if any(unicodedata.category(character) in {"Cc", "Cf", "Zl", "Zp"} for character in value):
         raise ConfigError("GNO_GOVERNANCE_REALM is invalid")
     value = value.strip()
     if (
@@ -35,6 +36,12 @@ def _read_governance_realm() -> str:
         or len(value) > 512
         or not value.startswith("gno.land/r/")
         or ":" in value
+        or any(
+            character.isspace()
+            or not character.isprintable()
+            or unicodedata.category(character) in {"Cc", "Cf", "Zl", "Zp"}
+            for character in value
+        )
     ):
         raise ConfigError("GNO_GOVERNANCE_REALM is invalid")
     return value

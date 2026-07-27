@@ -1277,15 +1277,19 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                 raw[f"proposal/{proposal_id}"] = f"raw detail {proposal_id}\n"
                 raw[f"proposal/{proposal_id}/votes"] = f"raw votes {proposal_id}\n"
             return GovernanceDiscovery(
-                GovernanceSource("integration-chain", "redacted", height, "gno.land/r/gov/dao"),
+                GovernanceSource("topaz-1", "redacted", height, "gno.land/r/gov/dao"),
                 True, 5 if count else 1, tuple(proposals), (), raw,
             )
 
         database = PostgresDatabase(database_url)
-        first = database.persist_governance_snapshot(make_snapshot(), "integration-chain")
+        first = database.persist_governance_snapshot(make_snapshot(), "topaz-1")
         self.assertEqual((first.action, first.proposal_count, first.vote_count), ("applied", 21, 21))
-        self.assertEqual(database.persist_governance_snapshot(make_snapshot(), "integration-chain").action, "unchanged")
+        self.assertEqual(database.persist_governance_snapshot(make_snapshot(), "topaz-1").action, "unchanged")
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO indexer_state(state_key,chain_id,last_finalized_height) "
+                "VALUES ('default','topaz-1',0)"
+            )
             cursor.execute("SELECT yes_percent,first_observed_height,last_observed_height,first_observed_at,last_observed_at FROM governance_proposals WHERE proposal_id=0")
             percentage, first_height, last_height, first_at, last_at = cursor.fetchone()
             self.assertEqual(percentage, Decimal("33.3333"))
@@ -1295,16 +1299,77 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             cursor.execute("SELECT (SELECT count(*) FROM governance_proposals),(SELECT count(*) FROM governance_votes),(SELECT count(*) FROM governance_sync_state)")
             self.assertEqual(cursor.fetchone(), (21, 21, 1))
             connection.commit()
+
+        api_database = ApiDatabase()
+        api_database.open(ApiConfig(database_url=database_url))
+        try:
+            first_page = api_database.fetch_governance_proposals(
+                realm_path="gno.land/r/gov/dao", limit=10, before_proposal_id=None,
+            )
+            self.assertEqual([row["proposal_id"] for row in first_page["items"]], list(range(20, 9, -1)))
+            self.assertEqual(
+                (first_page["source"]["proposal_count"], first_page["source"]["first_proposal_id"],
+                 first_page["source"]["latest_proposal_id"], first_page["source"]["active_count"]),
+                (21, 0, 20, 21),
+            )
+            second_page = api_database.fetch_governance_proposals(
+                realm_path="gno.land/r/gov/dao", limit=20, before_proposal_id=10,
+            )
+            self.assertEqual([row["proposal_id"] for row in second_page["items"]], list(range(9, -1, -1)))
+            self.assertEqual(first_page["items"][0]["voter_count"], 1)
+            for proposal_id in (0, 20):
+                detail = api_database.fetch_governance_proposal_detail(
+                    realm_path="gno.land/r/gov/dao", proposal_id=proposal_id,
+                )
+                self.assertEqual(detail["proposal"]["proposal_id"], proposal_id)
+                self.assertEqual(detail["votes"][0]["voting_power"], str(proposal_id + 1))
+                self.assertNotIn("voter_key", detail["votes"][0])
+                self.assertNotIn("raw_detail_render", detail["proposal"])
+            self.assertIsNone(api_database.fetch_governance_proposals(
+                realm_path="gno.land/r/gov/other", limit=20, before_proposal_id=None,
+            ))
+
+            original_source_fetch = api_database._fetch_governance_source
+            writer_committed = False
+            def fetch_source_then_commit_writer(cursor, realm_path):
+                nonlocal writer_committed
+                row = original_source_fetch(cursor, realm_path)
+                if not writer_committed:
+                    with psycopg.connect(database_url) as writer, writer.cursor() as writer_cursor:
+                        writer_cursor.execute(
+                            "UPDATE governance_proposals SET title='Concurrent title' "
+                            "WHERE chain_id='topaz-1' AND realm_path=%s AND proposal_id=20",
+                            (realm_path,),
+                        )
+                    writer_committed = True
+                return row
+            api_database._fetch_governance_source = fetch_source_then_commit_writer
+            consistent_page = api_database.fetch_governance_proposals(
+                realm_path="gno.land/r/gov/dao", limit=1, before_proposal_id=None,
+            )
+            self.assertEqual(consistent_page["items"][0]["title"], "Proposal 20")
+            api_database._fetch_governance_source = original_source_fetch
+            next_request = api_database.fetch_governance_proposals(
+                realm_path="gno.land/r/gov/dao", limit=1, before_proposal_id=None,
+            )
+            self.assertEqual(next_request["items"][0]["title"], "Concurrent title")
+            with psycopg.connect(database_url) as writer, writer.cursor() as writer_cursor:
+                writer_cursor.execute(
+                    "UPDATE governance_proposals SET title='Proposal 20' "
+                    "WHERE chain_id='topaz-1' AND realm_path='gno.land/r/gov/dao' AND proposal_id=20"
+                )
+        finally:
+            api_database.close()
         with self.assertRaises(StaleGovernanceSnapshot):
-            database.persist_governance_snapshot(make_snapshot(height=99), "integration-chain")
+            database.persist_governance_snapshot(make_snapshot(height=99), "topaz-1")
         with self.assertRaises(GovernanceSnapshotConflict):
-            database.persist_governance_snapshot(make_snapshot(height=101, count=20), "integration-chain")
+            database.persist_governance_snapshot(make_snapshot(height=101, count=20), "topaz-1")
         with self.assertRaises(GovernancePersistenceError):
-            database.persist_governance_snapshot(make_snapshot(height=101, parsed_empty=True), "integration-chain")
+            database.persist_governance_snapshot(make_snapshot(height=101, parsed_empty=True), "topaz-1")
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
-            cursor.execute("SELECT source_height,(SELECT count(*) FROM governance_votes) FROM governance_sync_state WHERE chain_id='integration-chain'")
+            cursor.execute("SELECT source_height,(SELECT count(*) FROM governance_votes) FROM governance_sync_state WHERE chain_id='topaz-1'")
             self.assertEqual(cursor.fetchone(), (100, 21))
-        accepted = database.persist_governance_snapshot(make_snapshot(height=101, status="ACCEPTED"), "integration-chain")
+        accepted = database.persist_governance_snapshot(make_snapshot(height=101, status="ACCEPTED"), "topaz-1")
         self.assertEqual(accepted.action, "applied")
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
             cursor.execute("SELECT first_observed_height,last_observed_height,first_observed_at,last_observed_at FROM governance_proposals WHERE proposal_id=0")
@@ -1313,10 +1378,10 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             self.assertEqual(new_first_at, first_at)
             self.assertGreaterEqual(new_last_at, last_at)
         with self.assertRaises(GovernanceSnapshotConflict):
-            database.persist_governance_snapshot(make_snapshot(height=102, status="ACTIVE"), "integration-chain")
+            database.persist_governance_snapshot(make_snapshot(height=102, status="ACTIVE"), "topaz-1")
         with self.assertRaises(GovernanceSnapshotConflict):
-            database.persist_governance_snapshot(make_snapshot(height=102, status="REJECTED"), "integration-chain")
-        emptied = database.persist_governance_snapshot(make_snapshot(height=102, status="ACCEPTED", empty_votes=True), "integration-chain")
+            database.persist_governance_snapshot(make_snapshot(height=102, status="REJECTED"), "topaz-1")
+        emptied = database.persist_governance_snapshot(make_snapshot(height=102, status="ACCEPTED", empty_votes=True), "topaz-1")
         self.assertEqual(emptied.vote_count, 0)
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
             cursor.execute("SELECT raw_detail_render,raw_votes_render FROM governance_proposals WHERE proposal_id=0")

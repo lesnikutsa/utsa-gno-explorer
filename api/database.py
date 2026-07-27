@@ -545,6 +545,8 @@ ORDER BY tier ASC, voter_key ASC
 LIMIT 1001
 """
 
+GOVERNANCE_TRANSACTION_SQL = "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"
+
 
 class MissingIndexerStateError(RuntimeError):
     """Raised when the singleton indexer state row is missing."""
@@ -605,15 +607,17 @@ class ApiDatabase:
         if self.pool is None:
             raise RuntimeError("Database pool is not open")
         with self.pool.connection(timeout=2.0) as connection:
-            with connection.cursor() as cursor:
-                source = self._fetch_governance_source(cursor, realm_path)
-                if source is None:
-                    return None
-                cursor.execute(GOVERNANCE_PROPOSALS_SQL, (
-                    source["chain_id"], realm_path, before_proposal_id,
-                    before_proposal_id, limit + 1,
-                ))
-                rows = cursor.fetchall()
+            with connection.transaction():
+                with connection.cursor() as cursor:
+                    cursor.execute(GOVERNANCE_TRANSACTION_SQL)
+                    source = self._fetch_governance_source(cursor, realm_path)
+                    if source is None:
+                        return None
+                    cursor.execute(GOVERNANCE_PROPOSALS_SQL, (
+                        source["chain_id"], realm_path, before_proposal_id,
+                        before_proposal_id, limit + 1,
+                    ))
+                    rows = cursor.fetchall()
         return {"source": source, "items": [dict(row) for row in rows]}
 
     def fetch_governance_proposal_detail(
@@ -622,17 +626,19 @@ class ApiDatabase:
         if self.pool is None:
             raise RuntimeError("Database pool is not open")
         with self.pool.connection(timeout=2.0) as connection:
-            with connection.cursor() as cursor:
-                source = self._fetch_governance_source(cursor, realm_path)
-                if source is None:
-                    return None
-                identity = (source["chain_id"], realm_path, proposal_id)
-                cursor.execute(GOVERNANCE_PROPOSAL_DETAIL_SQL, identity)
-                proposal = cursor.fetchone()
-                if proposal is None:
-                    return {"source": source, "proposal": None, "votes": []}
-                cursor.execute(GOVERNANCE_VOTES_SQL, identity)
-                votes = cursor.fetchall()
+            with connection.transaction():
+                with connection.cursor() as cursor:
+                    cursor.execute(GOVERNANCE_TRANSACTION_SQL)
+                    source = self._fetch_governance_source(cursor, realm_path)
+                    if source is None:
+                        return None
+                    identity = (source["chain_id"], realm_path, proposal_id)
+                    cursor.execute(GOVERNANCE_PROPOSAL_DETAIL_SQL, identity)
+                    proposal = cursor.fetchone()
+                    if proposal is None:
+                        return {"source": source, "proposal": None, "votes": []}
+                    cursor.execute(GOVERNANCE_VOTES_SQL, identity)
+                    votes = cursor.fetchall()
         return {
             "source": source,
             "proposal": dict(proposal),
