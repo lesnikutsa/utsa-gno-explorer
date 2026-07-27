@@ -77,6 +77,10 @@ class GnoRpcClient:
         """Run a TM2 ABCI query and return its bounded UTF-8 response data."""
         if not path or not isinstance(data, str):
             raise RpcError("ABCI query path and string data are required")
+        if height is not None and (
+            not isinstance(height, int) or isinstance(height, bool) or height < 1
+        ):
+            raise RpcError("ABCI query height must be a positive integer")
         encoded = base64.b64encode(data.encode("utf-8")).decode("ascii")
         params: dict[str, Any] = {
             "path": json.dumps(path),

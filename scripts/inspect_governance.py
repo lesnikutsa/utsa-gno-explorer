@@ -40,12 +40,17 @@ def main(argv: list[str] | None = None) -> int:
     try:
         selected = select_rpc(configured_rpc_urls(), configured_chain_id(), configured_max_height_lag(), args.timeout)
         source = GovernanceSource(configured_chain_id(), selected.client.base_url.rstrip("/"), selected.latest_height, realm)
-        discovery = discover_governance(selected.client, source, args.max_pages, args.max_proposals, args.proposal)
+        raw_sink = None
         if args.raw_dir:
-            args.raw_dir.mkdir(parents=True, exist_ok=True)
-            for name, render in discovery.raw_renders.items():
+            def write_raw(name: str, render: str) -> None:
+                args.raw_dir.mkdir(parents=True, exist_ok=True)
                 target = args.raw_dir / (name.replace("/", "_").replace("?", "_") + ".md")
                 target.write_text(render, encoding="utf-8")
+            raw_sink = write_raw
+        discovery = discover_governance(
+            selected.client, source, args.max_pages, args.max_proposals, args.proposal,
+            capture_raw=args.include_raw, raw_sink=raw_sink,
+        )
         if args.json:
             print(json.dumps(discovery.to_dict(args.include_raw), ensure_ascii=False, sort_keys=True))
         else:

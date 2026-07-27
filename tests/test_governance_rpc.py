@@ -3,7 +3,7 @@ import json
 import unittest
 from unittest.mock import patch
 
-from scripts.inspect_rpc import GnoRpcClient, RpcError
+from scripts.inspect_rpc import GnoRpcClient, MAX_ABCI_RESPONSE_BYTES, RpcError
 
 
 class GovernanceRpcTests(unittest.TestCase):
@@ -20,6 +20,20 @@ class GovernanceRpcTests(unittest.TestCase):
             with self.assertRaises(RpcError): client.abci_query("vm/qrender", "realm:")
         with patch.object(client, "get", return_value={"result": {"response": {"ResponseBase": {"Error": None, "Data": "%%%"}}}}):
             with self.assertRaises(RpcError): client.abci_query("vm/qrender", "realm:")
+
+    def test_abci_query_validates_height_utf8_and_response_limit(self):
+        client = GnoRpcClient("https://rpc.example")
+        for height in (0, -1, True, "1"):
+            with self.assertRaisesRegex(RpcError, "positive integer"):
+                client.abci_query("vm/qrender", "realm:", height=height)
+        invalid_utf8 = base64.b64encode(b"\xff").decode()
+        with patch.object(client, "get", return_value={"result": {"response": {"ResponseBase": {"Error": None, "Data": invalid_utf8}}}}):
+            with self.assertRaisesRegex(RpcError, "UTF-8"):
+                client.abci_query("vm/qrender", "realm:", height=1)
+        oversized = base64.b64encode(b"x" * (MAX_ABCI_RESPONSE_BYTES + 1)).decode()
+        with patch.object(client, "get", return_value={"result": {"response": {"ResponseBase": {"Error": None, "Data": oversized}}}}):
+            with self.assertRaisesRegex(RpcError, "size limit"):
+                client.abci_query("vm/qrender", "realm:")
 
 
 if __name__ == "__main__": unittest.main()

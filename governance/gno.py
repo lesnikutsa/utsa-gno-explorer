@@ -1,29 +1,32 @@
-"""Bounded parsing and discovery of GovDAO qrender documents."""
+"""Bounded parsing and discovery of official GovDAO qrender documents."""
 from __future__ import annotations
 
+import math
 import re
 from collections import Counter, deque
 from dataclasses import asdict, dataclass, field
 from typing import Callable
 
-from scripts.inspect_rpc import GnoRpcClient, RpcError
+from scripts.inspect_rpc import GnoRpcClient
 
 DEFAULT_REALM = "gno.land/r/gov/dao"
 MAX_GOVERNANCE_PAGES = 100
 MAX_GOVERNANCE_PROPOSALS = 1000
 MAX_RENDER_BYTES = 1024 * 1024
+MAX_TOTAL_RAW_BYTES = 16 * 1024 * 1024
 MAX_TEXT_CHARS = 100_000
 MAX_WARNINGS = 50
 
 _HEADER = re.compile(r"^#{2,3}\s+(?:\[)?Prop\s+#([0-9]+)\s*-\s*(.+?)(?:\]\([^)]*\))?\s*$", re.I)
-_FIELD = re.compile(r"^(Author|Status|Tiers eligible to vote):\s*(.*?)\s*$", re.I)
+_LIST_FIELD = re.compile(r"^(?:[-*]\s+)?(Author|Status|Tiers eligible to vote):\s*(.*?)\s*$", re.I)
 _LINK = re.compile(r"\[[^]]*\]\(([^)]+)\)")
 _ADDRESS = re.compile(r"\bg1[023456789ac-hj-np-z]{38}\b")
-_PAGE = re.compile(r"^(?:" + re.escape(DEFAULT_REALM) + r":)?\?page=([1-9][0-9]*)$")
+_VOTE_GROUP = re.compile(r"^(YES|NO|ABSTAIN)\s+from\s+([^\s]+)\s+\(VPPM\s+([^()]+)\):\s*$", re.I)
+_PERCENT = re.compile(r"^(?:[-*]\s+)?(YES|NO|ABSTAIN)\s+PERCENT:\s*(.*?)\s*$", re.I)
 
 
 class GovernanceParseError(ValueError):
-    """The source cannot be interpreted safely."""
+    """The governance source cannot be interpreted safely."""
 
 
 @dataclass(frozen=True)
@@ -49,9 +52,9 @@ class GovernanceProposalSummary:
 class GovernanceVote:
     voter_display: str
     voter_address: str | None
-    option: str | None
-    tier: str | None
-    voting_power: str | None
+    option: str
+    tier: str
+    voting_power: str
 
 
 @dataclass(frozen=True)
@@ -65,6 +68,10 @@ class GovernanceProposalDetail:
     description: str
     executor_text: str | None
     executor_creation_realm: str | None
+    rejection_reason: str | None
+    yes_percent: float | None
+    no_percent: float | None
+    abstain_percent: float | None
     detail_parse_status: str
     votes_parse_status: str
     votes: tuple[GovernanceVote, ...]
@@ -84,10 +91,13 @@ class GovernanceDiscovery:
         proposals = [asdict(item) for item in self.proposals]
         counts = Counter(item.status.lower() for item in self.proposals)
         output = {
-            "source": asdict(self.source), "complete": self.complete,
-            "page_count": self.page_count, "proposal_count": len(proposals),
+            "source": asdict(self.source),
+            "complete": self.complete,
+            "page_count": self.page_count,
+            "proposal_count": len(proposals),
             "status_counts": {name: counts[name] for name in ("active", "accepted", "rejected", "unknown")},
-            "proposals": proposals, "warnings": list(self.warnings),
+            "proposals": proposals,
+            "warnings": list(self.warnings),
         }
         if include_raw:
             output["raw_renders"] = self.raw_renders
@@ -95,8 +105,7 @@ class GovernanceDiscovery:
 
 
 def _text(value: str, limit: int = MAX_TEXT_CHARS) -> str:
-    value = value.replace("\r\n", "\n").replace("\r", "\n").replace("\x00", "").strip()
-    return value[:limit]
+    return value.replace("\r\n", "\n").replace("\r", "\n").replace("\x00", "").strip()[:limit]
 
 
 def _display(value: str) -> tuple[str | None, str | None]:
@@ -107,110 +116,201 @@ def _display(value: str) -> tuple[str | None, str | None]:
     return display, address.group(0) if address else None
 
 
-def _status(value: str) -> tuple[str, str | None]:
-    normalized = value.strip().upper()
-    if normalized in {"ACTIVE", "ACCEPTED", "REJECTED"}:
-        return normalized, None
+def _list_status(value: str) -> tuple[str, str | None]:
+    status = value.strip().upper()
+    if status in {"ACTIVE", "ACCEPTED", "REJECTED"}:
+        return status, None
     return "UNKNOWN", f"Unknown governance status: {_text(value, 100)}"
 
 
 def parse_proposal_list(render: str) -> tuple[list[GovernanceProposalSummary], list[str]]:
-    _validate_size(render)
-    lines = render.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    starts = [(i, _HEADER.match(line.strip())) for i, line in enumerate(lines)]
-    starts = [(i, m) for i, m in starts if m]
+    lines = _lines(render)
+    starts = [(index, match) for index, line in enumerate(lines) if (match := _HEADER.match(line.strip()))]
     proposals: list[GovernanceProposalSummary] = []
     warnings: list[str] = []
-    for pos, (start, match) in enumerate(starts):
-        assert match
-        end = starts[pos + 1][0] if pos + 1 < len(starts) else len(lines)
+    for position, (start, match) in enumerate(starts):
+        end = starts[position + 1][0] if position + 1 < len(starts) else len(lines)
         values: dict[str, str] = {}
         for line in lines[start + 1:end]:
-            field_match = _FIELD.match(line.strip())
-            if field_match:
+            if field_match := _LIST_FIELD.match(line.strip()):
                 values[field_match.group(1).lower()] = field_match.group(2)
         if "status" not in values:
             raise GovernanceParseError(f"Proposal {match.group(1)} has no status")
-        status, warning = _status(values["status"])
-        local = (warning,) if warning else ()
-        if warning: warnings.append(warning)
+        status, warning = _list_status(values["status"])
+        if warning:
+            warnings.append(warning)
         author, address = _display(values.get("author", ""))
-        tiers = tuple(x.strip().upper() for x in values.get("tiers eligible to vote", "").split(",") if x.strip())
-        proposals.append(GovernanceProposalSummary(int(match.group(1)), _text(match.group(2), 1000), author, address, status, tiers, local))
+        tiers = _tiers(values.get("tiers eligible to vote", ""))
+        proposals.append(GovernanceProposalSummary(
+            int(match.group(1)), _text(match.group(2), 1000), author, address,
+            status, tiers, (warning,) if warning else (),
+        ))
     seen: dict[int, GovernanceProposalSummary] = {}
     for proposal in proposals:
         previous = seen.get(proposal.proposal_id)
-        if previous and previous != proposal:
+        if previous is not None and previous != proposal:
             raise GovernanceParseError(f"Conflicting duplicate proposal ID {proposal.proposal_id}")
         seen[proposal.proposal_id] = proposal
     return list(seen.values()), warnings[:MAX_WARNINGS]
 
 
 def pager_paths(render: str, realm: str) -> list[str]:
-    paths = []
+    _validate_size(render)
     pattern = re.compile(r"^(?:" + re.escape(realm) + r":)?\?page=([1-9][0-9]*)$")
+    paths: list[str] = []
     for target in _LINK.findall(render):
-        if pattern.fullmatch(target.strip()):
-            page = pattern.fullmatch(target.strip()).group(1)
-            paths.append("" if page == "1" else "?page=" + page)
+        if match := pattern.fullmatch(target.strip()):
+            paths.append("" if match.group(1) == "1" else f"?page={match.group(1)}")
     return list(dict.fromkeys(paths))
 
 
 def parse_detail(render: str, requested_id: int) -> dict:
-    _validate_size(render)
-    lines = render.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    header_index = next((i for i, line in enumerate(lines) if _HEADER.match(line.strip())), None)
+    lines = _lines(render)
+    header_index = next((index for index, line in enumerate(lines) if _HEADER.match(line.strip())), None)
     if header_index is None:
         raise GovernanceParseError(f"Proposal {requested_id} detail has no ID/title")
-    match = _HEADER.match(lines[header_index].strip()); assert match
-    if int(match.group(1)) != requested_id:
+    header = _HEADER.match(lines[header_index].strip())
+    assert header is not None
+    if int(header.group(1)) != requested_id:
         raise GovernanceParseError(f"Proposal detail ID does not match requested ID {requested_id}")
-    values = {}
+
+    author = address = None
     for line in lines[header_index + 1:]:
-        fm = _FIELD.match(line.strip())
-        if fm: values[fm.group(1).lower()] = fm.group(2)
-    author, address = _display(values.get("author", ""))
-    status, warning = _status(values.get("status", ""))
-    stop_markers = ("This proposal contains the following metadata:", "Actions", "Detailed voting list", "---", "Status:")
+        if match := _LIST_FIELD.match(line.strip()):
+            if match.group(1).lower() == "author":
+                author, address = _display(match.group(2))
+                break
+
     body_start = header_index + 1
-    while body_start < len(lines) and (not lines[body_start].strip() or _FIELD.match(lines[body_start].strip())): body_start += 1
-    body_end = next((i for i in range(body_start, len(lines)) if any(lines[i].strip().startswith(x) for x in stop_markers)), len(lines))
-    executor_realm = next((line.split(":", 1)[1].strip() for line in lines if line.strip().startswith("Executor created in:")), None)
-    metadata_index = next((i for i, line in enumerate(lines) if line.strip() == "This proposal contains the following metadata:"), None)
-    executor = None
+    while body_start < len(lines) and (not lines[body_start].strip() or _LIST_FIELD.match(lines[body_start].strip())):
+        body_start += 1
+    body_end = next((index for index in range(body_start, len(lines))
+                     if lines[index].strip() == "This proposal contains the following metadata:"
+                     or lines[index].strip() == "---"), len(lines))
+    description = _text("\n".join(lines[body_start:body_end]))
+
+    metadata_index = next((index for index, line in enumerate(lines)
+                           if line.strip() == "This proposal contains the following metadata:"), None)
+    executor_text = None
     if metadata_index is not None:
-        executor_lines = []
+        executor_lines: list[str] = []
         for line in lines[metadata_index + 1:]:
-            if line.strip().startswith(("Executor created in:", "---")): break
+            if line.strip().startswith("Executor created in:") or line.strip() == "---":
+                break
             executor_lines.append(line)
-        executor = _text("\n".join(executor_lines)) or None
-    return {"proposal_id": requested_id, "title": _text(match.group(2), 1000), "author_display": author,
-            "author_address": address, "status": status, "eligible_tiers": tuple(x.strip().upper() for x in values.get("tiers eligible to vote", "").split(",") if x.strip()),
-            "description": _text("\n".join(lines[body_start:body_end])), "executor_text": executor,
-            "executor_creation_realm": _text(executor_realm, 1000) if executor_realm else None,
-            "warnings": [warning] if warning else []}
+        executor_text = _text("\n".join(executor_lines)) or None
+    executor_realm = next((_text(line.strip().split(":", 1)[1], 1000)
+                           for line in lines if line.strip().startswith("Executor created in:")), None)
+
+    joined = "\n".join(lines)
+    if re.search(r"PROPOSAL HAS BEEN ACCEPTED", joined, re.I):
+        status = "ACCEPTED"
+    elif re.search(r"PROPOSAL HAS BEEN DENIED", joined, re.I):
+        status = "REJECTED"
+    elif re.search(r"Proposal is open for votes", joined, re.I):
+        status = "ACTIVE"
+    else:
+        status = "UNKNOWN"
+
+    warnings: list[str] = []
+    if status == "UNKNOWN":
+        warnings.append("Official proposal status section was not recognized")
+    tiers = ()
+    rejection_reason = None
+    percentages: dict[str, float | None] = {"YES": None, "NO": None, "ABSTAIN": None}
+    for line in lines:
+        stripped = line.strip()
+        if match := _LIST_FIELD.match(stripped):
+            if match.group(1).lower() == "tiers eligible to vote":
+                tiers = _tiers(match.group(2))
+        reason_match = re.match(r"^(?:[-*]\s+)?REASON:\s*(.*)$", stripped, re.I)
+        if reason_match:
+            rejection_reason = _text(reason_match.group(1), 10_000) or None
+        if match := _PERCENT.match(stripped):
+            raw = match.group(2)
+            try:
+                value = float(raw[:-1].strip()) if raw.endswith("%") else math.nan
+            except ValueError:
+                value = math.nan
+            if math.isfinite(value) and 0 <= value <= 100:
+                percentages[match.group(1).upper()] = value
+            else:
+                warnings.append(f"Invalid {match.group(1).upper()} percentage")
+    return {
+        "proposal_id": requested_id,
+        "title": _text(header.group(2), 1000),
+        "author_display": author,
+        "author_address": address,
+        "status": status,
+        "eligible_tiers": tiers,
+        "description": description,
+        "executor_text": executor_text,
+        "executor_creation_realm": executor_realm,
+        "rejection_reason": rejection_reason,
+        "yes_percent": percentages["YES"],
+        "no_percent": percentages["NO"],
+        "abstain_percent": percentages["ABSTAIN"],
+        "detail_parse_status": "parsed" if status != "UNKNOWN" else "partial",
+        "warnings": warnings[:MAX_WARNINGS],
+    }
 
 
 def parse_votes(render: str) -> tuple[str, tuple[GovernanceVote, ...], list[str]]:
-    _validate_size(render)
+    lines = _lines(render)
     text = _text(render)
-    if not text or re.search(r"\b(?:no votes|no vote has been cast)\b", text, re.I): return "empty", (), []
-    votes = []
-    pattern = re.compile(r"^[-*]\s+(.+?)\s*\|\s*(YES|NO|ABSTAIN)(?:\s*\|\s*(T[123]))?(?:\s*\|\s*([^|]+))?\s*$", re.I)
-    for line in text.splitlines():
-        match = pattern.match(line.strip())
-        if match:
-            display, address = _display(match.group(1))
-            votes.append(GovernanceVote(display or "", address, match.group(2).upper(), match.group(3).upper() if match.group(3) else None, _text(match.group(4), 100) if match.group(4) else None))
-    if votes: return "parsed", tuple(votes), []
+    if re.fullmatch(r"(?:No one voted yet\.?|No votes\.?|No vote has been cast\.?)", text, re.I):
+        return "empty", (), []
+    votes: list[GovernanceVote] = []
+    group: tuple[str, str, str] | None = None
+    invalid = False
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or re.fullmatch(r"#\s+Proposal\s+#[0-9]+\s+-\s+Vote List", stripped, re.I):
+            continue
+        if match := _VOTE_GROUP.fullmatch(stripped):
+            group = (match.group(1).upper(), _text(match.group(2), 100), _text(match.group(3), 100))
+            continue
+        if stripped.startswith(("- ", "* ")) and group:
+            voter = stripped[2:].strip()
+            display, address = _display(voter)
+            if display:
+                votes.append(GovernanceVote(display, address, *group))
+                continue
+        invalid = True
+    if votes and not invalid:
+        return "parsed", tuple(votes), []
     return "unparsed", (), ["Votes render format was not recognized"]
 
 
-def discover_governance(client: GnoRpcClient, source: GovernanceSource, max_pages: int = MAX_GOVERNANCE_PAGES,
-                        max_proposals: int = MAX_GOVERNANCE_PROPOSALS, proposal_id: int | None = None) -> GovernanceDiscovery:
+def discover_governance(
+    client: GnoRpcClient,
+    source: GovernanceSource,
+    max_pages: int = MAX_GOVERNANCE_PAGES,
+    max_proposals: int = MAX_GOVERNANCE_PROPOSALS,
+    proposal_id: int | None = None,
+    capture_raw: bool = False,
+    raw_sink: Callable[[str, str], None] | None = None,
+) -> GovernanceDiscovery:
     if not 1 <= max_pages <= MAX_GOVERNANCE_PAGES or not 1 <= max_proposals <= MAX_GOVERNANCE_PROPOSALS:
         raise GovernanceParseError("Discovery limits exceed hard safety limits")
-    raw, warnings, summaries = {}, [], {}
+    raw: dict[str, str] = {}
+    raw_bytes = 0
+
+    def fetch(name: str, path: str) -> str:
+        nonlocal raw_bytes
+        render = client.abci_query("vm/qrender", f"{source.realm_path}:{path}", height=source.observed_height)
+        _validate_size(render)
+        if raw_sink:
+            raw_sink(name, render)
+        if capture_raw:
+            raw_bytes += len(render.encode("utf-8"))
+            if raw_bytes > MAX_TOTAL_RAW_BYTES:
+                raise GovernanceParseError("Captured raw renders exceed total size limit")
+            raw[name] = render
+        return render
+
+    warnings: list[str] = []
+    summaries: dict[int, GovernanceProposalSummary | None] = {}
     page_count, complete = 0, True
     if proposal_id is not None:
         summaries[proposal_id] = None
@@ -218,32 +318,74 @@ def discover_governance(client: GnoRpcClient, source: GovernanceSource, max_page
         queue, visited = deque([""]), set()
         while queue:
             path = queue.popleft()
-            if path in visited: continue
-            if page_count >= max_pages: complete = False; warnings.append("Governance page limit reached"); break
-            visited.add(path); render = _render(client, source.realm_path, path); raw[f"list/{path or 'root'}"] = render; page_count += 1
-            parsed, page_warnings = parse_proposal_list(render); warnings.extend(page_warnings)
+            if path in visited:
+                continue
+            if page_count >= max_pages:
+                complete = False
+                warnings.append("Governance page limit reached")
+                break
+            visited.add(path)
+            render = fetch(f"list/{path or 'root'}", path)
+            page_count += 1
+            parsed, page_warnings = parse_proposal_list(render)
+            warnings.extend(page_warnings)
             for item in parsed:
                 old = summaries.get(item.proposal_id)
-                if old is not None and old != item: raise GovernanceParseError(f"Conflicting duplicate proposal ID {item.proposal_id}")
+                if old is not None and old != item:
+                    raise GovernanceParseError(f"Conflicting duplicate proposal ID {item.proposal_id}")
                 summaries[item.proposal_id] = item
-            if len(summaries) > max_proposals: raise GovernanceParseError("Governance proposal limit exceeded")
+            if len(summaries) > max_proposals:
+                raise GovernanceParseError("Governance proposal limit exceeded")
             pages = pager_paths(render, source.realm_path)
-            queue.extend(p for p in pages if p not in visited)
+            queue.extend(page for page in pages if page not in visited)
             if not pages and path == "" and len(parsed) >= 5:
-                complete = False; warnings.append("Pagination format was not recognized; list may be incomplete")
-    details = []
-    for pid in sorted(summaries, reverse=True):
-        detail_render = _render(client, source.realm_path, str(pid)); votes_render = _render(client, source.realm_path, f"{pid}/votes")
-        raw[f"proposal/{pid}"] = detail_render; raw[f"proposal/{pid}/votes"] = votes_render
-        detail = parse_detail(detail_render, pid); vote_status, votes, vote_warnings = parse_votes(votes_render)
-        details.append(GovernanceProposalDetail(**{k: detail[k] for k in ("proposal_id", "title", "author_display", "author_address", "status", "eligible_tiers", "description", "executor_text", "executor_creation_realm")}, detail_parse_status="parsed", votes_parse_status=vote_status, votes=votes, parse_warnings=tuple((detail["warnings"] + vote_warnings)[:MAX_WARNINGS])))
+                complete = False
+                warnings.append("Pagination format was not recognized; list may be incomplete")
+
+    details: list[GovernanceProposalDetail] = []
+    for proposal_id_value in sorted(summaries, reverse=True):
+        summary = summaries[proposal_id_value]
+        detail = parse_detail(fetch(f"proposal/{proposal_id_value}", str(proposal_id_value)), proposal_id_value)
+        vote_status, votes, vote_warnings = parse_votes(fetch(f"proposal/{proposal_id_value}/votes", f"{proposal_id_value}/votes"))
+        detail_warnings = list(detail["warnings"]) + vote_warnings
+        if summary:
+            if _text(summary.title).casefold() != _text(detail["title"]).casefold():
+                detail_warnings.append("Proposal title differs between list and detail renders")
+            if detail["status"] == "UNKNOWN":
+                detail["status"] = summary.status
+            elif summary.status != "UNKNOWN" and summary.status != detail["status"]:
+                detail_warnings.append("Proposal status differs between list and detail renders")
+            if not detail["eligible_tiers"]:
+                detail["eligible_tiers"] = summary.eligible_tiers
+            elif summary.eligible_tiers and summary.eligible_tiers != detail["eligible_tiers"]:
+                detail_warnings.append("Eligible tiers differ between list and detail renders")
+            if detail["author_display"] is None:
+                detail["author_display"] = summary.author_display
+                detail["author_address"] = summary.author_address
+        details.append(GovernanceProposalDetail(
+            **{key: detail[key] for key in (
+                "proposal_id", "title", "author_display", "author_address", "status", "eligible_tiers",
+                "description", "executor_text", "executor_creation_realm", "rejection_reason",
+                "yes_percent", "no_percent", "abstain_percent", "detail_parse_status",
+            )},
+            votes_parse_status=vote_status,
+            votes=votes,
+            parse_warnings=tuple(detail_warnings[:MAX_WARNINGS]),
+        ))
     return GovernanceDiscovery(source, complete, page_count, tuple(details), tuple(warnings[:MAX_WARNINGS]), raw)
 
 
-def _render(client: GnoRpcClient, realm: str, path: str) -> str:
-    return client.abci_query("vm/qrender", f"{realm}:{path}")
+def _tiers(value: str) -> tuple[str, ...]:
+    return tuple(part.strip().upper() for part in value.split(",") if part.strip())
+
+
+def _lines(render: str) -> list[str]:
+    _validate_size(render)
+    return render.replace("\r\n", "\n").replace("\r", "\n").split("\n")
 
 
 def _validate_size(render: str) -> None:
-    if not isinstance(render, str): raise GovernanceParseError("Render must be text")
-    if len(render.encode("utf-8")) > MAX_RENDER_BYTES: raise GovernanceParseError("Governance render exceeds size limit")
+    if not isinstance(render, str):
+        raise GovernanceParseError("Render must be text")
+    if len(render.encode("utf-8")) > MAX_RENDER_BYTES:
+        raise GovernanceParseError("Governance render exceeds size limit")
