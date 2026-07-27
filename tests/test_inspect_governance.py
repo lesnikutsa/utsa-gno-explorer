@@ -50,5 +50,24 @@ class InspectGovernanceTests(unittest.TestCase):
             self.assertEqual(main(["--realm", "bad:realm"]), 2)
         self.assertNotIn("secret-value", stderr.getvalue())
 
+    @patch("scripts.inspect_governance.select_rpc")
+    def test_invalid_discovery_limits_exit_before_rpc_or_raw_directory(self, select):
+        cases = (
+            ("--max-pages", "0"),
+            ("--max-pages", "101"),
+            ("--max-proposals", "0"),
+            ("--max-proposals", "1001"),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            for index, (flag, value) in enumerate(cases):
+                raw_directory = Path(directory) / str(index)
+                stderr = io.StringIO()
+                with patch.dict("os.environ", {"DATABASE_URL": "database-secret"}), redirect_stderr(stderr):
+                    self.assertEqual(main([flag, value, "--raw-dir", str(raw_directory)]), 2)
+                self.assertIn("invalid governance configuration", stderr.getvalue())
+                self.assertNotIn("database-secret", stderr.getvalue())
+                self.assertFalse(raw_directory.exists())
+        select.assert_not_called()
+
 
 if __name__ == "__main__": unittest.main()

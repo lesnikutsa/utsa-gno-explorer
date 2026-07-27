@@ -2,6 +2,8 @@
 
 from .gno import (
     DEFAULT_REALM,
+    MAX_GOVERNANCE_PAGES,
+    MAX_GOVERNANCE_PROPOSALS,
     GovernanceDiscovery,
     GovernanceParseError,
     GovernanceProposalDetail,
@@ -17,6 +19,8 @@ from .gno import (
 
 __all__ = [
     "DEFAULT_REALM",
+    "MAX_GOVERNANCE_PAGES",
+    "MAX_GOVERNANCE_PROPOSALS",
     "GovernanceDiscovery",
     "GovernanceParseError",
     "GovernanceProposalDetail",

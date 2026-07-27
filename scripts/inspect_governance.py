@@ -12,7 +12,14 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from governance.gno import DEFAULT_REALM, GovernanceParseError, GovernanceSource, discover_governance
+from governance import (
+    DEFAULT_REALM,
+    MAX_GOVERNANCE_PAGES,
+    MAX_GOVERNANCE_PROPOSALS,
+    GovernanceParseError,
+    GovernanceSource,
+    discover_governance,
+)
 from indexer.rpc import select_rpc
 from scripts.inspect_rpc import RpcError, configured_chain_id, configured_max_height_lag, configured_rpc_urls, load_dotenv
 
@@ -34,7 +41,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     load_dotenv()
     realm = args.realm or os.environ.get("GNO_GOVERNANCE_REALM", "").strip() or DEFAULT_REALM
-    if not realm.startswith("gno.land/r/") or ":" in realm or args.timeout < 1 or args.timeout > 60 or args.proposal is not None and args.proposal < 0:
+    if (
+        not realm.startswith("gno.land/r/")
+        or ":" in realm
+        or not 1 <= args.timeout <= 60
+        or args.proposal is not None and args.proposal < 0
+        or not 1 <= args.max_pages <= MAX_GOVERNANCE_PAGES
+        or not 1 <= args.max_proposals <= MAX_GOVERNANCE_PROPOSALS
+    ):
         print("error: invalid governance configuration", file=sys.stderr)
         return 2
     try:

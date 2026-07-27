@@ -181,33 +181,52 @@ def parse_detail(render: str, requested_id: int) -> dict:
                 author, address = _display(match.group(2))
                 break
 
+    stats_index = next((index for index in range(len(lines) - 1, header_index, -1)
+                        if lines[index].strip().casefold() == "### stats"), None)
+    stats_separator = None
+    if stats_index is not None:
+        stats_separator = next((index for index in range(stats_index - 1, header_index, -1)
+                                if lines[index].strip() == "---"), None)
+    stats_end = len(lines)
+    if stats_index is not None:
+        stats_end = next((index for index in range(stats_index + 1, len(lines))
+                          if lines[index].strip() == "---"
+                          or re.match(r"^\[Detailed voting list\]", lines[index].strip(), re.I)), len(lines))
+    stats_lines = lines[stats_index + 1:stats_end] if stats_index is not None else []
+
+    metadata_index = next((index for index, line in enumerate(lines[header_index + 1:], header_index + 1)
+                           if line.strip() == "This proposal contains the following metadata:"), None)
     body_start = header_index + 1
     while body_start < len(lines) and (not lines[body_start].strip() or _LIST_FIELD.match(lines[body_start].strip())):
         body_start += 1
-    body_end = next((index for index in range(body_start, len(lines))
-                     if lines[index].strip() == "This proposal contains the following metadata:"
-                     or lines[index].strip() == "---"), len(lines))
+    if metadata_index is not None:
+        body_end = metadata_index
+    elif stats_separator is not None:
+        body_end = stats_separator
+    elif stats_index is not None:
+        body_end = stats_index
+    else:
+        body_end = len(lines)
     description = _text("\n".join(lines[body_start:body_end]))
 
-    metadata_index = next((index for index, line in enumerate(lines)
-                           if line.strip() == "This proposal contains the following metadata:"), None)
     executor_text = None
+    executor_realm = None
     if metadata_index is not None:
+        metadata_end = stats_separator if stats_separator is not None and stats_separator > metadata_index else len(lines)
         executor_lines: list[str] = []
-        for line in lines[metadata_index + 1:]:
-            if line.strip().startswith("Executor created in:") or line.strip() == "---":
-                break
+        for line in lines[metadata_index + 1:metadata_end]:
+            if line.strip().startswith("Executor created in:"):
+                executor_realm = _text(line.strip().split(":", 1)[1], 1000) or None
+                continue
             executor_lines.append(line)
         executor_text = _text("\n".join(executor_lines)) or None
-    executor_realm = next((_text(line.strip().split(":", 1)[1], 1000)
-                           for line in lines if line.strip().startswith("Executor created in:")), None)
 
-    joined = "\n".join(lines)
-    if re.search(r"PROPOSAL HAS BEEN ACCEPTED", joined, re.I):
+    stats_text = "\n".join(stats_lines)
+    if re.search(r"PROPOSAL HAS BEEN ACCEPTED", stats_text, re.I):
         status = "ACCEPTED"
-    elif re.search(r"PROPOSAL HAS BEEN DENIED", joined, re.I):
+    elif re.search(r"PROPOSAL HAS BEEN DENIED", stats_text, re.I):
         status = "REJECTED"
-    elif re.search(r"Proposal is open for votes", joined, re.I):
+    elif re.search(r"Proposal is open for votes", stats_text, re.I):
         status = "ACTIVE"
     else:
         status = "UNKNOWN"
@@ -218,7 +237,7 @@ def parse_detail(render: str, requested_id: int) -> dict:
     tiers = ()
     rejection_reason = None
     percentages: dict[str, float | None] = {"YES": None, "NO": None, "ABSTAIN": None}
-    for line in lines:
+    for line in stats_lines:
         stripped = line.strip()
         if match := _LIST_FIELD.match(stripped):
             if match.group(1).lower() == "tiers eligible to vote":
@@ -257,8 +276,12 @@ def parse_detail(render: str, requested_id: int) -> dict:
 
 def parse_votes(render: str) -> tuple[str, tuple[GovernanceVote, ...], list[str]]:
     lines = _lines(render)
-    text = _text(render)
-    if re.fullmatch(r"(?:No one voted yet\.?|No votes\.?|No vote has been cast\.?)", text, re.I):
+    content_lines = [line.strip() for line in lines
+                     if line.strip()
+                     and not re.fullmatch(r"#\s+Proposal\s+#[0-9]+\s+-\s+Vote List", line.strip(), re.I)]
+    if len(content_lines) == 1 and re.fullmatch(
+        r"(?:No one voted yet\.?|No votes\.?|No vote has been cast\.?)", content_lines[0], re.I
+    ):
         return "empty", (), []
     votes: list[GovernanceVote] = []
     group: tuple[str, str, str] | None = None

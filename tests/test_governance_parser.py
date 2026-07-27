@@ -137,9 +137,76 @@ ABSTAIN from T3 (VPPM 1):
         self.assertEqual(warnings, [])
 
     def test_empty_and_unknown_votes(self):
-        for text in ("No one voted yet.", "No votes", "No vote has been cast"):
+        for text in (
+            "# Proposal #20 - Vote List\n\nNo one voted yet.\n",
+            "No votes",
+            "No vote has been cast",
+        ):
             self.assertEqual(parse_votes(text)[0], "empty")
         self.assertEqual(parse_votes("new unexplained format")[0], "unparsed")
+
+    def test_stats_are_scoped_and_description_keeps_user_separator(self):
+        rendered = f"""## Prop #20 - Scoped values
+
+Author: {ADDRESS}
+
+First paragraph.
+PROPOSAL HAS BEEN DENIED
+- YES PERCENT: 100%
+- Tiers eligible to vote: T9
+
+---
+
+Second paragraph.
+
+This proposal contains the following metadata:
+
+Executor text with PROPOSAL HAS BEEN DENIED
+- REASON: False executor reason
+- YES PERCENT: 99%
+Executor created in: gno.land/r/demo/real
+
+---
+
+### Stats
+
+- **PROPOSAL HAS BEEN ACCEPTED**
+- Tiers eligible to vote: T1, T2, T3
+- YES PERCENT: 75%
+- NO PERCENT: 25%
+- ABSTAIN PERCENT: 0%
+
+[Detailed voting list](/r/gov/dao:20/votes)
+"""
+        parsed = parse_detail(rendered, 20)
+        self.assertEqual(parsed["status"], "ACCEPTED")
+        self.assertEqual(parsed["eligible_tiers"], ("T1", "T2", "T3"))
+        self.assertEqual((parsed["yes_percent"], parsed["no_percent"], parsed["abstain_percent"]), (75.0, 25.0, 0.0))
+        self.assertIsNone(parsed["rejection_reason"])
+        self.assertIn("First paragraph.\nPROPOSAL HAS BEEN DENIED", parsed["description"])
+        self.assertIn("---\n\nSecond paragraph.", parsed["description"])
+        self.assertEqual(parsed["executor_creation_realm"], "gno.land/r/demo/real")
+
+    def test_description_without_metadata_uses_separator_before_stats(self):
+        rendered = f"""## Prop #20 - Horizontal rules
+
+Author: {ADDRESS}
+
+First paragraph.
+
+---
+
+Second paragraph.
+
+---
+
+### Stats
+
+- Proposal is open for votes
+"""
+        parsed = parse_detail(rendered, 20)
+        self.assertEqual(parsed["description"], "First paragraph.\n\n---\n\nSecond paragraph.")
+        self.assertEqual(parsed["status"], "ACTIVE")
 
     def test_external_and_action_links_are_not_pagers(self):
         rendered = "[Next](?page=2) [remote](https://example.com/?page=3) [vote](20/votes)"
