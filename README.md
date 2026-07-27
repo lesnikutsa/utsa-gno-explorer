@@ -150,6 +150,7 @@ The API requires `DATABASE_URL` in the environment. Keep credentials outside the
 - `API_VERSION` (default `0.8.0`; update the production environment separately after merge)
 - `API_INDEXER_LAG_DEGRADED_THRESHOLD` (default `10`)
 - `API_RPC_CHECK_STALE_SECONDS` (default `60`)
+- `GNO_GOVERNANCE_REALM` (default `gno.land/r/gov/dao`)
 
 Example placeholder configuration:
 
@@ -230,6 +231,37 @@ as their denominator, while ranking shares use geolocated public IPs. `updated_a
 collector scan timestamp. The response exposes no raw peer identity or IP address. HTTP
 404 means that no collector snapshot exists yet; HTTP 503 means that the database is
 unavailable or persisted aggregate validation failed.
+
+### Governance API
+
+```bash
+curl -fsS \
+  'http://127.0.0.1:18180/api/governance/proposals?limit=20'
+curl -fsS \
+  'http://127.0.0.1:18180/api/governance/proposals?limit=20&before_proposal_id=1'
+curl -fsS \
+  'http://127.0.0.1:18180/api/governance/proposals/20'
+```
+
+`GET /api/governance/proposals` returns snapshot metadata, complete status counts, and
+proposals ordered by descending proposal ID. Pagination is cursor-based: when another page
+exists, `next_before_proposal_id` is the final displayed ID and the next request returns IDs
+strictly below it. Proposal ID `0` is valid. `proposal_count` is the number of stored rows,
+not `latest_proposal_id + 1`, because IDs may have gaps.
+
+`GET /api/governance/proposals/{proposal_id}` returns the full public proposal and its
+currently stored votes in stable tier/voter order. Voting power is serialized as a decimal
+string so values remain safe for JavaScript clients. Both endpoints read the latest saved
+snapshot for the default indexer's current chain and the configured Governance realm from
+PostgreSQL only; they perform no RPC requests. `last_success_at` is the snapshot persistence
+time. Raw renders, parser warnings, internal voter keys, and database timestamps are not
+public API fields.
+
+The API validates snapshot totals, ID bounds, statuses, observation ranges, and vote parser
+contracts before returning stored state. A missing snapshot or proposal returns HTTP 404;
+missing/inconsistent database state returns a generic HTTP 503. Governance snapshots are
+not refreshed automatically yet and continue to be updated by the one-shot persistence
+script.
 
 ### Validators API
 

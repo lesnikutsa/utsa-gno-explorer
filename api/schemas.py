@@ -325,3 +325,80 @@ class ValidatorDetailResponse(BaseModel):
     uptime_20: ValidatorUptime
     uptime_1000: ValidatorUptime
     signing_history: ValidatorSigningHistory
+
+
+GovernanceStatus = Literal["ACTIVE", "ACCEPTED", "REJECTED", "UNKNOWN"]
+GovernanceVoteOption = Literal["YES", "NO", "ABSTAIN"]
+GovernanceParseStatus = Literal["parsed", "partial", "empty"]
+
+
+class GovernanceSourceResponse(BaseModel):
+    chain_id: str = Field(min_length=1, max_length=128)
+    realm_path: str = Field(min_length=1, max_length=512)
+    source_height: int = Field(ge=1)
+    page_count: int = Field(ge=1, le=100)
+    proposal_count: int = Field(ge=0, le=1000)
+    first_proposal_id: int | None = Field(default=None, ge=0)
+    latest_proposal_id: int | None = Field(default=None, ge=0)
+    last_success_at: str
+
+
+class GovernanceStatusCounts(BaseModel):
+    active: int = Field(ge=0)
+    accepted: int = Field(ge=0)
+    rejected: int = Field(ge=0)
+    unknown: int = Field(ge=0)
+
+
+class GovernanceProposalListItem(BaseModel):
+    proposal_id: int = Field(ge=0)
+    title: str = Field(min_length=1, max_length=1000)
+    author_display: str | None = Field(default=None, max_length=1000)
+    author_address: str | None = Field(default=None, pattern=r"^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$")
+    status: GovernanceStatus
+    eligible_tiers: list[str]
+    yes_percent: float | None = Field(default=None, ge=0, le=100)
+    no_percent: float | None = Field(default=None, ge=0, le=100)
+    abstain_percent: float | None = Field(default=None, ge=0, le=100)
+    voter_count: int = Field(ge=0, le=1000)
+
+
+class GovernanceProposalsPagination(BaseModel):
+    limit: int = Field(ge=1, le=100)
+    next_before_proposal_id: int | None = Field(default=None, ge=0)
+
+
+class GovernanceProposalsResponse(BaseModel):
+    source: GovernanceSourceResponse
+    status_counts: GovernanceStatusCounts
+    items: list[GovernanceProposalListItem]
+    pagination: GovernanceProposalsPagination
+
+
+class GovernanceVoteResponse(BaseModel):
+    voter_display: str = Field(min_length=1, max_length=1000)
+    voter_address: str | None = Field(default=None, pattern=r"^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$")
+    option: GovernanceVoteOption
+    tier: str = Field(min_length=1, max_length=64)
+    voting_power: str = Field(pattern=r"^(0|[1-9][0-9]*)$")
+    first_observed_height: int = Field(ge=1)
+    last_observed_height: int = Field(ge=1)
+
+
+class GovernanceProposalDetail(GovernanceProposalListItem):
+    description: str = Field(max_length=100000)
+    executor_text: str | None = Field(default=None, max_length=100000)
+    executor_creation_realm: str | None = Field(default=None, max_length=1000)
+    rejection_reason: str | None = Field(default=None, max_length=10000)
+    detail_parse_status: Literal["parsed", "partial"]
+    votes_parse_status: Literal["parsed", "empty"]
+    first_observed_height: int = Field(ge=1)
+    last_observed_height: int = Field(ge=1)
+    first_observed_at: str
+    last_observed_at: str
+    votes: list[GovernanceVoteResponse]
+
+
+class GovernanceProposalDetailResponse(BaseModel):
+    source: GovernanceSourceResponse
+    proposal: GovernanceProposalDetail
