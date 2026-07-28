@@ -461,7 +461,9 @@ def discover_governance(
     raw = dict(listed.raw_renders)
     warnings = list(listed.warnings)
     for summary in listed.proposals:
-        found = discover_governance_proposal(client, source, summary, capture_raw)
+        found = discover_governance_proposal(
+            client, source, summary, capture_raw, raw_sink
+        )
         details.extend(found.proposals)
         raw.update(found.raw_renders)
         if sum(len(value.encode("utf-8")) for value in raw.values()) > MAX_TOTAL_RAW_BYTES:

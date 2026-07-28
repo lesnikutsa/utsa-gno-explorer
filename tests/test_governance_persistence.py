@@ -4,10 +4,12 @@ from datetime import datetime, timezone
 import math
 import random
 import pytest
-from governance.gno import GovernanceDiscovery, GovernanceProposalDetail, GovernanceSource, GovernanceVote
+from governance.gno import (GovernanceDiscovery, GovernanceListDiscovery,
+    GovernanceProposalDetail, GovernanceProposalSummary, GovernanceSource, GovernanceVote)
 from indexer.governance_persistence import (GovernanceChainIdentityError, GovernancePersistenceError,
     GovernanceStoredStateError, IncompleteGovernanceSnapshot, normalize_discovery, voter_key,
-    persist_governance_snapshot_cursor, _content, _load)
+    persist_governance_incremental_cursor, persist_governance_snapshot_cursor,
+    _content, _final_incremental_raw_bytes, _load)
 
 
 def proposal(proposal_id=0, *, votes=None, votes_status="parsed", **changes):
@@ -159,3 +161,49 @@ def test_cursor_requests_transaction_advisory_lock_before_database_reads():
     with pytest.raises(RuntimeError, match="stop after first statement"):
         persist_governance_snapshot_cursor(cursor, snapshot(), "topaz-1")
     assert cursor.statements == ["SELECT pg_advisory_xact_lock(%s)"]
+
+
+def test_final_incremental_raw_bytes_counts_utf8_and_replacements():
+    _, stored, _ = stored_rows(raw_detail="old-é", raw_votes="old-votes")
+    first = normalize_discovery(snapshot(), "topaz-1")[0]
+    assert _final_incremental_raw_bytes(stored, {}) == len("old-éold-votes".encode("utf-8"))
+    assert _final_incremental_raw_bytes(stored, {0: first}) == len(
+        (first.raw_detail + first.raw_votes).encode("utf-8")
+    )
+
+
+def test_final_incremental_raw_bytes_includes_unchanged_and_new_proposals():
+    _, stored, _ = stored_rows(raw_detail="terminal", raw_votes="terminal-votes")
+    new = normalize_discovery(snapshot((proposal(1),)), "topaz-1")[0]
+    expected = len("terminalterminal-votes".encode("utf-8"))
+    expected += len((new.raw_detail + new.raw_votes).encode("utf-8"))
+    assert _final_incremental_raw_bytes(stored, {1: new}) == expected
+
+
+def test_incremental_rejects_final_aggregate_raw_limit_before_writes(monkeypatch):
+    proposal_id = 1
+    source = GovernanceSource("topaz-1", "redacted", 11, "gno.land/r/gov/dao")
+    summaries = [GovernanceProposalSummary(0, "Clean title 0", None, None, "ACCEPTED", ("CORE",)),
+                 GovernanceProposalSummary(1, "Clean title 1", None, None, "ACTIVE", ("CORE",))]
+    listed = GovernanceListDiscovery(source, True, 1, tuple(summaries))
+    targeted_snapshot = snapshot((proposal(proposal_id),), source=source)
+    state, stored, votes = stored_rows(raw_detail="kept", raw_votes="kept-votes")
+    stored[0] = tuple("ACCEPTED" if index == 4 else value for index, value in enumerate(stored[0]))
+    state = (10, 1, 1, 0, 0)
+
+    class ReadOnlyCursor:
+        def __init__(self): self.statements = []
+        def execute(self, sql, params):
+            self.statements.append(sql)
+            self.result = ("topaz-1",) if "SELECT chain_id FROM indexer_state" in sql else (None,)
+        def fetchone(self): return self.result
+
+    cursor = ReadOnlyCursor()
+    monkeypatch.setattr("indexer.governance_persistence._load", lambda *args: (state, stored, votes))
+    monkeypatch.setattr("indexer.governance_persistence.MAX_TOTAL_RAW_BYTES", 20)
+    with pytest.raises(IncompleteGovernanceSnapshot, match="final governance raw renders"):
+        persist_governance_incremental_cursor(cursor, listed, [targeted_snapshot], "topaz-1")
+    assert cursor.statements == [
+        "SELECT pg_advisory_xact_lock(%s)",
+        "SELECT chain_id FROM indexer_state WHERE state_key=%s",
+    ]

@@ -2,7 +2,9 @@ import unittest
 from dataclasses import replace
 from unittest.mock import patch
 
-from governance.gno import GovernanceDiscovery, GovernanceParseError, GovernanceSource, discover_governance
+from governance.gno import (GovernanceDiscovery, GovernanceParseError,
+    GovernanceProposalSummary, GovernanceSource, discover_governance,
+    discover_governance_proposal)
 from tests.test_governance_parser import ADDRESS, detail
 
 
@@ -33,6 +35,38 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(result.to_dict()["status_counts"], {"active": 1, "accepted": 1, "rejected": 0, "unknown": 0})
         self.assertTrue(any(warning.startswith("Proposal status differs") for warning in result.proposals[0].parse_warnings))
         self.assertTrue(any(warning.startswith("Eligible tiers differ") for warning in result.proposals[0].parse_warnings))
+
+    def test_full_discovery_streams_every_list_detail_and_votes_render(self):
+        renders = {
+            "": "### Prop #1 - One\nStatus: ACTIVE\n[2](?page=2)",
+            "?page=2": "### Prop #0 - Zero\nStatus: ACTIVE\n[1](?page=1)",
+            "1": detail().replace("#20", "#1").replace("Add validators", "One"),
+            "1/votes": "No votes", "0": detail().replace("#20", "#0").replace("Add validators", "Zero"),
+            "0/votes": "No votes",
+        }
+        streamed = {}
+        result = discover_governance(
+            FakeClient(renders), GovernanceSource("topaz-1", "rpc", 9, "gno.land/r/gov/dao"),
+            raw_sink=lambda name, render: streamed.__setitem__(name, render),
+        )
+        self.assertEqual(set(streamed), {"list/root", "list/?page=2", "proposal/1",
+                                         "proposal/1/votes", "proposal/0", "proposal/0/votes"})
+        self.assertEqual(result.raw_renders, {})
+
+    def test_targeted_discovery_streams_exact_detail_and_votes(self):
+        streamed = {}
+        source = GovernanceSource("topaz-1", "rpc", 9, "gno.land/r/gov/dao")
+        client = FakeClient({"0": detail().replace("#20", "#0"), "0/votes": "No votes"})
+        result = discover_governance_proposal(
+            client, source, GovernanceProposalSummary(0, "Add validators", None, None, "ACTIVE"),
+            capture_raw=False, raw_sink=lambda name, render: streamed.__setitem__(name, render),
+        )
+        self.assertEqual(set(streamed), {"proposal/0", "proposal/0/votes"})
+        self.assertEqual(result.raw_renders, {})
+        self.assertEqual(len(discover_governance_proposal(
+            client, source, GovernanceProposalSummary(0, "Add validators", None, None, "ACTIVE"),
+            capture_raw=True,
+        ).raw_renders), 2)
 
     def test_single_proposal_is_pinned_and_can_stream_without_capture(self):
         client = FakeClient({"20": detail(), "20/votes": "No votes"})

@@ -318,6 +318,22 @@ def select_governance_refresh_ids(
     return tuple(sorted(selected))
 
 
+def _final_incremental_raw_bytes(stored, normalized) -> int:
+    """Return exact UTF-8 bytes retained after an incremental replacement."""
+    final_raw_by_id = {
+        row[0]: (row[16], row[17])
+        for row in stored
+    }
+    final_raw_by_id.update({
+        proposal_id: (row.raw_detail, row.raw_votes)
+        for proposal_id, row in normalized.items()
+    })
+    return sum(
+        len(raw_detail.encode("utf-8")) + len(raw_votes.encode("utf-8"))
+        for raw_detail, raw_votes in final_raw_by_id.values()
+    )
+
+
 def persist_governance_incremental_cursor(cursor, listed, targeted, configured_chain_id):
     """Validate and atomically apply a list scan plus exact targeted refreshes."""
     _raise_if(not isinstance(listed, GovernanceListDiscovery), "a GovernanceListDiscovery is required")
@@ -367,6 +383,11 @@ def persist_governance_incremental_cursor(cursor, listed, targeted, configured_c
                   and summaries[proposal_id].status != "UNKNOWN",
                   "targeted proposal status differs from list")
         normalized[proposal_id] = row
+    _raise_if(
+        _final_incremental_raw_bytes(stored, normalized) > MAX_TOTAL_RAW_BYTES,
+        "final governance raw renders exceed total limit",
+        IncompleteGovernanceSnapshot,
+    )
     ids = sorted(summaries)
     metadata = (listed.page_count, len(ids), ids[0] if ids else None, ids[-1] if ids else None)
     if state and state[0] == height:
