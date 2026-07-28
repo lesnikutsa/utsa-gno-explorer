@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import {
   formatGovernancePercent,
   governanceAuthorValue,
@@ -17,6 +18,18 @@ const listResponse = (ids = [2, 1, 0], cursor = null) => ({
   status_counts: {},
   items: ids.map((proposal_id) => ({ proposal_id })),
   pagination: { next_before_proposal_id: cursor },
+})
+
+const governanceDetailPage = readFileSync(
+  new URL('../src/pages/GovernanceDetail.jsx', import.meta.url),
+  'utf8',
+)
+
+test('Governance detail omits misleading snapshot footer metadata', () => {
+  assert.equal(governanceDetailPage.includes('Governance data snapshot'), false)
+  assert.equal(governanceDetailPage.includes('source.source_height'), false)
+  assert.equal(governanceDetailPage.includes('Saved <time'), false)
+  assert.equal(governanceDetailPage.includes('governance-detail__snapshot-meta'), false)
 })
 
 test('route ID accepts proposal zero', () => assert.equal(parseProposalRouteId('0'), 0))

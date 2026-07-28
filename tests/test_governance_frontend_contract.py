@@ -149,7 +149,7 @@ class TestGovernanceDetailPage:
     detail = read('frontend/src/pages/GovernanceDetail.jsx')
 
     def test_states_and_sections(self):
-        for text in ['Back to Governance', 'Loading proposal…', 'Invalid proposal ID', 'Governance proposal not found', 'currently unavailable', 'Proposal Details', 'Vote Results', 'Votes', 'Governance data snapshot']:
+        for text in ['Back to Governance', 'Loading proposal…', 'Invalid proposal ID', 'Governance proposal not found', 'currently unavailable', 'Proposal Details', 'Vote Results', 'Votes']:
             assert text in self.detail
 
     def test_snapshot_missing_state_is_distinct_and_retryable(self):
@@ -157,18 +157,14 @@ class TestGovernanceDetailPage:
         assert 'if (snapshotMissing) return <StatePanel title="Governance snapshot is not available yet" retry={retry} />' in self.detail
         assert self.detail.index('if (snapshotMissing)') < self.detail.index('if (error || !proposal)')
 
-    def test_snapshot_metadata_is_compact_and_omits_extended_fields(self):
-        assert 'governance-detail__snapshot-meta' in self.detail
-        assert 'Stored Snapshot' not in self.detail
+    def test_snapshot_footer_is_not_rendered(self):
+        for footer_content in ['Governance data snapshot', 'governance-detail__snapshot-meta',
+                               'source.source_height', 'Saved <time', 'href={`/blocks/${height}`}']:
+            assert footer_content not in self.detail
+
+    def test_extended_snapshot_fields_remain_omitted(self):
         for field in ['Source Chain', 'Realm', 'First Observed Height', 'Last Observed Height']:
             assert f'<Field label="{field}">' not in self.detail
-
-    def test_snapshot_metadata_keeps_safe_height_and_freshness(self):
-        assert 'heightLink(source.source_height)' in self.detail
-        assert 'formatIntegerString(height)' in self.detail
-        assert 'href={`/blocks/${height}`}' in self.detail
-        assert 'Saved <time dateTime={source.last_success_at} title={source.last_success_at}' in self.detail
-        assert 'relativeTime(source.last_success_at)' in self.detail
 
     def test_copy_and_string_voting_power(self):
         assert 'CopyButton' in self.detail
@@ -182,7 +178,6 @@ class TestGovernanceDetailPage:
 
     def test_safe_rendering_and_string_safe_heights(self):
         assert 'dangerouslySetInnerHTML' not in self.detail
-        assert 'formatIntegerString(height)' in self.detail
         assert 'Number(height)' not in self.detail
 
 
