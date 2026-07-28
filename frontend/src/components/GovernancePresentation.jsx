@@ -19,9 +19,9 @@ export function GovernanceVoteSplit({ proposal }) {
   return (
     <div className="governance-vote-split">
       <div className="governance-vote-split__text">
-        <span>YES {formatGovernancePercent(values[0])}</span>
-        <span>NO {formatGovernancePercent(values[1])}</span>
-        <span>ABSTAIN {formatGovernancePercent(values[2])}</span>
+        <span className="governance-vote-split__yes">YES {formatGovernancePercent(values[0])}</span>
+        <span className="governance-vote-split__no">NO {formatGovernancePercent(values[1])}</span>
+        <span className="governance-vote-split__abstain">ABSTAIN {formatGovernancePercent(values[2])}</span>
       </div>
       <div className="governance-vote-bar" aria-hidden="true">
         <i className="governance-vote-bar__yes" style={{ width: `${normalizeVoteWidth(values[0])}%` }} />

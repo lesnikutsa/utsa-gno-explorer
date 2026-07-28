@@ -109,14 +109,13 @@ export function GovernanceDetail({ governanceDetail }) {
         <DataTable columns={voteColumns} rows={Array.isArray(proposal.votes) ? proposal.votes : []} rowKey={voteRowKey} emptyMessage="No votes stored for this proposal." />
       </section>
 
-      <section className="panel governance-detail__section" aria-labelledby="stored-snapshot-title">
-        <div className="panel__heading"><h2 id="stored-snapshot-title">Stored Snapshot</h2></div>
-        <div className="governance-detail__snapshot">
-          <Field label="Source Chain">{source.chain_id || '—'}</Field><Field label="Realm">{source.realm_path || '—'}</Field>
-          <Field label="Source Height">{heightLink(source.source_height)}</Field><Field label="Saved"><time dateTime={source.last_success_at} title={source.last_success_at}>{relativeTime(source.last_success_at)}</time></Field>
-          <Field label="First Observed Height">{heightLink(proposal.first_observed_height)}</Field><Field label="Last Observed Height">{heightLink(proposal.last_observed_height)}</Field>
-        </div>
-      </section>
+      <div className="governance-detail__snapshot-meta" aria-label="Governance data snapshot">
+        <span>Governance data snapshot</span>
+        <span aria-hidden="true">·</span>
+        <span>Block {heightLink(source.source_height)}</span>
+        <span aria-hidden="true">·</span>
+        <span>Saved <time dateTime={source.last_success_at} title={source.last_success_at}>{relativeTime(source.last_success_at)}</time></span>
+      </div>
     </article>
   )
 }

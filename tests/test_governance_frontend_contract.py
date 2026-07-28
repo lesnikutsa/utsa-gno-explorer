@@ -87,6 +87,10 @@ class TestGovernanceListPage:
         for option in ['YES', 'NO', 'ABSTAIN']:
             assert option in self.presentation
 
+    def test_vote_split_uses_semantic_text_classes(self):
+        for option in ['yes', 'no', 'abstain']:
+            assert f'className="governance-vote-split__{option}"' in self.presentation
+
     def test_pagination_buttons_have_explicit_type(self):
         for label in ['Newer proposals', 'Older proposals']:
             assert re.search(rf'<button[^>]*type="button"[^>]*>\s*{label}', self.page)
@@ -101,8 +105,21 @@ class TestGovernanceDetailPage:
     detail = read('frontend/src/pages/GovernanceDetail.jsx')
 
     def test_states_and_sections(self):
-        for text in ['Back to Governance', 'Loading proposal…', 'Invalid proposal ID', 'Governance proposal not found', 'currently unavailable', 'Proposal Details', 'Vote Results', 'Votes', 'Stored Snapshot']:
+        for text in ['Back to Governance', 'Loading proposal…', 'Invalid proposal ID', 'Governance proposal not found', 'currently unavailable', 'Proposal Details', 'Vote Results', 'Votes', 'Governance data snapshot']:
             assert text in self.detail
+
+    def test_snapshot_metadata_is_compact_and_omits_extended_fields(self):
+        assert 'governance-detail__snapshot-meta' in self.detail
+        assert 'Stored Snapshot' not in self.detail
+        for field in ['Source Chain', 'Realm', 'First Observed Height', 'Last Observed Height']:
+            assert f'<Field label="{field}">' not in self.detail
+
+    def test_snapshot_metadata_keeps_safe_height_and_freshness(self):
+        assert 'heightLink(source.source_height)' in self.detail
+        assert 'formatIntegerString(height)' in self.detail
+        assert 'href={`/blocks/${height}`}' in self.detail
+        assert 'Saved <time dateTime={source.last_success_at} title={source.last_success_at}' in self.detail
+        assert 'relativeTime(source.last_success_at)' in self.detail
 
     def test_copy_and_string_voting_power(self):
         assert 'CopyButton' in self.detail
@@ -150,3 +167,15 @@ class TestGovernanceScopeAndCss:
 
     def test_vote_segments_do_not_shrink(self):
         assert '.governance-vote-bar i { display: block; flex: 0 0 auto; }' in self.css
+
+    def test_vote_text_uses_semantic_colors_and_readable_type(self):
+        text_rule = re.search(r'\.governance-vote-split__text \{([^}]+)\}', self.css).group(1)
+        assert 'font-size: 9px' in text_rule
+        assert 'font-weight: 600' in text_rule
+        tones = {
+            'yes': '--color-success',
+            'no': '--color-error',
+            'abstain': '--color-warning',
+        }
+        for option, variable in tones.items():
+            assert re.search(rf'\.governance-vote-split__{option} \{{[^}}]*color: var\({variable}\)', self.css)
