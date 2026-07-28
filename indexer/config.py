@@ -14,6 +14,10 @@ DEFAULT_INDEXER_BATCH_SIZE = 10
 DEFAULT_INDEXER_POLL_INTERVAL_SECONDS = 5
 DEFAULT_INDEXER_ERROR_BACKOFF_SECONDS = 5
 DEFAULT_INDEXER_MAX_BACKOFF_SECONDS = 60
+DEFAULT_GOVERNANCE_REFRESH_INTERVAL_SECONDS = 30
+DEFAULT_GOVERNANCE_FULL_RECONCILE_INTERVAL_SECONDS = 21600
+DEFAULT_GOVERNANCE_ERROR_BACKOFF_SECONDS = 5
+DEFAULT_GOVERNANCE_MAX_BACKOFF_SECONDS = 60
 
 
 @dataclass(frozen=True)
@@ -111,3 +115,20 @@ def load_continuous_config():
         max_backoff_seconds=_positive_int("INDEXER_MAX_BACKOFF_SECONDS", DEFAULT_INDEXER_MAX_BACKOFF_SECONDS),
         hard_max_heights=configured_hard_max_heights(),
     )
+
+
+def load_governance_updater_config():
+    from .governance_updater import GovernanceUpdaterConfig, validate_config
+    load_dotenv()
+    config = GovernanceUpdaterConfig(
+        database_url=os.environ.get("DATABASE_URL", "").strip(),
+        rpc_urls=configured_rpc_urls(), chain_id=configured_chain_id(),
+        realm=os.environ.get("GNO_GOVERNANCE_REALM", "").strip() or "gno.land/r/gov/dao",
+        max_height_lag=configured_max_height_lag(),
+        refresh_interval_seconds=_positive_int("GOVERNANCE_REFRESH_INTERVAL_SECONDS", DEFAULT_GOVERNANCE_REFRESH_INTERVAL_SECONDS),
+        full_reconcile_interval_seconds=_positive_int("GOVERNANCE_FULL_RECONCILE_INTERVAL_SECONDS", DEFAULT_GOVERNANCE_FULL_RECONCILE_INTERVAL_SECONDS),
+        error_backoff_seconds=_positive_int("GOVERNANCE_ERROR_BACKOFF_SECONDS", DEFAULT_GOVERNANCE_ERROR_BACKOFF_SECONDS),
+        max_backoff_seconds=_positive_int("GOVERNANCE_MAX_BACKOFF_SECONDS", DEFAULT_GOVERNANCE_MAX_BACKOFF_SECONDS),
+    )
+    validate_config(config)
+    return config

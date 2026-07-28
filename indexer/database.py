@@ -10,8 +10,9 @@ from .rpc import RpcProbeResult
 from .transaction_summary import normalize_summary
 from .valopers_persistence import ValopersPersistenceResult, replace_valopers_snapshot_cursor
 from .valopers_snapshot import ValopersSnapshot
-from .governance_persistence import GovernancePersistenceResult, persist_governance_snapshot_cursor
-from governance.gno import GovernanceDiscovery
+from .governance_persistence import (GovernancePersistenceResult,
+    persist_governance_incremental_cursor, persist_governance_snapshot_cursor)
+from governance.gno import GovernanceDiscovery, GovernanceListDiscovery
 
 
 class DatabaseError(RuntimeError):
@@ -98,6 +99,19 @@ class PostgresDatabase:
         with self.connect() as connection:
             with connection.cursor() as cursor:
                 result = persist_governance_snapshot_cursor(cursor, discovery, chain_id)
+            connection.commit()
+        return result
+
+    def governance_statuses(self, chain_id: str, realm_path: str) -> dict[int, str]:
+        with self.connect() as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT proposal_id,status FROM governance_proposals WHERE chain_id=%s AND realm_path=%s", (chain_id, realm_path))
+            return dict(cursor.fetchall())
+
+    def persist_governance_incremental(self, listed: GovernanceListDiscovery,
+                                       targeted: list[GovernanceDiscovery], chain_id: str):
+        with self.connect() as connection:
+            with connection.cursor() as cursor:
+                result = persist_governance_incremental_cursor(cursor, listed, targeted, chain_id)
             connection.commit()
         return result
 

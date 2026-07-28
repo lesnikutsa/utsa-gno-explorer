@@ -1070,3 +1070,30 @@ Configure `GNO_RPC_URLS` in preference order. Each complete probe cycle synchron
 8. Only after validation, install the service and timer into `/etc/systemd/system`, run `systemctl daemon-reload`, and enable `utsa-gno-network-distribution.timer`.
 
 Verify with `systemctl list-timers utsa-gno-network-distribution.timer` and `journalctl -u utsa-gno-network-distribution.service`. The timer runs every 15 minutes with a one-minute randomized delay and persistent catch-up. The collector uses a chain-specific advisory lock. Snapshot writes and retention pruning are atomic; all-RPC failure leaves the previous snapshot unchanged. Rollback means disabling the timer and restoring the fresh backup; the repository does not automatically deploy, enable, or migrate anything.
+
+### Continuous Governance updater
+
+Governance has exactly one scheduler and process: `utsa-gno-governance-updater.service`.
+There is no Governance timer and no Governance cron entry. The service contains its own
+sequential, non-overlapping schedule: list scans default to 30 seconds and full
+reconciliation defaults to 6 hours. New and ACTIVE proposals receive prompt detail and
+vote refreshes; terminal proposals are normally frozen between full reconciliations.
+The last successful PostgreSQL data remains available if a cycle fails.
+
+```bash
+sudo install -m 0644 deploy/systemd/utsa-gno-governance-updater.service /etc/systemd/system/
+sudo systemctl daemon-reload
+.venv/bin/python scripts/run_governance_updater.py --once
+.venv/bin/python scripts/run_governance_updater.py --full-once
+sudo systemctl enable --now utsa-gno-governance-updater
+sudo systemctl status utsa-gno-governance-updater
+sudo journalctl -u utsa-gno-governance-updater -f
+sudo systemctl restart utsa-gno-governance-updater
+sudo systemctl stop utsa-gno-governance-updater
+sudo systemctl disable utsa-gno-governance-updater
+systemctl --no-pager --full status utsa-gno-indexer utsa-gno-api utsa-gno-governance-updater
+```
+
+The updater reuses `/etc/utsa-gno-explorer/indexer.env`. It never runs a migration or
+pulls code automatically. Installation and activation remain explicit operator actions.
+Frontend background polling is deferred to a separate change.
