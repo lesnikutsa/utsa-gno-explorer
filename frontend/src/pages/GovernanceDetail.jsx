@@ -4,8 +4,6 @@ import { GovernanceTiers, GovernanceVoteSplit } from '../components/GovernancePr
 import { StatusBadge } from '../components/StatusBadge'
 import { shortAddress } from '../utils/address'
 import { formatGovernancePercent, governanceAuthorValue, governanceStatusTone, governanceVoteTone } from '../utils/governance'
-import { relativeTime } from '../utils/time'
-import { formatIntegerString } from '../utils/validatorHealth'
 
 const present = (value) => value !== null && value !== undefined && value !== ''
 
@@ -30,10 +28,6 @@ function Field({ label, children, className = '' }) {
   )
 }
 
-const heightLink = (height) => present(height)
-  ? <a className="accent-value mono" href={`/blocks/${height}`}>#{formatIntegerString(height)}</a>
-  : '—'
-
 const voteColumns = [
   {
     key: 'voter',
@@ -56,7 +50,7 @@ const voteColumns = [
 const voteRowKey = (vote) => `${vote.voter_address || vote.voter_display || 'unknown'}:${vote.tier || ''}`
 
 export function GovernanceDetail({ governanceDetail }) {
-  const { proposal, source, loading, invalidProposalId, notFound, snapshotMissing, error, retry } = governanceDetail
+  const { proposal, loading, invalidProposalId, notFound, snapshotMissing, error, retry } = governanceDetail
 
   if (loading) return <StatePanel title="Loading proposal…" />
   if (invalidProposalId) return <StatePanel title="Invalid proposal ID" />
@@ -109,14 +103,6 @@ export function GovernanceDetail({ governanceDetail }) {
         <div className="panel__heading"><h2 id="votes-title">Votes</h2></div>
         <DataTable columns={voteColumns} rows={Array.isArray(proposal.votes) ? proposal.votes : []} rowKey={voteRowKey} emptyMessage="No votes stored for this proposal." />
       </section>
-
-      <div className="governance-detail__snapshot-meta" aria-label="Governance data snapshot">
-        <span>Governance data snapshot</span>
-        <span aria-hidden="true">·</span>
-        <span>Block {heightLink(source.source_height)}</span>
-        <span aria-hidden="true">·</span>
-        <span>Saved <time dateTime={source.last_success_at} title={source.last_success_at}>{relativeTime(source.last_success_at)}</time></span>
-      </div>
     </article>
   )
 }

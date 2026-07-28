@@ -1,10 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import {
   formatGovernancePercent,
   governanceAuthorValue,
   governanceStatusTone,
   governanceVoteTone,
+  isMutableGovernanceStatus,
   isValidGovernanceDetailResponse,
   isValidGovernanceListResponse,
   normalizeVoteWidth,
@@ -16,6 +18,18 @@ const listResponse = (ids = [2, 1, 0], cursor = null) => ({
   status_counts: {},
   items: ids.map((proposal_id) => ({ proposal_id })),
   pagination: { next_before_proposal_id: cursor },
+})
+
+const governanceDetailPage = readFileSync(
+  new URL('../src/pages/GovernanceDetail.jsx', import.meta.url),
+  'utf8',
+)
+
+test('Governance detail omits misleading snapshot footer metadata', () => {
+  assert.equal(governanceDetailPage.includes('Governance data snapshot'), false)
+  assert.equal(governanceDetailPage.includes('source.source_height'), false)
+  assert.equal(governanceDetailPage.includes('Saved <time'), false)
+  assert.equal(governanceDetailPage.includes('governance-detail__snapshot-meta'), false)
 })
 
 test('route ID accepts proposal zero', () => assert.equal(parseProposalRouteId('0'), 0))
@@ -31,6 +45,16 @@ test('ACCEPTED uses success tone', () => assert.equal(governanceStatusTone('ACCE
 test('ACTIVE uses warning tone', () => assert.equal(governanceStatusTone('ACTIVE'), 'warning'))
 test('REJECTED uses error tone', () => assert.equal(governanceStatusTone('REJECTED'), 'error'))
 test('UNKNOWN uses neutral tone', () => assert.equal(governanceStatusTone('UNKNOWN'), 'neutral'))
+test('ACTIVE and UNKNOWN Governance proposals are mutable', () => {
+  assert.equal(isMutableGovernanceStatus('ACTIVE'), true)
+  assert.equal(isMutableGovernanceStatus('UNKNOWN'), true)
+})
+test('terminal and unsupported Governance statuses are immutable', () => {
+  assert.equal(isMutableGovernanceStatus('ACCEPTED'), false)
+  assert.equal(isMutableGovernanceStatus('REJECTED'), false)
+  assert.equal(isMutableGovernanceStatus(), false)
+  assert.equal(isMutableGovernanceStatus('PENDING'), false)
+})
 test('YES uses success tone', () => assert.equal(governanceVoteTone('YES'), 'success'))
 test('NO uses error tone', () => assert.equal(governanceVoteTone('NO'), 'error'))
 test('ABSTAIN uses warning tone', () => assert.equal(governanceVoteTone('ABSTAIN'), 'warning'))

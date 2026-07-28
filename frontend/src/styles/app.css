@@ -524,7 +524,6 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .governance-detail__state { padding: 18px; }
 .governance-detail__state-actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
 .governance-detail__state .governance-detail__back { margin: 0; }
-.governance-detail__snapshot-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 7px; margin-top: 2px; padding: 2px 1px; color: var(--color-text-secondary); font-size: 10px; }
 
 @media (max-width: 1100px) {
   .governance-page__summary { grid-template-columns: repeat(2, 1fr); }

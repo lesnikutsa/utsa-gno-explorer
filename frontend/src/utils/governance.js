@@ -12,6 +12,8 @@ export const governanceVoteTone = (option) => ({
   ABSTAIN: 'warning',
 })[option] ?? 'neutral'
 
+export const isMutableGovernanceStatus = (status) => status === 'ACTIVE' || status === 'UNKNOWN'
+
 export function formatGovernancePercent(value) {
   if (value === null || value === undefined || value === '') return '—'
   const number = Number(value)
