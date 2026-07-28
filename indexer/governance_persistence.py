@@ -357,12 +357,6 @@ def persist_governance_incremental_cursor(cursor, listed, targeted, configured_c
         raise StaleGovernanceSnapshot("governance snapshot is stale")
     old = {row[0]: row for row in stored}
     _raise_if(not set(old).issubset(summaries), "a stored proposal is missing from newer list", GovernanceSnapshotConflict)
-    for proposal_id, row in old.items():
-        new_status = summaries[proposal_id].status
-        if row[4] != new_status:
-            _raise_if(new_status not in _TRANSITIONS.get(row[4], set()),
-                      "invalid governance status transition", GovernanceSnapshotConflict)
-    required = set(select_governance_refresh_ids(listed.proposals, {key: row[4] for key, row in old.items()}))
     target_map = {}
     for discovery in targeted:
         _raise_if(not isinstance(discovery, GovernanceDiscovery) or discovery.source != source,
@@ -370,10 +364,8 @@ def persist_governance_incremental_cursor(cursor, listed, targeted, configured_c
         _raise_if(len(discovery.proposals) != 1, "targeted discovery must contain exactly one proposal")
         proposal_id = discovery.proposals[0].proposal_id
         _raise_if(proposal_id in target_map, "duplicate targeted discovery")
-        _raise_if(proposal_id not in required or proposal_id not in summaries,
-                  "unrelated targeted discovery")
+        _raise_if(proposal_id not in summaries, "unrelated targeted discovery")
         target_map[proposal_id] = discovery
-    _raise_if(set(target_map) != required, "selected proposal is missing targeted discovery")
     normalized = {}
     for proposal_id, discovery in target_map.items():
         candidate = GovernanceDiscovery(source, True, 1, discovery.proposals, (), discovery.raw_renders)
@@ -390,17 +382,43 @@ def persist_governance_incremental_cursor(cursor, listed, targeted, configured_c
     )
     ids = sorted(summaries)
     metadata = (listed.page_count, len(ids), ids[0] if ids else None, ids[-1] if ids else None)
+    stored_statuses = {key: row[4] for key, row in old.items()}
+    required = set(select_governance_refresh_ids(listed.proposals, stored_statuses))
     if state and state[0] == height:
         # At one source height, an already-published list is immutable. Targeted rows
         # must also be byte-for-byte equal to make retries idempotent.
         if tuple(state[1:5]) != metadata:
             raise GovernanceSnapshotConflict("same-height governance list differs")
+        for proposal_id, summary in summaries.items():
+            current = old.get(proposal_id)
+            if current is None or (
+                summary.proposal_id, summary.title, summary.author_display,
+                summary.author_address, summary.status, tuple(summary.eligible_tiers)
+            ) != (
+                current[0], current[1], current[2], current[3], current[4], tuple(current[5])
+            ):
+                raise GovernanceSnapshotConflict("same-height governance list summary differs")
+        _raise_if(not required.issubset(target_map),
+                  "selected proposal is missing targeted discovery", GovernanceSnapshotConflict)
+        for proposal_id in set(target_map) - required:
+            current = old.get(proposal_id)
+            _raise_if(current is None or current[4] not in {"ACCEPTED", "REJECTED"}
+                      or current[19] != height,
+                      "unrelated targeted discovery", GovernanceSnapshotConflict)
         for proposal_id, row in normalized.items():
             current = next(item for item in stored if item[0] == proposal_id)
             current_votes = [vote for vote in stored_votes if vote[0] == proposal_id]
             if _stored_content([current], current_votes) != _content((row,)):
                 raise GovernanceSnapshotConflict("same-height targeted content differs")
         return GovernancePersistenceResult("unchanged", height, listed.page_count, len(ids), len(stored_votes))
+    for proposal_id, row in old.items():
+        new_status = summaries[proposal_id].status
+        if row[4] != new_status:
+            _raise_if(new_status not in _TRANSITIONS.get(row[4], set()),
+                      "invalid governance status transition", GovernanceSnapshotConflict)
+    _raise_if(set(target_map) != required,
+              "unrelated targeted discovery" if set(target_map) - required
+              else "selected proposal is missing targeted discovery")
     for proposal_id, row in normalized.items():
         p = row.proposal
         cursor.execute("""INSERT INTO governance_proposals(chain_id,realm_path,proposal_id,title,author_display,author_address,status,eligible_tiers,description,executor_text,executor_creation_realm,rejection_reason,yes_percent,no_percent,abstain_percent,detail_parse_status,votes_parse_status,parse_warnings,raw_detail_render,raw_votes_render,first_observed_height,last_observed_height) VALUES (%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s) ON CONFLICT(chain_id,realm_path,proposal_id) DO UPDATE SET title=EXCLUDED.title,author_display=EXCLUDED.author_display,author_address=EXCLUDED.author_address,status=EXCLUDED.status,eligible_tiers=EXCLUDED.eligible_tiers,description=EXCLUDED.description,executor_text=EXCLUDED.executor_text,executor_creation_realm=EXCLUDED.executor_creation_realm,rejection_reason=EXCLUDED.rejection_reason,yes_percent=EXCLUDED.yes_percent,no_percent=EXCLUDED.no_percent,abstain_percent=EXCLUDED.abstain_percent,detail_parse_status=EXCLUDED.detail_parse_status,votes_parse_status=EXCLUDED.votes_parse_status,parse_warnings=EXCLUDED.parse_warnings,raw_detail_render=EXCLUDED.raw_detail_render,raw_votes_render=EXCLUDED.raw_votes_render,last_observed_height=EXCLUDED.last_observed_height,last_observed_at=now(),updated_at=now()""", (source.chain_id, source.realm_path, proposal_id, p.title, p.author_display, p.author_address, p.status, json.dumps(list(p.eligible_tiers)), p.description, p.executor_text, p.executor_creation_realm, p.rejection_reason, row.yes_percent, row.no_percent, row.abstain_percent, p.detail_parse_status, p.votes_parse_status, json.dumps(list(p.parse_warnings)), row.raw_detail, row.raw_votes, height, height))

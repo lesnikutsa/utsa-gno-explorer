@@ -207,3 +207,41 @@ def test_incremental_rejects_final_aggregate_raw_limit_before_writes(monkeypatch
         "SELECT pg_advisory_xact_lock(%s)",
         "SELECT chain_id FROM indexer_state WHERE state_key=%s",
     ]
+
+
+def test_same_height_retry_accepts_new_terminal_target_and_performs_no_writes(monkeypatch):
+    source = GovernanceSource("topaz-1", "redacted", 101, "gno.land/r/gov/dao")
+    active = proposal(1)
+    terminal = proposal(2, status="ACCEPTED", votes=(), votes_status="empty")
+    discoveries = [snapshot((item,), source=source) for item in (active, terminal)]
+    rows = [normalize_discovery(replace(value, page_count=1), "topaz-1")[0] for value in discoveries]
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    stored, stored_votes = [], []
+    for row in rows:
+        p = row.proposal
+        first_height = 100 if p.proposal_id == 1 else 101
+        stored.append((p.proposal_id, p.title, p.author_display, p.author_address, p.status,
+            list(p.eligible_tiers), p.description, p.executor_text, p.executor_creation_realm,
+            p.rejection_reason, row.yes_percent, row.no_percent, row.abstain_percent,
+            p.detail_parse_status, p.votes_parse_status, list(p.parse_warnings), row.raw_detail,
+            row.raw_votes, first_height, 101, now, now))
+        stored_votes.extend((p.proposal_id, *vote, first_height, 101, now, now) for vote in row.votes)
+    listed = GovernanceListDiscovery(source, True, 1, (
+        GovernanceProposalSummary(2, terminal.title, None, None, "ACCEPTED", ("CORE",)),
+        GovernanceProposalSummary(1, active.title, None, None, "ACTIVE", ("CORE",)),
+    ))
+
+    class ReadCursor:
+        def __init__(self): self.statements = []
+        def execute(self, sql, params):
+            self.statements.append(sql)
+            self.result = ("topaz-1",) if "SELECT chain_id FROM indexer_state" in sql else (None,)
+        def fetchone(self): return self.result
+
+    cursor = ReadCursor()
+    monkeypatch.setattr("indexer.governance_persistence._load",
+                        lambda *args: ((101, 1, 2, 1, 2), stored, stored_votes))
+    result = persist_governance_incremental_cursor(cursor, listed, discoveries, "topaz-1")
+    assert result.action == "unchanged"
+    assert cursor.statements == ["SELECT pg_advisory_xact_lock(%s)",
+                                 "SELECT chain_id FROM indexer_state WHERE state_key=%s"]

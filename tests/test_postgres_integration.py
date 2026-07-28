@@ -1447,7 +1447,21 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             cursor.execute("SELECT proposal_id,voter_display FROM governance_votes ORDER BY proposal_id")
             self.assertEqual(cursor.fetchall(), [(0, "Bob"), (1, "Carol")])
 
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT proposal_id,status,last_observed_height,last_observed_at FROM governance_proposals ORDER BY proposal_id")
+            proposals_before_retry = cursor.fetchall()
+            cursor.execute("SELECT proposal_id,voter_key,option,voting_power,last_observed_height,last_observed_at FROM governance_votes ORDER BY proposal_id,voter_key")
+            votes_before_retry = cursor.fetchall()
+            cursor.execute("SELECT source_height,last_success_at,updated_at FROM governance_sync_state WHERE chain_id='topaz-1' AND realm_path=%s", (realm,))
+            sync_before_retry = cursor.fetchone()
         self.assertEqual(database.persist_governance_incremental(listed, targeted, "topaz-1").action, "unchanged")
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT proposal_id,status,last_observed_height,last_observed_at FROM governance_proposals ORDER BY proposal_id")
+            self.assertEqual(cursor.fetchall(), proposals_before_retry)
+            cursor.execute("SELECT proposal_id,voter_key,option,voting_power,last_observed_height,last_observed_at FROM governance_votes ORDER BY proposal_id,voter_key")
+            self.assertEqual(cursor.fetchall(), votes_before_retry)
+            cursor.execute("SELECT source_height,last_success_at,updated_at FROM governance_sync_state WHERE chain_id='topaz-1' AND realm_path=%s", (realm,))
+            self.assertEqual(cursor.fetchone(), sync_before_retry)
         stale = GovernanceListDiscovery(GovernanceSource("topaz-1", "redacted", 99, realm), True, 1, summaries)
         with self.assertRaises(StaleGovernanceSnapshot):
             database.persist_governance_incremental(stale, [], "topaz-1")
