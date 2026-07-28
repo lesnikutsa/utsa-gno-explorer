@@ -35,6 +35,37 @@ class TestGovernanceApiAndHooks:
     listing = read('frontend/src/hooks/useGovernancePage.js')
     detail = read('frontend/src/hooks/useGovernanceDetail.js')
 
+    def test_polling_intervals_use_timeouts_only(self):
+        assert 'GOVERNANCE_LIST_POLL_MS = 30_000' in self.listing
+        assert 'GOVERNANCE_DETAIL_POLL_MS = 15_000' in self.detail
+        assert 'window.setTimeout' in self.listing
+        assert 'window.setTimeout' in self.detail
+        assert 'setInterval' not in self.listing + self.detail
+
+    def test_list_polling_is_latest_page_only_and_non_overlapping(self):
+        assert 'pageIndexRef.current !== 0' in self.listing
+        assert 'hasLoadedData.current' in self.listing
+        assert 'inFlight.current' in self.listing
+        background = self.listing[self.listing.index('const refreshInBackground'):]
+        assert 'clearPublicData()' not in background.split('const retry', 1)[0]
+        for update in ['setProposals(', 'setSource(', 'setStatusCounts(', 'setNextCursor(']:
+            assert update in background
+        assert "setHealthState('degraded')" in background
+
+    def test_detail_polling_preserves_data_and_stops_for_terminal_status(self):
+        assert 'isMutableGovernanceStatus(storedProposal.current.status)' in self.detail
+        assert 'inFlight.current' in self.detail
+        background = self.detail[self.detail.index('const refreshInBackground'):]
+        assert 'setState((current) => ({ ...current, healthState: \'degraded\' }))' in background
+        assert 'storedProposal.current = response.proposal' in background
+
+    def test_visibility_and_unmount_cleanup(self):
+        for hook in [self.listing, self.detail]:
+            assert "document.addEventListener('visibilitychange', handleVisibilityChange)" in hook
+            assert "document.removeEventListener('visibilitychange', handleVisibilityChange)" in hook
+            assert "document.visibilityState === 'hidden'" in hook
+            assert 'clearPollTimeout()' in hook
+
     def test_api_methods_and_encoded_detail_id(self):
         assert 'getGovernanceProposals' in self.api
         assert 'getGovernanceProposal' in self.api

@@ -3,6 +3,7 @@ import { getGovernanceProposals } from '../services/api'
 import { isValidGovernanceListResponse } from '../utils/governance'
 
 export const PAGE_SIZE = 25
+export const GOVERNANCE_LIST_POLL_MS = 30_000
 const hasCursor = (value) => value !== null && value !== undefined
 
 export function useGovernancePage() {
@@ -19,6 +20,28 @@ export function useGovernancePage() {
   const mounted = useRef(false)
   const requestId = useRef(0)
   const failedRequest = useRef(null)
+  const pollTimeout = useRef(null)
+  const inFlight = useRef(false)
+  const pageIndexRef = useRef(0)
+  const hasLoadedData = useRef(false)
+  const backgroundRefreshRef = useRef(null)
+
+  const clearPollTimeout = useCallback(() => {
+    if (pollTimeout.current !== null) {
+      window.clearTimeout(pollTimeout.current)
+      pollTimeout.current = null
+    }
+  }, [])
+
+  const schedulePoll = useCallback(() => {
+    clearPollTimeout()
+    if (!mounted.current || pageIndexRef.current !== 0 || !hasLoadedData.current
+      || document.visibilityState !== 'visible' || inFlight.current) return
+    pollTimeout.current = window.setTimeout(() => {
+      pollTimeout.current = null
+      backgroundRefreshRef.current?.()
+    }, GOVERNANCE_LIST_POLL_MS)
+  }, [clearPollTimeout])
 
   const clearPublicData = () => {
     setProposals([])
@@ -28,6 +51,9 @@ export function useGovernancePage() {
   }
 
   const loadPage = useCallback(async (cursor, targetIndex, history) => {
+    if (inFlight.current) return
+    clearPollTimeout()
+    inFlight.current = true
     const attemptedRequest = { cursor, targetIndex, history }
     const id = ++requestId.current
     setLoading(true)
@@ -49,12 +75,15 @@ export function useGovernancePage() {
       setStatusCounts(response.status_counts)
       setNextCursor(response.pagination.next_before_proposal_id)
       setPageIndex(targetIndex)
+      pageIndexRef.current = targetIndex
+      hasLoadedData.current = true
       if (history) setCursorHistory(history)
       failedRequest.current = null
       setHealthState('healthy')
     } catch (cause) {
       if (!mounted.current || id !== requestId.current) return
       clearPublicData()
+      hasLoadedData.current = false
       if (cause.status === 404) {
         setPageIndex(0)
         setCursorHistory([null])
@@ -69,9 +98,38 @@ export function useGovernancePage() {
         setHealthState('error')
       }
     } finally {
-      if (mounted.current && id === requestId.current) setLoading(false)
+      if (id === requestId.current) inFlight.current = false
+      if (mounted.current && id === requestId.current) {
+        setLoading(false)
+        schedulePoll()
+      }
     }
-  }, [])
+  }, [clearPollTimeout, schedulePoll])
+
+  const refreshInBackground = useCallback(async () => {
+    if (!mounted.current || inFlight.current || pageIndexRef.current !== 0
+      || !hasLoadedData.current || document.visibilityState !== 'visible') return
+    clearPollTimeout()
+    inFlight.current = true
+    const id = ++requestId.current
+    try {
+      const response = await getGovernanceProposals({ limit: PAGE_SIZE, beforeProposalId: null })
+      if (!mounted.current || id !== requestId.current) return
+      if (!isValidGovernanceListResponse(response)) throw new Error('Invalid Governance response')
+      setProposals(response.items.slice(0, PAGE_SIZE))
+      setSource(response.source)
+      setStatusCounts(response.status_counts)
+      setNextCursor(response.pagination.next_before_proposal_id)
+      setHealthState('healthy')
+    } catch {
+      if (mounted.current && id === requestId.current) setHealthState('degraded')
+    } finally {
+      if (id === requestId.current) inFlight.current = false
+      if (mounted.current && id === requestId.current) schedulePoll()
+    }
+  }, [clearPollTimeout, schedulePoll])
+
+  backgroundRefreshRef.current = refreshInBackground
 
   const retry = useCallback(() => {
     const request = failedRequest.current
@@ -92,11 +150,19 @@ export function useGovernancePage() {
   useEffect(() => {
     mounted.current = true
     loadPage(null, 0)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') clearPollTimeout()
+      else refreshInBackground()
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => {
       mounted.current = false
       requestId.current += 1
+      inFlight.current = false
+      clearPollTimeout()
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [loadPage])
+  }, [clearPollTimeout, loadPage, refreshInBackground])
 
   return {
     proposals,

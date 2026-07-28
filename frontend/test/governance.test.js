@@ -5,6 +5,7 @@ import {
   governanceAuthorValue,
   governanceStatusTone,
   governanceVoteTone,
+  isMutableGovernanceStatus,
   isValidGovernanceDetailResponse,
   isValidGovernanceListResponse,
   normalizeVoteWidth,
@@ -31,6 +32,16 @@ test('ACCEPTED uses success tone', () => assert.equal(governanceStatusTone('ACCE
 test('ACTIVE uses warning tone', () => assert.equal(governanceStatusTone('ACTIVE'), 'warning'))
 test('REJECTED uses error tone', () => assert.equal(governanceStatusTone('REJECTED'), 'error'))
 test('UNKNOWN uses neutral tone', () => assert.equal(governanceStatusTone('UNKNOWN'), 'neutral'))
+test('ACTIVE and UNKNOWN Governance proposals are mutable', () => {
+  assert.equal(isMutableGovernanceStatus('ACTIVE'), true)
+  assert.equal(isMutableGovernanceStatus('UNKNOWN'), true)
+})
+test('terminal and unsupported Governance statuses are immutable', () => {
+  assert.equal(isMutableGovernanceStatus('ACCEPTED'), false)
+  assert.equal(isMutableGovernanceStatus('REJECTED'), false)
+  assert.equal(isMutableGovernanceStatus(), false)
+  assert.equal(isMutableGovernanceStatus('PENDING'), false)
+})
 test('YES uses success tone', () => assert.equal(governanceVoteTone('YES'), 'success'))
 test('NO uses error tone', () => assert.equal(governanceVoteTone('NO'), 'error'))
 test('ABSTAIN uses warning tone', () => assert.equal(governanceVoteTone('ABSTAIN'), 'warning'))
