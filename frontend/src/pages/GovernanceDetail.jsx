@@ -56,11 +56,12 @@ const voteColumns = [
 const voteRowKey = (vote) => `${vote.voter_address || vote.voter_display || 'unknown'}:${vote.tier || ''}`
 
 export function GovernanceDetail({ governanceDetail }) {
-  const { proposal, source, loading, invalidProposalId, notFound, error, retry } = governanceDetail
+  const { proposal, source, loading, invalidProposalId, notFound, snapshotMissing, error, retry } = governanceDetail
 
   if (loading) return <StatePanel title="Loading proposal…" />
   if (invalidProposalId) return <StatePanel title="Invalid proposal ID" />
   if (notFound) return <StatePanel title="Governance proposal not found" />
+  if (snapshotMissing) return <StatePanel title="Governance snapshot is not available yet" retry={retry} />
   if (error || !proposal) return <StatePanel title="Governance proposal is currently unavailable" retry={error ? retry : null} />
 
   const author = governanceAuthorValue(proposal)

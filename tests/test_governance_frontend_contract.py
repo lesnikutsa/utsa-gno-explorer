@@ -68,6 +68,16 @@ class TestGovernanceApiAndHooks:
         assert 'if (proposalId === null) return' in self.detail
         assert "invalidProposalId: proposalId === null" in self.detail
 
+    def test_detail_distinguishes_snapshot_and_proposal_404_responses(self):
+        assert "cause.detail === 'Governance snapshot not found'" in self.detail
+        assert "cause.detail === 'Governance proposal not found'" in self.detail
+        assert 'const error = !snapshotMissing && !notFound' in self.detail
+        assert 'snapshotMissing,' in self.detail
+
+    def test_unknown_detail_404_remains_a_recoverable_error(self):
+        assert "const notFound = cause.status === 404\n        && cause.detail === 'Governance proposal not found'" in self.detail
+        assert "healthState: error ? 'error' : 'healthy'" in self.detail
+
 
 class TestGovernanceListPage:
     page = read('frontend/src/pages/Governance.jsx')
@@ -107,6 +117,11 @@ class TestGovernanceDetailPage:
     def test_states_and_sections(self):
         for text in ['Back to Governance', 'Loading proposal…', 'Invalid proposal ID', 'Governance proposal not found', 'currently unavailable', 'Proposal Details', 'Vote Results', 'Votes', 'Governance data snapshot']:
             assert text in self.detail
+
+    def test_snapshot_missing_state_is_distinct_and_retryable(self):
+        assert 'if (notFound) return <StatePanel title="Governance proposal not found" />' in self.detail
+        assert 'if (snapshotMissing) return <StatePanel title="Governance snapshot is not available yet" retry={retry} />' in self.detail
+        assert self.detail.index('if (snapshotMissing)') < self.detail.index('if (error || !proposal)')
 
     def test_snapshot_metadata_is_compact_and_omits_extended_fields(self):
         assert 'governance-detail__snapshot-meta' in self.detail

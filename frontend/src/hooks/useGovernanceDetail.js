@@ -10,6 +10,7 @@ export function useGovernanceDetail(routeProposalId) {
     loading: proposalId !== null,
     error: false,
     notFound: false,
+    snapshotMissing: false,
     healthState: proposalId === null ? 'healthy' : 'loading',
   })
   const mounted = useRef(false)
@@ -24,6 +25,7 @@ export function useGovernanceDetail(routeProposalId) {
       loading: true,
       error: false,
       notFound: false,
+      snapshotMissing: false,
       healthState: 'loading',
     })
 
@@ -39,18 +41,24 @@ export function useGovernanceDetail(routeProposalId) {
         loading: false,
         error: false,
         notFound: false,
+        snapshotMissing: false,
         healthState: 'healthy',
       })
     } catch (cause) {
       if (!mounted.current || id !== requestId.current) return
+      const snapshotMissing = cause.status === 404
+        && cause.detail === 'Governance snapshot not found'
       const notFound = cause.status === 404
+        && cause.detail === 'Governance proposal not found'
+      const error = !snapshotMissing && !notFound
       setState({
         proposal: null,
         source: {},
         loading: false,
-        error: !notFound,
+        error,
         notFound,
-        healthState: notFound ? 'healthy' : 'error',
+        snapshotMissing,
+        healthState: error ? 'error' : 'healthy',
       })
     }
   }, [proposalId])
