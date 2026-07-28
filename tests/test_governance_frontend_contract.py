@@ -105,10 +105,13 @@ class TestGovernanceListPage:
         for label in ['Newer proposals', 'Older proposals']:
             assert re.search(rf'<button[^>]*type="button"[^>]*>\s*{label}', self.page)
 
-    def test_snapshot_context_uses_safe_height_and_time(self):
-        assert 'formatIntegerString(source.source_height)' in self.page
-        assert '<time dateTime=' in self.page
-        assert 'href={`/blocks/${source.source_height}`}' in self.page
+    def test_list_header_omits_snapshot_context(self):
+        assert 'governance-page__context' not in self.page
+        assert 'source.chain_id' not in self.page
+        assert 'source.realm_path' not in self.page
+        assert 'source.source_height' not in self.page
+        assert 'source.last_success_at' not in self.page
+        assert '<time' not in self.page
 
 
 class TestGovernanceDetailPage:

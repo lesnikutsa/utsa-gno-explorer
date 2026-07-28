@@ -466,8 +466,6 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .governance-page,
 .governance-detail { min-width: 0; }
 .governance-page__header { margin-bottom: 12px; }
-.governance-page__context { margin-top: 5px; }
-.governance-page__context a,
 .governance-table__proposal,
 .governance-detail__back { color: #dc795e; }
 .governance-page__summary { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 10px; }

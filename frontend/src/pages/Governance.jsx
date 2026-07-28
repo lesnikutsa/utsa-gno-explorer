@@ -4,8 +4,6 @@ import { GovernanceTiers, GovernanceVoteSplit } from '../components/GovernancePr
 import { StatusBadge } from '../components/StatusBadge'
 import { shortAddress } from '../utils/address'
 import { governanceAuthorValue, governanceStatusTone } from '../utils/governance'
-import { relativeTime } from '../utils/time'
-import { formatIntegerString } from '../utils/validatorHealth'
 
 const proposalHref = (id) => `/governance/${encodeURIComponent(id)}`
 
@@ -73,13 +71,6 @@ export function Governance({ governancePage }) {
         <div>
           <h1 id="governance-page-title">Governance</h1>
           <p>Governance proposals saved by UTSA Explorer.</p>
-          {source.chain_id && (
-            <p className="governance-page__context">
-              {source.chain_id} · {source.realm_path} · Snapshot at block{' '}
-              <a href={`/blocks/${source.source_height}`} className="accent-value">#{formatIntegerString(source.source_height)}</a> · Saved{' '}
-              <time dateTime={source.last_success_at} title={source.last_success_at}>{relativeTime(source.last_success_at)}</time>
-            </p>
-          )}
         </div>
         {error && <button className="blocks-page__button blocks-page__button--accent" type="button" onClick={retry}>Retry</button>}
       </header>
