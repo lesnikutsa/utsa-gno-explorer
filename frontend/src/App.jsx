@@ -8,6 +8,8 @@ import { Transactions } from './pages/Transactions'
 import { Overview } from './pages/Overview'
 import { ValidatorDetail } from './pages/ValidatorDetail'
 import { Validators } from './pages/Validators'
+import { Governance } from './pages/Governance'
+import { GovernanceDetail } from './pages/GovernanceDetail'
 import { useBlocksPage } from './hooks/useBlocksPage'
 import { useBlockDetail } from './hooks/useBlockDetail'
 import { useTransactionDetail } from './hooks/useTransactionDetail'
@@ -15,6 +17,8 @@ import { useTransactionsPage } from './hooks/useTransactionsPage'
 import { useExplorerData } from './hooks/useExplorerData'
 import { useValidatorDetail } from './hooks/useValidatorDetail'
 import { useValidatorsPage } from './hooks/useValidatorsPage'
+import { useGovernancePage } from './hooks/useGovernancePage'
+import { useGovernanceDetail } from './hooks/useGovernanceDetail'
 
 const NETWORK_MASCOT_SRC = '/assets/network-mascot.png?v=1'
 
@@ -100,6 +104,8 @@ function ValidatorDetailPage({ address }) {
     </ExplorerLayout>
   )
 }
+function GovernancePage() { const governancePage = useGovernancePage(); return <ExplorerLayout healthState={governancePage.healthState} showRefreshCountdown={false}><Governance governancePage={governancePage} /></ExplorerLayout> }
+function GovernanceDetailPage({ proposalId }) { const governanceDetail = useGovernanceDetail(proposalId); return <ExplorerLayout healthState={governanceDetail.healthState} showRefreshCountdown={false}><GovernanceDetail governanceDetail={governanceDetail} /></ExplorerLayout> }
 
 export default function App() {
   const path = window.location.pathname
@@ -121,6 +127,9 @@ export default function App() {
   if (path === '/transactions' || path === '/transactions/') {
     return <TransactionsPage />
   }
+  if (path === '/governance' || path === '/governance/') return <GovernancePage />
+  const governanceDetailMatch = path.match(/^\/governance\/([^/]+)\/?$/)
+  if (governanceDetailMatch) return <GovernanceDetailPage proposalId={governanceDetailMatch[1]} />
 
   const validatorDetailMatch = path.match(/^\/validators\/([^/]+)\/?$/)
   if (validatorDetailMatch) {

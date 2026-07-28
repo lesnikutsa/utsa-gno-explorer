@@ -64,6 +64,14 @@ export const searchValidators = ({ query, limit = 6 }) => {
   return request(`/search/validators?${params.toString()}`)
 }
 export const getValidator = (address) => request(`/validators/${encodeURIComponent(address)}`)
+export const getGovernanceProposals = ({ limit, beforeProposalId } = {}) => {
+  const query = new URLSearchParams()
+  if (limit !== undefined && limit !== null && limit !== '') query.set('limit', limit)
+  if (beforeProposalId !== undefined && beforeProposalId !== null && beforeProposalId !== '') query.set('before_proposal_id', beforeProposalId)
+  const queryString = query.toString()
+  return request(`/governance/proposals${queryString ? `?${queryString}` : ''}`)
+}
+export const getGovernanceProposal = (proposalId) => request(`/governance/proposals/${encodeURIComponent(proposalId)}`)
 
 export const getValidatorSigningHistory = ({ limit = 100 } = {}) => {
   const query = new URLSearchParams()

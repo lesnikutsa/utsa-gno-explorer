@@ -42,6 +42,7 @@ class FrontendNetworkProfileTests(unittest.TestCase):
             ("Blocks", "/blocks"),
             ("Transactions", "/transactions"),
             ("Validators", "/validators"),
+            ("Governance", "/governance"),
         ])
         self.assertNotIn("NetworkIcon", self.sidebar)
         self.assertNotIn("MapIcon", self.sidebar)

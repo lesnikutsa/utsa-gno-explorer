@@ -1,5 +1,5 @@
 import { UtsaLogo } from './UtsaLogo'
-import { BlocksIcon, ChevronDownIcon, HomeIcon, TransactionsIcon, ValidatorsIcon } from './Icons'
+import { BlocksIcon, ChevronDownIcon, GovernanceIcon, HomeIcon, TransactionsIcon, ValidatorsIcon } from './Icons'
 import { networkProfile } from '../config/networkProfile'
 
 const items = [
@@ -7,6 +7,7 @@ const items = [
   { label: 'Blocks', Icon: BlocksIcon, href: '/blocks' },
   { label: 'Transactions', Icon: TransactionsIcon, href: '/transactions' },
   { label: 'Validators', Icon: ValidatorsIcon, href: '/validators' },
+  { label: 'Governance', Icon: GovernanceIcon, href: '/governance' },
 ]
 
 export function Sidebar({ open, onClose, chainId }) {
