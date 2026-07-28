@@ -101,12 +101,19 @@ def test_detail_zero_votes_and_safe_errors():
 
 def test_detail_freshness_is_proposal_specific_while_list_is_global():
     fake = FakeDatabase()
+    first_time = NOW.replace(hour=17)
     old_time = NOW.replace(hour=18)
     original = fake.fetch_governance_proposal_detail
     def older_terminal(**kwargs):
         result = original(**kwargs)
-        result["proposal"].update(last_observed_height=240000, last_observed_at=old_time)
-        result["votes"][0].update(last_observed_height=240000, last_observed_at=old_time)
+        result["proposal"].update(
+            first_observed_height=239000, last_observed_height=240000,
+            first_observed_at=first_time, last_observed_at=old_time,
+        )
+        result["votes"][0].update(
+            first_observed_height=239000, last_observed_height=240000,
+            first_observed_at=first_time, last_observed_at=old_time,
+        )
         return result
     fake.fetch_governance_proposal_detail = older_terminal
     with make_client(fake) as client:
