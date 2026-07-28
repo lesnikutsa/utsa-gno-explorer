@@ -6,10 +6,10 @@ import time
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
-from governance.gno import (GovernanceSource, discover_governance,
+from governance.gno import (GovernanceParseError, GovernanceSource, discover_governance,
                             discover_governance_list, discover_governance_proposal)
 from indexer.governance_persistence import (GovernanceChainIdentityError,
-                                            GovernancePersistenceError,
+                                            IncompleteGovernanceSnapshot,
                                             StaleGovernanceSnapshot,
                                             GovernanceStoredStateError,
                                             select_governance_refresh_ids)
@@ -22,6 +22,18 @@ LOGGER = logging.getLogger(__name__)
 
 class FatalGovernanceUpdaterError(RuntimeError):
     pass
+
+
+class AllGovernanceRpcAttemptsFailed(RpcError):
+    """Every suitable endpoint failed with an explicitly retryable read error."""
+
+
+RETRYABLE_ENDPOINT_ERRORS = (
+    RpcError,
+    GovernanceParseError,
+    IncompleteGovernanceSnapshot,
+    StaleGovernanceSnapshot,
+)
 
 
 @dataclass(frozen=True)
@@ -75,7 +87,7 @@ def _candidates(config, cycle_type):
             time.monotonic() - started,
         )
     if not candidates:
-        raise RpcError("No suitable Governance RPC candidates")
+        raise AllGovernanceRpcAttemptsFailed("No suitable Governance RPC candidates")
     return candidates
 
 
@@ -90,30 +102,23 @@ def _attempt_log(cycle_type, selected, attempt, count, stage, started, result,
     )
 
 
-def _is_fatal_attempt_error(exc):
-    return (isinstance(exc, GovernancePersistenceError)
-            and not isinstance(exc, StaleGovernanceSnapshot))
-
-
 def run_full_cycle(config, database):
     started = time.monotonic()
     candidates = _candidates(config, "full")
     for attempt, selected in enumerate(candidates, 1):
-        attempt_started, stage = time.monotonic(), "list"
+        attempt_started, stage = time.monotonic(), "discovery"
         try:
             discovery = discover_governance(selected.client, _source(config, selected), capture_raw=True)
             stage = "persist"
             result = database.persist_governance_snapshot(discovery, config.chain_id)
-        except Exception as exc:
+        except RETRYABLE_ENDPOINT_ERRORS as exc:
             _attempt_log("full", selected, attempt, len(candidates), stage, attempt_started,
                          "failed", type(exc).__name__)
-            if _is_fatal_attempt_error(exc):
-                raise
             continue
         _attempt_log("full", selected, attempt, len(candidates), stage, attempt_started, "succeeded")
         break
     else:
-        raise RpcError("All suitable Governance RPC attempts failed")
+        raise AllGovernanceRpcAttemptsFailed("All suitable Governance RPC attempts failed")
     LOGGER.info("cycle_type=full source_height=%s page_count=%s proposal_count=%s targeted_count=%s inserted_count=%s updated_count=%s active_count=%s duration_seconds=%.3f action=%s",
                 result.source_height, result.page_count, result.proposal_count, result.proposal_count,
                 result.inserted_proposals, result.updated_proposals,
@@ -124,12 +129,12 @@ def run_full_cycle(config, database):
 def run_quick_cycle(config, database):
     started = time.monotonic()
     candidates = _candidates(config, "quick")
+    stored = database.governance_statuses(config.chain_id, config.realm)
     for attempt, selected in enumerate(candidates, 1):
         attempt_started, stage, proposal_id = time.monotonic(), "list", None
         try:
             source = _source(config, selected)
             listed = discover_governance_list(selected.client, source, capture_raw=True)
-            stored = database.governance_statuses(config.chain_id, config.realm)
             selected_ids = set(select_governance_refresh_ids(listed.proposals, stored))
             targeted = []
             stage = "proposal"
@@ -140,16 +145,14 @@ def run_quick_cycle(config, database):
                         selected.client, source, summary, capture_raw=True))
             stage, proposal_id = "persist", None
             result = database.persist_governance_incremental(listed, targeted, config.chain_id)
-        except Exception as exc:
+        except RETRYABLE_ENDPOINT_ERRORS as exc:
             _attempt_log("quick", selected, attempt, len(candidates), stage, attempt_started,
                          "failed", type(exc).__name__, proposal_id)
-            if _is_fatal_attempt_error(exc):
-                raise
             continue
         _attempt_log("quick", selected, attempt, len(candidates), stage, attempt_started, "succeeded")
         break
     else:
-        raise RpcError("All suitable Governance RPC attempts failed")
+        raise AllGovernanceRpcAttemptsFailed("All suitable Governance RPC attempts failed")
     LOGGER.info("cycle_type=quick source_height=%s page_count=%s proposal_count=%s targeted_count=%s inserted_count=%s updated_count=%s active_count=%s duration_seconds=%.3f action=%s",
                 result.source_height, result.page_count, result.proposal_count, len(targeted),
                 result.inserted_proposals, result.updated_proposals,
@@ -178,8 +181,12 @@ def run_updater(config, database, stop: StopController, *, once=False, full_once
         except (GovernanceChainIdentityError, GovernanceStoredStateError):
             raise
         except Exception as exc:
-            LOGGER.warning("All suitable Governance RPC attempts failed; retrying after %s seconds; error_type=%s",
-                           backoff, type(exc).__name__)
+            if isinstance(exc, AllGovernanceRpcAttemptsFailed):
+                message = "All suitable Governance RPC attempts failed"
+            else:
+                message = "Governance cycle failed"
+            LOGGER.warning("%s; retrying after %s seconds; error_type=%s",
+                           message, backoff, type(exc).__name__)
             stop.wait(backoff)
             backoff = min(backoff * 2, config.max_backoff_seconds)
     return 0

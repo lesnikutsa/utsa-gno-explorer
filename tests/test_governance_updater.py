@@ -4,12 +4,15 @@ from unittest.mock import Mock
 import pytest
 
 import indexer.governance_updater as updater
-from governance.gno import (GovernanceListDiscovery, GovernanceProposalSummary,
+from governance.gno import (GovernanceListDiscovery, GovernanceParseError, GovernanceProposalSummary,
                             GovernanceSource)
 from indexer.governance_persistence import (GovernanceChainIdentityError,
+                                            GovernancePersistenceError,
                                             GovernanceSnapshotConflict,
+                                            IncompleteGovernanceSnapshot,
                                             GovernanceStoredStateError)
 from indexer.rpc import RpcProbeResult
+from scripts.inspect_rpc import RpcError
 
 
 def config(**changes):
@@ -117,7 +120,7 @@ def test_quick_cycle_retries_complete_operation_without_mixing_candidates(monkey
     def discover_proposal(client, source, summary, capture_raw):
         calls.append(("proposal", client.base_url, source.observed_height))
         if client.base_url == "https://first.rpc":
-            raise ValueError("malformed render")
+            raise GovernanceParseError("malformed render")
         return SimpleNamespace()
 
     persisted = []
@@ -172,7 +175,7 @@ def test_full_discovery_failure_falls_back_to_next_candidate(monkeypatch):
     def discover(client, source, capture_raw):
         calls.append((client.base_url, source.observed_height))
         if client.base_url == "https://first.rpc":
-            raise ValueError("incomplete response")
+            raise RpcError("incomplete response")
         return discovery
 
     monkeypatch.setattr(updater, "_candidates", lambda *args: candidates)
@@ -189,6 +192,91 @@ def test_fatal_persistence_error_does_not_try_next_candidate(monkeypatch, error)
     candidates = [
         SimpleNamespace(client=SimpleNamespace(base_url="https://first.rpc"), latest_height=90),
         SimpleNamespace(client=SimpleNamespace(base_url="https://second.rpc"), latest_height=90),
+    ]
+    calls = []
+    monkeypatch.setattr(updater, "_candidates", lambda *args: candidates)
+    monkeypatch.setattr(updater, "discover_governance",
+                        lambda client, *args, **kwargs: calls.append(client.base_url) or SimpleNamespace(proposals=()))
+    with pytest.raises(type(error)):
+        updater.run_full_cycle(config(), SimpleNamespace(
+            persist_governance_snapshot=Mock(side_effect=error)))
+    assert calls == ["https://first.rpc"]
+
+
+def test_incomplete_snapshot_retries_full_cycle_on_next_candidate(monkeypatch):
+    candidates = [
+        SimpleNamespace(client=SimpleNamespace(base_url="https://first.rpc"), latest_height=90),
+        SimpleNamespace(client=SimpleNamespace(base_url="https://second.rpc"), latest_height=89),
+    ]
+    discoveries = []
+    result = SimpleNamespace(source_height=89, page_count=1, proposal_count=0,
+                             inserted_proposals=0, updated_proposals=0, action="applied")
+
+    def discover(client, source, capture_raw):
+        value = SimpleNamespace(source=source, proposals=())
+        discoveries.append((client.base_url, source.observed_height))
+        return value
+
+    def persist(discovery, chain_id):
+        if discovery.source.rpc_url == "https://first.rpc":
+            raise IncompleteGovernanceSnapshot("incomplete pagination")
+        return result
+
+    monkeypatch.setattr(updater, "_candidates", lambda *args: candidates)
+    monkeypatch.setattr(updater, "discover_governance", discover)
+    updater.run_full_cycle(config(), SimpleNamespace(persist_governance_snapshot=persist))
+    assert discoveries == [("https://first.rpc", 90), ("https://second.rpc", 89)]
+
+
+def test_incomplete_votes_retry_complete_quick_cycle(monkeypatch):
+    candidates = [
+        SimpleNamespace(client=SimpleNamespace(base_url="https://first.rpc"), latest_height=90),
+        SimpleNamespace(client=SimpleNamespace(base_url="https://second.rpc"), latest_height=89),
+    ]
+    summary = GovernanceProposalSummary(7, "Active", None, None, "ACTIVE")
+    calls = []
+
+    def listed(client, source, capture_raw):
+        calls.append(("list", client.base_url, source.observed_height))
+        return GovernanceListDiscovery(source, True, 1, (summary,))
+
+    def proposal(client, source, actual, capture_raw):
+        calls.append(("proposal", client.base_url, source.observed_height))
+        return SimpleNamespace(source=source)
+
+    def persist(actual, targeted, chain_id):
+        if actual.source.rpc_url == "https://first.rpc":
+            raise IncompleteGovernanceSnapshot("unparsed votes")
+        return SimpleNamespace(source_height=89, page_count=1, proposal_count=1,
+                               inserted_proposals=0, updated_proposals=1, action="applied")
+
+    monkeypatch.setattr(updater, "_candidates", lambda *args: candidates)
+    monkeypatch.setattr(updater, "discover_governance_list", listed)
+    monkeypatch.setattr(updater, "discover_governance_proposal", proposal)
+    database = SimpleNamespace(governance_statuses=lambda *args: {7: "ACTIVE"},
+                               persist_governance_incremental=persist)
+    updater.run_quick_cycle(config(), database)
+    assert calls == [("list", "https://first.rpc", 90), ("proposal", "https://first.rpc", 90),
+                     ("list", "https://second.rpc", 89), ("proposal", "https://second.rpc", 89)]
+
+
+def test_quick_database_read_failure_attempts_no_discovery(monkeypatch):
+    monkeypatch.setattr(updater, "_candidates", lambda *args: [
+        SimpleNamespace(client=SimpleNamespace(base_url="https://rpc"), latest_height=90)])
+    discovery = Mock()
+    monkeypatch.setattr(updater, "discover_governance_list", discovery)
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        updater.run_quick_cycle(config(), SimpleNamespace(
+            governance_statuses=Mock(side_effect=RuntimeError("database unavailable"))))
+    discovery.assert_not_called()
+
+
+@pytest.mark.parametrize("error", [RuntimeError("database unavailable"), TypeError("bug"),
+                                    GovernancePersistenceError("invalid persisted data")])
+def test_non_endpoint_persistence_error_does_not_try_next_candidate(monkeypatch, error):
+    candidates = [
+        SimpleNamespace(client=SimpleNamespace(base_url="https://first.rpc"), latest_height=90),
+        SimpleNamespace(client=SimpleNamespace(base_url="https://second.rpc"), latest_height=89),
     ]
     calls = []
     monkeypatch.setattr(updater, "_candidates", lambda *args: candidates)
@@ -235,6 +323,57 @@ def test_attempt_log_contains_safe_fields_without_sensitive_values(caplog):
     assert "rpc-secret" not in caplog.text
     assert "raw-render" not in caplog.text
     assert "postgresql://" not in caplog.text
+
+
+def test_quick_list_and_targeted_failure_logs_truthful_stage(caplog, monkeypatch):
+    candidate = SimpleNamespace(client=SimpleNamespace(base_url="https://rpc.example"), latest_height=90)
+    monkeypatch.setattr(updater, "_candidates", lambda *args: [candidate])
+    database = SimpleNamespace(governance_statuses=lambda *args: {7: "ACTIVE"})
+    monkeypatch.setattr(updater, "discover_governance_list",
+                        Mock(side_effect=RpcError("list failed")))
+    with caplog.at_level("INFO"), pytest.raises(updater.AllGovernanceRpcAttemptsFailed):
+        updater.run_quick_cycle(config(), database)
+    assert "stage=list" in caplog.text and "proposal_id=none" in caplog.text
+
+    caplog.clear()
+    summary = GovernanceProposalSummary(7, "Active", None, None, "ACTIVE")
+    monkeypatch.setattr(updater, "discover_governance_list", lambda client, source, capture_raw:
+                        GovernanceListDiscovery(source, True, 1, (summary,)))
+    monkeypatch.setattr(updater, "discover_governance_proposal",
+                        Mock(side_effect=GovernanceParseError("detail failed")))
+    with caplog.at_level("INFO"), pytest.raises(updater.AllGovernanceRpcAttemptsFailed):
+        updater.run_quick_cycle(config(), database)
+    assert "stage=proposal" in caplog.text and "proposal_id=7" in caplog.text
+
+
+def test_full_discovery_failure_is_not_logged_as_list_only(caplog, monkeypatch):
+    candidate = SimpleNamespace(client=SimpleNamespace(base_url="https://rpc.example"), latest_height=90)
+    monkeypatch.setattr(updater, "_candidates", lambda *args: [candidate])
+    monkeypatch.setattr(updater, "discover_governance",
+                        Mock(side_effect=GovernanceParseError("votes failed")))
+    with caplog.at_level("INFO"), pytest.raises(updater.AllGovernanceRpcAttemptsFailed):
+        updater.run_full_cycle(config(), object())
+    assert "stage=discovery" in caplog.text
+    assert "stage=list" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("error", "expected", "unexpected"),
+    [(updater.AllGovernanceRpcAttemptsFailed("rpc"),
+      "All suitable Governance RPC attempts failed", "Governance cycle failed;"),
+     (RuntimeError("postgresql://user:secret@db/name"),
+      "Governance cycle failed", "All suitable Governance RPC attempts failed")],
+)
+def test_outer_backoff_warning_distinguishes_rpc_and_generic_failures(
+        caplog, monkeypatch, error, expected, unexpected):
+    stop = ClockStop()
+    monkeypatch.setattr(updater, "run_full_cycle", Mock(side_effect=error))
+    stop.wait = lambda seconds: setattr(stop, "requested", True) or True
+    with caplog.at_level("WARNING"):
+        updater.run_updater(config(), object(), stop)
+    assert expected in caplog.text
+    assert unexpected not in caplog.text
+    assert "postgresql://" not in caplog.text and "secret" not in caplog.text
 
 
 def test_failure_log_does_not_leak_urls(caplog, monkeypatch):
