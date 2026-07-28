@@ -60,6 +60,38 @@ class DeploymentAssetTests(unittest.TestCase):
         self.assertNotIn("git pull", unit)
         self.assertNotIn("--start-height", unit)
 
+    def test_governance_updater_service_and_single_scheduler_contract(self):
+        unit_path = ROOT / "deploy/systemd/utsa-gno-governance-updater.service"
+        self.assertTrue(unit_path.is_file())
+        unit = unit_path.read_text()
+        expected = ["Type=simple", "User=utsa-gno", "Group=utsa-gno",
+            "WorkingDirectory=/opt/utsa-gno-explorer",
+            "EnvironmentFile=/etc/utsa-gno-explorer/indexer.env",
+            "ExecStartPre=/opt/utsa-gno-explorer/.venv/bin/python /opt/utsa-gno-explorer/scripts/wait_for_postgres.py --timeout 120 --retry-interval 2",
+            "ExecStart=/opt/utsa-gno-explorer/.venv/bin/python scripts/run_governance_updater.py",
+            "Restart=on-failure", "KillSignal=SIGTERM", "TimeoutStopSec=900",
+            "NoNewPrivileges=true", "PrivateTmp=true", "ProtectHome=true",
+            "ProtectSystem=strict", "PrivateDevices=true", "ProtectKernelTunables=true",
+            "ProtectKernelModules=true", "ProtectControlGroups=true", "RestrictSUIDSGID=true",
+            "LockPersonality=true", "UMask=0077", "CapabilityBoundingSet=",
+            "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6", "WantedBy=multi-user.target"]
+        for value in expected: self.assertIn(value, unit)
+        self.assertFalse(list((ROOT / "deploy/systemd").glob("*governance*.timer")))
+
+    def test_governance_updater_env_docs_and_no_automatic_activation(self):
+        env = self.text("deploy/systemd/indexer.env.example")
+        for value in ["GOVERNANCE_REFRESH_INTERVAL_SECONDS=30",
+                      "GOVERNANCE_FULL_RECONCILE_INTERVAL_SECONDS=21600",
+                      "GOVERNANCE_ERROR_BACKOFF_SECONDS=5", "GOVERNANCE_MAX_BACKOFF_SECONDS=60"]:
+            self.assertIn(value, env)
+        docs = self.text("docs/production-deployment.md") + self.text("docs/operator-runbook.md")
+        self.assertIn("only Governance scheduler/process", docs)
+        self.assertIn("no Governance timer", docs)
+        self.assertIn("no Governance cron", docs)
+        code = "\n".join(path.read_text() for path in (ROOT / "scripts").glob("*.py"))
+        self.assertNotIn("systemctl enable --now utsa-gno-governance-updater", code)
+        self.assertNotIn("crontab", docs.lower())
+
     def test_valopers_refresh_service_contract(self):
         unit = self.text("deploy/systemd/utsa-gno-valopers-refresh.service")
         expected = [

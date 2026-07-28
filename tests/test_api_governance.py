@@ -99,6 +99,37 @@ def test_detail_zero_votes_and_safe_errors():
         assert response.status_code == 503 and "postgresql://secret" not in response.text
 
 
+def test_detail_freshness_is_proposal_specific_while_list_is_global():
+    fake = FakeDatabase()
+    old_time = NOW.replace(hour=18)
+    original = fake.fetch_governance_proposal_detail
+    def older_terminal(**kwargs):
+        result = original(**kwargs)
+        result["proposal"].update(last_observed_height=240000, last_observed_at=old_time)
+        result["votes"][0].update(last_observed_height=240000, last_observed_at=old_time)
+        return result
+    fake.fetch_governance_proposal_detail = older_terminal
+    with make_client(fake) as client:
+        assert client.get("/api/governance/proposals").json()["source"]["source_height"] == 243022
+        detail_response = client.get("/api/governance/proposals/0")
+        assert detail_response.status_code == 200
+        detail_source = detail_response.json()["source"]
+        assert detail_source["source_height"] == 240000
+        assert detail_source["last_success_at"] == "2026-07-27T18:25:20Z"
+
+
+def test_active_targeted_proposal_exposes_recent_observation():
+    fake = FakeDatabase(); fake.items[0]["status"] = "ACTIVE"
+    original = fake.fetch_governance_proposal_detail
+    def active(**kwargs):
+        result = original(**kwargs); result["proposal"]["status"] = "ACTIVE"; return result
+    fake.fetch_governance_proposal_detail = active
+    with make_client(fake) as client:
+        body = client.get("/api/governance/proposals/20").json()
+        assert body["source"]["source_height"] == 243022
+        assert body["source"]["last_success_at"] == "2026-07-27T20:25:20Z"
+
+
 def test_inconsistent_state_and_vote_contract_are_rejected():
     fake = FakeDatabase()
     original = fake.fetch_governance_proposals

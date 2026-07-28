@@ -23,7 +23,8 @@ from api.database import (
     MissingIndexerStateError,
 )
 from indexer.database import PostgresDatabase, _upsert_transactions
-from governance.gno import GovernanceDiscovery, GovernanceProposalDetail, GovernanceSource, GovernanceVote
+from governance.gno import (GovernanceDiscovery, GovernanceListDiscovery,
+    GovernanceProposalDetail, GovernanceProposalSummary, GovernanceSource, GovernanceVote)
 from indexer.governance_persistence import (
     GovernancePersistenceError, GovernanceSnapshotConflict, StaleGovernanceSnapshot,
 )
@@ -1397,6 +1398,59 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             connection.rollback()
             cursor.execute("INSERT INTO governance_sync_state(chain_id,realm_path,source_height,page_count,proposal_count,first_proposal_id,latest_proposal_id) VALUES ('empty','empty',1,1,0,NULL,NULL)")
             connection.rollback()
+
+    def test_governance_incremental_real_transaction(self):
+        name = f"utsa_governance_incremental_{os.getpid()}"
+        self.create_database(name)
+        database_url = self.database_url_for(name)
+        self.assertEqual(self.run_init(database_url).returncode, 0)
+        realm = "gno.land/r/gov/dao"
+
+        def item(proposal_id, status, votes, suffix=""):
+            return GovernanceProposalDetail(
+                proposal_id, f"Proposal {proposal_id}", None, None, status, ("CORE",),
+                f"Description {suffix}", None, None, None, 50.0, 25.0, 25.0,
+                "parsed", "parsed" if votes else "empty", tuple(votes), (),
+            )
+
+        source100 = GovernanceSource("topaz-1", "redacted", 100, realm)
+        active_vote = GovernanceVote("Alice", None, "YES", "CORE", "10")
+        frozen_vote = GovernanceVote("Bob", None, "YES", "CORE", "20")
+        initial_items = (item(1, "ACTIVE", (active_vote,)), item(0, "ACCEPTED", (frozen_vote,)))
+        raw = {"proposal/1": "active detail", "proposal/1/votes": "active votes",
+               "proposal/0": "frozen detail", "proposal/0/votes": "frozen votes"}
+        database = PostgresDatabase(database_url)
+        self.assertEqual(database.persist_governance_snapshot(
+            GovernanceDiscovery(source100, True, 1, initial_items, (), raw), "topaz-1").action, "applied")
+
+        source101 = GovernanceSource("topaz-1", "redacted", 101, realm)
+        summaries = (GovernanceProposalSummary(2, "Proposal 2", None, None, "ACCEPTED", ("CORE",)),
+                     GovernanceProposalSummary(1, "Proposal 1", None, None, "ACTIVE", ("CORE",)),
+                     GovernanceProposalSummary(0, "Proposal 0", None, None, "ACCEPTED", ("CORE",)))
+        listed = GovernanceListDiscovery(source101, True, 1, summaries)
+        changed_vote = GovernanceVote("Carol", None, "NO", "CORE", "30")
+        targeted_items = (item(1, "ACTIVE", (changed_vote,), "changed"),
+                          item(2, "ACCEPTED", (), "offline terminal"))
+        targeted = []
+        for proposal in targeted_items:
+            proposal_raw = {f"proposal/{proposal.proposal_id}": f"detail {proposal.proposal_id}",
+                            f"proposal/{proposal.proposal_id}/votes": f"votes {proposal.proposal_id}"}
+            targeted.append(GovernanceDiscovery(source101, True, 0, (proposal,), (), proposal_raw))
+        result = database.persist_governance_incremental(listed, targeted, "topaz-1")
+        self.assertEqual((result.action, result.inserted_proposals, result.updated_proposals),
+                         ("applied", 1, 1))
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT source_height,proposal_count FROM governance_sync_state WHERE chain_id='topaz-1' AND realm_path=%s", (realm,))
+            self.assertEqual(cursor.fetchone(), (101, 3))
+            cursor.execute("SELECT proposal_id,first_observed_height,last_observed_height FROM governance_proposals ORDER BY proposal_id")
+            self.assertEqual(cursor.fetchall(), [(0, 100, 100), (1, 100, 101), (2, 101, 101)])
+            cursor.execute("SELECT proposal_id,voter_display FROM governance_votes ORDER BY proposal_id")
+            self.assertEqual(cursor.fetchall(), [(0, "Bob"), (1, "Carol")])
+
+        self.assertEqual(database.persist_governance_incremental(listed, targeted, "topaz-1").action, "unchanged")
+        stale = GovernanceListDiscovery(GovernanceSource("topaz-1", "redacted", 99, realm), True, 1, summaries)
+        with self.assertRaises(StaleGovernanceSnapshot):
+            database.persist_governance_incremental(stale, [], "topaz-1")
 
 
 if __name__ == "__main__":
