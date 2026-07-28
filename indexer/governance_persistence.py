@@ -12,7 +12,7 @@ from typing import Any
 from governance.gno import (
     MAX_GOVERNANCE_PAGES, MAX_GOVERNANCE_PROPOSALS, MAX_RENDER_BYTES,
     MAX_TEXT_CHARS, MAX_TOTAL_RAW_BYTES, MAX_WARNINGS, GovernanceDiscovery,
-    GovernanceProposalDetail, GovernanceVote, proposal_raw_renders,
+    GovernanceListDiscovery, GovernanceProposalDetail, GovernanceVote, proposal_raw_renders,
 )
 
 GOVERNANCE_ADVISORY_LOCK = -7046029254386353127
@@ -304,3 +304,94 @@ def persist_governance_snapshot_cursor(cursor, discovery, configured_chain_id):
     _raise_if(tuple(verified_state[:5]) != (height, *metadata) or _stored_content(verified, verified_votes) != incoming_content, "post-write governance verification failed")
     inserted = sum(row.proposal.proposal_id not in old for row in rows)
     return GovernancePersistenceResult("applied", height, discovery.page_count, len(rows), len(incoming_content[1]), inserted, len(rows) - inserted)
+
+
+def select_governance_refresh_ids(
+    summaries, stored_statuses: dict[int, str]
+) -> tuple[int, ...]:
+    """Return deterministic targeted refresh IDs for one complete list scan."""
+    selected = []
+    for summary in summaries:
+        old = stored_statuses.get(summary.proposal_id)
+        if old is None or old in {"ACTIVE", "UNKNOWN"} or summary.status in {"ACTIVE", "UNKNOWN"}:
+            selected.append(summary.proposal_id)
+    return tuple(sorted(selected))
+
+
+def persist_governance_incremental_cursor(cursor, listed, targeted, configured_chain_id):
+    """Validate and atomically apply a list scan plus exact targeted refreshes."""
+    _raise_if(not isinstance(listed, GovernanceListDiscovery), "a GovernanceListDiscovery is required")
+    _raise_if(not listed.complete, "only a complete list discovery may be persisted", IncompleteGovernanceSnapshot)
+    source = listed.source
+    _raise_if(source.chain_id != configured_chain_id, "governance source chain does not match configured chain", GovernanceChainIdentityError)
+    _raise_if(not _bounded_text(source.realm_path, 512, nonempty=True), "invalid governance realm")
+    _raise_if(not _integer(source.observed_height, 1), "invalid governance source height")
+    _raise_if(not _integer(listed.page_count, 1, MAX_GOVERNANCE_PAGES), "invalid list page count")
+    summaries = {item.proposal_id: item for item in listed.proposals}
+    _raise_if(len(summaries) != len(listed.proposals), "duplicate proposal ID")
+    _raise_if(len(summaries) > MAX_GOVERNANCE_PROPOSALS, "invalid proposal collection")
+    cursor.execute("SELECT pg_advisory_xact_lock(%s)", (GOVERNANCE_ADVISORY_LOCK,))
+    cursor.execute("SELECT chain_id FROM indexer_state WHERE state_key=%s", ("default",))
+    identity = cursor.fetchone()
+    _raise_if(identity is not None and identity[0] != source.chain_id,
+              "indexer state belongs to another chain", GovernanceChainIdentityError)
+    state, stored, stored_votes = _load(cursor, source.chain_id, source.realm_path)
+    height = source.observed_height
+    if state and state[0] > height:
+        raise StaleGovernanceSnapshot("governance snapshot is stale")
+    old = {row[0]: row for row in stored}
+    _raise_if(not set(old).issubset(summaries), "a stored proposal is missing from newer list", GovernanceSnapshotConflict)
+    for proposal_id, row in old.items():
+        new_status = summaries[proposal_id].status
+        if row[4] != new_status:
+            _raise_if(new_status not in _TRANSITIONS.get(row[4], set()),
+                      "invalid governance status transition", GovernanceSnapshotConflict)
+    required = set(select_governance_refresh_ids(listed.proposals, {key: row[4] for key, row in old.items()}))
+    target_map = {}
+    for discovery in targeted:
+        _raise_if(not isinstance(discovery, GovernanceDiscovery) or discovery.source != source,
+                  "targeted discovery source mismatch")
+        _raise_if(len(discovery.proposals) != 1, "targeted discovery must contain exactly one proposal")
+        proposal_id = discovery.proposals[0].proposal_id
+        _raise_if(proposal_id in target_map, "duplicate targeted discovery")
+        _raise_if(proposal_id not in required or proposal_id not in summaries,
+                  "unrelated targeted discovery")
+        target_map[proposal_id] = discovery
+    _raise_if(set(target_map) != required, "selected proposal is missing targeted discovery")
+    normalized = {}
+    for proposal_id, discovery in target_map.items():
+        candidate = GovernanceDiscovery(source, True, 1, discovery.proposals, (), discovery.raw_renders)
+        row = normalize_discovery(candidate, configured_chain_id)[0]
+        _raise_if(row.proposal.proposal_id != proposal_id, "targeted proposal ID mismatch")
+        _raise_if(row.proposal.status != summaries[proposal_id].status
+                  and summaries[proposal_id].status != "UNKNOWN",
+                  "targeted proposal status differs from list")
+        normalized[proposal_id] = row
+    ids = sorted(summaries)
+    metadata = (listed.page_count, len(ids), ids[0] if ids else None, ids[-1] if ids else None)
+    if state and state[0] == height:
+        # At one source height, an already-published list is immutable. Targeted rows
+        # must also be byte-for-byte equal to make retries idempotent.
+        if tuple(state[1:5]) != metadata:
+            raise GovernanceSnapshotConflict("same-height governance list differs")
+        for proposal_id, row in normalized.items():
+            current = next(item for item in stored if item[0] == proposal_id)
+            current_votes = [vote for vote in stored_votes if vote[0] == proposal_id]
+            if _stored_content([current], current_votes) != _content((row,)):
+                raise GovernanceSnapshotConflict("same-height targeted content differs")
+        return GovernancePersistenceResult("unchanged", height, listed.page_count, len(ids), len(stored_votes))
+    for proposal_id, row in normalized.items():
+        p = row.proposal
+        cursor.execute("""INSERT INTO governance_proposals(chain_id,realm_path,proposal_id,title,author_display,author_address,status,eligible_tiers,description,executor_text,executor_creation_realm,rejection_reason,yes_percent,no_percent,abstain_percent,detail_parse_status,votes_parse_status,parse_warnings,raw_detail_render,raw_votes_render,first_observed_height,last_observed_height) VALUES (%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s) ON CONFLICT(chain_id,realm_path,proposal_id) DO UPDATE SET title=EXCLUDED.title,author_display=EXCLUDED.author_display,author_address=EXCLUDED.author_address,status=EXCLUDED.status,eligible_tiers=EXCLUDED.eligible_tiers,description=EXCLUDED.description,executor_text=EXCLUDED.executor_text,executor_creation_realm=EXCLUDED.executor_creation_realm,rejection_reason=EXCLUDED.rejection_reason,yes_percent=EXCLUDED.yes_percent,no_percent=EXCLUDED.no_percent,abstain_percent=EXCLUDED.abstain_percent,detail_parse_status=EXCLUDED.detail_parse_status,votes_parse_status=EXCLUDED.votes_parse_status,parse_warnings=EXCLUDED.parse_warnings,raw_detail_render=EXCLUDED.raw_detail_render,raw_votes_render=EXCLUDED.raw_votes_render,last_observed_height=EXCLUDED.last_observed_height,last_observed_at=now(),updated_at=now()""", (source.chain_id, source.realm_path, proposal_id, p.title, p.author_display, p.author_address, p.status, json.dumps(list(p.eligible_tiers)), p.description, p.executor_text, p.executor_creation_realm, p.rejection_reason, row.yes_percent, row.no_percent, row.abstain_percent, p.detail_parse_status, p.votes_parse_status, json.dumps(list(p.parse_warnings)), row.raw_detail, row.raw_votes, height, height))
+        keys = [vote[0] for vote in row.votes]
+        if keys:
+            cursor.execute("DELETE FROM governance_votes WHERE chain_id=%s AND realm_path=%s AND proposal_id=%s AND NOT (voter_key=ANY(%s::text[]))", (source.chain_id, source.realm_path, proposal_id, keys))
+        else:
+            cursor.execute("DELETE FROM governance_votes WHERE chain_id=%s AND realm_path=%s AND proposal_id=%s", (source.chain_id, source.realm_path, proposal_id))
+        for vote in row.votes:
+            cursor.execute("""INSERT INTO governance_votes(chain_id,realm_path,proposal_id,voter_key,voter_display,voter_address,option,tier,voting_power,first_observed_height,last_observed_height) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(chain_id,realm_path,proposal_id,voter_key) DO UPDATE SET voter_display=EXCLUDED.voter_display,voter_address=EXCLUDED.voter_address,option=EXCLUDED.option,tier=EXCLUDED.tier,voting_power=EXCLUDED.voting_power,last_observed_height=EXCLUDED.last_observed_height,last_observed_at=now(),updated_at=now()""", (source.chain_id, source.realm_path, proposal_id, *vote, height, height))
+    cursor.execute("""INSERT INTO governance_sync_state(chain_id,realm_path,source_height,page_count,proposal_count,first_proposal_id,latest_proposal_id) VALUES (%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(chain_id,realm_path) DO UPDATE SET source_height=EXCLUDED.source_height,page_count=EXCLUDED.page_count,proposal_count=EXCLUDED.proposal_count,first_proposal_id=EXCLUDED.first_proposal_id,latest_proposal_id=EXCLUDED.latest_proposal_id,last_success_at=now(),updated_at=now()""", (source.chain_id, source.realm_path, height, *metadata))
+    inserted = sum(proposal_id not in old for proposal_id in normalized)
+    return GovernancePersistenceResult("applied", height, listed.page_count, len(ids),
+                                       sum(len(row.votes) for row in normalized.values()),
+                                       inserted, len(normalized) - inserted)

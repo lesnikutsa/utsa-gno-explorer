@@ -422,6 +422,11 @@ def _governance_detail(
     source = _governance_source(result["source"], realm_path)
     _governance_status_counts(result["source"], source.proposal_count)
     proposal = result["proposal"]
+    # Detail freshness belongs to this proposal, not the newer global list scan.
+    source = source.model_copy(update={
+        "source_height": proposal["last_observed_height"],
+        "last_success_at": isoformat_utc_z(_governance_datetime(proposal["last_observed_at"])),
+    })
     votes = result["votes"]
     if len(votes) > 1000:
         raise ValueError("Too many votes")

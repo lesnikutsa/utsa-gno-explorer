@@ -108,6 +108,17 @@ class GovernanceDiscovery:
         return output
 
 
+@dataclass(frozen=True)
+class GovernanceListDiscovery:
+    """A complete, fixed-height traversal of Governance list pages only."""
+    source: GovernanceSource
+    complete: bool
+    page_count: int
+    proposals: tuple[GovernanceProposalSummary, ...]
+    warnings: tuple[str, ...] = ()
+    raw_renders: dict[str, str] = field(default_factory=dict, repr=False, compare=False)
+
+
 def proposal_raw_renders(discovery: GovernanceDiscovery, proposal_id: int) -> tuple[str | None, str | None]:
     """Return the unmodified bounded detail and vote renders for one proposal."""
     return (
@@ -331,15 +342,14 @@ def parse_votes(render: str) -> tuple[str, tuple[GovernanceVote, ...], list[str]
     return "unparsed", (), ["Votes render format was not recognized"]
 
 
-def discover_governance(
+def discover_governance_list(
     client: GnoRpcClient,
     source: GovernanceSource,
     max_pages: int = MAX_GOVERNANCE_PAGES,
     max_proposals: int = MAX_GOVERNANCE_PROPOSALS,
-    proposal_id: int | None = None,
     capture_raw: bool = False,
     raw_sink: Callable[[str, str], None] | None = None,
-) -> GovernanceDiscovery:
+) -> GovernanceListDiscovery:
     if not 1 <= max_pages <= MAX_GOVERNANCE_PAGES or not 1 <= max_proposals <= MAX_GOVERNANCE_PROPOSALS:
         raise GovernanceParseError("Discovery limits exceed hard safety limits")
     raw: dict[str, str] = {}
@@ -359,70 +369,105 @@ def discover_governance(
         return render
 
     warnings: list[str] = []
-    summaries: dict[int, GovernanceProposalSummary | None] = {}
+    summaries: dict[int, GovernanceProposalSummary] = {}
     page_count, complete = 0, True
-    if proposal_id is not None:
-        summaries[proposal_id] = None
-    else:
-        queue, visited = deque([""]), set()
-        while queue:
-            path = queue.popleft()
-            if path in visited:
-                continue
-            if page_count >= max_pages:
-                complete = False
-                warnings.append("Governance page limit reached")
-                break
-            visited.add(path)
-            render = fetch(f"list/{path or 'root'}", path)
-            page_count += 1
-            parsed, page_warnings = parse_proposal_list(render)
-            warnings.extend(page_warnings)
-            for item in parsed:
-                old = summaries.get(item.proposal_id)
-                if old is not None and old != item:
-                    raise GovernanceParseError(f"Conflicting duplicate proposal ID {item.proposal_id}")
-                summaries[item.proposal_id] = item
-            if len(summaries) > max_proposals:
-                raise GovernanceParseError("Governance proposal limit exceeded")
-            pages = pager_paths(render, source.realm_path)
-            queue.extend(page for page in pages if page not in visited)
-            if not pages and path == "" and len(parsed) >= 5:
-                complete = False
-                warnings.append("Pagination format was not recognized; list may be incomplete")
+    queue, visited = deque([""]), set()
+    while queue:
+        path = queue.popleft()
+        if path in visited:
+            continue
+        if page_count >= max_pages:
+            complete = False
+            warnings.append("Governance page limit reached")
+            break
+        visited.add(path)
+        render = fetch(f"list/{path or 'root'}", path)
+        page_count += 1
+        parsed, page_warnings = parse_proposal_list(render)
+        warnings.extend(page_warnings)
+        for item in parsed:
+            old = summaries.get(item.proposal_id)
+            if old is not None and old != item:
+                raise GovernanceParseError(f"Conflicting duplicate proposal ID {item.proposal_id}")
+            summaries[item.proposal_id] = item
+        if len(summaries) > max_proposals:
+            raise GovernanceParseError("Governance proposal limit exceeded")
+        pages = pager_paths(render, source.realm_path)
+        queue.extend(page for page in pages if page not in visited)
+        if not pages and path == "" and len(parsed) >= 5:
+            complete = False
+            warnings.append("Pagination format was not recognized; list may be incomplete")
+    return GovernanceListDiscovery(source, complete, page_count,
+                                   tuple(summaries[key] for key in sorted(summaries, reverse=True)),
+                                   tuple(warnings[:MAX_WARNINGS]), raw)
 
+
+def discover_governance_proposal(
+    client: GnoRpcClient, source: GovernanceSource, summary: GovernanceProposalSummary,
+    capture_raw: bool = True, raw_sink: Callable[[str, str], None] | None = None,
+) -> GovernanceDiscovery:
+    """Fetch exactly one proposal detail and its complete votes render."""
+    raw: dict[str, str] = {}
+
+    def fetch(name: str, path: str) -> str:
+        render = client.abci_query("vm/qrender", f"{source.realm_path}:{path}", height=source.observed_height)
+        _validate_size(render)
+        if raw_sink:
+            raw_sink(name, render)
+        if capture_raw:
+            if sum(len(value.encode("utf-8")) for value in raw.values()) + len(render.encode("utf-8")) > MAX_TOTAL_RAW_BYTES:
+                raise GovernanceParseError("Captured raw renders exceed total size limit")
+            raw[name] = render
+        return render
+
+    proposal_id_value = summary.proposal_id
+    detail = parse_detail(fetch(f"proposal/{proposal_id_value}", str(proposal_id_value)), proposal_id_value)
+    vote_status, votes, vote_warnings = parse_votes(fetch(
+        f"proposal/{proposal_id_value}/votes", f"{proposal_id_value}/votes"))
+    detail_warnings = list(detail["warnings"]) + vote_warnings
+    if _unescape_markdown_text(summary.title).casefold() != _unescape_markdown_text(detail["title"]).casefold():
+        detail_warnings.append("Proposal title differs between list and detail renders")
+    if detail["status"] == "UNKNOWN":
+        detail["status"] = summary.status
+    elif summary.status != "UNKNOWN" and summary.status != detail["status"]:
+        detail_warnings.append("Proposal status differs between list and detail renders")
+    if not detail["eligible_tiers"]:
+        detail["eligible_tiers"] = summary.eligible_tiers
+    elif summary.eligible_tiers and summary.eligible_tiers != detail["eligible_tiers"]:
+        detail_warnings.append("Eligible tiers differ between list and detail renders")
+    if detail["author_display"] is None:
+        detail["author_display"] = summary.author_display
+        detail["author_address"] = summary.author_address
+    proposal = GovernanceProposalDetail(**{key: detail[key] for key in (
+        "proposal_id", "title", "author_display", "author_address", "status", "eligible_tiers",
+        "description", "executor_text", "executor_creation_realm", "rejection_reason",
+        "yes_percent", "no_percent", "abstain_percent", "detail_parse_status")},
+        votes_parse_status=vote_status, votes=votes,
+        parse_warnings=tuple(detail_warnings[:MAX_WARNINGS]))
+    return GovernanceDiscovery(source, True, 0, (proposal,), (), raw)
+
+
+def discover_governance(
+    client: GnoRpcClient, source: GovernanceSource,
+    max_pages: int = MAX_GOVERNANCE_PAGES, max_proposals: int = MAX_GOVERNANCE_PROPOSALS,
+    proposal_id: int | None = None, capture_raw: bool = False,
+    raw_sink: Callable[[str, str], None] | None = None,
+) -> GovernanceDiscovery:
+    if proposal_id is not None:
+        summary = GovernanceProposalSummary(proposal_id, f"Proposal #{proposal_id}", None, None, "UNKNOWN")
+        return discover_governance_proposal(client, source, summary, capture_raw, raw_sink)
+    listed = discover_governance_list(client, source, max_pages, max_proposals, capture_raw, raw_sink)
     details: list[GovernanceProposalDetail] = []
-    for proposal_id_value in sorted(summaries, reverse=True):
-        summary = summaries[proposal_id_value]
-        detail = parse_detail(fetch(f"proposal/{proposal_id_value}", str(proposal_id_value)), proposal_id_value)
-        vote_status, votes, vote_warnings = parse_votes(fetch(f"proposal/{proposal_id_value}/votes", f"{proposal_id_value}/votes"))
-        detail_warnings = list(detail["warnings"]) + vote_warnings
-        if summary:
-            if (_unescape_markdown_text(summary.title).casefold()
-                    != _unescape_markdown_text(detail["title"]).casefold()):
-                detail_warnings.append("Proposal title differs between list and detail renders")
-            if detail["status"] == "UNKNOWN":
-                detail["status"] = summary.status
-            elif summary.status != "UNKNOWN" and summary.status != detail["status"]:
-                detail_warnings.append("Proposal status differs between list and detail renders")
-            if not detail["eligible_tiers"]:
-                detail["eligible_tiers"] = summary.eligible_tiers
-            elif summary.eligible_tiers and summary.eligible_tiers != detail["eligible_tiers"]:
-                detail_warnings.append("Eligible tiers differ between list and detail renders")
-            if detail["author_display"] is None:
-                detail["author_display"] = summary.author_display
-                detail["author_address"] = summary.author_address
-        details.append(GovernanceProposalDetail(
-            **{key: detail[key] for key in (
-                "proposal_id", "title", "author_display", "author_address", "status", "eligible_tiers",
-                "description", "executor_text", "executor_creation_realm", "rejection_reason",
-                "yes_percent", "no_percent", "abstain_percent", "detail_parse_status",
-            )},
-            votes_parse_status=vote_status,
-            votes=votes,
-            parse_warnings=tuple(detail_warnings[:MAX_WARNINGS]),
-        ))
-    return GovernanceDiscovery(source, complete, page_count, tuple(details), tuple(warnings[:MAX_WARNINGS]), raw)
+    raw = dict(listed.raw_renders)
+    warnings = list(listed.warnings)
+    for summary in listed.proposals:
+        found = discover_governance_proposal(client, source, summary, capture_raw)
+        details.extend(found.proposals)
+        raw.update(found.raw_renders)
+        if sum(len(value.encode("utf-8")) for value in raw.values()) > MAX_TOTAL_RAW_BYTES:
+            raise GovernanceParseError("Captured raw renders exceed total size limit")
+    return GovernanceDiscovery(source, listed.complete, listed.page_count, tuple(details),
+                               tuple(warnings[:MAX_WARNINGS]), raw)
 
 
 def _tiers(value: str) -> tuple[str, ...]:

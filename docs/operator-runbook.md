@@ -242,3 +242,25 @@ python scripts/collect_network_distribution.py
 Configure `NETWORK_DISTRIBUTION_CHAIN_ID` (falling back to `GNO_CHAIN_ID`) and optional `NETWORK_DISTRIBUTION_RPC_HEALTH_MAX_AGE`, `NETWORK_DISTRIBUTION_RPC_TIMEOUT`, `NETWORK_DISTRIBUTION_GEO_API_URL`, `NETWORK_DISTRIBUTION_GEO_TIMEOUT`, `NETWORK_DISTRIBUTION_GEO_CACHE_TTL`, `NETWORK_DISTRIBUTION_GEO_FAILURE_TTL`, `NETWORK_DISTRIBUTION_GEO_MAX_LOOKUPS`, `NETWORK_DISTRIBUTION_GEO_CONCURRENCY`, and `NETWORK_DISTRIBUTION_SNAPSHOT_RETENTION` in the external environment file. RPC and GeoIP timeouts are independent and both default to 10 seconds.
 
 Historical migrations 0001 (Valopers) and 0002 (transaction hashes) are independent and support either order. Migration 0003 requires both earlier migrations. Production already has 0001 and 0002, so this rollout runs only the explicit 0003 command. `init_database.py` validates stages but never applies migrations automatically; no production migration is performed by repository code.
+
+## Governance updater
+
+`utsa-gno-governance-updater.service` is the only Governance scheduler/process. There
+is no Governance timer or cron entry. Its sequential internal schedule performs a
+quick list scan every 30 seconds and a full reconciliation every 6 hours by default.
+New and ACTIVE proposals are refreshed quickly, while terminal proposals are normally
+frozen between reconciliations. Failed cycles leave the last successful PostgreSQL
+data available.
+
+```bash
+sudo install -m 0644 deploy/systemd/utsa-gno-governance-updater.service /etc/systemd/system/
+sudo systemctl daemon-reload
+.venv/bin/python scripts/run_governance_updater.py --once
+sudo systemctl enable --now utsa-gno-governance-updater
+sudo systemctl status utsa-gno-governance-updater
+sudo journalctl -u utsa-gno-governance-updater -f
+sudo systemctl restart utsa-gno-governance-updater
+sudo systemctl stop utsa-gno-governance-updater
+sudo systemctl disable utsa-gno-governance-updater
+systemctl --no-pager --full status utsa-gno-indexer utsa-gno-api utsa-gno-governance-updater
+```
