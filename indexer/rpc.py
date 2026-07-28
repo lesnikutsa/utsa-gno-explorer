@@ -86,6 +86,23 @@ def select_rpc(urls: list[str], chain_id: str, max_height_lag: int, timeout: int
     return selected_rpc_from_probes(probes, max_height_lag)
 
 
+def suitable_rpc_candidates(probes: list[RpcProbeResult]) -> list[SelectedRpc]:
+    """Return healthy, non-stale probes as single-endpoint candidates in input order."""
+    candidates = []
+    for probe in probes:
+        if (not probe.healthy or probe.client is None or probe.status_payload is None
+                or probe.latest_height is None):
+            continue
+        candidates.append(SelectedRpc(
+            client=probe.client,
+            status_payload=probe.status_payload,
+            latest_height=probe.latest_height,
+            finalized_tip=probe.latest_height - 1,
+            probes=[probe],
+        ))
+    return candidates
+
+
 def _probe_endpoint(url: str, expected_chain_id: str, timeout: int) -> RpcProbeResult:
     client = GnoRpcClient(url, timeout=timeout)
     try:

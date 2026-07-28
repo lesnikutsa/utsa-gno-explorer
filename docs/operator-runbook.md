@@ -250,7 +250,14 @@ is no Governance timer or cron entry. Its sequential internal schedule performs 
 quick list scan every 30 seconds and a full reconciliation every 6 hours by default.
 New and ACTIVE proposals are refreshed quickly, while terminal proposals are normally
 frozen between reconciliations. Failed cycles leave the last successful PostgreSQL
-data available.
+data available. Each cycle probes the endpoints already configured in `GNO_RPC_URLS`
+and preserves their configured preference order. A Governance qrender failure causes
+an immediate same-cycle retry of the complete operation against the next suitable
+endpoint; pages, proposal details, and votes are never mixed between endpoints or
+source heights. Exponential backoff begins only after all suitable endpoints fail.
+Diagnostics identify the stage and safe RPC hostname without logging credentials,
+query strings, or raw renders. There remains exactly one Governance service and no
+Governance timer or cron entry.
 
 ```bash
 sudo install -m 0644 deploy/systemd/utsa-gno-governance-updater.service /etc/systemd/system/
