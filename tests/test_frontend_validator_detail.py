@@ -184,6 +184,15 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
         self.assertIn("5–99.99% missed", self.validators)
         self.assertIn("Latest 50 signing blocks", self.overview)
 
+    def test_production_frontend_has_no_20_block_uptime_dependency(self):
+        frontend_sources = (
+            source for source in (ROOT / "frontend/src").rglob("*")
+            if source.suffix in {".js", ".jsx", ".css", ".html"}
+        )
+        for source in frontend_sources:
+            if source.is_file():
+                self.assertNotIn("uptime_20", source.read_text(), source)
+
     def test_incomplete_uptime_data_has_neutral_health(self):
         self.assertIn("const requiredCounters =", self.page)
         self.assertIn("requiredCounters.every", self.page)

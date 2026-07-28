@@ -270,8 +270,9 @@ curl http://127.0.0.1:8000/api/validators
 ```
 
 Validator detail uses the exact consensus signing address and includes validator identity,
-current active status and voting power, 20-block and 100-block active-membership uptime,
-and chronological signing history for up to 100 actual stored blocks:
+current active status and voting power, active-membership uptime over the latest available
+window of up to 1000 indexed blocks, and chronological signing history for up to 100 actual
+stored blocks:
 
 ```bash
 curl http://127.0.0.1:8000/api/validators/<consensus-signing-address>
@@ -282,7 +283,12 @@ show official Valopers monikers when available, fall back to the shortened signi
 and link identities to the detail route. Inactive indexed validators remain valid detail
 pages. Profiles come from the manually persisted official Valopers snapshot, and refresh
 remains operator-controlled.
-The list response contains the active validator set at the completed checkpoint, current voting power, and 20-block and 100-block active-membership uptime. Addresses are consensus signing addresses.
+The list response contains the active validator set at the completed checkpoint, current
+voting power, and uptime over the latest available window of up to 1000 indexed blocks.
+Only blocks where a validator was active contribute to its uptime denominator. An `unknown`
+status means that membership existed for the block but no signature row was available.
+The recent visual signing strip is a separate bounded history response. Addresses are
+consensus signing addresses.
 
 ## Bounded indexer prototype
 

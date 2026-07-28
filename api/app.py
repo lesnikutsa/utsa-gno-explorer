@@ -635,20 +635,18 @@ def _validators_response_from_rows(result: dict) -> ValidatorsResponse:
     checkpoint = result["checkpoint"]
     items = []
     for row in rows:
-        uptimes = {}
-        for window in (20, 1000):
-            active = int(row[f"active_blocks_{window}"])
-            signed = int(row[f"signed_blocks_{window}"])
-            uptimes[window] = ValidatorUptime(
-                network_blocks=int(checkpoint[f"network_blocks_{window}"]),
-                active_blocks=active,
-                signed_blocks=signed,
-                nil_blocks=int(row[f"nil_blocks_{window}"]),
-                absent_blocks=int(row[f"absent_blocks_{window}"]),
-                invalid_blocks=int(row[f"invalid_blocks_{window}"]),
-                unknown_blocks=int(row[f"unknown_blocks_{window}"]),
-                uptime_percent=_rounded_percent(signed, active),
-            )
+        active = int(row["active_blocks_1000"])
+        signed = int(row["signed_blocks_1000"])
+        uptime = ValidatorUptime(
+            network_blocks=int(checkpoint["network_blocks_1000"]),
+            active_blocks=active,
+            signed_blocks=signed,
+            nil_blocks=int(row["nil_blocks_1000"]),
+            absent_blocks=int(row["absent_blocks_1000"]),
+            invalid_blocks=int(row["invalid_blocks_1000"]),
+            unknown_blocks=int(row["unknown_blocks_1000"]),
+            uptime_percent=_rounded_percent(signed, active),
+        )
         items.append(ValidatorListItem(
             address=row["address"],
             public_key_type=row["public_key_type"],
@@ -659,8 +657,7 @@ def _validators_response_from_rows(result: dict) -> ValidatorsResponse:
             operator_address=row.get("operator_address"),
             server_type=row.get("server_type"),
             valoper_source_height=row.get("valoper_source_height"),
-            uptime_20=uptimes[20],
-            uptime_1000=uptimes[1000],
+            uptime_1000=uptime,
         ))
     return ValidatorsResponse(
         height=checkpoint["height"], total=len(items),
@@ -729,7 +726,6 @@ def _validator_detail_from_rows(result: dict) -> ValidatorDetailResponse:
             proposer_priority=(None if not active or current_row["proposer_priority"] is None
                                else str(current_row["proposer_priority"])),
         ),
-        uptime_20=_uptime_from_history(all_history_items[-20:]),
         uptime_1000=_uptime_from_history(all_history_items),
         signing_history=ValidatorSigningHistory(
             network_blocks=len(visible_history_items),

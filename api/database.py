@@ -266,9 +266,6 @@ SELECT
     s.last_finalized_height AS height,
     b.height IS NOT NULL AS block_exists,
     (SELECT count(*) FROM (
-        SELECT height FROM blocks WHERE height <= s.last_finalized_height ORDER BY height DESC LIMIT 20
-    ) recent_20) AS network_blocks_20,
-    (SELECT count(*) FROM (
         SELECT height FROM blocks WHERE height <= s.last_finalized_height ORDER BY height DESC LIMIT 1000
     ) recent_1000) AS network_blocks_1000
 FROM indexer_state s
@@ -278,7 +275,7 @@ WHERE s.state_key = %s
 
 ACTIVE_VALIDATORS_SQL = """
 WITH recent_blocks AS MATERIALIZED (
-    SELECT height, row_number() OVER (ORDER BY height DESC) AS position
+    SELECT height
     FROM (
         SELECT height FROM blocks WHERE height <= %s ORDER BY height DESC LIMIT 1000
     ) bounded_blocks
@@ -289,7 +286,6 @@ WITH recent_blocks AS MATERIALIZED (
     WHERE vsm.height = %s
 ), membership_by_validator AS (
     SELECT membership.signing_address,
-           count(*) FILTER (WHERE recent.position <= 20)::bigint AS active_blocks_20,
            count(*)::bigint AS active_blocks_1000
     FROM recent_blocks recent
     JOIN validator_set_members membership ON membership.height = recent.height
@@ -297,11 +293,6 @@ WITH recent_blocks AS MATERIALIZED (
     GROUP BY membership.signing_address
 ), signatures_by_validator AS (
     SELECT signature.signing_address,
-           count(*) FILTER (WHERE recent.position <= 20)::bigint AS observed_signatures_20,
-           count(*) FILTER (WHERE recent.position <= 20 AND signature.signed = true)::bigint AS signed_blocks_20,
-           count(*) FILTER (WHERE recent.position <= 20 AND signature.vote_status = 'nil')::bigint AS nil_blocks_20,
-           count(*) FILTER (WHERE recent.position <= 20 AND signature.vote_status = 'absent')::bigint AS absent_blocks_20,
-           count(*) FILTER (WHERE recent.position <= 20 AND signature.vote_status = 'invalid')::bigint AS invalid_blocks_20,
            count(*)::bigint AS observed_signatures_1000,
            count(*) FILTER (WHERE signature.signed = true)::bigint AS signed_blocks_1000,
            count(*) FILTER (WHERE signature.vote_status = 'nil')::bigint AS nil_blocks_1000,
@@ -315,12 +306,6 @@ WITH recent_blocks AS MATERIALIZED (
 SELECT current.signing_address AS address, current.public_key_type, current.voting_power,
        current.proposer_priority, profile.moniker, profile.operator_address, profile.server_type,
        profile.source_height AS valoper_source_height,
-       COALESCE(membership.active_blocks_20, 0)::bigint AS active_blocks_20,
-       COALESCE(signatures.signed_blocks_20, 0)::bigint AS signed_blocks_20,
-       COALESCE(signatures.nil_blocks_20, 0)::bigint AS nil_blocks_20,
-       COALESCE(signatures.absent_blocks_20, 0)::bigint AS absent_blocks_20,
-       COALESCE(signatures.invalid_blocks_20, 0)::bigint AS invalid_blocks_20,
-       GREATEST(COALESCE(membership.active_blocks_20, 0) - COALESCE(signatures.observed_signatures_20, 0), 0)::bigint AS unknown_blocks_20,
        COALESCE(membership.active_blocks_1000, 0)::bigint AS active_blocks_1000,
        COALESCE(signatures.signed_blocks_1000, 0)::bigint AS signed_blocks_1000,
        COALESCE(signatures.nil_blocks_1000, 0)::bigint AS nil_blocks_1000,

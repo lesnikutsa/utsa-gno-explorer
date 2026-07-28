@@ -11,18 +11,12 @@ from api.database import MissingIndexedBlockError, MissingIndexerStateError
 SECRET_URL = "postgresql://api_user:super-secret-password@db.internal:5432/explorer"
 
 
-def validator(address, voting_power, priority, active_20=3, signed_20=2, **overrides):
+def validator(address, voting_power, priority, **overrides):
     row = {
         "address": address,
         "public_key_type": "tendermint/PubKeyEd25519",
         "voting_power": Decimal(voting_power),
         "proposer_priority": None if priority is None else Decimal(priority),
-        "active_blocks_20": active_20,
-        "signed_blocks_20": signed_20,
-        "nil_blocks_20": 0,
-        "absent_blocks_20": 0,
-        "invalid_blocks_20": 0,
-        "unknown_blocks_20": active_20 - signed_20,
         "active_blocks_1000": 3,
         "signed_blocks_1000": 2,
         "nil_blocks_1000": 0,
@@ -71,14 +65,14 @@ class ApiValidatorsTests(unittest.TestCase):
 
     def result(self, items):
         return {
-            "checkpoint": {"height": 870394, "network_blocks_20": 3, "network_blocks_1000": 3},
+            "checkpoint": {"height": 870394, "network_blocks_1000": 3},
             "items": items,
         }
 
     def test_successful_response_serializes_values_uptime_and_safe_fields(self):
         rows = [
-            validator("g1a", "3", "-1234", active_20=3, signed_20=2, moniker="Official", operator_address="g1operator", server_type="cloud", valoper_source_height=947852),
-            validator("g1b", "1", None, active_20=0, signed_20=0),
+            validator("g1a", "3", "-1234", moniker="Official", operator_address="g1operator", server_type="cloud", valoper_source_height=947852),
+            validator("g1b", "1", None),
         ]
         with self.make_client(FakeDatabase(self.result(rows))) as client:
             response = client.get("/api/validators")
@@ -91,13 +85,10 @@ class ApiValidatorsTests(unittest.TestCase):
         self.assertEqual(data["items"][0]["percent"], 75.0)
         self.assertEqual(data["items"][0]["proposer_priority"], "-1234")
         self.assertIsNone(data["items"][1]["proposer_priority"])
-        self.assertEqual(data["items"][0]["uptime_20"]["network_blocks"], 3)
-        self.assertEqual(data["items"][0]["uptime_20"]["uptime_percent"], 66.67)
-        self.assertEqual(data["items"][1]["uptime_20"]["uptime_percent"], 0.0)
+        self.assertNotIn("uptime_20", data["items"][0])
         self.assertEqual(data["items"][0]["uptime_1000"]["uptime_percent"], 66.67)
         self.assertEqual(data["items"][0]["uptime_1000"]["absent_blocks"], 1)
-        self.assertNotIn("uptime_100", data["items"][0])
-        self.assertEqual(data["items"][0]["uptime_20"]["unknown_blocks"], 1)
+        self.assertNotIn("uptime_20", data["items"][1])
         self.assertNotIn("public_key_value", response.text)
         self.assertEqual(data["items"][0]["moniker"], "Official")
         self.assertEqual(data["items"][0]["operator_address"], "g1operator")
@@ -135,24 +126,26 @@ class ApiValidatorsTests(unittest.TestCase):
         self.assertNotIn("CROSS JOIN recent_blocks", ACTIVE_VALIDATORS_SQL)
         self.assertIn("membership_by_validator AS (", ACTIVE_VALIDATORS_SQL)
         self.assertIn("signatures_by_validator AS (", ACTIVE_VALIDATORS_SQL)
+        self.assertNotIn("uptime_by_validator", ACTIVE_VALIDATORS_SQL)
         membership_cte = ACTIVE_VALIDATORS_SQL.split("membership_by_validator AS (", 1)[1].split("signatures_by_validator AS (", 1)[0]
         signatures_cte = ACTIVE_VALIDATORS_SQL.split("signatures_by_validator AS (", 1)[1].split(")\nSELECT", 1)[0]
+        self.assertIn("JOIN validator_set_members membership", membership_cte)
         self.assertIn("JOIN current_validators current", membership_cte)
-        self.assertIn("JOIN current_validators current", signatures_cte)
+        self.assertIn("active_blocks_1000", membership_cte)
         self.assertNotIn("validator_signatures", membership_cte)
+        self.assertIn("JOIN validator_signatures signature", signatures_cte)
+        self.assertIn("JOIN current_validators current", signatures_cte)
+        self.assertIn("observed_signatures_1000", signatures_cte)
         self.assertNotIn("validator_set_members", signatures_cte)
-        self.assertIn("observed_signatures_20", ACTIVE_VALIDATORS_SQL)
-        self.assertIn("observed_signatures_1000", ACTIVE_VALIDATORS_SQL)
-        self.assertIn("GREATEST(", ACTIVE_VALIDATORS_SQL)
         self.assertIn("LEFT JOIN membership_by_validator membership", ACTIVE_VALIDATORS_SQL)
         self.assertIn("LEFT JOIN signatures_by_validator signatures", ACTIVE_VALIDATORS_SQL)
         self.assertIn("LIMIT 1000", ACTIVE_VALIDATORS_SQL)
         self.assertIn("network_blocks_1000", VALIDATORS_CHECKPOINT_SQL)
+        self.assertNotIn("network_blocks_20", VALIDATORS_CHECKPOINT_SQL)
         for counter in ("active", "signed", "nil", "absent", "invalid", "unknown"):
-            self.assertIn(f"{counter}_blocks_20", ACTIVE_VALIDATORS_SQL)
+            self.assertNotIn(f"{counter}_blocks_20", ACTIVE_VALIDATORS_SQL)
             self.assertIn(f"{counter}_blocks_1000", ACTIVE_VALIDATORS_SQL)
-        self.assertIn("membership.active_blocks_20, 0) - COALESCE(signatures.observed_signatures_20, 0)", ACTIVE_VALIDATORS_SQL)
-        self.assertIn("membership.active_blocks_1000, 0) - COALESCE(signatures.observed_signatures_1000, 0)", ACTIVE_VALIDATORS_SQL)
+        self.assertIn("GREATEST(COALESCE(membership.active_blocks_1000, 0) - COALESCE(signatures.observed_signatures_1000, 0), 0)", ACTIVE_VALIDATORS_SQL)
 
 
 if __name__ == "__main__":

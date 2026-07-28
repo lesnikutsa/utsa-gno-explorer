@@ -140,12 +140,9 @@ class ApiValidatorDetailTests(unittest.TestCase):
             else:
                 rows.append(history_row(height, signed=(height % 3 == 0)))
         data = self.get(detail_result(history=rows)).json()
-        self.assertEqual(data["uptime_20"]["network_blocks"], 20)
         self.assertEqual(data["uptime_1000"]["network_blocks"], 25)
-        self.assertEqual(data["uptime_20"]["active_blocks"], 19)
-        self.assertEqual(data["uptime_20"]["unknown_blocks"], 1)
-        self.assertEqual(data["uptime_20"]["uptime_percent"], 31.58)
-        for name in ("uptime_20", "uptime_1000"):
+        self.assertNotIn("uptime_20", data)
+        for name in ("uptime_1000",):
             uptime = data[name]
             classified = sum(uptime[key] for key in (
                 "signed_blocks", "nil_blocks", "absent_blocks", "invalid_blocks", "unknown_blocks"
@@ -169,7 +166,7 @@ class ApiValidatorDetailTests(unittest.TestCase):
         self.assertEqual(data["uptime_1000"]["network_blocks"], 1000)
         self.assertEqual(data["uptime_1000"]["active_blocks"], 1000)
         self.assertEqual(data["uptime_1000"]["signed_blocks"], 900)
-        self.assertEqual(data["uptime_20"]["signed_blocks"], 18)
+        self.assertNotIn("uptime_20", data)
         history = data["signing_history"]
         self.assertEqual(history["network_blocks"], 100)
         self.assertEqual((history["start_height"], history["end_height"]), (901, 1000))
@@ -210,7 +207,6 @@ class ApiValidatorDetailTests(unittest.TestCase):
         inspected_objects = [
             data,
             data["current"],
-            data["uptime_20"],
             data["uptime_1000"],
             data["signing_history"],
             *data["signing_history"]["items"],
@@ -221,7 +217,6 @@ class ApiValidatorDetailTests(unittest.TestCase):
             "raw_precommit", "vote_status", "signed",
         }
         self.assertTrue(forbidden_keys.isdisjoint(exposed_keys))
-        self.assertIn("signed_blocks", data["uptime_20"])
         self.assertIn("signed_blocks", data["uptime_1000"])
         for item in data["signing_history"]["items"]:
             self.assertEqual(set(item), {"height", "time", "status"})
