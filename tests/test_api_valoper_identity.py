@@ -15,8 +15,6 @@ def active_row(address=ADDRESS, **profile):
     row = {
         "address": address, "public_key_type": "/tm.PubKeyEd25519",
         "voting_power": Decimal("10"), "proposer_priority": Decimal("-2"),
-        "active_blocks_20": 1, "signed_blocks_20": 1, "nil_blocks_20": 0,
-        "absent_blocks_20": 0, "invalid_blocks_20": 0, "unknown_blocks_20": 0,
         "active_blocks_1000": 1, "signed_blocks_1000": 1, "nil_blocks_1000": 0,
         "absent_blocks_1000": 0, "invalid_blocks_1000": 0, "unknown_blocks_1000": 0,
         "moniker": None, "operator_address": None, "server_type": None,
@@ -51,7 +49,7 @@ class ValoperIdentityTests(unittest.TestCase):
                            signing_pubkey="hidden", description="hidden", inserted_at="hidden"),
                 active_row("g1" + "4" * 38, voting_power=Decimal("5"))]
         response = _validators_response_from_rows({
-            "checkpoint": {"height": 2, "network_blocks_20": 1, "network_blocks_1000": 1},
+            "checkpoint": {"height": 2, "network_blocks_1000": 1},
             "items": rows,
         })
         data = response.model_dump()
@@ -62,7 +60,8 @@ class ValoperIdentityTests(unittest.TestCase):
         self.assertEqual(data["items"][0]["server_type"], "cloud")
         self.assertEqual(data["items"][0]["valoper_source_height"], 947852)
         self.assertEqual(data["items"][0]["voting_power"], "10")
-        self.assertEqual(data["items"][0]["uptime_20"]["uptime_percent"], 100.0)
+        self.assertEqual(data["items"][0]["uptime_1000"]["uptime_percent"], 100.0)
+        self.assertNotIn("uptime_20", data["items"][0])
         for key in ("moniker", "operator_address", "server_type", "valoper_source_height"):
             self.assertIsNone(data["items"][1][key])
         self.assertTrue({"signing_pubkey", "description", "inserted_at", "updated_at"}.isdisjoint(data["items"][0]))

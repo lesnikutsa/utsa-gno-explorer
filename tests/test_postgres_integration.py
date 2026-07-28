@@ -871,10 +871,9 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                     (2, 1, 0, 0, 0, 1),
                 ]
                 for row, counters in zip(active, expected):
-                    for window in (20, 1000):
-                        actual = tuple(row[f'{name}_blocks_{window}'] for name in ('active', 'signed', 'nil', 'absent', 'invalid', 'unknown'))
-                        self.assertEqual(actual, counters)
-                        self.assertEqual(actual[0], sum(actual[1:]))
+                    actual = tuple(row[f'{name}_blocks_1000'] for name in ('active', 'signed', 'nil', 'absent', 'invalid', 'unknown'))
+                    self.assertEqual(actual, counters)
+                    self.assertEqual(actual[0], sum(actual[1:]))
                 self.assertEqual((active[0]['moniker'], active[0]['operator_address'], active[0]['server_type'], active[0]['valoper_source_height']), ('Active Official', operators[0], 'cloud', 947852))
                 self.assertTrue(all(active[1][key] is None for key in ('moniker', 'operator_address', 'server_type', 'valoper_source_height')))
                 identities = {}
