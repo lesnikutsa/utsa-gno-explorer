@@ -113,7 +113,9 @@ def get_account(address: str) -> AccountResponse:
         raise HTTPException(status_code=422, detail="Invalid account address")
     try:
         result = fetch_live_account(address, config)
-        result["validator_relation"] = database.fetch_account_validator_relation(address)
+        result["validator_relation"] = (
+            database.fetch_account_validator_relation(address) if result["found"] else None
+        )
         return AccountResponse(**result)
     except AccountUnavailableError:
         LOGGER.error("Live account RPC data is unavailable")

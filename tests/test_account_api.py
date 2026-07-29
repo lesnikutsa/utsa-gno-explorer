@@ -4,8 +4,9 @@ from unittest.mock import patch
 import pytest
 
 from api.account_adapters import AccountParseError, parse_auth_account, parse_coins
-from api.account_service import AccountUnavailableError, fetch_live_account
+from api.account_service import AccountUnavailableError, fetch_live_account, public_rpc_url
 from api.config import ApiConfig
+from api.database import ApiDatabase
 from api.network_profile import BECH32_CHARSET, _convert_bits, _expand_hrp, _polymod, topaz_profile, validate_account_address
 
 
@@ -66,8 +67,14 @@ def test_malformed_coins_are_rejected(coins):
 
 class Client:
     base_url = "https://fresh.example/"
-    def __init__(self, values): self.values = iter(values)
-    def abci_query(self, path, data): return next(self.values)
+    def __init__(self, values, base_url=None):
+        self.values = iter(values)
+        self.calls = []
+        if base_url is not None:
+            self.base_url = base_url
+    def abci_query(self, path, data):
+        self.calls.append((path, data))
+        return next(self.values)
 
 
 class Candidate:
@@ -86,6 +93,41 @@ def test_service_failover_and_confirmed_missing():
     assert result["observed_height"] == 100
 
 
+def test_service_uses_path_queries_with_empty_data():
+    candidate = Candidate([auth(), "1ugnot"])
+    config = ApiConfig("postgres://test", rpc_urls=("a",))
+    with patch("api.account_service.probe_rpc_endpoints", return_value=[object()]), patch(
+        "api.account_service.suitable_rpc_candidates", return_value=[candidate],
+    ):
+        fetch_live_account(UTSA, config)
+    assert candidate.client.calls == [
+        (f"auth/accounts/{UTSA}", ""),
+        (f"bank/balances/{UTSA}", ""),
+    ]
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("https://user:pass@rpc.example:443/path?token=secret#x", "https://rpc.example:443/path"),
+    ("https://rpc.example/?apikey=secret", "https://rpc.example/"),
+])
+def test_public_rpc_url_removes_private_components(raw, expected):
+    result = public_rpc_url(raw)
+    assert result == expected
+    assert "user" not in result and "pass" not in result
+    assert "token" not in result and "apikey" not in result and "#" not in result
+
+
+def test_malformed_public_rpc_url_triggers_failover():
+    bad, good = Candidate([auth(), ""]), Candidate([auth(), ""])
+    bad.client.base_url = "not a URL?token=secret"
+    config = ApiConfig("postgres://test", rpc_urls=("a", "b"))
+    with patch("api.account_service.probe_rpc_endpoints", return_value=[object()]), patch(
+        "api.account_service.suitable_rpc_candidates", return_value=[bad, good],
+    ):
+        result = fetch_live_account(UTSA, config)
+    assert result["source"]["rpc_url"] == "https://fresh.example/"
+
+
 def test_service_all_candidates_failed_is_safe():
     config = ApiConfig("postgres://test", rpc_urls=("a",))
     with patch("api.account_service.probe_rpc_endpoints", return_value=[]), patch("api.account_service.suitable_rpc_candidates", return_value=[]):
@@ -94,10 +136,17 @@ def test_service_all_candidates_failed_is_safe():
 
 
 class FakeDatabase:
+    def __init__(self, relation=None, error=None):
+        self.relation = relation or {"moniker": "UTSA", "operator_address": UTSA, "signing_address": "A"}
+        self.error = error
+        self.relation_calls = []
     def open(self, config): pass
     def close(self): pass
     def fetch_account_validator_relation(self, value):
-        return {"moniker": "UTSA", "operator_address": value, "signing_address": "A"}
+        self.relation_calls.append(value)
+        if self.error:
+            raise self.error
+        return {**self.relation, "operator_address": value}
 
 
 def test_endpoint_found_contract_and_invalid_short_circuit():
@@ -107,13 +156,28 @@ def test_endpoint_found_contract_and_invalid_short_circuit():
             "account_number": "275", "sequence": "1", "public_key": None,
             "source": {"kind": "rpc", "chain_id": "topaz-1", "rpc_url": "https://rpc.example"}, "observed_height": 100}
     module.app.state.api_config = config
-    with patch.object(module, "database", FakeDatabase()), patch.object(module, "fetch_live_account", return_value=live) as fetch:
+    fake_database = FakeDatabase()
+    with patch.object(module, "database", fake_database), patch.object(module, "fetch_live_account", return_value=live) as fetch:
         response = module.get_account(UTSA)
         with pytest.raises(module.HTTPException) as invalid:
             module.get_account("not-an-address")
     assert response.model_dump()["validator_relation"]["moniker"] == "UTSA"
     assert invalid.value.status_code == 422 and invalid.value.detail == "Invalid account address"
     assert fetch.call_count == 1
+    assert fake_database.relation_calls == [UTSA]
+
+
+def test_endpoint_missing_account_does_not_query_database():
+    from api import app as module
+    module.app.state.api_config = ApiConfig("postgres://test")
+    live = {"address": UTSA, "found": False, "balances": [], "account_number": None,
+            "sequence": None, "public_key": None, "source": {"kind": "rpc", "chain_id": "topaz-1",
+            "rpc_url": "https://rpc.example"}, "observed_height": 100}
+    fake_database = FakeDatabase(error=AssertionError("DB must not be called"))
+    with patch.object(module, "database", fake_database), patch.object(module, "fetch_live_account", return_value=live):
+        response = module.get_account(UTSA)
+    assert response.validator_relation is None
+    assert fake_database.relation_calls == []
 
 
 def test_endpoint_safe_503_does_not_leak():
@@ -124,3 +188,58 @@ def test_endpoint_safe_503_does_not_leak():
             module.get_account(UTSA)
     assert response.value.status_code == 503
     assert response.value.detail == "Account data is temporarily unavailable"
+
+
+@pytest.mark.parametrize("error", [RuntimeError("duplicate"), OSError("database secret")])
+def test_endpoint_database_failure_is_safe(error):
+    from api import app as module
+    module.app.state.api_config = ApiConfig("postgres://secret")
+    live = {"address": UTSA, "found": True, "balances": [], "account_number": "1", "sequence": "0",
+            "public_key": None, "source": {"kind": "rpc", "chain_id": "topaz-1",
+            "rpc_url": "https://rpc.example"}, "observed_height": 100}
+    with patch.object(module, "database", FakeDatabase(error=error)), patch.object(module, "fetch_live_account", return_value=live):
+        with pytest.raises(module.HTTPException) as response:
+            module.get_account(UTSA)
+    assert response.value.status_code == 503
+    assert response.value.detail == "Account data is temporarily unavailable"
+
+
+class FakeCursor:
+    def __init__(self, rows): self.rows, self.parameters = rows, None
+    def __enter__(self): return self
+    def __exit__(self, *args): pass
+    def execute(self, sql, parameters): self.sql, self.parameters = sql, parameters
+    def fetchall(self): return self.rows
+
+
+class FakeConnection:
+    def __init__(self, cursor): self._cursor = cursor
+    def __enter__(self): return self
+    def __exit__(self, *args): pass
+    def cursor(self): return self._cursor
+
+
+class FakePool:
+    def __init__(self, rows): self.cursor = FakeCursor(rows)
+    def connection(self, timeout): return FakeConnection(self.cursor)
+
+
+@pytest.mark.parametrize("rows,expected", [
+    ([], None),
+    ([{"moniker": "UTSA", "operator_address": UTSA, "signing_address": "SIGN"}],
+     {"moniker": "UTSA", "operator_address": UTSA, "signing_address": "SIGN"}),
+])
+def test_validator_relation_zero_or_one_exact_operator_row(rows, expected):
+    database = ApiDatabase()
+    database.pool = FakePool(rows)
+    assert database.fetch_account_validator_relation(UTSA) == expected
+    assert database.pool.cursor.parameters == (UTSA,)
+    assert "operator_address = %s" in database.pool.cursor.sql
+    assert "signing_address = %s" not in database.pool.cursor.sql
+
+
+def test_validator_relation_duplicate_rows_are_rejected():
+    database = ApiDatabase()
+    database.pool = FakePool([{"operator_address": UTSA}, {"operator_address": UTSA}])
+    with pytest.raises(RuntimeError):
+        database.fetch_account_validator_relation(UTSA)
