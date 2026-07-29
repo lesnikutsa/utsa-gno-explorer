@@ -3,7 +3,7 @@
 import logging
 from urllib.parse import urlsplit, urlunsplit
 
-from api.account_adapters import AccountParseError, parse_auth_account, parse_coins
+from api.account_adapters import AccountParseError, parse_auth_account, parse_bank_balances
 from api.network_profile import topaz_profile
 from indexer.rpc import probe_rpc_endpoints, suitable_rpc_candidates
 from scripts.inspect_rpc import RpcError
@@ -50,9 +50,9 @@ def fetch_live_account(address: str, config) -> dict:
             auth_text = candidate.client.abci_query(f"auth/accounts/{address}", "")
             bank_text = candidate.client.abci_query(f"bank/balances/{address}", "")
             account = parse_auth_account(auth_text, address)
-            balances = parse_coins(bank_text, profile)
+            balances = parse_bank_balances(bank_text, profile)
             if account is None:
-                if bank_text != "" or balances:
+                if balances:
                     raise AccountParseError("inconsistent missing account")
                 account = {"account_number": None, "sequence": None, "public_key": None}
             return {

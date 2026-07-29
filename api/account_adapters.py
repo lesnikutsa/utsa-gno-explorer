@@ -101,3 +101,11 @@ def parse_coins(text: str, profile: NetworkProfile) -> list[dict]:
         balances.append({"denom": denom, "amount": amount, "display_amount": _display(amount, decimals),
                          "symbol": profile.native_symbol if native else denom, "decimals": decimals})
     return sorted(balances, key=lambda item: item["denom"])
+
+
+def parse_bank_balances(text: str, profile: NetworkProfile) -> list[dict]:
+    """Decode the bounded JSON-serialized Gno Coins.String bank response."""
+    value = _json(text)
+    if not isinstance(value, str):
+        raise AccountParseError("bank balance response is not a string")
+    return parse_coins(value, profile)

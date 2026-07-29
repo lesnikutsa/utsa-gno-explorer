@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from api.account_adapters import AccountParseError, parse_auth_account, parse_coins
+from api.account_adapters import AccountParseError, parse_auth_account, parse_bank_balances, parse_coins
 from api.account_service import AccountUnavailableError, fetch_live_account, public_rpc_url
 from api.config import ApiConfig
 from api.database import ApiDatabase
@@ -65,6 +65,30 @@ def test_malformed_coins_are_rejected(coins):
         parse_coins(coins, PROFILE)
 
 
+@pytest.mark.parametrize("text,expected", [
+    ('"17569800ugnot"', [("ugnot", "17569800", "17.5698")]),
+    ('""', []),
+    ('"2foo,1ugnot"', [("foo", "2", "2"), ("ugnot", "1", "0.000001")]),
+])
+def test_bank_response_decodes_json_coins_string(text, expected):
+    balances = parse_bank_balances(text, PROFILE)
+    assert [(item["denom"], item["amount"], item["display_amount"]) for item in balances] == expected
+
+
+@pytest.mark.parametrize("text", [
+    "17569800ugnot", "null", "{}", "[]", "1", "true", '"unterminated',
+    '"1ugnot,2ugnot"', '"-1ugnot"',
+])
+def test_bank_response_rejects_non_string_or_malformed_values(text):
+    with pytest.raises(AccountParseError):
+        parse_bank_balances(text, PROFILE)
+
+
+def test_bank_response_rejects_oversized_json_string():
+    with pytest.raises(AccountParseError):
+        parse_bank_balances('"' + ("1" * 262144) + '"', PROFILE)
+
+
 class Client:
     base_url = "https://fresh.example/"
     def __init__(self, values, base_url=None):
@@ -86,7 +110,7 @@ def test_service_failover_and_confirmed_missing():
     config = ApiConfig("postgres://test", rpc_urls=("a", "b"))
     with patch("api.account_service.probe_rpc_endpoints", return_value=[object()]), patch(
         "api.account_service.suitable_rpc_candidates",
-        return_value=[Candidate(["bad", ""]), Candidate(["null", ""])],
+        return_value=[Candidate(["bad", '""']), Candidate(["null", '""'])],
     ):
         result = fetch_live_account(UTSA, config)
     assert result["found"] is False
@@ -94,7 +118,7 @@ def test_service_failover_and_confirmed_missing():
 
 
 def test_service_uses_path_queries_with_empty_data():
-    candidate = Candidate([auth(), "1ugnot"])
+    candidate = Candidate([auth(), '"1ugnot"'])
     config = ApiConfig("postgres://test", rpc_urls=("a",))
     with patch("api.account_service.probe_rpc_endpoints", return_value=[object()]), patch(
         "api.account_service.suitable_rpc_candidates", return_value=[candidate],
@@ -118,7 +142,7 @@ def test_public_rpc_url_removes_private_components(raw, expected):
 
 
 def test_malformed_public_rpc_url_triggers_failover():
-    bad, good = Candidate([auth(), ""]), Candidate([auth(), ""])
+    bad, good = Candidate([auth(), '""']), Candidate([auth(), '""'])
     bad.client.base_url = "not a URL?token=secret"
     config = ApiConfig("postgres://test", rpc_urls=("a", "b"))
     with patch("api.account_service.probe_rpc_endpoints", return_value=[object()]), patch(
@@ -133,6 +157,30 @@ def test_service_all_candidates_failed_is_safe():
     with patch("api.account_service.probe_rpc_endpoints", return_value=[]), patch("api.account_service.suitable_rpc_candidates", return_value=[]):
         with pytest.raises(AccountUnavailableError):
             fetch_live_account(UTSA, config)
+
+
+def test_missing_auth_with_nonempty_bank_fails_over_to_valid_candidate():
+    inconsistent = Candidate(["null", '"1ugnot"'])
+    valid = Candidate([auth(), '"1ugnot"'])
+    config = ApiConfig("postgres://test", rpc_urls=("a", "b"))
+    with patch("api.account_service.probe_rpc_endpoints", return_value=[object()]), patch(
+        "api.account_service.suitable_rpc_candidates", return_value=[inconsistent, valid],
+    ):
+        result = fetch_live_account(UTSA, config)
+    assert result["found"] is True
+    assert result["balances"][0]["amount"] == "1"
+
+
+def test_malformed_bank_candidate_fails_over_to_valid_candidate():
+    malformed = Candidate([auth(), "1ugnot"])
+    valid = Candidate([auth(), '"1ugnot"'])
+    config = ApiConfig("postgres://test", rpc_urls=("a", "b"))
+    with patch("api.account_service.probe_rpc_endpoints", return_value=[object()]), patch(
+        "api.account_service.suitable_rpc_candidates", return_value=[malformed, valid],
+    ):
+        result = fetch_live_account(UTSA, config)
+    assert result["source"]["rpc_url"] == "https://fresh.example/"
+    assert result["balances"][0]["display_amount"] == "0.000001"
 
 
 class FakeDatabase:
