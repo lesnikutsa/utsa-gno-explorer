@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { decodeAccountRouteAddress, findNativeBalance, findOtherBalances } from '../src/utils/account.js'
+import { decodeAccountRouteAddress, findNativeBalance, findOtherBalances, formatAmountString } from '../src/utils/account.js'
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
 const app = read('../src/App.jsx')
@@ -48,6 +48,12 @@ test('primary balance selection uses denom rather than a display symbol', () => 
   assert.ok(page.includes('findNativeBalance(balances, networkProfile.nativeDenom)'))
   assert.equal(page.includes("balance.symbol === 'GNOT'"), false)
 })
+test('amount formatter groups integer digits without changing precision', () => {
+  assert.equal(formatAmountString('9999999996013'), '9 999 999 996 013')
+  assert.equal(formatAmountString('104.600242'), '104.600242')
+  assert.equal(formatAmountString('1234567.890123'), '1 234 567.890123')
+  assert.equal(formatAmountString('9999999996013000000'), '9 999 999 996 013 000 000')
+})
 test('missing account refresh reuses retry, preserves content, and reports errors safely', () => {
   assert.ok(page.includes('function MissingAccount({ account, retry, loading, refreshError })'))
   assert.ok(page.includes('onClick={retry} disabled={loading}'))
@@ -67,10 +73,12 @@ test('page uses a compact balance and account summary overview', () => {
   const balanceCard = page.slice(page.indexOf('aria-labelledby="account-balance-title"'), page.indexOf('aria-labelledby="account-summary-title"'))
   assert.ok(balanceCard.includes('Account Balance'))
   assert.ok(balanceCard.includes('primary.display_amount'))
+  assert.ok(balanceCard.includes('formatAmountString(primary.display_amount)'))
   assert.ok(balanceCard.includes('primary.symbol'))
   for (const label of ['Denom', 'Raw amount', 'Decimals', 'account-detail__compact-list']) assert.equal(balanceCard.includes(label), false)
   const accountSummary = page.slice(page.indexOf('aria-labelledby="account-summary-title"'), page.indexOf('{account.validator_relation &&'))
   for (const value of ['Account number', 'Sequence', 'Denom', 'Decimals', 'Raw amount']) assert.ok(accountSummary.includes(value))
+  assert.ok(accountSummary.includes('formatAmountString(primary.amount)'))
   for (const value of ['RPC endpoint', 'Chain ID', 'Fetched at block', 'observed_height', 'Public key']) assert.equal(accountSummary.includes(value), false)
   assert.ok(styles.includes('grid-template-columns: minmax(240px, .75fr) minmax(0, 1.25fr)'))
   assert.ok(styles.includes('font-size: clamp(24px, 1.8vw, 30px)'))
@@ -80,6 +88,7 @@ test('page uses a compact balance and account summary overview', () => {
   assert.ok(tabletRules.includes('.account-detail__summary-raw { grid-column: span 2; }'))
   assert.match(styles, /@media \(max-width: 760px\)[\s\S]*?account-detail__overview[\s\S]*?grid-template-columns: 1fr/)
   assert.match(styles, /@media \(max-width: 760px\)[\s\S]*?account-detail__summary-values \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}[\s\S]*?account-detail__summary-raw \{ grid-column: 1 \/ -1; \}/)
+  assert.ok(styles.includes('font-size: 17px; font-weight: 600; overflow-wrap: anywhere'))
 })
 test('page keeps technical and validator information compact', () => {
   assert.ok(page.includes('<details className="panel account-detail__details">'))
@@ -88,6 +97,7 @@ test('page keeps technical and validator information compact', () => {
   for (const label of ['Network', 'RPC endpoint', 'Observed RPC height', 'Public key']) assert.ok(technicalDetails.includes(label))
   for (const label of ['Native balance', 'Raw amount', 'Decimals']) assert.equal(technicalDetails.includes(label), false)
   assert.ok(technicalDetails.includes('CopyValue value={account.public_key.value}'))
+  assert.ok(technicalDetails.includes('TechnicalField label="RPC endpoint"'))
   assert.ok(styles.includes('.account-detail__technical-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }'))
   assert.match(styles, /@media \(max-width: 760px\)[\s\S]*?account-detail__technical-grid \{ grid-template-columns: 1fr/)
 })
@@ -96,6 +106,7 @@ test('validator relation is a compact message without exposed addresses', () => 
   assert.ok(validatorCard.includes('This account belongs to validator'))
   assert.ok(validatorCard.includes('>{account.validator_relation.moniker'))
   assert.ok(validatorCard.includes('/validators/${encodeURIComponent(account.validator_relation.signing_address)}'))
+  assert.equal(validatorCard.includes('</a>.</p>'), false)
   assert.equal(validatorCard.includes('View validator'), false)
   assert.equal(validatorCard.includes('operator_address'), false)
   assert.equal(validatorCard.includes('<CopyValue'), false)
@@ -127,4 +138,6 @@ test('page contains account content and all safe result states', () => {
 })
 test('validator operator address links to an encoded account route only when present', () => {
   assert.ok(validator.includes('href={validator.operator_address ? `/accounts/${encodeURIComponent(validator.operator_address)}` : undefined}'))
+  assert.ok(validator.includes('className="validator-detail__account-link"'))
+  for (const selector of ['.validator-detail__account-link {', '.validator-detail__account-link:hover', '.validator-detail__account-link:focus-visible']) assert.ok(styles.includes(selector))
 })

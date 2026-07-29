@@ -38,7 +38,7 @@ function AddressField({ label, value, copyLabel, href }) {
       <span className="validator-detail__label">{label}</span>
       {present(value) ? (
         <div className="validator-detail__copy-row">
-          <strong className="validator-detail__value validator-detail__address mono">{href ? <a href={href}>{value}</a> : value}</strong>
+          <strong className="validator-detail__value validator-detail__address mono">{href ? <a className="validator-detail__account-link" href={href}>{value}</a> : value}</strong>
           <CopyButton value={value} label={copyLabel} />
         </div>
       ) : <strong className="validator-detail__value">—</strong>}
