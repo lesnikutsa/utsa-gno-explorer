@@ -486,6 +486,44 @@ sudo systemctl disable --now utsa-gno-api.service
 
 ### API-only update and rollback
 
+#### Account API RPC prerequisite
+
+The API service receives its RPC configuration only from the protected
+`/etc/utsa-gno-explorer/api.env` file. Add these public settings, keeping the
+endpoints in preferred order:
+
+```dotenv
+GNO_RPC_URLS=https://rpc.topaz.testnets.gno.land,https://gnoland-testnet-rpc.itrocket.net
+GNO_CHAIN_ID=topaz-1
+RPC_MAX_HEIGHT_LAG=10
+API_ACCOUNT_RPC_TIMEOUT_SECONDS=10
+```
+
+When changing networks, update both the chain ID and RPC list. Account state is
+read live and is not stored in PostgreSQL. The runtime selector rejects stale,
+catching-up, and wrong-chain endpoints. Never publish private RPC URLs, tokens,
+credentials, or the contents of the real environment file in documentation.
+
+After changing only these settings, restart only the API service; do not stop or
+restart the indexer, PostgreSQL, or the Governance updater:
+
+```bash
+sudo systemctl restart utsa-gno-api.service
+```
+
+After the restart, smoke-check an existing and a confirmed missing account with
+addresses appropriate for the configured network:
+
+```text
+/api/accounts/<valid-existing-address>
+/api/accounts/<valid-missing-address>
+```
+
+An invalid address must return HTTP 422. An RPC outage must return the safe HTTP
+503 response without exposing upstream or configuration details. These are
+operator instructions only; do not execute production commands during repository
+validation.
+
 #### Network distribution API access prerequisite
 
 This is a bounded prerequisite for deploying the network-distribution read endpoint. Use

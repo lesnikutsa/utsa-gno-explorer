@@ -11,6 +11,8 @@ from decimal import Decimal, ROUND_HALF_UP
 from fastapi import FastAPI, HTTPException, Path, Query
 
 from api.config import ConfigError, load_config
+from api.account_service import AccountUnavailableError, fetch_live_account
+from api.network_profile import topaz_profile, validate_account_address
 from api.database import (
     MissingIndexedBlockError,
     MissingIndexerStateError,
@@ -18,6 +20,7 @@ from api.database import (
     isoformat_utc_z,
 )
 from api.schemas import (
+    AccountResponse,
     BlockCommitSummary,
     BlockDetailResponse,
     BlockSummary,
@@ -96,9 +99,29 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="UTSA Gno.land Explorer API", lifespan=lifespan)
 
+ACCOUNT_UNAVAILABLE_DETAIL = "Account data is temporarily unavailable"
+
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+@app.get("/api/accounts/{address}", response_model=AccountResponse)
+def get_account(address: str) -> AccountResponse:
+    config = app.state.api_config
+    if not validate_account_address(address, topaz_profile(config.chain_id)):
+        raise HTTPException(status_code=422, detail="Invalid account address")
+    try:
+        result = fetch_live_account(address, config)
+        result["validator_relation"] = (
+            database.fetch_account_validator_relation(address) if result["found"] else None
+        )
+        return AccountResponse(**result)
+    except AccountUnavailableError:
+        LOGGER.error("Live account RPC data is unavailable")
+    except Exception:
+        LOGGER.error("Account validator relation query failed")
+    raise HTTPException(status_code=503, detail=ACCOUNT_UNAVAILABLE_DETAIL) from None
 
 
 def _normalize_block_hash(block_hash_hex: str) -> str:

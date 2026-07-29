@@ -8,6 +8,43 @@ from pydantic import BaseModel, Field
 JsonSafeScalar = str | int | float | bool | None
 
 
+class AccountBalance(BaseModel):
+    denom: str = Field(min_length=1, max_length=128)
+    amount: str = Field(min_length=1, max_length=256, pattern=r"^(0|[1-9][0-9]*)$")
+    display_amount: str = Field(min_length=1, max_length=264)
+    symbol: str = Field(min_length=1, max_length=128)
+    decimals: int = Field(ge=0, le=30)
+
+
+class AccountPublicKey(BaseModel):
+    type: str = Field(min_length=1, max_length=128)
+    value: str = Field(min_length=1, max_length=4096)
+
+
+class AccountValidatorRelation(BaseModel):
+    moniker: str = Field(min_length=1, max_length=256)
+    operator_address: str = Field(min_length=1, max_length=90)
+    signing_address: str = Field(min_length=1, max_length=128)
+
+
+class AccountSource(BaseModel):
+    kind: Literal["rpc"]
+    chain_id: str = Field(min_length=1, max_length=128)
+    rpc_url: str = Field(min_length=1, max_length=2048)
+
+
+class AccountResponse(BaseModel):
+    address: str = Field(min_length=1, max_length=90)
+    found: bool
+    balances: list[AccountBalance] = Field(max_length=64)
+    account_number: str | None = Field(default=None, max_length=40, pattern=r"^(0|[1-9][0-9]*)$")
+    sequence: str | None = Field(default=None, max_length=40, pattern=r"^(0|[1-9][0-9]*)$")
+    public_key: AccountPublicKey | None
+    validator_relation: AccountValidatorRelation | None
+    source: AccountSource
+    observed_height: int = Field(gt=0)
+
+
 class HealthResponse(BaseModel):
     status: str
     database: str
