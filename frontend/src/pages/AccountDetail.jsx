@@ -92,24 +92,21 @@ export function AccountDetail({ accountDetail }) {
 
       <div className="account-detail__overview">
         <section className="panel account-detail__summary-card" aria-labelledby="account-balance-title">
-          <h2 id="account-balance-title">Balance</h2>
+          <h2 id="account-balance-title">Account Balance</h2>
           {primary ? <strong className="account-detail__main-balance">{primary.display_amount} {primary.symbol}</strong> : <p className="account-detail__empty">No native bank balance</p>}
         </section>
         <section className="panel account-detail__summary-card" aria-labelledby="account-summary-title">
           <h2 id="account-summary-title">Account Summary</h2>
-          <dl className="account-detail__summary-values"><div><dt>Account number</dt><dd className="mono">{account.account_number}</dd></div><div><dt>Sequence</dt><dd className="mono">{account.sequence}</dd></div></dl>
+          <dl className="account-detail__summary-values"><div><dt>Account number</dt><dd className="mono">{account.account_number}</dd></div><div><dt>Sequence</dt><dd className="mono">{account.sequence}</dd></div><div><dt>Denom</dt><dd className="mono">{primary?.denom || '—'}</dd></div><div><dt>Decimals</dt><dd className="mono">{present(primary?.decimals) ? primary.decimals : '—'}</dd></div><div className="account-detail__summary-raw"><dt>Raw amount</dt><dd className="mono">{primary?.amount || '—'}</dd></div></dl>
         </section>
       </div>
 
       {account.validator_relation && (
         <section className="panel account-detail__validator" aria-labelledby="account-validator-title">
           <h2 id="account-validator-title" className="sr-only">Validator relation</h2>
-          <p>This account belongs to validator <strong>{account.validator_relation.moniker || 'Unknown validator'}</strong>.</p>
-          <a href={`/validators/${encodeURIComponent(account.validator_relation.signing_address)}`}>View validator →</a>
+          <p>This account belongs to validator <a href={`/validators/${encodeURIComponent(account.validator_relation.signing_address)}`}>{account.validator_relation.moniker || 'Unknown validator'}</a>.</p>
         </section>
       )}
-
-      <TransactionsPlaceholder />
 
       {otherBalances.length > 0 && (
         <section className="panel account-detail__section" aria-labelledby="account-balances-title">
@@ -127,11 +124,13 @@ export function AccountDetail({ accountDetail }) {
 
       <details className="panel account-detail__details">
         <summary>Technical details</summary>
-        <section aria-labelledby="account-native-details-title"><h3 id="account-native-details-title">Native balance</h3>{primary ? <div className="account-detail__grid"><Field label="Denom" mono>{primary.denom}</Field><Field label="Raw amount" mono>{primary.amount}</Field><Field label="Decimals" mono>{primary.decimals}</Field></div> : <p className="account-detail__empty">No native bank balance</p>}</section>
-        <section aria-labelledby="account-network-details-title"><h3 id="account-network-details-title">Network</h3><div className="account-detail__grid"><Field label="Chain ID" mono>{account.source?.chain_id || '—'}</Field><Field label="RPC endpoint">{sourceLabel(account.source)}</Field><Field label="Observed RPC height" mono>{present(account.observed_height) ? <a href={`/blocks/${encodeURIComponent(account.observed_height)}`}>{account.observed_height}</a> : '—'}</Field></div></section>
-        <section aria-labelledby="account-public-key-details-title"><h3 id="account-public-key-details-title">Public key</h3>{account.public_key ? <div className="account-detail__grid"><Field label="Public key type" mono>{account.public_key.type}</Field><div className="account-detail__field"><span className="account-detail__label">Public key value</span><CopyValue value={account.public_key.value} label="public key" /></div></div> : <p className="account-detail__empty">Public key not available</p>}</section>
+        <div className="account-detail__technical-grid">
+          <section aria-labelledby="account-network-details-title"><h3 id="account-network-details-title">Network</h3><div><Field label="Chain ID" mono>{account.source?.chain_id || '—'}</Field><Field label="RPC endpoint">{sourceLabel(account.source)}</Field><Field label="Observed RPC height" mono>{present(account.observed_height) ? <a href={`/blocks/${encodeURIComponent(account.observed_height)}`}>{account.observed_height}</a> : '—'}</Field></div></section>
+          <section aria-labelledby="account-public-key-details-title"><h3 id="account-public-key-details-title">Public key</h3>{account.public_key ? <div><Field label="Public key type" mono>{account.public_key.type}</Field><div className="account-detail__field"><span className="account-detail__label">Public key value</span><CopyValue value={account.public_key.value} label="public key" /></div></div> : <p className="account-detail__empty">Public key not available</p>}</section>
+        </div>
       </details>
 
+      <TransactionsPlaceholder />
     </article>
   )
 }
