@@ -6,6 +6,7 @@ import logging
 import re
 import json
 import math
+import time
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import FastAPI, HTTPException, Path, Query
@@ -113,9 +114,16 @@ def get_account(address: str) -> AccountResponse:
         raise HTTPException(status_code=422, detail="Invalid account address")
     try:
         result = fetch_live_account(address, config)
-        result["validator_relation"] = (
-            database.fetch_account_validator_relation(address) if result["found"] else None
-        )
+        relation_started_at = time.perf_counter()
+        try:
+            result["validator_relation"] = (
+                database.fetch_account_validator_relation(address) if result["found"] else None
+            )
+        finally:
+            LOGGER.info(
+                "account_validator_relation validator_relation_seconds=%.6f",
+                time.perf_counter() - relation_started_at,
+            )
         return AccountResponse(**result)
     except AccountUnavailableError:
         LOGGER.error("Live account RPC data is unavailable")

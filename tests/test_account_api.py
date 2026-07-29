@@ -1,17 +1,28 @@
 import json
+import threading
+import time
 from unittest.mock import patch
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
 from api.account_adapters import AccountParseError, parse_auth_account, parse_bank_balances, parse_coins
 from api.account_service import AccountUnavailableError, fetch_live_account, public_rpc_url
+from api import account_service
 from api.config import ApiConfig
 from api.database import ApiDatabase
 from api.network_profile import BECH32_CHARSET, _convert_bits, _expand_hrp, _polymod, topaz_profile, validate_account_address
+from indexer.rpc import RpcProbeResult
 
 
 UTSA = "g16mldrfu90pe5r97cjm3xk02m7a3d0z8g9g3r75"
 PROFILE = topaz_profile("topaz-1")
+
+
+@pytest.fixture(autouse=True)
+def clear_account_probe_cache():
+    with account_service._probe_cache_lock:
+        account_service._probe_cache.clear()
 
 
 def address(payload=b"\x01" * 20, hrp="g"):
@@ -94,15 +105,18 @@ class Client:
     def __init__(self, values, base_url=None):
         self.values = iter(values)
         self.calls = []
+        self.lock = threading.Lock()
         if base_url is not None:
             self.base_url = base_url
-    def abci_query(self, path, data):
-        self.calls.append((path, data))
-        return next(self.values)
+    def abci_query(self, path, data, height=None):
+        with self.lock:
+            self.calls.append((path, data, height))
+            return next(self.values)
 
 
 class Candidate:
     latest_height = 100
+    finalized_tip = 99
     def __init__(self, values): self.client = Client(values)
 
 
@@ -114,7 +128,7 @@ def test_service_failover_and_confirmed_missing():
     ):
         result = fetch_live_account(UTSA, config)
     assert result["found"] is False
-    assert result["observed_height"] == 100
+    assert result["observed_height"] == 99
 
 
 def test_service_uses_path_queries_with_empty_data():
@@ -125,8 +139,8 @@ def test_service_uses_path_queries_with_empty_data():
     ):
         fetch_live_account(UTSA, config)
     assert candidate.client.calls == [
-        (f"auth/accounts/{UTSA}", ""),
-        (f"bank/balances/{UTSA}", ""),
+        (f"auth/accounts/{UTSA}", "", 99),
+        (f"bank/balances/{UTSA}", "", 99),
     ]
 
 
@@ -181,6 +195,82 @@ def test_malformed_bank_candidate_fails_over_to_valid_candidate():
         result = fetch_live_account(UTSA, config)
     assert result["source"]["rpc_url"] == "https://fresh.example/"
     assert result["balances"][0]["display_amount"] == "0.000001"
+
+
+def cacheable_probe(url="https://rpc.example"):
+    client = Client([], base_url=url)
+    return RpcProbeResult(
+        url=url, healthy=True, selected=True, latest_height=100, observed_lag=0,
+        client=client, status_payload={"result": {}}, response_seconds=0.1,
+    )
+
+
+def test_account_probe_cache_hit_expiry_key_and_copy_safety():
+    first = cacheable_probe()
+    config = ApiConfig("postgres://test", rpc_urls=("https://rpc.example",))
+    with patch("api.account_service.probe_rpc_endpoints", return_value=[first]) as probe:
+        one, hit_one, _ = account_service._account_probes(config)
+        one.clear()
+        two, hit_two, _ = account_service._account_probes(config)
+        different, hit_different, _ = account_service._account_probes(
+            ApiConfig("postgres://test", rpc_urls=("https://other.example",)),
+        )
+    assert not hit_one and hit_two and not hit_different
+    assert two == [first] and different == [first]
+    assert probe.call_count == 2
+
+    with patch.object(account_service, "ACCOUNT_RPC_PROBE_CACHE_TTL_SECONDS", 0), patch(
+        "api.account_service.probe_rpc_endpoints", return_value=[first],
+    ) as expired_probe:
+        _, expired_hit, _ = account_service._account_probes(config)
+    assert not expired_hit and expired_probe.call_count == 1
+
+
+def test_all_failed_probe_is_not_cached_and_concurrent_cache_access_is_safe():
+    failed = RpcProbeResult("https://down.example", False, False)
+    config = ApiConfig("postgres://test", rpc_urls=("https://down.example",))
+    with patch("api.account_service.probe_rpc_endpoints", return_value=[failed]) as probe:
+        account_service._account_probes(config)
+        account_service._account_probes(config)
+    assert probe.call_count == 2
+
+    healthy = cacheable_probe()
+    with patch("api.account_service.probe_rpc_endpoints", return_value=[healthy]) as probe:
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            results = list(executor.map(lambda _: account_service._account_probes(config), range(8)))
+    assert probe.call_count == 1
+    assert sum(hit for _, hit, _ in results) == 7
+
+
+def test_account_queries_run_in_parallel_at_finalized_height(caplog):
+    class ParallelClient:
+        base_url = "https://user:secret@rpc.example/path?token=hidden"
+
+        def __init__(self):
+            self.calls = []
+
+        def abci_query(self, path, data, height=None):
+            self.calls.append((path, height))
+            time.sleep(0.12)
+            return auth() if path.startswith("auth/") else '"1ugnot"'
+
+    client = ParallelClient()
+    candidate = Candidate([])
+    candidate.client = client
+    config = ApiConfig("postgres://test", rpc_urls=("a",))
+    started_at = time.perf_counter()
+    with patch("api.account_service._account_probes", return_value=([cacheable_probe()], True, None)), patch(
+        "api.account_service.suitable_rpc_candidates", return_value=[candidate],
+    ), caplog.at_level("INFO"):
+        result = fetch_live_account(UTSA, config)
+    elapsed = time.perf_counter() - started_at
+
+    assert elapsed < 0.21
+    assert {height for _, height in client.calls} == {99}
+    assert result["observed_height"] == 99
+    assert "selected_rpc_hostname=rpc.example" in caplog.text
+    assert "auth_query_seconds=" in caplog.text and "bank_query_seconds=" in caplog.text
+    assert "secret" not in caplog.text and "hidden" not in caplog.text
 
 
 class FakeDatabase:
