@@ -9,3 +9,7 @@ export const decodeAccountRouteAddress = (routeAddress) => {
     return null
   }
 }
+
+export const findNativeBalance = (balances, nativeDenom) => (
+  balances.find((balance) => balance.denom === nativeDenom)
+)

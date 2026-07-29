@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { decodeAccountRouteAddress } from '../src/utils/account.js'
+import { decodeAccountRouteAddress, findNativeBalance } from '../src/utils/account.js'
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
 const app = read('../src/App.jsx')
@@ -9,6 +9,7 @@ const api = read('../src/services/api.js')
 const hook = read('../src/hooks/useAccountDetail.js')
 const page = read('../src/pages/AccountDetail.jsx')
 const validator = read('../src/pages/ValidatorDetail.jsx')
+const profile = read('../src/config/networkProfile.js')
 
 const address = 'g16mldrfu90pe5r97cjm3xk02m7a3d0z8g9g3r75'
 
@@ -34,6 +35,25 @@ test('hook maps safe states, supports retry and has no polling timer', () => {
   for (const text of ['requestError.status === 422', 'requestError.status === 503', 'const retry = useCallback', 'requestId === requestIdRef.current']) assert.ok(hook.includes(text))
   assert.equal(hook.includes('setTimeout'), false)
   assert.equal(hook.includes('setInterval'), false)
+})
+test('network profile defines the native denom with an ugnot fallback', () => {
+  assert.ok(profile.includes('import.meta.env.VITE_NATIVE_DENOM'))
+  assert.match(profile, /nativeDenom:\s*publicValue\([\s\S]*?'ugnot'/)
+})
+test('primary balance selection uses denom rather than a display symbol', () => {
+  const synthetic = { denom: 'GNOT', symbol: 'GNOT' }
+  const native = { denom: 'ugnot', symbol: 'GNOT' }
+  assert.equal(findNativeBalance([synthetic, native], 'ugnot'), native)
+  assert.ok(page.includes('findNativeBalance(balances, networkProfile.nativeDenom)'))
+  assert.equal(page.includes("balance.symbol === 'GNOT'"), false)
+})
+test('missing account refresh reuses retry, preserves content, and reports errors safely', () => {
+  assert.ok(page.includes('function MissingAccount({ account, retry, loading, refreshError })'))
+  assert.ok(page.includes('onClick={retry} disabled={loading}'))
+  assert.ok(page.includes("loading ? 'Refreshing…' : 'Refresh'"))
+  assert.ok(page.includes('refreshError && <p className="account-detail__refresh-error"'))
+  assert.ok(page.includes('<MissingAccount account={account} retry={retry} loading={loading}'))
+  assert.ok(page.includes('This address has no account state on the current network.'))
 })
 test('page contains account content and all safe result states', () => {
   for (const text of ['Loading account…', 'Invalid account address', 'Account data is temporarily unavailable', 'Account details are currently unavailable', 'Account not found']) assert.ok(page.includes(text))

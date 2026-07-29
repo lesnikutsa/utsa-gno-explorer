@@ -1,4 +1,6 @@
 import { CopyButton } from '../components/CopyButton'
+import { networkProfile } from '../config/networkProfile'
+import { findNativeBalance } from '../utils/account'
 
 const present = (value) => value !== null && value !== undefined && value !== ''
 
@@ -46,12 +48,16 @@ function SourceFields({ account }) {
   )
 }
 
-function MissingAccount({ account }) {
+function MissingAccount({ account, retry, loading, refreshError }) {
   return (
     <article className="account-detail" aria-labelledby="account-detail-title">
       <a className="account-detail__back" href="/">← Back to Overview</a>
-      <header className="account-detail__header"><h1 id="account-detail-title">Account not found</h1></header>
+      <header className="account-detail__header">
+        <h1 id="account-detail-title">Account not found</h1>
+        <button className="blocks-page__button blocks-page__button--accent" type="button" onClick={retry} disabled={loading} aria-label="Refresh missing account details">{loading ? 'Refreshing…' : 'Refresh'}</button>
+      </header>
       <p className="account-detail__message">This address has no account state on the current network.</p>
+      {refreshError && <p className="account-detail__refresh-error" role="status">Account refresh is currently unavailable.</p>}
       <section className="panel account-detail__section" aria-labelledby="account-request-title">
         <div className="panel__heading"><h2 id="account-request-title">Requested Account</h2></div>
         <div className="account-detail__grid">
@@ -70,10 +76,10 @@ export function AccountDetail({ accountDetail }) {
   if (invalidAddress && !account) return <StatePanel title="Invalid account address" message="The requested account address is not valid for this network." />
   if (unavailable && !account) return <StatePanel title="Account data is temporarily unavailable" message="The Explorer could not read current account state from a fresh RPC endpoint." retry={retry} />
   if (error && !account) return <StatePanel title="Account details are currently unavailable" retry={retry} />
-  if (!account?.found) return <MissingAccount account={account} />
+  if (!account?.found) return <MissingAccount account={account} retry={retry} loading={loading} refreshError={invalidAddress || unavailable || error} />
 
   const balances = Array.isArray(account.balances) ? account.balances : []
-  const primary = balances.find((balance) => balance.symbol === 'GNOT')
+  const primary = findNativeBalance(balances, networkProfile.nativeDenom)
 
   return (
     <article className="account-detail" aria-labelledby="account-detail-title">
