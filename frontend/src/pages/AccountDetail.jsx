@@ -1,6 +1,6 @@
 import { CopyButton } from '../components/CopyButton'
 import { networkProfile } from '../config/networkProfile'
-import { findNativeBalance } from '../utils/account'
+import { findNativeBalance, findOtherBalances } from '../utils/account'
 
 const present = (value) => value !== null && value !== undefined && value !== ''
 
@@ -77,6 +77,7 @@ export function AccountDetail({ accountDetail }) {
 
   const balances = Array.isArray(account.balances) ? account.balances : []
   const primary = findNativeBalance(balances, networkProfile.nativeDenom)
+  const otherBalances = findOtherBalances(balances, networkProfile.nativeDenom)
 
   return (
     <article className="account-detail" aria-labelledby="account-detail-title">
@@ -90,7 +91,7 @@ export function AccountDetail({ accountDetail }) {
       <div className="account-detail__overview">
         <section className="panel account-detail__summary-card" aria-labelledby="account-balance-title">
           <h2 id="account-balance-title">Balance</h2>
-          {primary ? <><strong className="account-detail__main-balance">{primary.display_amount} {primary.symbol}</strong><dl className="account-detail__compact-list"><div><dt>Denom</dt><dd className="mono">{primary.denom}</dd></div><div><dt>Raw amount</dt><dd className="mono">{primary.amount}</dd></div><div><dt>Decimals</dt><dd className="mono">{primary.decimals}</dd></div></dl></> : <p className="account-detail__empty">No native bank balance</p>}
+          {primary ? <strong className="account-detail__main-balance">{primary.display_amount} {primary.symbol}</strong> : <p className="account-detail__empty">No native bank balance</p>}
         </section>
         <section className="panel account-detail__summary-card" aria-labelledby="account-summary-title">
           <h2 id="account-summary-title">Account Summary</h2>
@@ -99,11 +100,11 @@ export function AccountDetail({ accountDetail }) {
         </section>
       </div>
 
-      {balances.length > 1 && (
+      {otherBalances.length > 0 && (
         <section className="panel account-detail__section" aria-labelledby="account-balances-title">
-          <div className="panel__heading"><h2 id="account-balances-title">All Balances</h2></div>
+          <div className="panel__heading"><h2 id="account-balances-title">Other balances</h2></div>
           <div className="account-detail__balances">
-            {balances.map((balance, index) => (
+            {otherBalances.map((balance, index) => (
               <div className="account-detail__balance" key={`${balance.denom}-${index}`}>
                 <strong>{balance.display_amount} {balance.symbol}</strong>
                 <dl><div><dt>Denom</dt><dd className="mono">{balance.denom}</dd></div><div><dt>Raw amount</dt><dd className="mono">{balance.amount}</dd></div><div><dt>Decimals</dt><dd className="mono">{balance.decimals}</dd></div></dl>
@@ -115,7 +116,9 @@ export function AccountDetail({ accountDetail }) {
 
       <details className="panel account-detail__details">
         <summary>Technical details</summary>
-        <div className="account-detail__grid"><Field label="Chain ID" mono>{account.source?.chain_id || '—'}</Field>{account.public_key ? <><Field label="Public key type" mono>{account.public_key.type}</Field><div className="account-detail__field"><span className="account-detail__label">Public key value</span><CopyValue value={account.public_key.value} label="public key" /></div></> : <p className="account-detail__empty">Public key not available</p>}</div>
+        <section aria-labelledby="account-native-details-title"><h3 id="account-native-details-title">Native balance</h3>{primary ? <div className="account-detail__grid"><Field label="Denom" mono>{primary.denom}</Field><Field label="Raw amount" mono>{primary.amount}</Field><Field label="Decimals" mono>{primary.decimals}</Field></div> : <p className="account-detail__empty">No native bank balance</p>}</section>
+        <section aria-labelledby="account-network-details-title"><h3 id="account-network-details-title">Network</h3><div className="account-detail__grid"><Field label="Chain ID" mono>{account.source?.chain_id || '—'}</Field><Field label="RPC endpoint">{sourceLabel(account.source)}</Field><Field label="Observed RPC height" mono>{account.observed_height || '—'}</Field></div></section>
+        <section aria-labelledby="account-public-key-details-title"><h3 id="account-public-key-details-title">Public key</h3>{account.public_key ? <div className="account-detail__grid"><Field label="Public key type" mono>{account.public_key.type}</Field><div className="account-detail__field"><span className="account-detail__label">Public key value</span><CopyValue value={account.public_key.value} label="public key" /></div></div> : <p className="account-detail__empty">Public key not available</p>}</section>
       </details>
 
       {account.validator_relation && (

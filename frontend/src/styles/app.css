@@ -586,6 +586,7 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .account-detail__details { margin-bottom: 10px; }
 .account-detail__details summary { padding: 12px 14px; color: var(--color-text); font-size: 11px; font-weight: 600; cursor: pointer; }
 .account-detail__details summary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.account-detail__details h3 { margin: 0; padding: 12px 13px 5px; border-top: 1px solid var(--color-border-soft); color: var(--color-text-bright); font-size: 10px; }
 .account-detail__validator { margin-bottom: 10px; }
 .account-detail__validator .account-detail__field { padding: 9px 0; border: 0; border-top: 1px solid var(--color-border-soft); }
 .account-detail__skeleton { display: grid; gap: 8px; margin-top: 16px; }

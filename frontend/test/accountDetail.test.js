@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { decodeAccountRouteAddress, findNativeBalance } from '../src/utils/account.js'
+import { decodeAccountRouteAddress, findNativeBalance, findOtherBalances } from '../src/utils/account.js'
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
 const app = read('../src/App.jsx')
@@ -62,12 +62,28 @@ test('page uses a compact balance and account summary overview', () => {
   assert.ok(page.includes('Fetched at block'))
   assert.ok(page.includes('account-detail__main-balance'))
   assert.equal(page.includes('label="Observed Height"'), false)
+  const balanceCard = page.slice(page.indexOf('aria-labelledby="account-balance-title"'), page.indexOf('aria-labelledby="account-summary-title"'))
+  assert.ok(balanceCard.includes('primary.display_amount'))
+  assert.ok(balanceCard.includes('primary.symbol'))
+  for (const label of ['Denom', 'Raw amount', 'Decimals', 'account-detail__compact-list']) assert.equal(balanceCard.includes(label), false)
 })
 test('page keeps technical and validator information compact', () => {
   assert.ok(page.includes('<details className="panel account-detail__details">'))
   assert.ok(page.includes('<summary>Technical details</summary>'))
   assert.ok(page.includes('Operator account'))
   assert.ok(page.includes('Signing validator'))
+  const technicalDetails = page.slice(page.indexOf('<details className="panel account-detail__details">'), page.indexOf('</details>'))
+  for (const label of ['Native balance', 'Denom', 'Raw amount', 'Decimals', 'Network', 'RPC endpoint', 'Observed RPC height', 'Public key']) assert.ok(technicalDetails.includes(label))
+})
+test('other balances exclude native denom and render only when non-native balances exist', () => {
+  const native = { denom: 'ugnot' }
+  const other = { denom: 'uatom' }
+  assert.deepEqual(findOtherBalances([native, other], 'ugnot'), [other])
+  assert.deepEqual(findOtherBalances([native], 'ugnot'), [])
+  assert.ok(page.includes('otherBalances.length > 0'))
+  assert.ok(page.includes('otherBalances.map'))
+  assert.equal(page.includes('balances.map'), false)
+  assert.ok(page.includes('Other balances'))
 })
 test('page contains account content and all safe result states', () => {
   for (const text of ['Loading account…', 'Invalid account address', 'Account data is temporarily unavailable', 'Account details are currently unavailable', 'Account not found']) assert.ok(page.includes(text))
