@@ -2,7 +2,7 @@ import json
 import threading
 import time
 from unittest.mock import patch
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 
 import pytest
 
@@ -24,6 +24,7 @@ PROFILE = topaz_profile("topaz-1")
 def clear_account_probe_cache():
     with account_service._probe_cache_lock:
         account_service._probe_cache.clear()
+        account_service._probe_inflight.clear()
 
 
 def address(payload=b"\x01" * 20, hrp="g"):
@@ -242,25 +243,137 @@ def cacheable_probe(url="https://rpc.example"):
     )
 
 
+class TrackingFuture(Future):
+    def __init__(self, expected_followers):
+        super().__init__()
+        self.expected_followers = expected_followers
+        self.follower_count = 0
+        self.follower_lock = threading.Lock()
+        self.followers_waiting = threading.Event()
+
+    def result(self, timeout=None):
+        with self.follower_lock:
+            self.follower_count += 1
+            if self.follower_count == self.expected_followers:
+                self.followers_waiting.set()
+        return super().result(timeout)
+
+
+def run_singleflight_callers(config, probe_result, caller_count=4, error=None):
+    tracking = TrackingFuture(caller_count - 1)
+    probe_calls = 0
+    probe_lock = threading.Lock()
+
+    def probe(*args, **kwargs):
+        nonlocal probe_calls
+        with probe_lock:
+            probe_calls += 1
+        assert tracking.followers_waiting.wait(2)
+        if error is not None:
+            raise error
+        return probe_result
+
+    with patch("api.account_service.Future", return_value=tracking), patch(
+        "api.account_service.probe_rpc_endpoints", side_effect=probe,
+    ):
+        with ThreadPoolExecutor(max_workers=caller_count) as executor:
+            futures = [executor.submit(account_service._account_probes, config) for _ in range(caller_count)]
+            results = []
+            errors = []
+            for future in futures:
+                try:
+                    results.append(future.result(timeout=3))
+                except Exception as exc:
+                    errors.append(exc)
+    return probe_calls, tracking, results, errors
+
+
+def test_same_key_successful_probe_is_single_flight():
+    config = ApiConfig("postgres://test", rpc_urls=("https://rpc.example",))
+    probe = cacheable_probe()
+    calls, tracking, results, errors = run_singleflight_callers(config, [probe])
+
+    assert calls == 1 and not errors
+    assert len(results) == 4
+    assert sum(result.probe_performed for result in results) == 1
+    assert sum(result.shared_inflight for result in results) == 3
+    assert all(result.probes == [probe] for result in results)
+    assert len({id(result.probes) for result in results}) == 4
+    assert tracking.follower_count == 3
+
+
+def test_same_key_all_failed_result_is_shared_but_not_cached():
+    config = ApiConfig("postgres://test", rpc_urls=("https://down.example",))
+    failed = RpcProbeResult("https://down.example", False, False)
+    calls, _, results, errors = run_singleflight_callers(config, [failed])
+    assert calls == 1 and not errors
+    assert sum(result.probe_performed for result in results) == 1
+    assert sum(result.shared_inflight for result in results) == 3
+    assert not account_service._probe_cache
+
+    with patch("api.account_service.probe_rpc_endpoints", return_value=[failed]) as retry:
+        later = account_service._account_probes(config)
+    assert later.probe_performed and retry.call_count == 1
+
+
+def test_same_key_probe_exception_releases_followers_and_allows_retry():
+    config = ApiConfig("postgres://test", rpc_urls=("https://down.example",))
+    calls, _, results, errors = run_singleflight_callers(
+        config, [], error=RpcError("probe failed"),
+    )
+    assert calls == 1 and not results and len(errors) == 4
+    assert all(isinstance(error, RpcError) for error in errors)
+    assert not account_service._probe_inflight and not account_service._probe_cache
+
+    healthy = cacheable_probe()
+    with patch("api.account_service.probe_rpc_endpoints", return_value=[healthy]) as retry:
+        later = account_service._account_probes(config)
+    assert later.probe_performed and later.probes == [healthy] and retry.call_count == 1
+
+
+def test_different_keys_probe_concurrently_without_holding_cache_lock():
+    barrier = threading.Barrier(2, timeout=2)
+    lock_available = []
+
+    def probe(urls, *args, **kwargs):
+        acquired = account_service._probe_cache_lock.acquire(blocking=False)
+        lock_available.append(acquired)
+        if acquired:
+            account_service._probe_cache_lock.release()
+        barrier.wait()
+        return [cacheable_probe(urls[0])]
+
+    configs = [
+        ApiConfig("postgres://test", rpc_urls=("https://one.example",)),
+        ApiConfig("postgres://test", rpc_urls=("https://two.example",)),
+    ]
+    with patch("api.account_service.probe_rpc_endpoints", side_effect=probe) as mocked:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(account_service._account_probes, configs))
+    assert mocked.call_count == 2
+    assert lock_available == [True, True]
+    assert all(result.probe_performed for result in results)
+
+
 def test_account_probe_cache_hit_expiry_key_and_copy_safety():
     first = cacheable_probe()
     config = ApiConfig("postgres://test", rpc_urls=("https://rpc.example",))
     with patch("api.account_service.probe_rpc_endpoints", return_value=[first]) as probe:
-        one, hit_one, _ = account_service._account_probes(config)
-        one.clear()
-        two, hit_two, _ = account_service._account_probes(config)
-        different, hit_different, _ = account_service._account_probes(
+        one = account_service._account_probes(config)
+        one.probes.clear()
+        two = account_service._account_probes(config)
+        different = account_service._account_probes(
             ApiConfig("postgres://test", rpc_urls=("https://other.example",)),
         )
-    assert not hit_one and hit_two and not hit_different
-    assert two == [first] and different == [first]
+    assert not one.cache_hit and two.cache_hit and not different.cache_hit
+    assert two.probes == [first] and different.probes == [first]
     assert probe.call_count == 2
 
     with patch.object(account_service, "ACCOUNT_RPC_PROBE_CACHE_TTL_SECONDS", 0), patch(
         "api.account_service.probe_rpc_endpoints", return_value=[first],
     ) as expired_probe:
-        _, expired_hit, _ = account_service._account_probes(config)
-    assert not expired_hit and expired_probe.call_count == 1
+        expired = account_service._account_probes(config)
+    assert not expired.cache_hit and expired_probe.call_count == 1
 
 
 def test_all_failed_probe_is_not_cached_and_concurrent_cache_access_is_safe():
@@ -273,10 +386,10 @@ def test_all_failed_probe_is_not_cached_and_concurrent_cache_access_is_safe():
 
     healthy = cacheable_probe()
     with patch("api.account_service.probe_rpc_endpoints", return_value=[healthy]) as probe:
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            results = list(executor.map(lambda _: account_service._account_probes(config), range(8)))
+        account_service._account_probes(config)
+        results = [account_service._account_probes(config) for _ in range(7)]
     assert probe.call_count == 1
-    assert sum(hit for _, hit, _ in results) == 7
+    assert all(result.cache_hit for result in results)
 
 
 def test_probe_and_live_rpc_logging_distinguishes_real_probe_from_cache_hit(caplog):
@@ -298,6 +411,28 @@ def test_probe_and_live_rpc_logging_distinguishes_real_probe_from_cache_hit(capl
     assert "rpc_hostname=rpc.example" in caplog.text
     for forbidden in ("log-user", "log-password", "log-secret", "7654321", "private-key"):
         assert forbidden not in caplog.text
+
+
+def test_inflight_followers_log_shared_result_without_probe_duration(caplog):
+    config = ApiConfig("postgres://test", rpc_urls=("https://rpc.example",))
+    probe_result = cacheable_probe()
+    tracking = TrackingFuture(2)
+
+    def probe(*args, **kwargs):
+        assert tracking.followers_waiting.wait(2)
+        return [probe_result]
+
+    with patch("api.account_service.Future", return_value=tracking), patch(
+        "api.account_service.probe_rpc_endpoints", side_effect=probe,
+    ), caplog.at_level("INFO"):
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            results = list(executor.map(lambda _: fetch_live_account(UTSA, config), range(3)))
+        fetch_live_account(UTSA, config)
+
+    assert all(result["found"] is False for result in results)
+    assert caplog.text.count("rpc_probe_total_seconds=") == 1
+    assert caplog.text.count("rpc_probe_shared_inflight=true") == 2
+    assert caplog.text.count("rpc_probe_cache_hit=true") == 1
 
 
 def test_account_queries_run_in_parallel_at_finalized_height(caplog):
@@ -327,7 +462,8 @@ def test_account_queries_run_in_parallel_at_finalized_height(caplog):
     candidate = Candidate()
     candidate.client = client
     config = ApiConfig("postgres://test", rpc_urls=("a",))
-    with patch("api.account_service._account_probes", return_value=([cacheable_probe()], True, None)), patch(
+    lookup = account_service._ProbeLookup([cacheable_probe()], True, False, False, None)
+    with patch("api.account_service._account_probes", return_value=lookup), patch(
         "api.account_service.suitable_rpc_candidates", return_value=[candidate],
     ), caplog.at_level("INFO"):
         result = fetch_live_account(UTSA, config)

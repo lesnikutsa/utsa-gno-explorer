@@ -1,6 +1,7 @@
 """Live account retrieval using the shared RPC freshness selector."""
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass
 import logging
 import threading
 import time
@@ -17,6 +18,16 @@ ACCOUNT_RPC_PROBE_CACHE_TTL_SECONDS = 15.0
 _ProbeCacheKey = tuple[tuple[str, ...], str, int, int]
 _probe_cache: dict[_ProbeCacheKey, tuple[float, tuple[RpcProbeResult, ...]]] = {}
 _probe_cache_lock = threading.Lock()
+_probe_inflight: dict[_ProbeCacheKey, Future[tuple[RpcProbeResult, ...]]] = {}
+
+
+@dataclass(frozen=True)
+class _ProbeLookup:
+    probes: list[RpcProbeResult]
+    cache_hit: bool
+    probe_performed: bool
+    shared_inflight: bool
+    probe_duration: float | None
 
 
 class AccountUnavailableError(RuntimeError):
@@ -49,7 +60,7 @@ def _safe_rpc_hostname(value: str) -> str:
         return "invalid"
 
 
-def _account_probes(config) -> tuple[list[RpcProbeResult], bool, float | None]:
+def _account_probes(config) -> _ProbeLookup:
     key = (tuple(config.rpc_urls), config.chain_id, config.rpc_max_height_lag,
            config.account_rpc_timeout_seconds)
     with _probe_cache_lock:
@@ -62,26 +73,52 @@ def _account_probes(config) -> tuple[list[RpcProbeResult], bool, float | None]:
             _probe_cache.pop(expired_key, None)
         cached = _probe_cache.get(key)
         if cached is not None and now - cached[0] < ACCOUNT_RPC_PROBE_CACHE_TTL_SECONDS:
-            return list(cached[1]), True, None
+            return _ProbeLookup(list(cached[1]), True, False, False, None)
 
-        started_at = time.perf_counter()
+        inflight = _probe_inflight.get(key)
+        leader = inflight is None
+        if leader:
+            inflight = Future()
+            _probe_inflight[key] = inflight
+
+    if not leader:
         try:
-            probes = probe_rpc_endpoints(
-                list(config.rpc_urls), config.chain_id, config.rpc_max_height_lag,
-                timeout=config.account_rpc_timeout_seconds,
-            )
+            probes = inflight.result()
         except Exception:
             LOGGER.info(
-                "account_rpc_discovery rpc_probe_cache_hit=false rpc_probe_total_seconds=%.6f",
-                time.perf_counter() - started_at,
+                "account_rpc_discovery rpc_probe_cache_hit=false rpc_probe_shared_inflight=true",
             )
             raise
+        return _ProbeLookup(list(probes), False, False, True, None)
+
+    started_at = time.perf_counter()
+    try:
+        probes = probe_rpc_endpoints(
+            list(config.rpc_urls), config.chain_id, config.rpc_max_height_lag,
+            timeout=config.account_rpc_timeout_seconds,
+        )
+        frozen_probes = tuple(probes)
+    except Exception as exc:
         duration = time.perf_counter() - started_at
-        if suitable_rpc_candidates(probes):
-            _probe_cache[key] = (time.monotonic(), tuple(probes))
+        with _probe_cache_lock:
+            inflight.set_exception(exc)
+            _probe_inflight.pop(key, None)
+        LOGGER.info(
+            "account_rpc_discovery rpc_probe_cache_hit=false rpc_probe_total_seconds=%.6f",
+            duration,
+        )
+        raise
+
+    duration = time.perf_counter() - started_at
+    cacheable = bool(suitable_rpc_candidates(probes))
+    with _probe_cache_lock:
+        if cacheable:
+            _probe_cache[key] = (time.monotonic(), frozen_probes)
         else:
             _probe_cache.pop(key, None)
-        return list(probes), False, duration
+        inflight.set_result(frozen_probes)
+        _probe_inflight.pop(key, None)
+    return _ProbeLookup(list(frozen_probes), False, True, False, duration)
 
 
 def _timed_account_query(client, path: str, height: int) -> tuple[str, float]:
@@ -95,18 +132,23 @@ def fetch_live_account(address: str, config) -> dict:
     profile = topaz_profile(config.chain_id)
     try:
         try:
-            probes, cache_hit, probe_duration = _account_probes(config)
+            lookup = _account_probes(config)
+            probes = lookup.probes
             candidates = suitable_rpc_candidates(probes)
         except Exception:
             LOGGER.warning("account_rpc_discovery rpc_probe_cache_hit=false")
             raise AccountUnavailableError from None
 
-        if probe_duration is None:
+        if lookup.cache_hit:
             LOGGER.info("account_rpc_discovery rpc_probe_cache_hit=true")
+        elif lookup.shared_inflight:
+            LOGGER.info(
+                "account_rpc_discovery rpc_probe_cache_hit=false rpc_probe_shared_inflight=true",
+            )
         else:
             LOGGER.info(
                 "account_rpc_discovery rpc_probe_cache_hit=false rpc_probe_total_seconds=%.6f",
-                probe_duration,
+                lookup.probe_duration,
             )
         for probe in probes:
             LOGGER.info(
