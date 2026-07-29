@@ -597,8 +597,10 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .account-detail__technical-grid > section + section { border-left: 1px solid var(--color-border-soft); }
 .account-detail__technical-field { display: grid; min-width: 0; grid-template-columns: minmax(105px, .7fr) minmax(0, 1.3fr); gap: 10px; align-items: start; padding: 6px 12px; border-top: 1px solid var(--color-border-soft); font-size: 11px; }
 .account-detail__technical-field > span { color: var(--color-text-secondary); }
-.account-detail__technical-field > strong { min-width: 0; color: var(--color-text); font-weight: 600; text-align: right; overflow-wrap: anywhere; }
-.account-detail__technical-field .account-detail__copy-row { justify-content: flex-end; }
+.account-detail__technical-field > strong { min-width: 0; color: var(--color-text); font-weight: 600; text-align: left; overflow-wrap: anywhere; }
+.account-detail__technical-field .account-detail__copy-row { min-width: 0; justify-content: flex-start; }
+.account-detail__technical-field .account-detail__copy-row .account-detail__value { min-width: 0; text-align: left; overflow-wrap: anywhere; }
+.account-detail__technical-field .account-detail__copy-row .copy-button { flex: 0 0 auto; margin-left: auto; }
 .account-detail__validator { margin-bottom: 10px; padding: 16px; }
 .account-detail__validator p { margin: 0; color: var(--color-text); font-size: 13px; }
 .account-detail__validator p a { color: #dc795e; font-weight: 700; }

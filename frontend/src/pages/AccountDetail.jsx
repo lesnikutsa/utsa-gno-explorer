@@ -101,7 +101,7 @@ export function AccountDetail({ accountDetail }) {
         </section>
         <section className="panel account-detail__summary-card" aria-labelledby="account-summary-title">
           <h2 id="account-summary-title">Account Summary</h2>
-          <dl className="account-detail__summary-values"><div><dt>Account number</dt><dd className="mono">{account.account_number}</dd></div><div><dt>Sequence</dt><dd className="mono">{account.sequence}</dd></div><div><dt>Denom</dt><dd className="mono">{primary?.denom || '—'}</dd></div><div><dt>Decimals</dt><dd className="mono">{present(primary?.decimals) ? primary.decimals : '—'}</dd></div><div className="account-detail__summary-raw"><dt>Raw amount</dt><dd className="mono">{primary ? formatAmountString(primary.amount) : '—'}</dd></div></dl>
+          <dl className="account-detail__summary-values"><div><dt>Account number</dt><dd className="mono">{account.account_number}</dd></div><div><dt>Sequence</dt><dd className="mono">{account.sequence}</dd></div><div><dt>Denom</dt><dd className="mono">{primary?.denom || '—'}</dd></div><div><dt>Decimals</dt><dd className="mono">{present(primary?.decimals) ? primary.decimals : '—'}</dd></div><div className="account-detail__summary-raw"><dt>Raw amount</dt><dd className="mono">{primary?.amount || '—'}</dd></div></dl>
         </section>
       </div>
 
