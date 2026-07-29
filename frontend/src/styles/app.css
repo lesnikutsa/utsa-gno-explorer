@@ -551,14 +551,16 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .account-detail__section { margin-bottom: 10px; }
 .account-detail__overview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
 .account-detail__summary-card, .account-detail__compact-card { min-width: 0; padding: 16px; }
-.account-detail__summary-card h2, .account-detail__compact-card h2 { margin: 0 0 13px; color: var(--color-text-bright); font-size: 12px; }
+.account-detail__summary-card h2, .account-detail__compact-card h2, .account-detail__transactions h2 { margin: 0 0 16px; color: var(--color-text-bright); font-size: 16px; }
 .account-detail__main-balance { display: block; margin-bottom: 15px; color: var(--color-text-bright); font-size: clamp(24px, 3vw, 32px); line-height: 1.15; overflow-wrap: anywhere; }
 .account-detail__compact-list { margin: 0; }
 .account-detail__compact-list div { display: flex; min-width: 0; justify-content: space-between; gap: 16px; padding: 6px 0; border-top: 1px solid var(--color-border-soft); font-size: 10px; }
 .account-detail__compact-list dt { color: var(--color-text-secondary); }
 .account-detail__compact-list dd { min-width: 0; margin: 0; color: var(--color-text); text-align: right; overflow-wrap: anywhere; }
-.account-detail__source, .account-detail__fetched { margin: 10px 0 0; color: var(--color-text-secondary); font-size: 9px; }
-.account-detail__fetched a { color: #dc795e; }
+.account-detail__summary-values { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.account-detail__summary-values div { min-width: 0; }
+.account-detail__summary-values dt { margin-bottom: 6px; color: var(--color-text-secondary); font-size: 11px; }
+.account-detail__summary-values dd { margin: 0; color: var(--color-text-bright); font-size: 20px; overflow-wrap: anywhere; }
 .account-detail__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .account-detail__field { min-width: 0; padding: 11px 13px; border-bottom: 1px solid var(--color-border-soft); }
 .account-detail__field:nth-child(odd) { border-right: 1px solid var(--color-border-soft); }
@@ -587,8 +589,13 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .account-detail__details summary { padding: 12px 14px; color: var(--color-text); font-size: 11px; font-weight: 600; cursor: pointer; }
 .account-detail__details summary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 .account-detail__details h3 { margin: 0; padding: 12px 13px 5px; border-top: 1px solid var(--color-border-soft); color: var(--color-text-bright); font-size: 10px; }
-.account-detail__validator { margin-bottom: 10px; }
-.account-detail__validator .account-detail__field { padding: 9px 0; border: 0; border-top: 1px solid var(--color-border-soft); }
+.account-detail__validator { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 10px; padding: 16px; }
+.account-detail__validator p { margin: 0; color: var(--color-text); font-size: 13px; }
+.account-detail__validator p strong { color: var(--color-text-bright); }
+.account-detail__validator > a { flex: 0 0 auto; color: #dc795e; font-size: 11px; font-weight: 600; }
+.account-detail__transactions { margin-bottom: 10px; padding: 16px; }
+.account-detail__transactions strong { display: block; color: var(--color-text); font-size: 12px; }
+.account-detail__transactions p { margin: 6px 0 0; color: var(--color-text-secondary); font-size: 10px; }
 .account-detail__skeleton { display: grid; gap: 8px; margin-top: 16px; }
 .account-detail__skeleton span { display: block; width: 100%; height: 12px; border-radius: 3px; background: var(--color-border-soft); animation: account-skeleton 1.2s ease-in-out infinite alternate; }
 .account-detail__skeleton span:nth-child(2) { width: 72%; }
@@ -600,5 +607,6 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
   .account-detail__header { flex-wrap: wrap; }
   .account-detail__header > div { flex: 1 1 100%; }
   .account-detail__overview, .account-detail__grid, .account-detail__balances { grid-template-columns: 1fr; }
+  .account-detail__validator { align-items: flex-start; flex-direction: column; }
   .account-detail__field:nth-child(odd), .account-detail__balance:nth-child(odd) { border-right: 0; }
 }
