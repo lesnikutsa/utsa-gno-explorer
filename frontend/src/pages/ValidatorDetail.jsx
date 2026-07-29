@@ -32,13 +32,13 @@ function StatePanel({ title, message, retry }) {
   )
 }
 
-function AddressField({ label, value, copyLabel }) {
+function AddressField({ label, value, copyLabel, href }) {
   return (
     <div className="validator-detail__field">
       <span className="validator-detail__label">{label}</span>
       {present(value) ? (
         <div className="validator-detail__copy-row">
-          <strong className="validator-detail__value validator-detail__address mono">{value}</strong>
+          <strong className="validator-detail__value validator-detail__address mono">{href ? <a href={href}>{value}</a> : value}</strong>
           <CopyButton value={value} label={copyLabel} />
         </div>
       ) : <strong className="validator-detail__value">—</strong>}
@@ -110,7 +110,7 @@ export function ValidatorDetail({ validatorDetail }) {
         <div className="panel__heading"><h2 id="validator-identity-title">Validator Identity</h2></div>
         <div className="validator-detail__grid validator-detail__grid--identity">
           <AddressField label="Signing Address" value={validator.address} copyLabel="signing address" />
-          <AddressField label="Operator Address" value={validator.operator_address} copyLabel="operator address" />
+          <AddressField label="Operator Address" value={validator.operator_address} copyLabel="operator address" href={validator.operator_address ? `/accounts/${encodeURIComponent(validator.operator_address)}` : undefined} />
           <AddressField label="Signing PubKey (gpub)" value={validator.signing_pubkey} copyLabel="signing public key" />
           <Field label="Consensus Key Type (RPC)" mono>{present(validator.public_key_type) ? validator.public_key_type : '—'}</Field>
           <AddressField label="Consensus Public Key (RPC)" value={validator.public_key_value} copyLabel="validator public key" />
