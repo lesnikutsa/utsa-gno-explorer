@@ -13,6 +13,7 @@ from api.config import ApiConfig
 from api.database import ApiDatabase
 from api.network_profile import BECH32_CHARSET, _convert_bits, _expand_hrp, _polymod, topaz_profile, validate_account_address
 from indexer.rpc import RpcProbeResult
+from scripts.inspect_rpc import RpcError
 
 
 UTSA = "g16mldrfu90pe5r97cjm3xk02m7a3d0z8g9g3r75"
@@ -102,8 +103,8 @@ def test_bank_response_rejects_oversized_json_string():
 
 class Client:
     base_url = "https://fresh.example/"
-    def __init__(self, values, base_url=None):
-        self.values = iter(values)
+    def __init__(self, auth_response="null", bank_response='""', base_url=None):
+        self.responses = {"auth/accounts/": auth_response, "bank/balances/": bank_response}
         self.calls = []
         self.lock = threading.Lock()
         if base_url is not None:
@@ -111,20 +112,27 @@ class Client:
     def abci_query(self, path, data, height=None):
         with self.lock:
             self.calls.append((path, data, height))
-            return next(self.values)
+        response = next(value for prefix, value in self.responses.items() if path.startswith(prefix))
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 class Candidate:
     latest_height = 100
     finalized_tip = 99
-    def __init__(self, values): self.client = Client(values)
+    def __init__(self, auth_response="null", bank_response='""', *, finalized_tip=99,
+                 base_url=None):
+        self.finalized_tip = finalized_tip
+        self.latest_height = finalized_tip + 1
+        self.client = Client(auth_response, bank_response, base_url)
 
 
 def test_service_failover_and_confirmed_missing():
     config = ApiConfig("postgres://test", rpc_urls=("a", "b"))
     with patch("api.account_service.probe_rpc_endpoints", return_value=[object()]), patch(
         "api.account_service.suitable_rpc_candidates",
-        return_value=[Candidate(["bad", '""']), Candidate(["null", '""'])],
+        return_value=[Candidate("bad", '""'), Candidate("null", '""')],
     ):
         result = fetch_live_account(UTSA, config)
     assert result["found"] is False
@@ -132,16 +140,16 @@ def test_service_failover_and_confirmed_missing():
 
 
 def test_service_uses_path_queries_with_empty_data():
-    candidate = Candidate([auth(), '"1ugnot"'])
+    candidate = Candidate(auth(), '"1ugnot"')
     config = ApiConfig("postgres://test", rpc_urls=("a",))
     with patch("api.account_service.probe_rpc_endpoints", return_value=[object()]), patch(
         "api.account_service.suitable_rpc_candidates", return_value=[candidate],
     ):
         fetch_live_account(UTSA, config)
-    assert candidate.client.calls == [
+    assert sorted(candidate.client.calls) == sorted([
         (f"auth/accounts/{UTSA}", "", 99),
         (f"bank/balances/{UTSA}", "", 99),
-    ]
+    ])
 
 
 @pytest.mark.parametrize("raw,expected", [
@@ -156,7 +164,7 @@ def test_public_rpc_url_removes_private_components(raw, expected):
 
 
 def test_malformed_public_rpc_url_triggers_failover():
-    bad, good = Candidate([auth(), '""']), Candidate([auth(), '""'])
+    bad, good = Candidate(auth(), '""'), Candidate(auth(), '""')
     bad.client.base_url = "not a URL?token=secret"
     config = ApiConfig("postgres://test", rpc_urls=("a", "b"))
     with patch("api.account_service.probe_rpc_endpoints", return_value=[object()]), patch(
@@ -174,8 +182,8 @@ def test_service_all_candidates_failed_is_safe():
 
 
 def test_missing_auth_with_nonempty_bank_fails_over_to_valid_candidate():
-    inconsistent = Candidate(["null", '"1ugnot"'])
-    valid = Candidate([auth(), '"1ugnot"'])
+    inconsistent = Candidate("null", '"1ugnot"')
+    valid = Candidate(auth(), '"1ugnot"')
     config = ApiConfig("postgres://test", rpc_urls=("a", "b"))
     with patch("api.account_service.probe_rpc_endpoints", return_value=[object()]), patch(
         "api.account_service.suitable_rpc_candidates", return_value=[inconsistent, valid],
@@ -186,8 +194,8 @@ def test_missing_auth_with_nonempty_bank_fails_over_to_valid_candidate():
 
 
 def test_malformed_bank_candidate_fails_over_to_valid_candidate():
-    malformed = Candidate([auth(), "1ugnot"])
-    valid = Candidate([auth(), '"1ugnot"'])
+    malformed = Candidate(auth(), "1ugnot")
+    valid = Candidate(auth(), '"1ugnot"')
     config = ApiConfig("postgres://test", rpc_urls=("a", "b"))
     with patch("api.account_service.probe_rpc_endpoints", return_value=[object()]), patch(
         "api.account_service.suitable_rpc_candidates", return_value=[malformed, valid],
@@ -197,8 +205,37 @@ def test_malformed_bank_candidate_fails_over_to_valid_candidate():
     assert result["balances"][0]["display_amount"] == "0.000001"
 
 
+@pytest.mark.parametrize("failed_query", ["auth", "bank"])
+def test_query_failure_uses_next_candidate_without_reprobing_or_mixing(failed_query):
+    failure = RpcError("candidate query failed")
+    first = Candidate(
+        failure if failed_query == "auth" else auth(account_number="111"),
+        failure if failed_query == "bank" else '"999ugnot"',
+        finalized_tip=89,
+        base_url="https://first.example",
+    )
+    second = Candidate(
+        auth(account_number="222"), '"2ugnot"', finalized_tip=98,
+        base_url="https://second.example",
+    )
+    config = ApiConfig("postgres://test", rpc_urls=("first", "second"))
+    with patch("api.account_service.probe_rpc_endpoints", return_value=[object()]) as probe, patch(
+        "api.account_service.suitable_rpc_candidates", return_value=[first, second],
+    ):
+        result = fetch_live_account(UTSA, config)
+
+    assert probe.call_count == 1
+    assert result["account_number"] == "222"
+    assert result["balances"][0]["amount"] == "2"
+    assert result["observed_height"] == 98
+    assert {height for _, _, height in first.client.calls} == {89}
+    assert {height for _, _, height in second.client.calls} == {98}
+    assert {path.split("/", 1)[0] for path, _, _ in first.client.calls} == {"auth", "bank"}
+    assert {path.split("/", 1)[0] for path, _, _ in second.client.calls} == {"auth", "bank"}
+
+
 def cacheable_probe(url="https://rpc.example"):
-    client = Client([], base_url=url)
+    client = Client(base_url=url)
     return RpcProbeResult(
         url=url, healthy=True, selected=True, latest_height=100, observed_lag=0,
         client=client, status_payload={"result": {}}, response_seconds=0.1,
@@ -242,7 +279,33 @@ def test_all_failed_probe_is_not_cached_and_concurrent_cache_access_is_safe():
     assert sum(hit for _, hit, _ in results) == 7
 
 
+def test_probe_and_live_rpc_logging_distinguishes_real_probe_from_cache_hit(caplog):
+    credential_url = "https://log-user:log-password@rpc.example/path?api_key=log-secret"
+    probe_result = cacheable_probe(credential_url)
+    probe_result.client.responses = {
+        "auth/accounts/": auth(public_key={"@type": "/tm.PubKeySecp256k1", "value": "private-key"}),
+        "bank/balances/": '"7654321ugnot"',
+    }
+    config = ApiConfig("postgres://test", rpc_urls=(credential_url,))
+    with patch("api.account_service.probe_rpc_endpoints", return_value=[probe_result]) as probe, caplog.at_level("INFO"):
+        fetch_live_account(UTSA, config)
+        fetch_live_account(UTSA, config)
+
+    assert probe.call_count == 1
+    assert caplog.text.count("rpc_probe_total_seconds=") == 1
+    assert caplog.text.count("rpc_probe_cache_hit=true") == 1
+    assert caplog.text.count("account_live_rpc_seconds=") == 2
+    assert "rpc_hostname=rpc.example" in caplog.text
+    for forbidden in ("log-user", "log-password", "log-secret", "7654321", "private-key"):
+        assert forbidden not in caplog.text
+
+
 def test_account_queries_run_in_parallel_at_finalized_height(caplog):
+    barrier = threading.Barrier(2, timeout=2)
+    active = 0
+    max_active = 0
+    active_lock = threading.Lock()
+
     class ParallelClient:
         base_url = "https://user:secret@rpc.example/path?token=hidden"
 
@@ -250,22 +313,25 @@ def test_account_queries_run_in_parallel_at_finalized_height(caplog):
             self.calls = []
 
         def abci_query(self, path, data, height=None):
+            nonlocal active, max_active
             self.calls.append((path, height))
-            time.sleep(0.12)
+            with active_lock:
+                active += 1
+                max_active = max(max_active, active)
+            barrier.wait()
+            with active_lock:
+                active -= 1
             return auth() if path.startswith("auth/") else '"1ugnot"'
 
     client = ParallelClient()
-    candidate = Candidate([])
+    candidate = Candidate()
     candidate.client = client
     config = ApiConfig("postgres://test", rpc_urls=("a",))
-    started_at = time.perf_counter()
     with patch("api.account_service._account_probes", return_value=([cacheable_probe()], True, None)), patch(
         "api.account_service.suitable_rpc_candidates", return_value=[candidate],
     ), caplog.at_level("INFO"):
         result = fetch_live_account(UTSA, config)
-    elapsed = time.perf_counter() - started_at
-
-    assert elapsed < 0.21
+    assert max_active == 2
     assert {height for _, height in client.calls} == {99}
     assert result["observed_height"] == 99
     assert "selected_rpc_hostname=rpc.example" in caplog.text
@@ -303,6 +369,40 @@ def test_endpoint_found_contract_and_invalid_short_circuit():
     assert invalid.value.status_code == 422 and invalid.value.detail == "Invalid account address"
     assert fetch.call_count == 1
     assert fake_database.relation_calls == [UTSA]
+
+
+def test_route_logs_one_authoritative_total_and_validator_timing_on_success(caplog):
+    from api import app as module
+    module.app.state.api_config = ApiConfig("postgres://test")
+    live = {"address": UTSA, "found": True, "balances": [], "account_number": "1",
+            "sequence": "0", "public_key": None, "source": {"kind": "rpc",
+            "chain_id": "topaz-1", "rpc_url": "https://rpc.example"},
+            "observed_height": 99}
+    with patch.object(module, "database", FakeDatabase()), patch.object(
+        module, "fetch_live_account", return_value=live,
+    ), caplog.at_level("INFO"):
+        module.get_account(UTSA)
+    assert caplog.text.count("account_total_seconds=") == 1
+    assert caplog.text.count("validator_relation_seconds=") == 1
+
+
+def test_route_logs_one_authoritative_total_on_503(caplog):
+    from api import app as module
+    module.app.state.api_config = ApiConfig("postgres://test")
+    with patch.object(module, "fetch_live_account", side_effect=AccountUnavailableError), caplog.at_level("INFO"):
+        with pytest.raises(module.HTTPException) as response:
+            module.get_account(UTSA)
+    assert response.value.status_code == 503
+    assert caplog.text.count("account_total_seconds=") == 1
+    assert "validator_relation_seconds=" not in caplog.text
+
+
+def test_invalid_address_does_not_start_account_total_timer(caplog):
+    from api import app as module
+    module.app.state.api_config = ApiConfig("postgres://test")
+    with caplog.at_level("INFO"), pytest.raises(module.HTTPException):
+        module.get_account("invalid")
+    assert "account_total_seconds=" not in caplog.text
 
 
 def test_endpoint_missing_account_does_not_query_database():

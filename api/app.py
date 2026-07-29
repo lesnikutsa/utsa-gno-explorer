@@ -112,24 +112,31 @@ def get_account(address: str) -> AccountResponse:
     config = app.state.api_config
     if not validate_account_address(address, topaz_profile(config.chain_id)):
         raise HTTPException(status_code=422, detail="Invalid account address")
+    account_started_at = time.perf_counter()
     try:
-        result = fetch_live_account(address, config)
-        relation_started_at = time.perf_counter()
         try:
-            result["validator_relation"] = (
-                database.fetch_account_validator_relation(address) if result["found"] else None
-            )
-        finally:
-            LOGGER.info(
-                "account_validator_relation validator_relation_seconds=%.6f",
-                time.perf_counter() - relation_started_at,
-            )
-        return AccountResponse(**result)
-    except AccountUnavailableError:
-        LOGGER.error("Live account RPC data is unavailable")
-    except Exception:
-        LOGGER.error("Account validator relation query failed")
-    raise HTTPException(status_code=503, detail=ACCOUNT_UNAVAILABLE_DETAIL) from None
+            result = fetch_live_account(address, config)
+            relation_started_at = time.perf_counter()
+            try:
+                result["validator_relation"] = (
+                    database.fetch_account_validator_relation(address) if result["found"] else None
+                )
+            finally:
+                LOGGER.info(
+                    "account_validator_relation validator_relation_seconds=%.6f",
+                    time.perf_counter() - relation_started_at,
+                )
+            return AccountResponse(**result)
+        except AccountUnavailableError:
+            LOGGER.error("Live account RPC data is unavailable")
+        except Exception:
+            LOGGER.error("Account validator relation query failed")
+        raise HTTPException(status_code=503, detail=ACCOUNT_UNAVAILABLE_DETAIL) from None
+    finally:
+        LOGGER.info(
+            "account_request_timing account_total_seconds=%.6f",
+            time.perf_counter() - account_started_at,
+        )
 
 
 def _normalize_block_hash(block_hash_hex: str) -> str:

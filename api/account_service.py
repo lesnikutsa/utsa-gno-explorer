@@ -159,4 +159,7 @@ def fetch_live_account(address: str, config) -> dict:
                 )
         raise AccountUnavailableError
     finally:
-        LOGGER.info("account_request_timing account_total_seconds=%.6f", time.perf_counter() - total_started_at)
+        LOGGER.info(
+            "account_live_rpc_timing account_live_rpc_seconds=%.6f",
+            time.perf_counter() - total_started_at,
+        )
