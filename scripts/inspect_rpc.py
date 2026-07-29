@@ -381,34 +381,12 @@ def validate_status_for_health(status: dict[str, Any], expected_chain_id: str) -
 
 
 def select_healthy_rpc(urls: list[str], timeout: int = DEFAULT_TIMEOUT, expected_chain_id: str | None = None, max_height_lag: int | None = None) -> tuple[GnoRpcClient, dict[str, Any]]:
-    if not urls:
-        raise RpcError("Set GNO_RPC_URLS to a comma-separated RPC list, or temporarily set legacy GNO_RPC_URL")
     expected_chain_id = expected_chain_id or configured_chain_id()
     max_height_lag = configured_max_height_lag() if max_height_lag is None else max_height_lag
-    probes = []
-    for order, url in enumerate(urls):
-        client = GnoRpcClient(url, timeout=timeout)
-        try:
-            status_payload = client.get("status")
-            status = parse_status(status_payload)
-            validate_status_for_health(status, expected_chain_id)
-            probes.append({"order": order, "url": url, "client": client, "payload": status_payload, "status": status})
-        except RpcError as exc:
-            print(f"RPC health failed: {url} ({exc})")
-            continue
-    if not probes:
-        raise RpcError("All RPC endpoints are rejected or unavailable")
-    highest_height = max(probe["status"]["latest_height"] for probe in probes)
-    for probe in probes:
-        height = probe["status"]["latest_height"]
-        lag = highest_height - height
-        probe["lag"] = lag
-        print(f"RPC health succeeded: {probe['url']} chain_id={probe['status']['chain_id']} height={height} lag={lag} catching_up={probe['status']['catching_up']}")
-    for probe in probes:
-        if probe["lag"] <= max_height_lag:
-            print(f"Selected RPC: {probe['url']} height={probe['status']['latest_height']} lag={probe['lag']}")
-            return probe["client"], probe["payload"]
-    raise RpcError(f"No suitable RPC endpoint is within RPC_MAX_HEIGHT_LAG={max_height_lag} of highest healthy height {highest_height}")
+    from indexer.rpc import select_rpc
+
+    selected = select_rpc(urls, expected_chain_id, max_height_lag, timeout)
+    return selected.client, selected.status_payload
 
 
 def fetch_validators(client: GnoRpcClient, height: int) -> dict[str, Any]:
