@@ -92,6 +92,13 @@ LEFT JOIN rpc_endpoints r ON r.id = s.selected_rpc_endpoint_id
 WHERE s.state_key = %s
 """
 
+ACCOUNT_VALIDATOR_RELATION_SQL = """
+SELECT moniker, operator_address, signing_address
+FROM valoper_profiles
+WHERE operator_address = %s
+LIMIT 2
+"""
+
 NETWORK_DISTRIBUTION_SQL = """
 SELECT
     state.chain_id,
@@ -791,6 +798,18 @@ class ApiDatabase:
             "current": current,
             "history": [dict(row) for row in history],
         }
+
+    def fetch_account_validator_relation(self, address: str) -> dict[str, Any] | None:
+        """Return one exact operator profile while detecting inconsistent duplicates."""
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(ACCOUNT_VALIDATOR_RELATION_SQL, (address,))
+                rows = cursor.fetchall()
+        if len(rows) > 1:
+            raise RuntimeError("Duplicate validator operator profiles")
+        return None if not rows else dict(rows[0])
 
     def fetch_validator_search(self, query: str, limit: int) -> list[dict[str, Any]]:
         """Return compact validator identities matching literal search text."""

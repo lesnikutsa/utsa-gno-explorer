@@ -29,3 +29,27 @@ def test_invalid_governance_realm_is_rejected(value):
 def test_database_url_remains_required():
     with patch.dict(os.environ, {}, clear=True), pytest.raises(ConfigError):
         load_config()
+
+
+def test_account_rpc_configuration():
+    config = load(GNO_RPC_URLS=" https://one.example, ,https://two.example ", GNO_RPC_URL="https://legacy.example",
+                  GNO_CHAIN_ID="topaz-test", RPC_MAX_HEIGHT_LAG="12", API_ACCOUNT_RPC_TIMEOUT_SECONDS="7")
+    assert config.rpc_urls == ("https://one.example", "https://two.example")
+    assert config.chain_id == "topaz-test"
+    assert config.rpc_max_height_lag == 12
+    assert config.account_rpc_timeout_seconds == 7
+
+
+def test_legacy_and_missing_rpc_configuration():
+    assert load(GNO_RPC_URL="https://legacy.example").rpc_urls == ("https://legacy.example",)
+    assert load().rpc_urls == ()
+
+
+@pytest.mark.parametrize("environment", [
+    {"RPC_MAX_HEIGHT_LAG": "-1"}, {"RPC_MAX_HEIGHT_LAG": "bad"},
+    {"API_ACCOUNT_RPC_TIMEOUT_SECONDS": "0"}, {"API_ACCOUNT_RPC_TIMEOUT_SECONDS": "31"},
+    {"GNO_CHAIN_ID": ""}, {"GNO_CHAIN_ID": " bad"}, {"GNO_CHAIN_ID": "bad\nchain"},
+])
+def test_invalid_account_rpc_configuration(environment):
+    with pytest.raises(ConfigError):
+        load(**environment)
