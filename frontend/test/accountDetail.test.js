@@ -73,7 +73,13 @@ test('page uses a compact balance and account summary overview', () => {
   for (const value of ['Account number', 'Sequence', 'Denom', 'Decimals', 'Raw amount']) assert.ok(accountSummary.includes(value))
   for (const value of ['RPC endpoint', 'Chain ID', 'Fetched at block', 'observed_height', 'Public key']) assert.equal(accountSummary.includes(value), false)
   assert.ok(styles.includes('grid-template-columns: minmax(240px, .75fr) minmax(0, 1.25fr)'))
+  assert.ok(styles.includes('font-size: clamp(24px, 1.8vw, 30px)'))
+  const tabletRules = styles.slice(styles.indexOf('@media (max-width: 1050px)'), styles.indexOf('@media (max-width: 760px)', styles.indexOf('@media (max-width: 1050px)')))
+  assert.ok(tabletRules.includes('.account-detail__overview { grid-template-columns: 1fr; }'))
+  assert.ok(tabletRules.includes('.account-detail__summary-values { grid-template-columns: repeat(3, minmax(0, 1fr)); }'))
+  assert.ok(tabletRules.includes('.account-detail__summary-raw { grid-column: span 2; }'))
   assert.match(styles, /@media \(max-width: 760px\)[\s\S]*?account-detail__overview[\s\S]*?grid-template-columns: 1fr/)
+  assert.match(styles, /@media \(max-width: 760px\)[\s\S]*?account-detail__summary-values \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}[\s\S]*?account-detail__summary-raw \{ grid-column: 1 \/ -1; \}/)
 })
 test('page keeps technical and validator information compact', () => {
   assert.ok(page.includes('<details className="panel account-detail__details">'))

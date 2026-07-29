@@ -552,7 +552,7 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .account-detail__overview { display: grid; grid-template-columns: minmax(240px, .75fr) minmax(0, 1.25fr); gap: 10px; margin-bottom: 10px; }
 .account-detail__summary-card, .account-detail__compact-card { min-width: 0; padding: 16px; }
 .account-detail__summary-card h2, .account-detail__compact-card h2, .account-detail__transactions h2 { margin: 0 0 16px; color: var(--color-text-bright); font-size: 16px; }
-.account-detail__main-balance { display: block; margin-bottom: 15px; color: var(--color-text-bright); font-size: clamp(26px, 2.2vw, 34px); line-height: 1.15; overflow-wrap: anywhere; }
+.account-detail__main-balance { display: block; margin-bottom: 15px; color: var(--color-text-bright); font-size: clamp(24px, 1.8vw, 30px); line-height: 1.15; overflow-wrap: anywhere; }
 .account-detail__compact-list { margin: 0; }
 .account-detail__compact-list div { display: flex; min-width: 0; justify-content: space-between; gap: 16px; padding: 6px 0; border-top: 1px solid var(--color-border-soft); font-size: 10px; }
 .account-detail__compact-list dt { color: var(--color-text-secondary); }
@@ -606,6 +606,12 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .account-detail__skeleton span:nth-child(3) { width: 45%; }
 @keyframes account-skeleton { from { opacity: .45; } to { opacity: .9; } }
 @media (prefers-reduced-motion: reduce) { .account-detail__skeleton span { animation: none; } }
+
+@media (max-width: 1050px) {
+  .account-detail__overview { grid-template-columns: 1fr; }
+  .account-detail__summary-values { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .account-detail__summary-raw { grid-column: span 2; }
+}
 
 @media (max-width: 760px) {
   .account-detail__header { flex-wrap: wrap; }
