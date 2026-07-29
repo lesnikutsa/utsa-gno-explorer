@@ -2,6 +2,7 @@ import re
 import subprocess
 import unittest
 from pathlib import Path
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 ENV_PATH = ROOT / "deploy/systemd/api.env.example"
@@ -34,7 +35,29 @@ class ApiDeploymentAssetTests(unittest.TestCase):
         self.assertIn("REPLACE_WITH_URL_SAFE_PASSWORD", self.environment)
         self.assertIn("API_BIND_HOST=127.0.0.1", self.environment)
         self.assertIn("API_BIND_PORT=18180", self.environment)
-        self.assertNotIn("GNO_RPC_URLS", self.environment)
+        self.assertIn("GNO_RPC_URLS=", self.environment)
+        self.assertIn("GNO_CHAIN_ID=topaz-1", self.environment)
+        self.assertIn("RPC_MAX_HEIGHT_LAG=10", self.environment)
+        self.assertIn("API_ACCOUNT_RPC_TIMEOUT_SECONDS=10", self.environment)
+
+    def test_environment_example_has_safe_public_account_rpcs(self):
+        values = dict(
+            line.split("=", 1) for line in self.environment.splitlines()
+            if line and not line.startswith("#") and "=" in line
+        )
+        urls = values["GNO_RPC_URLS"].split(",")
+        self.assertEqual(urls, [
+            "https://rpc.topaz.testnets.gno.land",
+            "https://gnoland-testnet-rpc.itrocket.net",
+        ])
+        for url in urls:
+            parsed = urlsplit(url)
+            self.assertEqual(parsed.scheme, "https")
+            self.assertIsNotNone(parsed.hostname)
+            self.assertIsNone(parsed.username)
+            self.assertIsNone(parsed.password)
+            self.assertEqual(parsed.query, "")
+            self.assertEqual(parsed.fragment, "")
 
     def test_unit_uses_external_bind_configuration_and_one_worker(self):
         expected_exec_start = (
