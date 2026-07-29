@@ -1,9 +1,12 @@
 import json
 import os
+import subprocess
+import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from scripts.inspect_rpc import (
     GnoRpcClient,
@@ -29,14 +32,16 @@ def load(name):
 
 
 class FakeClient:
-    def __init__(self, base_url, responses=None, error=None):
+    def __init__(self, base_url, responses=None, error=None, delay=0):
         self.base_url = base_url.rstrip("/") + "/"
         self.responses = responses or {}
         self.error = error
+        self.delay = delay
         self.calls = []
 
     def get(self, method, **params):
         self.calls.append((method, params))
+        time.sleep(self.delay)
         if self.error:
             raise self.error
         return self.responses[method]
@@ -160,36 +165,88 @@ class InspectRpcParsingTests(unittest.TestCase):
 
 
 class RpcSelectionTests(unittest.TestCase):
+    def test_delegates_to_shared_selector_and_preserves_return_contract(self):
+        client = FakeClient("http://selected")
+        payload = load("status.json")
+        selected = Mock(client=client, status_payload=payload)
+        with patch("indexer.rpc.select_rpc", return_value=selected) as shared:
+            result = select_healthy_rpc(
+                ["http://one", "http://two"], timeout=7,
+                expected_chain_id="test-13", max_height_lag=4,
+            )
+        shared.assert_called_once_with(["http://one", "http://two"], "test-13", 4, 7)
+        self.assertEqual(result, (client, payload))
+
     def test_one_failed_rpc_followed_by_working_fallback(self):
         clients = [FakeClient("http://bad", error=RpcError("down")), FakeClient("http://good", {"status": load("status.json")})]
-        with patch("scripts.inspect_rpc.GnoRpcClient", side_effect=clients):
+        by_url = {"http://bad": clients[0], "http://good": clients[1]}
+        with patch("indexer.rpc.GnoRpcClient", side_effect=lambda url, timeout: by_url[url]):
             selected, status = select_healthy_rpc(["http://bad", "http://good"], expected_chain_id="test-13", max_height_lag=10)
         self.assertIs(selected, clients[1])
         self.assertEqual(parse_status(status)["latest_height"], 123)
 
+    def test_second_equally_fresh_rpc_is_selected_when_faster(self):
+        payload = load("status.json")
+        clients = {
+            "http://slow": FakeClient("http://slow", {"status": payload}, delay=0.08),
+            "http://fast": FakeClient("http://fast", {"status": payload}),
+        }
+        with patch("indexer.rpc.GnoRpcClient", side_effect=lambda url, timeout: clients[url]):
+            selected, status = select_healthy_rpc(
+                ["http://slow", "http://fast"], expected_chain_id="test-13", max_height_lag=10,
+            )
+        self.assertIs(selected, clients["http://fast"])
+        self.assertIs(status, payload)
+
+    def test_faster_wrong_chain_catching_up_and_stale_endpoints_are_rejected(self):
+        for rejection in ("wrong_chain", "catching_up", "stale"):
+            with self.subTest(rejection=rejection):
+                rejected = load("status.json")
+                healthy = load("status.json")
+                healthy["result"]["sync_info"]["latest_block_height"] = "120"
+                if rejection == "wrong_chain":
+                    rejected["result"]["node_info"]["network"] = "wrong-chain"
+                    rejected["result"]["sync_info"]["latest_block_height"] = "120"
+                elif rejection == "catching_up":
+                    rejected["result"]["sync_info"]["catching_up"] = True
+                    rejected["result"]["sync_info"]["latest_block_height"] = "120"
+                else:
+                    rejected["result"]["sync_info"]["latest_block_height"] = "100"
+                clients = {
+                    "http://rejected": FakeClient("http://rejected", {"status": rejected}),
+                    "http://healthy": FakeClient("http://healthy", {"status": healthy}, delay=0.08),
+                }
+                with patch("indexer.rpc.GnoRpcClient", side_effect=lambda url, timeout: clients[url]):
+                    selected, status = select_healthy_rpc(
+                        ["http://rejected", "http://healthy"],
+                        expected_chain_id="test-13", max_height_lag=5,
+                    )
+                self.assertIs(selected, clients["http://healthy"])
+                self.assertIs(status, healthy)
+
     def test_all_rpc_endpoints_unavailable(self):
-        with patch("scripts.inspect_rpc.GnoRpcClient", return_value=FakeClient("http://bad", error=RpcError("down"))):
+        with patch("indexer.rpc.GnoRpcClient", return_value=FakeClient("http://bad", error=RpcError("down"))):
             with self.assertRaisesRegex(RpcError, "All RPC endpoints are rejected or unavailable"):
                 select_healthy_rpc(["http://bad"], expected_chain_id="test-13", max_height_lag=10)
 
     def test_catching_up_endpoint_rejected(self):
         status = load("status.json")
         status["result"]["sync_info"]["catching_up"] = True
-        with patch("scripts.inspect_rpc.GnoRpcClient", return_value=FakeClient("http://syncing", {"status": status})):
+        with patch("indexer.rpc.GnoRpcClient", return_value=FakeClient("http://syncing", {"status": status})):
             with self.assertRaisesRegex(RpcError, "All RPC endpoints are rejected or unavailable"):
                 select_healthy_rpc(["http://syncing"], expected_chain_id="test-13", max_height_lag=10)
 
     def test_wrong_chain_id_endpoint_rejected(self):
         status = load("status.json")
         status["result"]["node_info"]["network"] = "wrong-chain"
-        with patch("scripts.inspect_rpc.GnoRpcClient", return_value=FakeClient("http://wrong", {"status": status})):
+        with patch("indexer.rpc.GnoRpcClient", return_value=FakeClient("http://wrong", {"status": status})):
             with self.assertRaisesRegex(RpcError, "All RPC endpoints are rejected"):
                 select_healthy_rpc(["http://wrong"], expected_chain_id="test-13", max_height_lag=10)
 
     def test_malformed_status_endpoint_rejected(self):
         status = load("status.json")
         status["result"]["sync_info"].pop("latest_block_height")
-        with patch("scripts.inspect_rpc.GnoRpcClient", return_value=FakeClient("http://bad-status", {"status": status})):
+        with patch("indexer.rpc.GnoRpcClient", return_value=FakeClient("http://bad-status", {"status": status})):
             with self.assertRaisesRegex(RpcError, "All RPC endpoints are rejected"):
                 select_healthy_rpc(["http://bad-status"], expected_chain_id="test-13", max_height_lag=10)
 
@@ -199,7 +256,8 @@ class RpcSelectionTests(unittest.TestCase):
         current = load("status.json")
         current["result"]["sync_info"]["latest_block_height"] = "120"
         clients = [FakeClient("http://stale", {"status": stale}), FakeClient("http://current", {"status": current})]
-        with patch("scripts.inspect_rpc.GnoRpcClient", side_effect=clients):
+        by_url = {"http://stale": clients[0], "http://current": clients[1]}
+        with patch("indexer.rpc.GnoRpcClient", side_effect=lambda url, timeout: by_url[url]):
             selected, status = select_healthy_rpc(["http://stale", "http://current"], expected_chain_id="test-13", max_height_lag=10)
         self.assertIs(selected, clients[1])
         self.assertEqual(parse_status(status)["latest_height"], 120)
@@ -210,7 +268,8 @@ class RpcSelectionTests(unittest.TestCase):
         malformed = load("status.json")
         malformed["result"]["sync_info"].pop("latest_block_height")
         clients = [FakeClient("http://wrong", {"status": wrong_chain}), FakeClient("http://malformed", {"status": malformed})]
-        with patch("scripts.inspect_rpc.GnoRpcClient", side_effect=clients):
+        by_url = {"http://wrong": clients[0], "http://malformed": clients[1]}
+        with patch("indexer.rpc.GnoRpcClient", side_effect=lambda url, timeout: by_url[url]):
             with self.assertRaisesRegex(RpcError, "All RPC endpoints are rejected or unavailable"):
                 select_healthy_rpc(["http://wrong", "http://malformed"], expected_chain_id="test-13", max_height_lag=10)
 
@@ -230,6 +289,18 @@ class RpcSelectionTests(unittest.TestCase):
             env_path.write_text("GNO_RPC_URLS=http://one,http://two\n")
             with patch("scripts.inspect_rpc.Path", return_value=env_path):
                 self.assertEqual(configured_rpc_urls(), ["http://one", "http://two"])
+
+    def test_both_rpc_module_import_orders_are_safe(self):
+        commands = (
+            "import indexer.rpc; import scripts.inspect_rpc",
+            "import scripts.inspect_rpc; import indexer.rpc",
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                completed = subprocess.run(
+                    [sys.executable, "-c", command], capture_output=True, text=True, check=False,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
 
 
 if __name__ == "__main__":

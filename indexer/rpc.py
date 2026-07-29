@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -24,6 +25,7 @@ class RpcProbeResult:
     error_message: str | None = None
     client: GnoRpcClient | None = None
     status_payload: dict[str, Any] | None = None
+    response_seconds: float | None = None
 
 
 class RpcContinuityError(RpcError):
@@ -46,7 +48,17 @@ class SelectedRpc:
 def probe_rpc_endpoints(urls: list[str], chain_id: str, max_height_lag: int, timeout: int = 10) -> list[RpcProbeResult]:
     if not urls:
         raise RpcError("Set GNO_RPC_URLS to a comma-separated RPC list, or temporarily set legacy GNO_RPC_URL")
-    raw_probes = [_probe_endpoint(url, chain_id, timeout) for url in urls]
+    max_workers = min(len(urls), 8)
+    with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="rpc-probe") as executor:
+        futures = [executor.submit(_probe_endpoint, url, chain_id, timeout) for url in urls]
+        raw_probes = []
+        for url, future in zip(urls, futures):
+            try:
+                raw_probes.append(future.result())
+            except Exception:
+                raw_probes.append(RpcProbeResult(
+                    url=url, healthy=False, selected=False, error_message="rpc_error",
+                ))
     healthy_heights = [probe.latest_height for probe in raw_probes if probe.healthy and probe.latest_height is not None]
     if not healthy_heights:
         return raw_probes
@@ -87,12 +99,9 @@ def select_rpc(urls: list[str], chain_id: str, max_height_lag: int, timeout: int
 
 
 def suitable_rpc_candidates(probes: list[RpcProbeResult]) -> list[SelectedRpc]:
-    """Return healthy, non-stale probes as single-endpoint candidates in input order."""
+    """Return healthy, non-stale probes in latency-aware failover order."""
     candidates = []
-    for probe in probes:
-        if (not probe.healthy or probe.client is None or probe.status_payload is None
-                or probe.latest_height is None):
-            continue
+    for probe in suitable_rpc_probes(probes):
         candidates.append(SelectedRpc(
             client=probe.client,
             status_payload=probe.status_payload,
@@ -103,13 +112,34 @@ def suitable_rpc_candidates(probes: list[RpcProbeResult]) -> list[SelectedRpc]:
     return candidates
 
 
+def suitable_rpc_probes(probes: list[RpcProbeResult]) -> list[RpcProbeResult]:
+    """Return complete healthy probes in latency-aware failover order."""
+    suitable = [
+        (index, probe) for index, probe in enumerate(probes)
+        if probe.healthy
+        and probe.client is not None
+        and probe.status_payload is not None
+        and probe.latest_height is not None
+        and isinstance(probe.observed_lag, int)
+        and not isinstance(probe.observed_lag, bool)
+        and probe.observed_lag >= 0
+        and probe.error_message != "stale endpoint"
+    ]
+    return [probe for index, probe in sorted(
+        suitable, key=lambda item: _probe_rank(item[1], item[0]),
+    )]
+
+
 def _probe_endpoint(url: str, expected_chain_id: str, timeout: int) -> RpcProbeResult:
     client = GnoRpcClient(url, timeout=timeout)
+    started_at = time.perf_counter()
     try:
         status_payload = client.get("status")
+        response_seconds = time.perf_counter() - started_at
         status = parse_status(status_payload)
         validate_status_for_health(status, expected_chain_id)
     except RpcError as exc:
+        response_seconds = time.perf_counter() - started_at
         status = locals().get("status", {})
         return RpcProbeResult(
             url=url,
@@ -120,6 +150,7 @@ def _probe_endpoint(url: str, expected_chain_id: str, timeout: int) -> RpcProbeR
             catching_up=status.get("catching_up"),
             error_message=_safe_probe_error(exc),
             client=client,
+            response_seconds=response_seconds,
         )
     return RpcProbeResult(
         url=url,
@@ -130,6 +161,7 @@ def _probe_endpoint(url: str, expected_chain_id: str, timeout: int) -> RpcProbeR
         catching_up=status["catching_up"],
         client=client,
         status_payload=status_payload,
+        response_seconds=response_seconds,
     )
 
 
@@ -154,10 +186,18 @@ def _with_lag(probe: RpcProbeResult, highest_height: int, max_height_lag: int) -
 
 
 def _selected_probe_index(probes: list[RpcProbeResult], max_height_lag: int) -> int | None:
-    for index, probe in enumerate(probes):
-        if probe.healthy and probe.observed_lag is not None and probe.observed_lag <= max_height_lag:
-            return index
-    return None
+    suitable = [
+        (index, probe) for index, probe in enumerate(probes)
+        if probe.healthy and probe.observed_lag is not None and probe.observed_lag <= max_height_lag
+    ]
+    return min(suitable, key=lambda item: _probe_rank(item[1], item[0]))[0] if suitable else None
+
+
+def _probe_rank(probe: RpcProbeResult, input_index: int) -> tuple[float, int]:
+    duration = probe.response_seconds
+    if not isinstance(duration, (int, float)) or not math.isfinite(duration) or duration < 0:
+        duration = math.inf
+    return float(duration), input_index
 
 
 

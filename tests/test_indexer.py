@@ -3,13 +3,15 @@ import json
 import os
 import subprocess
 import sys
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from indexer.database import ChainIdentityError, DatabaseError, FinalizedDataConflict, _upsert_transactions, _verify_transaction_conflicts
 from indexer.parsers import parse_height, parse_tx
-from indexer.rpc import RpcProbeResult, select_rpc
+from indexer.rpc import RpcProbeResult, probe_rpc_endpoints, select_rpc, suitable_rpc_candidates, suitable_rpc_probes
 from indexer.service import IndexerService, plan_range
 from scripts.inspect_rpc import RpcError
 
@@ -530,6 +532,119 @@ class ServiceAndDatabaseSemanticsTests(unittest.TestCase):
 
 
 class RpcHealthTests(unittest.TestCase):
+    def test_probes_are_parallel_ordered_and_latency_ranked(self):
+        barrier = threading.Barrier(2, timeout=2)
+        active = 0
+        max_active = 0
+        active_lock = threading.Lock()
+
+        class Client:
+            def __init__(self, url, timeout=10):
+                self.base_url = url
+
+            def get(self, method, **params):
+                nonlocal active, max_active
+                with active_lock:
+                    active += 1
+                    max_active = max(max_active, active)
+                barrier.wait()
+                if self.base_url == "http://slow":
+                    time.sleep(0.1)
+                payload = load("status.json")
+                payload["result"]["sync_info"]["latest_block_height"] = "20"
+                with active_lock:
+                    active -= 1
+                return payload
+
+        started_at = time.perf_counter()
+        with patch("indexer.rpc.GnoRpcClient", Client):
+            probes = probe_rpc_endpoints(["http://slow", "http://fast"], "test-13", 5)
+        elapsed = time.perf_counter() - started_at
+
+        self.assertEqual([probe.url for probe in probes], ["http://slow", "http://fast"])
+        self.assertEqual(max_active, 2)
+        self.assertLess(elapsed, 1.0)
+        self.assertFalse(probes[0].selected)
+        self.assertTrue(probes[1].selected)
+        self.assertEqual(
+            [candidate.client.base_url for candidate in suitable_rpc_candidates(probes)],
+            ["http://fast", "http://slow"],
+        )
+
+    def test_latency_ties_use_input_order_and_invalid_duration_ranks_last(self):
+        client = MagicMock()
+        payload = {"result": {}}
+        probes = [
+            RpcProbeResult("first", True, False, latest_height=20, observed_lag=0,
+                           client=client, status_payload=payload, response_seconds=0.1),
+            RpcProbeResult("second", True, False, latest_height=20, observed_lag=0,
+                           client=client, status_payload=payload, response_seconds=0.1),
+            RpcProbeResult("unknown", True, False, latest_height=20, observed_lag=0,
+                           client=client, status_payload=payload, response_seconds=None),
+        ]
+        self.assertEqual(
+            [candidate.probes[0].url for candidate in suitable_rpc_candidates(probes)],
+            ["first", "second", "unknown"],
+        )
+        self.assertEqual(
+            [probe.url for probe in suitable_rpc_probes(probes)],
+            ["first", "second", "unknown"],
+        )
+
+    def test_faster_rejected_and_timed_out_probes_do_not_replace_fresh_endpoints(self):
+        clients = {url: MagicMock(base_url=url) for url in
+                   ("wrong", "syncing", "timeout", "stale", "fast", "slow")}
+        raw = {
+            "wrong": RpcProbeResult("wrong", False, False, error_message="wrong chain ID",
+                                    response_seconds=0.001),
+            "syncing": RpcProbeResult("syncing", False, False, catching_up=True,
+                                      error_message="endpoint is catching up", response_seconds=0.002),
+            "timeout": RpcProbeResult("timeout", False, False, error_message="rpc_error",
+                                      response_seconds=0.003),
+            "stale": RpcProbeResult("stale", True, False, latest_height=80,
+                                    client=clients["stale"], status_payload={}, response_seconds=0.004),
+            "fast": RpcProbeResult("fast", True, False, latest_height=100,
+                                   client=clients["fast"], status_payload={}, response_seconds=0.02),
+            "slow": RpcProbeResult("slow", True, False, latest_height=100,
+                                   client=clients["slow"], status_payload={}, response_seconds=0.04),
+        }
+        urls = list(raw)
+        def probe(url, *_):
+            if url == "timeout":
+                raise RpcError("timed out")
+            return raw[url]
+
+        with patch("indexer.rpc._probe_endpoint", side_effect=probe):
+            probes = probe_rpc_endpoints(urls, "test-13", 5)
+
+        self.assertEqual([probe.url for probe in probes], urls)
+        self.assertEqual([probe.url for probe in probes if probe.selected], ["fast"])
+        self.assertEqual(next(probe for probe in probes if probe.url == "stale").error_message,
+                         "stale endpoint")
+        self.assertEqual(
+            [candidate.probes[0].url for candidate in suitable_rpc_candidates(probes)],
+            ["fast", "slow"],
+        )
+        self.assertEqual([probe.url for probe in suitable_rpc_probes(probes)], ["fast", "slow"])
+
+    def test_all_invalid_probe_durations_rank_after_valid_and_remain_deterministic(self):
+        client = MagicMock()
+        payload = {}
+        durations = [0.1, None, -1.0, float("nan"), float("inf")]
+        probes = [
+            RpcProbeResult(str(index), True, False, latest_height=20, observed_lag=0,
+                           client=client, status_payload=payload, response_seconds=duration)
+            for index, duration in enumerate(durations)
+        ]
+        self.assertEqual(
+            [candidate.probes[0].url for candidate in suitable_rpc_candidates(probes)],
+            ["0", "1", "2", "3", "4"],
+        )
+        self.assertEqual(
+            [probe.url for probe in suitable_rpc_probes(probes)],
+            ["0", "1", "2", "3", "4"],
+        )
+
     def test_structured_probe_results_include_rejections_and_stale(self):
         class Client:
             def __init__(self, url, timeout=10):

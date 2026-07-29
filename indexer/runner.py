@@ -18,7 +18,7 @@ from scripts.inspect_rpc import RpcError
 
 from .database import ChainIdentityError, CheckpointAnchor, DatabaseError, FinalizedDataConflict, PostgresDatabase
 from .parsers import parse_height
-from .rpc import RpcContinuityError, RpcProbeResult, canonical_block_hash_hex, fetch_height, probe_rpc_endpoints, verify_checkpoint_anchor, verify_parent_continuity
+from .rpc import RpcContinuityError, RpcProbeResult, canonical_block_hash_hex, fetch_height, probe_rpc_endpoints, suitable_rpc_probes, verify_checkpoint_anchor, verify_parent_continuity
 
 LOGGER = logging.getLogger(__name__)
 
@@ -188,9 +188,8 @@ def _anchor(database, chain_id: str) -> CheckpointAnchor | None:
 
 def _candidate_probes(probes: list[RpcProbeResult], required_height: int) -> list[RpcProbeResult]:
     return [
-        probe for probe in probes
-        if probe.healthy and probe.client is not None and probe.latest_height is not None
-        and probe.latest_height >= required_height - 1
+        probe for probe in suitable_rpc_probes(probes)
+        if probe.latest_height >= required_height - 1
     ]
 
 
