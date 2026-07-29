@@ -10,6 +10,7 @@ import { ValidatorDetail } from './pages/ValidatorDetail'
 import { Validators } from './pages/Validators'
 import { Governance } from './pages/Governance'
 import { GovernanceDetail } from './pages/GovernanceDetail'
+import { AccountDetail } from './pages/AccountDetail'
 import { useBlocksPage } from './hooks/useBlocksPage'
 import { useBlockDetail } from './hooks/useBlockDetail'
 import { useTransactionDetail } from './hooks/useTransactionDetail'
@@ -19,6 +20,7 @@ import { useValidatorDetail } from './hooks/useValidatorDetail'
 import { useValidatorsPage } from './hooks/useValidatorsPage'
 import { useGovernancePage } from './hooks/useGovernancePage'
 import { useGovernanceDetail } from './hooks/useGovernanceDetail'
+import { useAccountDetail } from './hooks/useAccountDetail'
 
 const NETWORK_MASCOT_SRC = '/assets/network-mascot.png?v=1'
 
@@ -104,6 +106,15 @@ function ValidatorDetailPage({ address }) {
     </ExplorerLayout>
   )
 }
+function AccountDetailPage({ address }) {
+  const accountDetail = useAccountDetail(address)
+
+  return (
+    <ExplorerLayout healthState={accountDetail.healthState} showRefreshCountdown={false}>
+      <AccountDetail accountDetail={accountDetail} />
+    </ExplorerLayout>
+  )
+}
 function GovernancePage() {
   const governancePage = useGovernancePage()
 
@@ -156,6 +167,11 @@ export default function App() {
   const validatorDetailMatch = path.match(/^\/validators\/([^/]+)\/?$/)
   if (validatorDetailMatch) {
     return <ValidatorDetailPage address={validatorDetailMatch[1]} />
+  }
+
+  const accountDetailMatch = path.match(/^\/accounts\/([^/]+)\/?$/)
+  if (accountDetailMatch) {
+    return <AccountDetailPage address={accountDetailMatch[1]} />
   }
 
   const transactionDetailMatch = path.match(/^\/blocks\/([^/]+)\/transactions\/([^/]+)\/?$/)

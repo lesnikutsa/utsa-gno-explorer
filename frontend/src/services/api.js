@@ -64,6 +64,7 @@ export const searchValidators = ({ query, limit = 6 }) => {
   return request(`/search/validators?${params.toString()}`)
 }
 export const getValidator = (address) => request(`/validators/${encodeURIComponent(address)}`)
+export const getAccount = (address) => request(`/accounts/${encodeURIComponent(address)}`)
 export const getGovernanceProposals = ({ limit, beforeProposalId } = {}) => {
   const query = new URLSearchParams()
   if (limit !== undefined && limit !== null && limit !== '') query.set('limit', limit)
