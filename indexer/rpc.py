@@ -101,10 +101,7 @@ def select_rpc(urls: list[str], chain_id: str, max_height_lag: int, timeout: int
 def suitable_rpc_candidates(probes: list[RpcProbeResult]) -> list[SelectedRpc]:
     """Return healthy, non-stale probes in latency-aware failover order."""
     candidates = []
-    for _, probe in sorted(enumerate(probes), key=lambda item: _probe_rank(item[1], item[0])):
-        if (not probe.healthy or probe.client is None or probe.status_payload is None
-                or probe.latest_height is None):
-            continue
+    for probe in suitable_rpc_probes(probes):
         candidates.append(SelectedRpc(
             client=probe.client,
             status_payload=probe.status_payload,
@@ -113,6 +110,24 @@ def suitable_rpc_candidates(probes: list[RpcProbeResult]) -> list[SelectedRpc]:
             probes=[probe],
         ))
     return candidates
+
+
+def suitable_rpc_probes(probes: list[RpcProbeResult]) -> list[RpcProbeResult]:
+    """Return complete healthy probes in latency-aware failover order."""
+    suitable = [
+        (index, probe) for index, probe in enumerate(probes)
+        if probe.healthy
+        and probe.client is not None
+        and probe.status_payload is not None
+        and probe.latest_height is not None
+        and isinstance(probe.observed_lag, int)
+        and not isinstance(probe.observed_lag, bool)
+        and probe.observed_lag >= 0
+        and probe.error_message != "stale endpoint"
+    ]
+    return [probe for index, probe in sorted(
+        suitable, key=lambda item: _probe_rank(item[1], item[0]),
+    )]
 
 
 def _probe_endpoint(url: str, expected_chain_id: str, timeout: int) -> RpcProbeResult:

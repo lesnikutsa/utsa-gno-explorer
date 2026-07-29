@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 from indexer.database import ChainIdentityError, DatabaseError, FinalizedDataConflict, _upsert_transactions, _verify_transaction_conflicts
 from indexer.parsers import parse_height, parse_tx
-from indexer.rpc import RpcProbeResult, probe_rpc_endpoints, select_rpc, suitable_rpc_candidates
+from indexer.rpc import RpcProbeResult, probe_rpc_endpoints, select_rpc, suitable_rpc_candidates, suitable_rpc_probes
 from indexer.service import IndexerService, plan_range
 from scripts.inspect_rpc import RpcError
 
@@ -586,6 +586,10 @@ class RpcHealthTests(unittest.TestCase):
             [candidate.probes[0].url for candidate in suitable_rpc_candidates(probes)],
             ["first", "second", "unknown"],
         )
+        self.assertEqual(
+            [probe.url for probe in suitable_rpc_probes(probes)],
+            ["first", "second", "unknown"],
+        )
 
     def test_faster_rejected_and_timed_out_probes_do_not_replace_fresh_endpoints(self):
         clients = {url: MagicMock(base_url=url) for url in
@@ -621,6 +625,7 @@ class RpcHealthTests(unittest.TestCase):
             [candidate.probes[0].url for candidate in suitable_rpc_candidates(probes)],
             ["fast", "slow"],
         )
+        self.assertEqual([probe.url for probe in suitable_rpc_probes(probes)], ["fast", "slow"])
 
     def test_all_invalid_probe_durations_rank_after_valid_and_remain_deterministic(self):
         client = MagicMock()
@@ -633,6 +638,10 @@ class RpcHealthTests(unittest.TestCase):
         ]
         self.assertEqual(
             [candidate.probes[0].url for candidate in suitable_rpc_candidates(probes)],
+            ["0", "1", "2", "3", "4"],
+        )
+        self.assertEqual(
+            [probe.url for probe in suitable_rpc_probes(probes)],
             ["0", "1", "2", "3", "4"],
         )
 

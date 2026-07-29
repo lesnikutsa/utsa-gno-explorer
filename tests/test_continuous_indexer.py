@@ -358,6 +358,66 @@ class ReviewSemanticsTests(unittest.TestCase):
             run_cycle(db, "test-13", ["x", "y"], 10, self.config(), StopController())
         self.assertEqual(db.probe_cycles, [probes])
 
+    def test_cycle_persists_input_order_but_activates_fastest_fresh_probe(self):
+        db = SqlLikeDb(9)
+        slow = RpcProbeResult(
+            "http://slow", True, False, "test-13", 12, 0, False,
+            client=FakeClient(12), status_payload={}, response_seconds=0.2,
+        )
+        fast = RpcProbeResult(
+            "http://fast", True, True, "test-13", 12, 0, False,
+            client=FakeClient(12), status_payload={}, response_seconds=0.1,
+        )
+        with patch("indexer.runner.probe_rpc_endpoints", return_value=[slow, fast]):
+            result = run_cycle(db, "test-13", ["http://slow", "http://fast"], 10,
+                               self.config(), StopController())
+
+        self.assertEqual(result.processed, [10, 11])
+        self.assertEqual([probe.url for probe in db.probe_cycles[0]], ["http://slow", "http://fast"])
+        self.assertEqual(db.selected_url, "http://fast")
+        self.assertEqual(db.selection_calls[0], ("http://fast", "initial_selection"))
+
+    def test_lower_latency_probe_below_required_height_is_skipped(self):
+        db = SqlLikeDb(9)
+        too_low = RpcProbeResult(
+            "http://low", True, False, "test-13", 9, 0, False,
+            client=FakeClient(9), status_payload={}, response_seconds=0.01,
+        )
+        suitable = RpcProbeResult(
+            "http://suitable", True, True, "test-13", 12, 0, False,
+            client=FakeClient(12), status_payload={}, response_seconds=0.2,
+        )
+        with patch("indexer.runner.probe_rpc_endpoints", return_value=[too_low, suitable]):
+            run_cycle(db, "test-13", ["http://low", "http://suitable"], 10,
+                      self.config(), StopController())
+        self.assertEqual(db.selection_calls[0][0], "http://suitable")
+
+    def test_fastest_runtime_failure_fails_over_in_latency_order_after_anchor_checks(self):
+        db = SqlLikeDb(9)
+        fast = RpcProbeResult(
+            "http://fast", True, True, "test-13", 12, 0, False,
+            client=FakeClient(12, fail_height=10), status_payload={}, response_seconds=0.01,
+        )
+        fallback = RpcProbeResult(
+            "http://fallback", True, False, "test-13", 12, 0, False,
+            client=FakeClient(12), status_payload={}, response_seconds=0.2,
+        )
+        anchor_checks = []
+
+        def verify(client, height, block_hash):
+            anchor_checks.append((client, height, block_hash))
+
+        with patch("indexer.runner.probe_rpc_endpoints", return_value=[fallback, fast]), patch(
+            "indexer.runner.verify_checkpoint_anchor", side_effect=verify,
+        ):
+            result = run_cycle(db, "test-13", ["http://fallback", "http://fast"], 10,
+                               self.config(), StopController())
+
+        self.assertEqual(result.processed, [10, 11])
+        self.assertEqual([url for url, _ in db.selection_calls], ["http://fast", "http://fallback"])
+        self.assertEqual([client for client, _, _ in anchor_checks], [fast.client, fallback.client])
+        self.assertEqual(db.runtime_failures, [("http://fast", "rpc_error")])
+
     def test_once_success_caught_up_and_transient_exit_codes(self):
         with patch("indexer.runner.probe_rpc_endpoints", return_value=selected(12).probes):
             self.assertEqual(run_continuous(SqlLikeDb(None), "test-13", ["x"], 10, self.config(once=True), lock_factory=FakeLock), 0)
