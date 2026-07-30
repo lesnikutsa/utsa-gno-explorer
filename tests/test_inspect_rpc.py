@@ -117,6 +117,29 @@ class RpcSessionPoolTests(unittest.TestCase):
         self.assertEqual(payload["result"]["height"], "1")
         urlopen.assert_called_once_with("https://rpc.example/status?height=3", timeout=7)
 
+    def test_urllib_transport_rejects_request_after_close_without_network_io(self):
+        client = GnoRpcClient("https://rpc.example")
+        client.close()
+        client.close()
+
+        with patch("builtins.__import__", side_effect=AssertionError("requests import attempted")), patch(
+            "scripts.inspect_rpc.urlopen"
+        ) as urlopen, self.assertRaisesRegex(RpcError, "RPC client is closed"):
+            client.get("status")
+
+        urlopen.assert_not_called()
+
+    def test_urllib_transport_rejects_request_after_context_manager_exit(self):
+        with GnoRpcClient("https://rpc.example") as client:
+            pass
+
+        with patch("builtins.__import__", side_effect=AssertionError("requests import attempted")), patch(
+            "scripts.inspect_rpc.urlopen"
+        ) as urlopen, self.assertRaisesRegex(RpcError, "RPC client is closed"):
+            client.get("status")
+
+        urlopen.assert_not_called()
+
     def test_sequential_calls_reuse_one_configured_session(self):
         sessions = []
 
@@ -327,6 +350,49 @@ class RpcSessionPoolTests(unittest.TestCase):
             with self.assertRaisesRegex(RpcError, "client is closed"):
                 client.get("status")
         self.assertEqual(len(sessions), 1)
+
+    def test_close_racing_with_session_checkout_cannot_create_session(self):
+        checked_open = threading.Event()
+        continue_checkout = threading.Event()
+        sessions = []
+
+        class Session:
+            def __init__(self):
+                sessions.append(self)
+
+        requests = fake_requests(Session)
+        client = GnoRpcClient("https://rpc.example")
+        original_check_open = client._check_open
+
+        def pause_after_open_check():
+            original_check_open()
+            checked_open.set()
+            continue_checkout.wait(timeout=2)
+
+        client._check_open = pause_after_open_check
+        errors = []
+
+        with patch.dict(sys.modules, {"requests": requests}):
+            request = threading.Thread(
+                target=lambda: errors.append(self._captured_rpc_error(client))
+            )
+            request.start()
+            self.assertTrue(checked_open.wait(timeout=1))
+            client.close()
+            continue_checkout.set()
+            request.join(timeout=2)
+
+        self.assertFalse(request.is_alive())
+        self.assertEqual(len(sessions), 0)
+        self.assertEqual(str(errors[0]), "RPC client is closed")
+
+    @staticmethod
+    def _captured_rpc_error(client):
+        try:
+            client.get("status")
+        except RpcError as exc:
+            return exc
+        raise AssertionError("request unexpectedly succeeded")
 
     def test_checked_out_session_closes_when_returned_after_close(self):
         entered = threading.Event()

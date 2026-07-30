@@ -65,6 +65,7 @@ class GnoRpcClient:
         self._closed = False
 
     def get(self, method: str, **params: Any) -> dict[str, Any]:
+        self._check_open()
         url = urljoin(self.base_url, method.lstrip("/"))
         try:
             import requests
@@ -90,6 +91,11 @@ class GnoRpcClient:
             finally:
                 self._return_session(session)
         return validate_payload(method, payload)
+
+    def _check_open(self) -> None:
+        with self._session_state_lock:
+            if self._closed:
+                raise RpcError("RPC client is closed")
 
     def _checkout_session(self, requests: Any) -> Any:
         with self._session_state_lock:
