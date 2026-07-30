@@ -7,8 +7,12 @@ import {
   isExactBase64BlockHash,
   isExactHexBlockHash,
   isPositiveBlockHeight,
+  isValidAccountAddress,
+  resolveAccountAddressDestination,
   shouldSearchValidators,
 } from '../src/utils/globalSearch.js'
+
+const validAccount = 'g16mldrfu90pe5r97cjm3xk02m7a3d0z8g9g3r75'
 
 const first = { address: 'g1signing-one', operator_address: 'g1operator-one', moniker: 'UTSA' }
 const second = { address: 'g1signing-two', operator_address: 'g1operator-two', moniker: 'UTSA' }
@@ -34,6 +38,35 @@ test('classifies monikers and signing or operator addresses as validator searche
   assert.equal(shouldSearchValidators('x'), false)
   assert.equal(shouldSearchValidators('12'), false)
   assert.equal(shouldSearchValidators('f'.repeat(64)), false)
+})
+
+test('strictly validates Topaz account addresses', () => {
+  assert.equal(isValidAccountAddress(validAccount), true)
+  assert.equal(isValidAccountAddress(` \t${validAccount}\n`), true)
+  assert.equal(isValidAccountAddress(`${validAccount.slice(0, -1)}q`), false)
+  assert.equal(isValidAccountAddress(validAccount.toUpperCase()), false)
+  assert.equal(isValidAccountAddress(`G${validAccount.slice(1)}`), false)
+  assert.equal(isValidAccountAddress(`x${validAccount.slice(1)}`), false)
+  assert.equal(isValidAccountAddress(`${validAccount.slice(0, -1)}i`), false)
+  assert.equal(isValidAccountAddress('g1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0lj0qc'), false)
+  assert.equal(isValidAccountAddress(null), false)
+})
+
+test('complete accounts skip validator autocomplete while partial addresses do not', () => {
+  assert.equal(shouldSearchValidators(validAccount), false)
+  assert.equal(shouldSearchValidators('g1abc'), true)
+})
+
+test('account destinations only give exact validator addresses precedence', () => {
+  const signing = { address: validAccount, operator_address: 'g1operator', moniker: 'signer' }
+  assert.equal(resolveAccountAddressDestination(validAccount, []), `/accounts/${validAccount}`)
+  assert.equal(resolveAccountAddressDestination(validAccount, [signing]), `/validators/${validAccount}`)
+
+  const operator = { address: 'g1signing-identity', operator_address: validAccount, moniker: 'operator' }
+  assert.equal(resolveAccountAddressDestination(validAccount, [operator]), '/validators/g1signing-identity')
+  assert.equal(resolveAccountAddressDestination(validAccount, [
+    { address: 'g1partial', operator_address: 'g1other', moniker: validAccount },
+  ]), `/accounts/${validAccount}`)
 })
 
 test('exact signing address has priority and comparisons are case-insensitive', () => {

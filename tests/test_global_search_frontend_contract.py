@@ -17,9 +17,41 @@ class GlobalSearchFrontendContractTests(unittest.TestCase):
         cls.validators = (ROOT / "frontend/src/pages/Validators.jsx").read_text()
 
     def test_labels_and_encoded_api_path(self):
-        self.assertIn('placeholder="Search blocks, transactions, or validators..."', self.topbar)
-        self.assertIn("transaction hash, validator moniker, signing address, or operator address", self.topbar)
+        self.assertIn('placeholder="Search blocks, transactions, accounts, or validators..."', self.topbar)
+        self.assertIn("transaction hash, account address, validator moniker, signing address, or operator address", self.topbar)
         self.assertIn("/transactions/by-hash/${encodeURIComponent(txHash)}", self.api)
+
+    def test_valid_account_uses_exact_validator_lookup_then_account_fallback(self):
+        for fragment in (
+            "if (isValidAccountAddress(trimmed))",
+            "searchValidators({ query: trimmed, limit: 6 })",
+            "resolveAccountAddressDestination(trimmed, items)",
+            "`/accounts/${encodeURIComponent(address.trim())}`",
+            "item.address?.toLocaleLowerCase() === normalized",
+            "item.operator_address?.toLocaleLowerCase() === normalized",
+        ):
+            self.assertIn(fragment, self.hook if fragment.startswith(("if (", "search", "resolve")) else self.helpers)
+        self.assertNotIn("getAccount", self.hook)
+
+    def test_account_lookup_preserves_request_cancellation_and_failure_fallback(self):
+        account_branch = self.hook.split("if (isValidAccountAddress(trimmed))", 1)[1].split(
+            "if (!shouldSearchValidators(trimmed))", 1
+        )[0]
+        self.assertIn("const id = ++requestId.current", account_branch)
+        self.assertGreaterEqual(account_branch.count("id !== requestId.current"), 3)
+        self.assertIn("setStatus('searching')", account_branch)
+        self.assertIn("catch {", account_branch)
+        self.assertIn("window.location.assign(resolveAccountAddressDestination(trimmed, items))", account_branch)
+
+    def test_account_validation_is_strict_and_excluded_from_autocomplete(self):
+        for fragment in (
+            "typeof query !== 'string'", "query.trim()", "address.length < 8", "address.length > 90",
+            "address !== address.toLowerCase()", "character.charCodeAt(0) < 33",
+            "address.slice(0, separator) !== 'g'", "BECH32_CHARSET.indexOf(character)",
+            "bech32Polymod([...expandedHrp, ...values]) !== 1", "payload.length === 20",
+            "!isValidAccountAddress(trimmed)",
+        ):
+            self.assertIn(fragment, self.helpers)
 
     def test_hex_hash_checks_both_lookups_and_prefers_transaction(self):
         for fragment in (

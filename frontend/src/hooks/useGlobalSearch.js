@@ -6,14 +6,16 @@ import {
   isExactBlockHash,
   isExactTransactionHash,
   isPositiveBlockHeight,
+  isValidAccountAddress,
   isValidBlockHashLookupResponse,
   isValidTransactionHashLookupResponse,
+  resolveAccountAddressDestination,
   shouldSearchValidators,
 } from '../utils/globalSearch'
 
 const messages = {
   searching: 'Searching…',
-  invalid: 'Enter a block height, block hash, transaction hash, validator moniker, or validator address.',
+  invalid: 'Enter a block height, block hash, transaction hash, account address, validator moniker, or validator address.',
   hashNotFound: 'No matching block or transaction found.',
   validatorNotFound: 'No matching validator found.',
   error: 'Search is currently unavailable.',
@@ -152,6 +154,22 @@ export function useGlobalSearch() {
       } catch {
         if (mounted.current && id === requestId.current) setStatus('error')
       }
+      return
+    }
+    if (isValidAccountAddress(trimmed)) {
+      const id = ++requestId.current
+      setStatus('searching')
+      let items = []
+      try {
+        const response = await searchValidators({ query: trimmed, limit: 6 })
+        if (!mounted.current || id !== requestId.current) return
+        if (!Array.isArray(response?.items)) throw new Error('Unexpected validator search response')
+        items = response.items
+      } catch {
+        if (!mounted.current || id !== requestId.current) return
+      }
+      if (!mounted.current || id !== requestId.current) return
+      window.location.assign(resolveAccountAddressDestination(trimmed, items))
       return
     }
     if (!shouldSearchValidators(trimmed)) {
