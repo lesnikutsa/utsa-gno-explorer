@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { decodeAccountRouteAddress, findNativeBalance, findOtherBalances, formatAmountString } from '../src/utils/account.js'
+import { decodeAccountRouteAddress, findNativeBalance, findOtherBalances, formatAmountString, getAccountDetailView } from '../src/utils/account.js'
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
 const app = read('../src/App.jsx')
@@ -51,11 +51,14 @@ test('initial loading renders the account shell with accessible skeletons', () =
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\) \{[^}]*account-detail__placeholder \{ animation: none;/)
   const initialBalance = page.slice(page.indexOf('aria-labelledby="account-balance-title"'), page.indexOf('aria-labelledby="account-summary-title"'))
   assert.ok(initialBalance.indexOf('initialLoading ? <Skeleton') < initialBalance.indexOf('No native bank balance'))
+  assert.equal(getAccountDetailView({ account: null, requestedAddress: address, loading: true }), 'loading')
+  assert.ok(page.includes("initialLoading ? 'Loading…' : loading ? 'Refreshing…' : 'Refresh'"))
 })
 test('manual refresh keeps loaded account values visible', () => {
   assert.ok(hook.includes('account: current.account?.address === address ? current.account : null'))
   assert.ok(page.includes("loading ? 'Refreshing…' : 'Refresh'"))
-  assert.ok(page.includes('loading && account && <p className="account-detail__updating"'))
+  assert.equal(getAccountDetailView({ account: { found: true }, requestedAddress: address, loading: true }), 'account')
+  assert.ok(page.includes('loading && account?.found && <p className="account-detail__updating"'))
 })
 test('network profile defines the native denom with an ugnot fallback', () => {
   assert.ok(profile.includes('import.meta.env.VITE_NATIVE_DENOM'))
@@ -75,6 +78,7 @@ test('amount formatter groups integer digits without changing precision', () => 
   assert.equal(formatAmountString('9999999996013000000'), '9 999 999 996 013 000 000')
 })
 test('missing account refresh reuses retry, preserves content, and reports errors safely', () => {
+  assert.equal(getAccountDetailView({ account: { found: false, address }, requestedAddress: address, loading: true }), 'missing')
   assert.ok(page.includes('function MissingAccount({ account, retry, loading, refreshError })'))
   assert.ok(page.includes('onClick={retry} disabled={loading}'))
   assert.ok(page.includes("loading ? 'Refreshing…' : 'Refresh'"))
@@ -84,6 +88,14 @@ test('missing account refresh reuses retry, preserves content, and reports error
   const missingState = page.slice(page.indexOf('function MissingAccount'), page.indexOf('export function AccountDetail'))
   for (const value of ['sourceLabel(', 'observed_height', 'chain_id', 'Fetched at block']) assert.equal(missingState.includes(value), false)
   assert.ok(missingState.includes('<TransactionsPlaceholder />'))
+  for (const value of ['Account Summary', 'No native bank balance', 'RPC endpoint', 'account-detail__main-balance']) assert.equal(missingState.includes(value), false)
+})
+test('account view selection preserves safe initial result states', () => {
+  assert.equal(getAccountDetailView({ account: null, requestedAddress: null, loading: true }), 'invalid')
+  assert.equal(getAccountDetailView({ account: null, requestedAddress: address, invalidAddress: true }), 'invalid')
+  assert.equal(getAccountDetailView({ account: null, requestedAddress: address, unavailable: true }), 'unavailable')
+  assert.equal(getAccountDetailView({ account: null, requestedAddress: address, error: true }), 'error')
+  assert.equal(getAccountDetailView({ account: { found: false }, requestedAddress: address, loading: false }), 'missing')
 })
 test('page uses a compact balance and account summary overview', () => {
   assert.ok(page.includes('account-detail__overview'))

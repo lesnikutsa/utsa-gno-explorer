@@ -1,6 +1,6 @@
 import { CopyButton } from '../components/CopyButton'
 import { networkProfile } from '../config/networkProfile'
-import { findNativeBalance, findOtherBalances, formatAmountString } from '../utils/account'
+import { findNativeBalance, findOtherBalances, formatAmountString, getAccountDetailView } from '../utils/account'
 
 const present = (value) => value !== null && value !== undefined && value !== ''
 
@@ -78,14 +78,14 @@ function MissingAccount({ account, retry, loading, refreshError }) {
 
 export function AccountDetail({ accountDetail }) {
   const { account, requestedAddress, loading, invalidAddress, unavailable, error, retry } = accountDetail
+  const view = getAccountDetailView(accountDetail)
 
-  if (loading && !account && !requestedAddress) return <StatePanel title="Invalid account address" message="The requested account address is not valid for this network." />
-  if (invalidAddress && !account) return <StatePanel title="Invalid account address" message="The requested account address is not valid for this network." />
-  if (unavailable && !account) return <StatePanel title="Account data is temporarily unavailable" message="The Explorer could not read current account state from a fresh RPC endpoint." retry={retry} />
-  if (error && !account) return <StatePanel title="Account details are currently unavailable" retry={retry} />
-  if (!loading && !account?.found) return <MissingAccount account={account} retry={retry} loading={loading} refreshError={invalidAddress || unavailable || error} />
+  if (view === 'invalid') return <StatePanel title="Invalid account address" message="The requested account address is not valid for this network." />
+  if (view === 'unavailable') return <StatePanel title="Account data is temporarily unavailable" message="The Explorer could not read current account state from a fresh RPC endpoint." retry={retry} />
+  if (view === 'error') return <StatePanel title="Account details are currently unavailable" retry={retry} />
+  if (view === 'missing') return <MissingAccount account={account} retry={retry} loading={loading} refreshError={invalidAddress || unavailable || error} />
 
-  const initialLoading = loading && !account
+  const initialLoading = view === 'loading'
   const balances = Array.isArray(account?.balances) ? account.balances : []
   const primary = findNativeBalance(balances, networkProfile.nativeDenom)
   const otherBalances = findOtherBalances(balances, networkProfile.nativeDenom)
@@ -95,10 +95,10 @@ export function AccountDetail({ accountDetail }) {
       <a className="account-detail__back" href="/">← Back to Overview</a>
       <header className="account-detail__header">
         <div><h1 id="account-detail-title">Account</h1><CopyValue value={account?.address || requestedAddress} label="account address" /></div>
-        <button className="blocks-page__button blocks-page__button--accent" type="button" onClick={retry} disabled={loading} aria-label="Refresh account details">{loading ? 'Refreshing…' : 'Refresh'}</button>
+        <button className="blocks-page__button blocks-page__button--accent" type="button" onClick={retry} disabled={loading} aria-label="Refresh account details">{initialLoading ? 'Loading…' : loading ? 'Refreshing…' : 'Refresh'}</button>
       </header>
       {initialLoading && <p className="sr-only" role="status" aria-live="polite">Loading current account state…</p>}
-      {loading && account && <p className="account-detail__updating" role="status">Updating…</p>}
+      {loading && account?.found && <p className="account-detail__updating" role="status">Updating…</p>}
       {(invalidAddress || unavailable || error) && <p className="account-detail__refresh-error" role="status">Account refresh is currently unavailable.</p>}
 
       <div className="account-detail__overview">

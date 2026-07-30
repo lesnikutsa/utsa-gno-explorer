@@ -18,6 +18,15 @@ export const findOtherBalances = (balances, nativeDenom) => (
   balances.filter((balance) => balance.denom !== nativeDenom)
 )
 
+export const getAccountDetailView = ({ account, requestedAddress, loading, invalidAddress, unavailable, error }) => {
+  if (!account && (!requestedAddress || invalidAddress)) return 'invalid'
+  if (!account && unavailable) return 'unavailable'
+  if (!account && error) return 'error'
+  if (account && !account.found) return 'missing'
+  if (!account && loading) return 'loading'
+  return 'account'
+}
+
 export const formatAmountString = (value) => {
   const text = String(value)
   const [integer, ...fractionParts] = text.split('.')
