@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import scripts.inspect_rpc as inspect_rpc
 from scripts.inspect_rpc import (
     GnoRpcClient,
     RpcError,
@@ -121,24 +122,58 @@ class RpcSessionPoolTests(unittest.TestCase):
         client = GnoRpcClient("https://rpc.example")
         client.close()
         client.close()
+        real_import = __import__
+        sessions = []
 
-        with patch("builtins.__import__", side_effect=AssertionError("requests import attempted")), patch(
-            "scripts.inspect_rpc.urlopen"
-        ) as urlopen, self.assertRaisesRegex(RpcError, "RPC client is closed"):
-            client.get("status")
+        class Session:
+            def __init__(self):
+                sessions.append(self)
+
+        def import_without_requests(name, *args, **kwargs):
+            if name == "requests":
+                raise AssertionError("requests import attempted")
+            return real_import(name, *args, **kwargs)
+
+        with patch.dict(sys.modules, {"requests": fake_requests(Session)}), patch.object(
+            inspect_rpc, "urlopen"
+        ) as urlopen:
+            with patch(
+                "builtins.__import__", side_effect=import_without_requests
+            ) as import_mock:
+                with self.assertRaisesRegex(RpcError, "RPC client is closed"):
+                    client.get("status")
 
         urlopen.assert_not_called()
+        import_mock.assert_not_called()
+        self.assertEqual(sessions, [])
 
     def test_urllib_transport_rejects_request_after_context_manager_exit(self):
         with GnoRpcClient("https://rpc.example") as client:
             pass
+        real_import = __import__
+        sessions = []
 
-        with patch("builtins.__import__", side_effect=AssertionError("requests import attempted")), patch(
-            "scripts.inspect_rpc.urlopen"
-        ) as urlopen, self.assertRaisesRegex(RpcError, "RPC client is closed"):
-            client.get("status")
+        class Session:
+            def __init__(self):
+                sessions.append(self)
+
+        def import_without_requests(name, *args, **kwargs):
+            if name == "requests":
+                raise AssertionError("requests import attempted")
+            return real_import(name, *args, **kwargs)
+
+        with patch.dict(sys.modules, {"requests": fake_requests(Session)}), patch.object(
+            inspect_rpc, "urlopen"
+        ) as urlopen:
+            with patch(
+                "builtins.__import__", side_effect=import_without_requests
+            ) as import_mock:
+                with self.assertRaisesRegex(RpcError, "RPC client is closed"):
+                    client.get("status")
 
         urlopen.assert_not_called()
+        import_mock.assert_not_called()
+        self.assertEqual(sessions, [])
 
     def test_sequential_calls_reuse_one_configured_session(self):
         sessions = []
