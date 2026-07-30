@@ -441,6 +441,87 @@ class ReviewSemanticsTests(unittest.TestCase):
         self.assertNotIn("private", log)
         self.assertNotIn("token", log)
 
+    def test_caught_up_cycles_preserve_streak_and_switch_after_success(self):
+        db = SqlLikeDb(10)
+        state = RpcSelectionState("https://selected.invalid")
+
+        def probes():
+            return [
+                RpcProbeResult("https://candidate.invalid", True, True, "test-13", 11, 0, False, client=FakeClient(11), status_payload={}, response_seconds=0.15),
+                RpcProbeResult("https://selected.invalid", True, False, "test-13", 11, 0, False, client=FakeClient(11), status_payload={}, response_seconds=0.20),
+            ]
+
+        with patch("indexer.runner.probe_rpc_endpoints", side_effect=lambda *_args: probes()), self.assertLogs("indexer.runner", level="INFO") as captured:
+            run_cycle(db, "test-13", ["https://selected.invalid", "https://candidate.invalid"], 10, self.config(), StopController(), selection_state=state)
+            self.assertEqual((state.selected_url, state.candidate_url, state.candidate_streak), ("https://selected.invalid", "https://candidate.invalid", 1))
+            run_cycle(db, "test-13", ["https://selected.invalid", "https://candidate.invalid"], 10, self.config(), StopController(), selection_state=state)
+            self.assertEqual((state.selected_url, state.candidate_url, state.candidate_streak), ("https://selected.invalid", "https://candidate.invalid", 2))
+            run_cycle(db, "test-13", ["https://selected.invalid", "https://candidate.invalid"], 10, self.config(), StopController(), selection_state=state)
+
+        self.assertEqual([url for url, _reason in db.selection_calls], ["https://selected.invalid", "https://selected.invalid", "https://candidate.invalid"])
+        self.assertEqual([reason for _url, reason in db.selection_calls], ["initial_selection", "initial_selection", "latency_hysteresis"])
+        self.assertEqual((state.selected_url, state.candidate_url, state.candidate_streak), ("https://candidate.invalid", None, 0))
+        self.assertEqual(sum("rpc_hysteresis_switch" in message for message in captured.output), 1)
+
+    def test_processing_cycles_preserve_streak_until_third_success(self):
+        db = SqlLikeDb(9)
+        state = RpcSelectionState("https://selected.invalid")
+
+        def probes():
+            return [
+                RpcProbeResult("https://candidate.invalid", True, True, "test-13", 20, 0, False, client=FakeClient(20), status_payload={}, response_seconds=0.15),
+                RpcProbeResult("https://selected.invalid", True, False, "test-13", 20, 0, False, client=FakeClient(20), status_payload={}, response_seconds=0.20),
+            ]
+
+        config = self.config(batch_size=1)
+        with patch("indexer.runner.probe_rpc_endpoints", side_effect=lambda *_args: probes()):
+            run_cycle(db, "test-13", ["https://selected.invalid", "https://candidate.invalid"], 10, config, StopController(), selection_state=state)
+            self.assertEqual(state.candidate_streak, 1)
+            run_cycle(db, "test-13", ["https://selected.invalid", "https://candidate.invalid"], 10, config, StopController(), selection_state=state)
+            self.assertEqual(state.candidate_streak, 2)
+            run_cycle(db, "test-13", ["https://selected.invalid", "https://candidate.invalid"], 10, config, StopController(), selection_state=state)
+        self.assertEqual([url for url, _reason in db.selection_calls], ["https://selected.invalid", "https://selected.invalid", "https://candidate.invalid"])
+        self.assertEqual((state.selected_url, state.candidate_url, state.candidate_streak), ("https://candidate.invalid", None, 0))
+
+    def test_failed_confirmed_candidate_falls_back_and_clears_streak(self):
+        db = SqlLikeDb(10)
+        selected_url = "https://user:secret@selected.invalid/private?token=x#fragment"
+        candidate_url = "https://user:secret@candidate.invalid/private?token=x#fragment"
+        state = RpcSelectionState(selected_url, candidate_url, 2)
+        selected_probe = RpcProbeResult(selected_url, True, False, "test-13", 11, 0, False, client=FakeClient(11), status_payload={}, response_seconds=0.20)
+        candidate_probe = RpcProbeResult(candidate_url, True, True, "test-13", 11, 0, False, client=FakeClient(11), status_payload={}, response_seconds=0.15)
+
+        def verify(client, _height, _hash):
+            if client is candidate_probe.client:
+                raise RpcError("checkpoint mismatch")
+
+        with patch("indexer.runner.probe_rpc_endpoints", return_value=[candidate_probe, selected_probe]), patch(
+            "indexer.runner.verify_checkpoint_anchor", side_effect=verify,
+        ), self.assertLogs("indexer.runner", level="INFO") as captured:
+            run_cycle(db, "test-13", [selected_url, candidate_url], 10, self.config(), StopController(), selection_state=state)
+
+        self.assertEqual(state.selected_url, selected_url)
+        self.assertEqual((state.candidate_url, state.candidate_streak), (None, 0))
+        self.assertEqual([url for url, _reason in db.selection_calls], [selected_url])
+        self.assertFalse(any("rpc_hysteresis_switch" in message for message in captured.output))
+        logs = " ".join(captured.output)
+        for secret in ("secret", "private", "token", "fragment"):
+            self.assertNotIn(secret, logs)
+
+    def test_failed_confirmed_candidate_fetch_falls_back_to_old_selected(self):
+        db = SqlLikeDb(9)
+        selected_url = "https://selected.invalid"
+        candidate_url = "https://candidate.invalid"
+        state = RpcSelectionState(selected_url, candidate_url, 2)
+        selected_probe = RpcProbeResult(selected_url, True, False, "test-13", 20, 0, False, client=FakeClient(20), status_payload={}, response_seconds=0.20)
+        candidate_probe = RpcProbeResult(candidate_url, True, True, "test-13", 20, 0, False, client=FakeClient(20, fail_height=10), status_payload={}, response_seconds=0.15)
+        with patch("indexer.runner.probe_rpc_endpoints", return_value=[candidate_probe, selected_probe]), self.assertLogs("indexer.runner", level="INFO") as captured:
+            result = run_cycle(db, "test-13", [selected_url, candidate_url], 10, self.config(batch_size=1), StopController(), selection_state=state)
+        self.assertEqual(result.processed, [10])
+        self.assertEqual(state.selected_url, selected_url)
+        self.assertEqual((state.candidate_url, state.candidate_streak), (None, 0))
+        self.assertFalse(any("rpc_hysteresis_switch" in message for message in captured.output))
+
     def test_all_unhealthy_cycle_persists_every_probe(self):
         db = SqlLikeDb(None)
         probes = [

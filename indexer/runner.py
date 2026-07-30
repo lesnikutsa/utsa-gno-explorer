@@ -165,10 +165,33 @@ def order_indexer_candidates(
     if state.candidate_streak < RPC_HYSTERESIS_CONFIRMATION_CYCLES:
         return [selected, *alternatives], "initial_selection"
     LOGGER.info(
-        "rpc_hysteresis_switch selected=%s candidate=%s reason=latency_hysteresis",
+        "rpc_hysteresis_candidate event=threshold_reached selected=%s candidate=%s streak=%s/%s",
         sanitized_url(selected.url), sanitized_url(candidate.url),
+        state.candidate_streak, RPC_HYSTERESIS_CONFIRMATION_CYCLES,
     )
     return [candidate, selected, *[probe for probe in alternatives if probe is not candidate]], "latency_hysteresis"
+
+
+def record_selection_success(
+    state: RpcSelectionState,
+    successful_url: str,
+    *,
+    fallback_occurred: bool = False,
+    selection_reason: str = "initial_selection",
+) -> None:
+    """Adopt a successful RPC while retaining an uninterrupted pending streak."""
+    previous_url = state.selected_url
+    adopted = successful_url != previous_url
+    if adopted:
+        state.selected_url = successful_url
+    if adopted or fallback_occurred:
+        state.candidate_url = None
+        state.candidate_streak = 0
+    if adopted and previous_url is not None and selection_reason == "latency_hysteresis":
+        LOGGER.info(
+            "rpc_hysteresis_switch selected=%s candidate=%s reason=latency_hysteresis",
+            sanitized_url(previous_url), sanitized_url(successful_url),
+        )
 
 
 def validate_continuous_config(config: ContinuousConfig) -> None:
@@ -318,6 +341,9 @@ def run_cycle(database, chain_id: str, rpc_urls: list[str], max_height_lag: int,
     def reject(probe: RpcProbeResult, exc: BaseException) -> str:
         reason = _endpoint_failure_reason(exc)
         excluded_urls.add(probe.url)
+        if selection_state is not None:
+            selection_state.candidate_url = None
+            selection_state.candidate_streak = 0
         recorder = getattr(database, "record_rpc_runtime_failure", None)
         if recorder is not None:
             recorder(chain_id, probe, reason)
@@ -329,19 +355,23 @@ def run_cycle(database, chain_id: str, rpc_urls: list[str], max_height_lag: int,
         if selection_state is not None:
             candidates, selection_reason = order_indexer_candidates(candidates, selection_state)
         last_error = None
+        fallback_occurred = False
         for probe in candidates:
             try:
                 reason = selection_reason if probe is candidates[0] else "selected_unavailable"
                 _activate_candidate(database, chain_id, probe, anchor, reason)
                 if selection_state is not None:
-                    selection_state.selected_url = probe.url
-                    selection_state.candidate_url = None
-                    selection_state.candidate_streak = 0
+                    record_selection_success(
+                        selection_state, probe.url,
+                        fallback_occurred=fallback_occurred,
+                        selection_reason=reason,
+                    )
                 LOGGER.info("selected_rpc=%s latest_rpc_height=%s finalized_tip=%s checkpoint_before=%s", sanitized_url(probe.url), probe.latest_height, probe.latest_height - 1, checkpoint)
                 return CycleResult([], checkpoint, checkpoint, probe.latest_height - 1, None, None)
             except (RpcError, OSError) as exc:
                 last_error = exc
                 reject(probe, exc)
+                fallback_occurred = True
         raise RpcError("All RPC endpoints failed checkpoint continuity") from last_error
 
     candidates = [probe for probe in candidates if probe.latest_height - 1 >= next_height]
@@ -381,9 +411,11 @@ def run_cycle(database, chain_id: str, rpc_urls: list[str], max_height_lag: int,
                 parsed = parse_height(height, block_payload, commit_payload, validators_payload, transaction_decoder)
                 database.write_height(parsed, chain_id, probe.latest_height - 1)
                 if selection_state is not None:
-                    selection_state.selected_url = probe.url
-                    selection_state.candidate_url = None
-                    selection_state.candidate_streak = 0
+                    record_selection_success(
+                        selection_state, probe.url,
+                        fallback_occurred=transition_from is not None,
+                        selection_reason=(transition_reason or selection_reason),
+                    )
                 if transition_from is not None:
                     LOGGER.info("rpc_failover height=%s from=%s to=%s reason=%s", height, sanitized_url(transition_from), sanitized_url(probe.url), transition_reason)
             except (RpcError, OSError) as exc:
