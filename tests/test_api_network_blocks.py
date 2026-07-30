@@ -181,14 +181,63 @@ class ApiNetworkBlocksTests(unittest.TestCase):
             rpc_pool_endpoints=[{
                 "url": "https://rpc.example", "selected": True, "state": "healthy",
                 "latency_ms": 12, "lag": 0,
-                "last_checked_at": "2026-07-30T13:45:00+00:00",
+                "last_checked_at": "2026-07-30T19:22:25.05023+00:00",
             }],
         )
         with self.make_client(fake_database) as client:
             response = client.get("/api/network")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["rpc_pool"]["last_checked_at"], "2026-07-30T13:45:00Z")
-        self.assertEqual(response.json()["rpc_pool"]["endpoints"][0]["last_checked_at"], "2026-07-30T13:45:00Z")
+        endpoint = response.json()["rpc_pool"]["endpoints"][0]
+        self.assertEqual(endpoint["last_checked_at"], "2026-07-30T19:22:25.050230Z")
+        self.assertEqual(
+            set(endpoint),
+            {"url", "selected", "state", "latency_ms", "lag", "last_checked_at"},
+        )
+
+    def test_jsonb_timestamp_accepts_postgresql_fractional_precision(self):
+        from api.app import _jsonb_timestamp_utc_z
+
+        cases = {
+            "2026-07-30T19:22:25+00:00": "2026-07-30T19:22:25Z",
+            "2026-07-30T19:22:25.0+00:00": "2026-07-30T19:22:25Z",
+            "2026-07-30T19:22:25.05+00:00": "2026-07-30T19:22:25.050000Z",
+            "2026-07-30T19:22:25.050+00:00": "2026-07-30T19:22:25.050000Z",
+            "2026-07-30T19:22:25.0502+00:00": "2026-07-30T19:22:25.050200Z",
+            "2026-07-30T19:22:25.05023+00:00": "2026-07-30T19:22:25.050230Z",
+            "2026-07-30T19:22:25.050230+00:00": "2026-07-30T19:22:25.050230Z",
+            "2026-07-30T19:22:25.05023Z": "2026-07-30T19:22:25.050230Z",
+            "2026-07-30T21:52:25.05023+02:30": "2026-07-30T19:22:25.050230Z",
+        }
+        for value, expected in cases.items():
+            with self.subTest(value=value):
+                self.assertEqual(_jsonb_timestamp_utc_z(value), expected)
+
+    def test_jsonb_timestamp_keeps_datetime_and_none_support(self):
+        from api.app import _jsonb_timestamp_utc_z
+
+        self.assertEqual(
+            _jsonb_timestamp_utc_z(datetime(2026, 7, 30, 19, 22, 25, 50230, timezone.utc)),
+            "2026-07-30T19:22:25.050230Z",
+        )
+        self.assertIsNone(_jsonb_timestamp_utc_z(None))
+
+    def test_jsonb_timestamp_rejects_invalid_persisted_values(self):
+        from api.app import _jsonb_timestamp_utc_z
+
+        invalid_values = (
+            123,
+            "",
+            "2026-07-30T19:22:25.05023",
+            "2026-02-30T19:22:25.05023+00:00",
+            "2026-07-30T19:22:25.05023+25:00",
+            "2026-07-30T19:22:25.05023+00:00unexpected",
+            "2026-07-30T19:22:25.0502301+00:00",
+        )
+        for value in invalid_values:
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, "Invalid RPC endpoint timestamp"):
+                    _jsonb_timestamp_utc_z(value)
 
     def test_network_rejects_malformed_jsonb_timestamp_without_echoing_it(self):
         from api.app import _jsonb_timestamp_utc_z
