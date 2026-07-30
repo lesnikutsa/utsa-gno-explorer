@@ -26,7 +26,7 @@ export function RpcPoolStatus({ pool: rawPool, selectedRpc }) {
 
   if (!pool) {
     if (!selectedRpc) return <span className="rpc-meta">RPC unavailable</span>
-    return <span className="rpc-meta" title={selectedRpc.url}>RPC: {endpointHostname(selectedRpc.url)}{selectedRpc.latency_ms == null ? '' : ` · ${selectedRpc.latency_ms} ms`}</span>
+    return <span className="rpc-meta">RPC: {endpointHostname(selectedRpc.url)}{selectedRpc.latency_ms == null ? '' : ` · ${selectedRpc.latency_ms} ms`}</span>
   }
 
   return <div className="rpc-pool" ref={rootRef} onPointerEnter={(event) => { cancelClose(); setOpen((value) => hoverPopoverState(value, event.pointerType)) }} onPointerLeave={delayedClose}>
@@ -37,7 +37,7 @@ export function RpcPoolStatus({ pool: rawPool, selectedRpc }) {
     {open && <div className="rpc-pool__popover" id={id} role="region" aria-label="RPC endpoints" onPointerEnter={cancelClose} onPointerLeave={delayedClose}>
       <div className="rpc-pool__heading"><strong>RPC endpoints</strong><span>{pool.available}/{pool.total} available{pool.last_checked_at ? ` · Checked ${relativeTime(pool.last_checked_at)}` : ''}</span></div>
       <div className="rpc-pool__list">{pool.endpoints.map((endpoint) => <div className="rpc-pool__row" key={endpoint.url}>
-        <span className="rpc-pool__host" title={endpoint.url}>{endpointHostname(endpoint.url)}</span>
+        <span className="rpc-pool__host">{endpointHostname(endpoint.url)}</span>
         <span className="rpc-pool__latency">{endpoint.latency_ms == null ? '—' : `${endpoint.latency_ms} ms`}</span>
         <span className={`rpc-pool__state rpc-pool__state--${endpoint.state}`}>{endpoint.selected ? 'Selected · ' : ''}{endpointStatus(endpoint)}</span>
       </div>)}</div>

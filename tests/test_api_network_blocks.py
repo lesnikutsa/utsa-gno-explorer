@@ -198,8 +198,8 @@ class ApiNetworkBlocksTests(unittest.TestCase):
         self.assertNotIn(malformed, str(raised.exception))
 
     def test_network_sanitizes_selected_and_pool_urls_without_mutating_database_row(self):
-        selected_raw = "https://user:password@rpc.example:443/path?token=secret#fragment"
-        other_raw = "https://other:private@backup.example:8443/rpc?key=value#details"
+        selected_raw = "https://username-placeholder:password@rpc.example.invalid:443/path-secret-placeholder?token-placeholder=value#fragment-placeholder"
+        other_raw = "https://other-placeholder:password@backup.example.invalid:8443/backup-secret-placeholder?key-placeholder=value#details-placeholder"
         endpoints = [
             {"url": selected_raw, "selected": True, "state": "healthy", "latency_ms": 12, "lag": 0, "last_checked_at": RPC_CHECK_TIME},
             {"url": other_raw, "selected": False, "state": "unavailable", "latency_ms": None, "lag": None, "last_checked_at": RPC_CHECK_TIME},
@@ -213,13 +213,13 @@ class ApiNetworkBlocksTests(unittest.TestCase):
             response = client.get("/api/network")
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data["selected_rpc"]["url"], "https://rpc.example:443/path")
-        self.assertEqual(data["rpc_pool"]["endpoints"][0]["url"], "https://rpc.example:443/path")
-        self.assertEqual(data["rpc_pool"]["endpoints"][1]["url"], "https://backup.example:8443/rpc")
+        self.assertEqual(data["selected_rpc"]["url"], "https://rpc.example.invalid:443")
+        self.assertEqual(data["rpc_pool"]["endpoints"][0]["url"], "https://rpc.example.invalid:443")
+        self.assertEqual(data["rpc_pool"]["endpoints"][1]["url"], "https://backup.example.invalid:8443")
         self.assertEqual(fake_database.network_row["rpc_url"], selected_raw)
         self.assertEqual(fake_database.network_row["rpc_pool_endpoints"][1]["url"], other_raw)
         public_payload = response.text
-        for secret_part in ("user", "password", "token", "secret", "private", "?", "#"):
+        for secret_part in ("username-placeholder", "password", "token-placeholder", "secret-placeholder", "other-placeholder", "?", "#", "/path", "/backup"):
             self.assertNotIn(secret_part, public_payload)
 
     def test_network_maps_unavailable_average_sample_sizes(self):

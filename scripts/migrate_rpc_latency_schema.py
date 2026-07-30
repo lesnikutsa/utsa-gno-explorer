@@ -43,6 +43,13 @@ def migrate(database_url: str, migration_path: Path = MIGRATION, connect=None) -
     return "already-compatible" if column_present else "applied"
 
 
+def _safe_error(message: str, database_url: str) -> str:
+    """Redact configured and incidental PostgreSQL credentials from an error."""
+    if database_url:
+        message = message.replace(database_url, "[redacted DATABASE_URL]")
+    return re.sub(r"postgres(?:ql)?://[^\s]+", "[redacted PostgreSQL URL]", message)
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--migration", type=Path, default=MIGRATION)
@@ -51,9 +58,7 @@ def main(argv=None) -> int:
     try:
         action = migrate(database_url, args.migration)
     except Exception as exc:
-        message = str(exc).replace(database_url, "[redacted DATABASE_URL]") if database_url else str(exc)
-        message = re.sub(r"(postgres(?:ql)?://[^:]+:)[^@\s]+@", r"\1[redacted]@", message)
-        print(f"RPC latency migration failed: {message}", file=sys.stderr)
+        print(f"RPC latency migration failed: {_safe_error(str(exc), database_url)}", file=sys.stderr)
         return 1
     print(f"RPC latency migration succeeded: {action}")
     return 0

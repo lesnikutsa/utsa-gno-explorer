@@ -1,6 +1,9 @@
 export const endpointHostname = (url) => {
   if (typeof url !== 'string' || !url) return 'Unknown endpoint'
-  try { return new URL(url).hostname || url } catch { return url }
+  try {
+    const parsed = new URL(url)
+    return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.hostname ? parsed.hostname : 'Unknown endpoint'
+  } catch { return 'Unknown endpoint' }
 }
 
 export const normalizeRpcPool = (pool) => {

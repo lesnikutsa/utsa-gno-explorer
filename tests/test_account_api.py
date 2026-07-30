@@ -154,25 +154,34 @@ def test_service_uses_path_queries_with_empty_data():
 
 
 @pytest.mark.parametrize("raw,expected", [
-    ("https://user:pass@rpc.example:443/path?token=secret#x", "https://rpc.example:443/path"),
-    ("https://rpc.example/?apikey=secret", "https://rpc.example/"),
+    ("https://username-placeholder:password@rpc.example.invalid:443/path-secret-placeholder?token-placeholder=value#fragment-placeholder", "https://rpc.example.invalid:443"),
+    ("https://rpc.example.invalid/rpc", "https://rpc.example.invalid"),
+    ("http://192.0.2.10:26657/private", "http://192.0.2.10:26657"),
+    ("https://[2001:db8::1]:443/private", "https://[2001:db8::1]:443"),
 ])
 def test_public_rpc_url_removes_private_components(raw, expected):
     result = public_rpc_url(raw)
     assert result == expected
-    assert "user" not in result and "pass" not in result
-    assert "token" not in result and "apikey" not in result and "#" not in result
+    assert "placeholder" not in result and "?" not in result and "#" not in result
+
+
+@pytest.mark.parametrize("raw", ["private-placeholder", "ftp://rpc.example.invalid", "https://bad_host.invalid", "https://rpc.example.invalid:99999"])
+def test_public_rpc_url_rejects_malformed_values_without_echoing_them(raw):
+    with pytest.raises(AccountParseError) as raised:
+        public_rpc_url(raw)
+    assert str(raised.value) == "invalid RPC URL"
+    assert raw not in str(raised.value)
 
 
 def test_malformed_public_rpc_url_triggers_failover():
     bad, good = Candidate(auth(), '""'), Candidate(auth(), '""')
-    bad.client.base_url = "not a URL?token=secret"
+    bad.client.base_url = "not-a-url-path-secret-placeholder"
     config = ApiConfig("postgres://test", rpc_urls=("a", "b"))
     with patch("api.account_service.probe_rpc_endpoints", return_value=[object()]), patch(
         "api.account_service.suitable_rpc_candidates", return_value=[bad, good],
     ):
         result = fetch_live_account(UTSA, config)
-    assert result["source"]["rpc_url"] == "https://fresh.example/"
+    assert result["source"]["rpc_url"] == "https://fresh.example"
 
 
 def test_service_all_candidates_failed_is_safe():
@@ -202,7 +211,7 @@ def test_malformed_bank_candidate_fails_over_to_valid_candidate():
         "api.account_service.suitable_rpc_candidates", return_value=[malformed, valid],
     ):
         result = fetch_live_account(UTSA, config)
-    assert result["source"]["rpc_url"] == "https://fresh.example/"
+    assert result["source"]["rpc_url"] == "https://fresh.example"
     assert result["balances"][0]["display_amount"] == "0.000001"
 
 
@@ -442,7 +451,7 @@ def test_account_queries_run_in_parallel_at_finalized_height(caplog):
     active_lock = threading.Lock()
 
     class ParallelClient:
-        base_url = "https://user:secret@rpc.example/path?token=hidden"
+        base_url = "https://username-placeholder:password@rpc.example.invalid/path-secret-placeholder?token-placeholder=value"
 
         def __init__(self):
             self.calls = []

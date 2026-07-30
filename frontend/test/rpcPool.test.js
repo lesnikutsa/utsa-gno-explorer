@@ -16,7 +16,10 @@ test('pool summary tones cover availability levels', () => {
 })
 
 test('endpoint presentation is safe and hides healthy lag', () => {
-  assert.equal(endpointHostname('https://rpc.example.test/path'), 'rpc.example.test')
+  assert.equal(endpointHostname('https://username-placeholder:password@rpc.example.invalid/path-secret-placeholder?token-placeholder=value'), 'rpc.example.invalid')
+  assert.equal(endpointHostname('not-a-url-path-secret-placeholder'), 'Unknown endpoint')
+  assert.equal(endpointHostname('ftp://rpc.example.invalid/private'), 'Unknown endpoint')
+  assert.notEqual(endpointHostname('malformed-secret-placeholder'), 'malformed-secret-placeholder')
   assert.equal(endpointStatus({ state: 'healthy', lag: 1 }), 'Healthy')
   assert.equal(endpointStatus({ state: 'stale', lag: 18 }), '18 blocks behind')
   assert.equal(endpointStatus({ state: 'wrong_chain' }), 'Wrong network')
