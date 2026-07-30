@@ -12,6 +12,7 @@ const initialState = {
 }
 
 export function useAccountDetail(routeAddress) {
+  const requestedAddress = decodeAccountRouteAddress(routeAddress)
   const requestIdRef = useRef(0)
   const [retryCount, setRetryCount] = useState(0)
   const [state, setState] = useState(initialState)
@@ -23,7 +24,7 @@ export function useAccountDetail(routeAddress) {
     const update = (nextState) => {
       if (mounted && requestId === requestIdRef.current) setState(nextState)
     }
-    const address = decodeAccountRouteAddress(routeAddress)
+    const address = requestedAddress
 
     if (address === null) {
       update({ ...initialState, loading: false, invalidAddress: true, healthState: 'healthy' })
@@ -60,7 +61,7 @@ export function useAccountDetail(routeAddress) {
     })
 
     return () => { mounted = false }
-  }, [routeAddress, retryCount])
+  }, [requestedAddress, retryCount])
 
-  return { ...state, retry }
+  return { ...state, requestedAddress, retry }
 }
