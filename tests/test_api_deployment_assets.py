@@ -6,6 +6,7 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 ENV_PATH = ROOT / "deploy/systemd/api.env.example"
+RPC_ENV_PATH = ROOT / "deploy/systemd/rpc.env.example"
 UNIT_PATH = ROOT / "deploy/systemd/utsa-gno-api.service"
 DOC_PATH = ROOT / "docs/production-deployment.md"
 CREDENTIAL_URL = re.compile(
@@ -35,21 +36,18 @@ class ApiDeploymentAssetTests(unittest.TestCase):
         self.assertIn("REPLACE_WITH_URL_SAFE_PASSWORD", self.environment)
         self.assertIn("API_BIND_HOST=127.0.0.1", self.environment)
         self.assertIn("API_BIND_PORT=18180", self.environment)
-        self.assertIn("GNO_RPC_URLS=", self.environment)
-        self.assertIn("GNO_CHAIN_ID=topaz-1", self.environment)
-        self.assertIn("RPC_MAX_HEIGHT_LAG=10", self.environment)
+        self.assertNotRegex(self.environment, r"(?m)^(GNO_RPC_URLS|GNO_CHAIN_ID|RPC_MAX_HEIGHT_LAG)=")
+        self.assertIn("/etc/utsa-gno-explorer/rpc.env", self.environment)
         self.assertIn("API_ACCOUNT_RPC_TIMEOUT_SECONDS=10", self.environment)
 
     def test_environment_example_has_safe_public_account_rpcs(self):
+        environment = RPC_ENV_PATH.read_text()
         values = dict(
-            line.split("=", 1) for line in self.environment.splitlines()
+            line.split("=", 1) for line in environment.splitlines()
             if line and not line.startswith("#") and "=" in line
         )
         urls = values["GNO_RPC_URLS"].split(",")
-        self.assertEqual(urls, [
-            "https://rpc.topaz.testnets.gno.land",
-            "https://gnoland-testnet-rpc.itrocket.net",
-        ])
+        self.assertEqual(urls, ["https://primary-rpc.example.invalid", "https://fallback-rpc.example.invalid"])
         for url in urls:
             parsed = urlsplit(url)
             self.assertEqual(parsed.scheme, "https")
@@ -80,6 +78,12 @@ class ApiDeploymentAssetTests(unittest.TestCase):
         self.assertIn("Group=utsa-gno", self.unit)
         self.assertNotIn("User=root", self.unit)
         self.assertIn("EnvironmentFile=/etc/utsa-gno-explorer/api.env", self.unit)
+        self.assertEqual([
+            line for line in self.unit.splitlines() if line.startswith("EnvironmentFile=")
+        ], [
+            "EnvironmentFile=/etc/utsa-gno-explorer/api.env",
+            "EnvironmentFile=/etc/utsa-gno-explorer/rpc.env",
+        ])
 
     def test_unit_has_readiness_restart_and_hardening(self):
         expected = [

@@ -11,6 +11,7 @@ Group=utsa-gno
 WorkingDirectory=/opt/utsa-gno-explorer
 EnvironmentFile=/etc/utsa-gno-explorer/indexer.env
 EnvironmentFile=-/etc/utsa-gno-explorer/network-distribution.env
+EnvironmentFile=/etc/utsa-gno-explorer/rpc.env
 ExecStartPre=/opt/utsa-gno-explorer/.venv/bin/python /opt/utsa-gno-explorer/scripts/wait_for_postgres.py --timeout 120 --retry-interval 2
 ExecStart=/opt/utsa-gno-explorer/.venv/bin/python /opt/utsa-gno-explorer/scripts/collect_network_distribution.py
 TimeoutStartSec=10m

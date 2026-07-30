@@ -15,13 +15,15 @@ RPC_URLS = (
 
 class TopazCutoverTests(unittest.TestCase):
     def test_active_environment_examples_use_topaz_defaults(self):
-        for relative in [".env.example", "deploy/systemd/indexer.env.example"]:
-            source = (ROOT / relative).read_text()
-            self.assertIn("GNO_CHAIN_ID=topaz-1", source)
-            self.assertIn(f"GNO_RPC_URLS={RPC_URLS}", source)
-            self.assertIn("INDEXER_START_HEIGHT=1", source)
-            self.assertIn("INDEXER_BATCH_SIZE=50", source)
-            self.assertIn("INDEXER_HARD_MAX_HEIGHTS=100", source)
+        source = (ROOT / ".env.example").read_text()
+        self.assertIn("GNO_CHAIN_ID=topaz-1", source)
+        self.assertIn(f"GNO_RPC_URLS={RPC_URLS}", source)
+        shared = (ROOT / "deploy/systemd/rpc.env.example").read_text()
+        self.assertIn("GNO_CHAIN_ID=topaz-1", shared)
+        self.assertIn("GNO_RPC_URLS=https://primary-rpc.example.invalid,https://fallback-rpc.example.invalid", shared)
+        self.assertIn("INDEXER_START_HEIGHT=1", source)
+        self.assertIn("INDEXER_BATCH_SIZE=50", source)
+        self.assertIn("INDEXER_HARD_MAX_HEIGHTS=100", source)
 
     def test_rpc_inspector_defaults_to_topaz(self):
         with patch.dict(os.environ, {}, clear=True):

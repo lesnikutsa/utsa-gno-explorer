@@ -135,6 +135,18 @@ WHERE operator_address = %s
 LIMIT 2
 """
 
+SELECTED_RPC_URL_SQL = """
+SELECT endpoint.url
+FROM indexer_state state
+JOIN rpc_endpoints endpoint
+  ON endpoint.id = state.selected_rpc_endpoint_id
+ AND endpoint.chain_id = state.chain_id
+WHERE state.state_key = %s
+  AND state.chain_id = %s
+  AND endpoint.is_selected = true
+  AND endpoint.is_enabled = true
+"""
+
 NETWORK_DISTRIBUTION_SQL = """
 SELECT
     state.chain_id,
@@ -846,6 +858,16 @@ class ApiDatabase:
         if len(rows) > 1:
             raise RuntimeError("Duplicate validator operator profiles")
         return None if not rows else dict(rows[0])
+
+    def fetch_selected_rpc_url(self, chain_id: str) -> str | None:
+        """Return the consistent canonical RPC URL without modifying selection state."""
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(SELECTED_RPC_URL_SQL, ("default", chain_id))
+                row = cursor.fetchone()
+        return None if row is None else row["url"]
 
     def fetch_validator_search(self, query: str, limit: int) -> list[dict[str, Any]]:
         """Return compact validator identities matching literal search text."""

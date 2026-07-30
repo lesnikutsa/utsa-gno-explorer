@@ -18,6 +18,47 @@ class DeploymentAssetTests(unittest.TestCase):
     def text(self, relative):
         return (ROOT / relative).read_text()
 
+    def test_shared_rpc_environment_and_unit_precedence(self):
+        rpc_env = self.text("deploy/systemd/rpc.env.example")
+        definitions = [line.split("=", 1)[0] for line in rpc_env.splitlines()
+                       if line and not line.startswith("#") and "=" in line]
+        self.assertEqual(definitions, ["GNO_CHAIN_ID", "GNO_RPC_URLS", "RPC_MAX_HEIGHT_LAG"])
+        self.assertNotRegex(rpc_env.lower(), r"database_url|password|token|https?://[^\s]+@")
+        for example in ("api.env.example", "indexer.env.example"):
+            text = self.text(f"deploy/systemd/{example}")
+            for name in definitions:
+                self.assertNotRegex(text, rf"(?m)^{name}=")
+        expected = {
+            "utsa-gno-api.service": ["api.env", "rpc.env"],
+            "utsa-gno-indexer.service": ["indexer.env", "rpc.env"],
+            "utsa-gno-governance-updater.service": ["indexer.env", "rpc.env"],
+            "utsa-gno-valopers-refresh.service": ["indexer.env", "rpc.env"],
+            "utsa-gno-network-distribution.service": [
+                "indexer.env", "-network-distribution.env", "rpc.env",
+            ],
+        }
+        for filename, suffixes in expected.items():
+            unit = self.text(f"deploy/systemd/{filename}")
+            files = [line.split("=", 1)[1].replace("/etc/utsa-gno-explorer/", "")
+                     for line in unit.splitlines() if line.startswith("EnvironmentFile=")]
+            self.assertEqual(files, suffixes)
+            self.assertNotIn("EnvironmentFile=-/etc/utsa-gno-explorer/rpc.env", unit)
+            self.assertNotRegex(unit, r"https?://")
+
+        stale = {"GNO_RPC_URLS": "https://stale.example.invalid"}
+        shared = {"GNO_RPC_URLS": "https://intended.example.invalid"}
+        effective = {**stale, **shared}
+        self.assertEqual(effective["GNO_RPC_URLS"], shared["GNO_RPC_URLS"])
+
+    def test_shared_rpc_migration_documentation_contract(self):
+        docs = self.text("docs/production-deployment.md")
+        create_at = docs.index("deploy/systemd/rpc.env.example /etc/utsa-gno-explorer/rpc.env")
+        reload_at = docs.index("sudo systemctl daemon-reload")
+        self.assertLess(create_at, reload_at)
+        self.assertIn("`root:utsa-gno` with mode `0640`", docs)
+        self.assertIn("single operator-controlled static source", docs)
+        self.assertIn("without printing", docs)
+
     def test_compose_postgres_runtime_is_pinned_local_and_persistent(self):
         compose = self.text("deploy/postgres/compose.yml")
         self.assertIn("image: postgres:16.14-bookworm", compose)

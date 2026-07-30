@@ -33,6 +33,7 @@ this repository change.
 - API systemd unit: `deploy/systemd/utsa-gno-api.service`
 - API environment example: `deploy/systemd/api.env.example`
 - Indexer environment example: `deploy/systemd/indexer.env.example`
+- Shared network environment example: `deploy/systemd/rpc.env.example`
 - External production secrets and environment: `/etc/utsa-gno-explorer/`
 - Default PostgreSQL data directory: `/var/lib/utsa-gno-explorer/postgres`
 - Default backup directory: `/var/backups/utsa-gno-explorer`
@@ -52,13 +53,48 @@ sudo install -d -o root -g root -m 755 /var/lib/utsa-gno-explorer
 sudo install -d -o 999 -g 999 -m 700 /var/lib/utsa-gno-explorer/postgres
 sudo install -o root -g root -m 600 deploy/postgres/postgres.env.example /etc/utsa-gno-explorer/postgres.env
 sudo install -o root -g utsa-gno -m 640 deploy/systemd/indexer.env.example /etc/utsa-gno-explorer/indexer.env
+sudo install -o root -g utsa-gno -m 0640 deploy/systemd/rpc.env.example /etc/utsa-gno-explorer/rpc.env
 sudo install -o root -g root -m 600 /dev/null /etc/utsa-gno-explorer/postgres-password
 sudo editor /etc/utsa-gno-explorer/postgres.env
 sudo editor /etc/utsa-gno-explorer/indexer.env
+sudo editor /etc/utsa-gno-explorer/rpc.env
 sudo sh -c 'umask 077; stty -echo; printf "PostgreSQL password: " >&2; read password; stty echo; printf "\n" >&2; printf "%s" "$password" > /etc/utsa-gno-explorer/postgres-password'
 ```
 
 Do not print or paste `DATABASE_URL`, database passwords, or credential-bearing RPC URLs in logs, tickets, or terminal transcripts. The PostgreSQL data directory must be writable only by the PostgreSQL container runtime identity. The repository and `.venv` under `/opt/utsa-gno-explorer` must be readable/executable by `utsa-gno` but must not be writable by the service user; use root-owned files with group/other read and execute bits as appropriate for the host policy.
+
+### Shared RPC environment migration
+
+`/etc/utsa-gno-explorer/rpc.env` is the single operator-controlled static source
+for `GNO_RPC_URLS`, `GNO_CHAIN_ID`, and `RPC_MAX_HEIGHT_LAG`. It is owned by
+`root:utsa-gno` with mode `0640`; treat it as sensitive because production RPC
+URLs may contain credentials. `api.env` and `indexer.env` remain separate because
+they contain different database credentials and service-specific settings.
+
+Create `rpc.env` before installing or reloading the updated units. Use the
+approved secret-handling process to determine the intended values without
+printing credential-bearing values. Then perform this migration in order:
+
+1. Install the example as `/etc/utsa-gno-explorer/rpc.env`, edit it securely, and
+   enforce `root:utsa-gno` ownership and mode `0640`.
+2. Validate access without printing the file: `sudo -u utsa-gno test -r
+   /etc/utsa-gno-explorer/rpc.env`.
+3. Install the updated API, continuous indexer, Governance updater, Valopers
+   refresh, and network-distribution unit files.
+4. Run `sudo systemctl daemon-reload`.
+5. Explicitly restart `utsa-gno-api.service`, `utsa-gno-indexer.service`, and
+   `utsa-gno-governance-updater.service`.
+6. Run the Valopers refresh and network-distribution services manually, or wait
+   for their timers as operationally appropriate.
+7. Verify all five consumers. Only after verification, remove duplicate shared
+   variables from the real `api.env` and `indexer.env` files.
+
+Every unit loads its service-specific environment first and the required
+`rpc.env` last. The last file therefore overrides stale duplicate shared values
+during migration; a missing `rpc.env` fails visibly. Later RPC-list changes
+require editing only `/etc/utsa-gno-explorer/rpc.env`, followed by explicit
+restarts of the long-running RPC consumers. Repository changes do not deploy,
+reload, enable, or restart production services automatically.
 
 ## PostgreSQL Compose architecture
 
