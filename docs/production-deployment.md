@@ -394,7 +394,13 @@ sudo systemctl start utsa-gno-indexer.service
 
 ## Read-only API deployment
 
-The API is a host Python process supervised by systemd and logged by journald. It reads PostgreSQL only; it does not call Gno RPC. Its credentials must be separate from the PostgreSQL owner/admin and indexer roles: never reuse the indexer role or its `DATABASE_URL`. This procedure makes no schema changes.
+The API is a host Python process supervised by systemd and logged by journald. Its
+PostgreSQL role is strictly read-only, and the API exposes no mutation endpoint. Most
+Explorer endpoints serve persisted PostgreSQL data, while the Account endpoint performs
+bounded live read-only Gno RPC queries and reads the canonical selected endpoint from
+PostgreSQL. The API never writes indexer or canonical RPC selection state. Its credentials
+must be separate from the PostgreSQL owner/admin and indexer roles: never reuse the
+indexer role or its `DATABASE_URL`. This procedure makes no schema changes.
 
 ### Create and verify the API database role
 

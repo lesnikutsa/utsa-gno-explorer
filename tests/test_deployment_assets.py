@@ -79,6 +79,18 @@ class DeploymentAssetTests(unittest.TestCase):
             self.assertIn(f"sudo systemctl restart {service}", section)
         self.assertIn("oneshot/timer consumers", section)
 
+    def test_read_only_api_documentation_includes_live_account_rpc_reads(self):
+        docs = self.text("docs/production-deployment.md")
+        section = docs.split("## Read-only API deployment", 1)[1].split(
+            "### Create and verify the API database role", 1,
+        )[0]
+        self.assertNotIn("It reads PostgreSQL only; it does not call Gno RPC", docs)
+        self.assertIn("PostgreSQL role is strictly read-only", section)
+        self.assertIn("exposes no mutation endpoint", section)
+        self.assertIn("bounded live read-only Gno RPC queries", section)
+        self.assertIn("reads the canonical selected endpoint from", section)
+        self.assertIn("never writes indexer or canonical RPC selection state", section)
+
     def test_manual_indexer_check_loads_shared_rpc_environment_last(self):
         docs = self.text("docs/production-deployment.md")
         command = next(
