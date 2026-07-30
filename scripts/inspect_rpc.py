@@ -6,7 +6,9 @@ import base64
 import binascii
 import json
 import os
+import queue
 import sys
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -16,6 +18,8 @@ from urllib.request import urlopen
 
 DEFAULT_TIMEOUT = 10
 MAX_ABCI_RESPONSE_BYTES = 1024 * 1024
+_SESSION_POOL_MAX_SIZE = 12
+_ADAPTER_POOL_MAX_SIZE = 2
 
 
 class RpcError(RuntimeError):
@@ -53,6 +57,12 @@ class GnoRpcClient:
             raise RpcError("RPC URL is required")
         self.base_url = base_url.rstrip("/") + "/"
         self.timeout = timeout
+        self._idle_sessions: queue.LifoQueue[Any] = queue.LifoQueue(
+            maxsize=_SESSION_POOL_MAX_SIZE
+        )
+        self._session_state_lock = threading.Lock()
+        self._session_count = 0
+        self._closed = False
 
     def get(self, method: str, **params: Any) -> dict[str, Any]:
         url = urljoin(self.base_url, method.lstrip("/"))
@@ -61,8 +71,10 @@ class GnoRpcClient:
         except ImportError:
             return self._get_with_urllib(url, method, params)
 
+        session = self._checkout_session(requests)
+        response = None
         try:
-            response = requests.get(url, params=params, timeout=self.timeout)
+            response = session.get(url, params=params, timeout=self.timeout)
             response.raise_for_status()
             payload = response.json()
         except requests.Timeout as exc:
@@ -71,7 +83,85 @@ class GnoRpcClient:
             raise RpcError(f"RPC request failed for {method}: {exc}") from exc
         except json.JSONDecodeError as exc:
             raise RpcError(f"RPC response for {method} was not valid JSON") from exc
+        finally:
+            try:
+                if response is not None:
+                    response.close()
+            finally:
+                self._return_session(session)
         return validate_payload(method, payload)
+
+    def _checkout_session(self, requests: Any) -> Any:
+        with self._session_state_lock:
+            if self._closed:
+                raise RpcError("RPC client is closed")
+            try:
+                return self._idle_sessions.get_nowait()
+            except queue.Empty:
+                pass
+            if self._session_count < _SESSION_POOL_MAX_SIZE:
+                session = requests.Session()
+                adapter = requests.adapters.HTTPAdapter(
+                    max_retries=0,
+                    pool_connections=_ADAPTER_POOL_MAX_SIZE,
+                    pool_maxsize=_ADAPTER_POOL_MAX_SIZE,
+                    pool_block=True,
+                )
+                session.mount("http://", adapter)
+                session.mount("https://", adapter)
+                self._session_count += 1
+                return session
+
+        try:
+            return self._idle_sessions.get(timeout=self.timeout)
+        except queue.Empty as exc:
+            raise RpcError("RPC HTTP session pool exhausted") from exc
+
+    def _return_session(self, session: Any) -> None:
+        try:
+            session.cookies.clear()
+        except Exception:
+            with self._session_state_lock:
+                self._session_count -= 1
+            session.close()
+            return
+        with self._session_state_lock:
+            if self._closed:
+                self._session_count -= 1
+                should_close = True
+            else:
+                should_close = False
+                self._idle_sessions.put_nowait(session)
+        if should_close:
+            session.close()
+
+    def close(self) -> None:
+        """Close this client's pooled HTTP sessions without waiting for requests."""
+        with self._session_state_lock:
+            if self._closed:
+                return
+            self._closed = True
+            idle_sessions = []
+            while True:
+                try:
+                    idle_sessions.append(self._idle_sessions.get_nowait())
+                except queue.Empty:
+                    break
+            self._session_count -= len(idle_sessions)
+        for session in idle_sessions:
+            session.close()
+
+    def __enter__(self) -> GnoRpcClient:
+        return self
+
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def abci_query(self, path: str, data: str, height: int | None = None) -> str:
         """Run a TM2 ABCI query and return its bounded UTF-8 response data."""
