@@ -3,11 +3,14 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import scripts.inspect_rpc as inspect_rpc
 from scripts.inspect_rpc import (
     GnoRpcClient,
     RpcError,
@@ -45,6 +48,422 @@ class FakeClient:
         if self.error:
             raise self.error
         return self.responses[method]
+
+
+class FakeResponse:
+    def __init__(self, payload=None, error=None, json_error=None):
+        self.payload = payload if payload is not None else {"result": {}}
+        self.error = error
+        self.json_error = json_error
+        self.closed = False
+
+    def raise_for_status(self):
+        if self.error:
+            raise self.error
+
+    def json(self):
+        if self.json_error:
+            raise self.json_error
+        return self.payload
+
+    def close(self):
+        self.closed = True
+
+
+class FakeCookies:
+    def __init__(self):
+        self.clear_count = 0
+
+    def clear(self):
+        self.clear_count += 1
+
+
+def fake_requests(session_factory):
+    class RequestException(Exception):
+        pass
+
+    class Timeout(RequestException):
+        pass
+
+    class HTTPAdapter:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    return types.SimpleNamespace(
+        Session=session_factory,
+        Timeout=Timeout,
+        RequestException=RequestException,
+        adapters=types.SimpleNamespace(HTTPAdapter=HTTPAdapter),
+    )
+
+
+class RpcSessionPoolTests(unittest.TestCase):
+    def test_requests_import_error_uses_unchanged_urllib_transport(self):
+        response = Mock()
+        response.read.return_value = b'{"result":{"height":"1"}}'
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        real_import = __import__
+
+        def import_without_requests(name, *args, **kwargs):
+            if name == "requests":
+                raise ImportError
+            return real_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=import_without_requests), patch(
+            "scripts.inspect_rpc.urlopen", return_value=response
+        ) as urlopen:
+            payload = GnoRpcClient("https://rpc.example", timeout=7).get("status", height=3)
+
+        self.assertEqual(payload["result"]["height"], "1")
+        urlopen.assert_called_once_with("https://rpc.example/status?height=3", timeout=7)
+
+    def test_urllib_transport_rejects_request_after_close_without_network_io(self):
+        client = GnoRpcClient("https://rpc.example")
+        client.close()
+        client.close()
+        real_import = __import__
+        sessions = []
+
+        class Session:
+            def __init__(self):
+                sessions.append(self)
+
+        def import_without_requests(name, *args, **kwargs):
+            if name == "requests":
+                raise AssertionError("requests import attempted")
+            return real_import(name, *args, **kwargs)
+
+        with patch.dict(sys.modules, {"requests": fake_requests(Session)}), patch.object(
+            inspect_rpc, "urlopen"
+        ) as urlopen:
+            with patch(
+                "builtins.__import__", side_effect=import_without_requests
+            ) as import_mock:
+                with self.assertRaisesRegex(RpcError, "RPC client is closed"):
+                    client.get("status")
+
+        urlopen.assert_not_called()
+        import_mock.assert_not_called()
+        self.assertEqual(sessions, [])
+
+    def test_urllib_transport_rejects_request_after_context_manager_exit(self):
+        with GnoRpcClient("https://rpc.example") as client:
+            pass
+        real_import = __import__
+        sessions = []
+
+        class Session:
+            def __init__(self):
+                sessions.append(self)
+
+        def import_without_requests(name, *args, **kwargs):
+            if name == "requests":
+                raise AssertionError("requests import attempted")
+            return real_import(name, *args, **kwargs)
+
+        with patch.dict(sys.modules, {"requests": fake_requests(Session)}), patch.object(
+            inspect_rpc, "urlopen"
+        ) as urlopen:
+            with patch(
+                "builtins.__import__", side_effect=import_without_requests
+            ) as import_mock:
+                with self.assertRaisesRegex(RpcError, "RPC client is closed"):
+                    client.get("status")
+
+        urlopen.assert_not_called()
+        import_mock.assert_not_called()
+        self.assertEqual(sessions, [])
+
+    def test_sequential_calls_reuse_one_configured_session(self):
+        sessions = []
+
+        class Session:
+            def __init__(self):
+                self.cookies = FakeCookies()
+                self.mounts = []
+                self.responses = []
+                self.closed = False
+                sessions.append(self)
+
+            def mount(self, prefix, adapter):
+                self.mounts.append((prefix, adapter))
+
+            def get(self, *args, **kwargs):
+                response = FakeResponse()
+                self.responses.append(response)
+                return response
+
+            def close(self):
+                self.closed = True
+
+        requests = fake_requests(Session)
+        with patch.dict(sys.modules, {"requests": requests}):
+            client = GnoRpcClient("https://rpc.example")
+            client.get("status")
+            client.get("status")
+
+        self.assertEqual(len(sessions), 1)
+        self.assertEqual([prefix for prefix, _ in sessions[0].mounts], ["http://", "https://"])
+        for _, adapter in sessions[0].mounts:
+            self.assertEqual(adapter.kwargs["max_retries"], 0)
+            self.assertTrue(adapter.kwargs["pool_block"])
+        self.assertTrue(all(response.closed for response in sessions[0].responses))
+        self.assertEqual(sessions[0].cookies.clear_count, 2)
+
+    def test_concurrent_calls_have_exclusive_sessions_and_overlap(self):
+        barrier = threading.Barrier(2)
+        sessions = []
+        active = set()
+        active_lock = threading.Lock()
+
+        class Session:
+            def __init__(self):
+                self.cookies = FakeCookies()
+                sessions.append(self)
+
+            def mount(self, *args):
+                pass
+
+            def get(self, *args, **kwargs):
+                with active_lock:
+                    self.assert_not_active = self not in active
+                    active.add(self)
+                barrier.wait(timeout=2)
+                with active_lock:
+                    active.remove(self)
+                return FakeResponse()
+
+            def close(self):
+                pass
+
+        requests = fake_requests(Session)
+        with patch.dict(sys.modules, {"requests": requests}):
+            client = GnoRpcClient("https://rpc.example")
+            errors = []
+
+            def request(method):
+                try:
+                    client.get(method)
+                except Exception as exc:
+                    errors.append(exc)
+
+            threads = [threading.Thread(target=request, args=(method,)) for method in ("auth", "bank")]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=3)
+
+        self.assertFalse(errors)
+        self.assertEqual(len(sessions), 2)
+        self.assertTrue(all(session.assert_not_active for session in sessions))
+        self.assertTrue(all(not thread.is_alive() for thread in threads))
+
+    def test_pool_exhaustion_is_bounded_and_returned_session_is_reused(self):
+        release = threading.Event()
+        entered = threading.Event()
+        sessions = []
+
+        class Session:
+            def __init__(self):
+                self.cookies = FakeCookies()
+                sessions.append(self)
+
+            def mount(self, *args):
+                pass
+
+            def get(self, method, **kwargs):
+                if method.endswith("hold"):
+                    entered.set()
+                    release.wait(timeout=2)
+                return FakeResponse()
+
+            def close(self):
+                pass
+
+        requests = fake_requests(Session)
+        with patch.dict(sys.modules, {"requests": requests}), patch(
+            "scripts.inspect_rpc._SESSION_POOL_MAX_SIZE", 1
+        ):
+            client = GnoRpcClient("https://rpc.example", timeout=0.02)
+            holder = threading.Thread(target=client.get, args=("hold",))
+            holder.start()
+            self.assertTrue(entered.wait(timeout=1))
+            with self.assertRaisesRegex(RpcError, "session pool exhausted"):
+                client.get("blocked")
+            release.set()
+            holder.join(timeout=2)
+            client.get("reused")
+
+        self.assertFalse(holder.is_alive())
+        self.assertEqual(len(sessions), 1)
+
+    def test_failures_return_session_and_close_response(self):
+        responses = []
+
+        class Session:
+            def __init__(self):
+                self.cookies = FakeCookies()
+
+            def mount(self, *args):
+                pass
+
+            def get(self, *args, **kwargs):
+                response = FakeResponse(error=requests.Timeout("slow"))
+                responses.append(response)
+                return response
+
+            def close(self):
+                pass
+
+        requests = fake_requests(Session)
+        with patch.dict(sys.modules, {"requests": requests}):
+            client = GnoRpcClient("https://rpc.example")
+            with self.assertRaisesRegex(RpcError, "timed out"):
+                client.get("status")
+        self.assertTrue(responses[0].closed)
+        self.assertEqual(client._idle_sessions.qsize(), 1)
+
+    def test_request_invalid_json_and_http_429_are_not_retried(self):
+        responses = []
+        requested = []
+
+        class Session:
+            def __init__(self):
+                self.cookies = FakeCookies()
+
+            def mount(self, *args):
+                pass
+
+            def get(self, url, **kwargs):
+                requested.append(url)
+                return responses.pop(0)
+
+            def close(self):
+                pass
+
+        requests = fake_requests(Session)
+        with patch.dict(sys.modules, {"requests": requests}):
+            client = GnoRpcClient("https://rpc.example")
+            responses.append(FakeResponse(error=requests.RequestException("failed")))
+            with self.assertRaisesRegex(RpcError, "request failed"):
+                client.get("request-error")
+            responses.append(FakeResponse(json_error=json.JSONDecodeError("bad", "", 0)))
+            with self.assertRaisesRegex(RpcError, "not valid JSON"):
+                client.get("invalid-json")
+            responses.append(FakeResponse(error=requests.RequestException("429 Too Many Requests")))
+            with self.assertRaisesRegex(RpcError, "429 Too Many Requests"):
+                client.get("limited")
+
+        self.assertEqual(len(requested), 3)
+        self.assertEqual(client._idle_sessions.qsize(), 1)
+
+    def test_close_and_context_manager_lifecycle(self):
+        sessions = []
+
+        class Session:
+            def __init__(self):
+                self.cookies = FakeCookies()
+                self.closed = False
+                sessions.append(self)
+
+            def mount(self, *args):
+                pass
+
+            def get(self, *args, **kwargs):
+                return FakeResponse()
+
+            def close(self):
+                self.closed = True
+
+        requests = fake_requests(Session)
+        with patch.dict(sys.modules, {"requests": requests}):
+            with GnoRpcClient("https://rpc.example") as client:
+                client.get("status")
+            client.close()
+            self.assertTrue(sessions[0].closed)
+            with self.assertRaisesRegex(RpcError, "client is closed"):
+                client.get("status")
+        self.assertEqual(len(sessions), 1)
+
+    def test_close_racing_with_session_checkout_cannot_create_session(self):
+        checked_open = threading.Event()
+        continue_checkout = threading.Event()
+        sessions = []
+
+        class Session:
+            def __init__(self):
+                sessions.append(self)
+
+        requests = fake_requests(Session)
+        client = GnoRpcClient("https://rpc.example")
+        original_check_open = client._check_open
+
+        def pause_after_open_check():
+            original_check_open()
+            checked_open.set()
+            continue_checkout.wait(timeout=2)
+
+        client._check_open = pause_after_open_check
+        errors = []
+
+        with patch.dict(sys.modules, {"requests": requests}):
+            request = threading.Thread(
+                target=lambda: errors.append(self._captured_rpc_error(client))
+            )
+            request.start()
+            self.assertTrue(checked_open.wait(timeout=1))
+            client.close()
+            continue_checkout.set()
+            request.join(timeout=2)
+
+        self.assertFalse(request.is_alive())
+        self.assertEqual(len(sessions), 0)
+        self.assertEqual(str(errors[0]), "RPC client is closed")
+
+    @staticmethod
+    def _captured_rpc_error(client):
+        try:
+            client.get("status")
+        except RpcError as exc:
+            return exc
+        raise AssertionError("request unexpectedly succeeded")
+
+    def test_checked_out_session_closes_when_returned_after_close(self):
+        entered = threading.Event()
+        release = threading.Event()
+        sessions = []
+
+        class Session:
+            def __init__(self):
+                self.cookies = FakeCookies()
+                self.closed = False
+                sessions.append(self)
+
+            def mount(self, *args):
+                pass
+
+            def get(self, *args, **kwargs):
+                entered.set()
+                release.wait(timeout=2)
+                return FakeResponse()
+
+            def close(self):
+                self.closed = True
+
+        requests = fake_requests(Session)
+        with patch.dict(sys.modules, {"requests": requests}):
+            client = GnoRpcClient("https://rpc.example")
+            request = threading.Thread(target=client.get, args=("status",))
+            request.start()
+            self.assertTrue(entered.wait(timeout=1))
+            client.close()
+            self.assertFalse(sessions[0].closed)
+            release.set()
+            request.join(timeout=2)
+
+        self.assertFalse(request.is_alive())
+        self.assertTrue(sessions[0].closed)
 
 
 class InspectRpcParsingTests(unittest.TestCase):

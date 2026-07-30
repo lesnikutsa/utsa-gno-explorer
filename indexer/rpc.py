@@ -141,6 +141,7 @@ def _probe_endpoint(url: str, expected_chain_id: str, timeout: int) -> RpcProbeR
     except RpcError as exc:
         response_seconds = time.perf_counter() - started_at
         status = locals().get("status", {})
+        _close_client(client)
         return RpcProbeResult(
             url=url,
             healthy=False,
@@ -181,8 +182,15 @@ def _with_lag(probe: RpcProbeResult, highest_height: int, max_height_lag: int) -
         return probe
     lag = highest_height - probe.latest_height
     if lag > max_height_lag:
+        _close_client(probe.client)
         return RpcProbeResult(**{**probe.__dict__, "healthy": False, "observed_lag": lag, "error_message": "stale endpoint"})
     return RpcProbeResult(**{**probe.__dict__, "observed_lag": lag})
+
+
+def _close_client(client: GnoRpcClient | None) -> None:
+    close = getattr(client, "close", None)
+    if callable(close):
+        close()
 
 
 def _selected_probe_index(probes: list[RpcProbeResult], max_height_lag: int) -> int | None:
