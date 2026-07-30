@@ -127,6 +127,68 @@ class Candidate:
         self.finalized_tip = finalized_tip
         self.latest_height = finalized_tip + 1
         self.client = Client(auth_response, bank_response, base_url)
+        self.probes = [RpcProbeResult(
+            url=self.client.base_url, healthy=True, selected=False,
+            latest_height=self.latest_height, observed_lag=0,
+            client=self.client, status_payload={"result": {}}, response_seconds=0.1,
+        )]
+
+
+def test_preferred_candidate_moves_first_without_mutating_latency_order():
+    first = Candidate(auth(account_number="1"), '"1ugnot"', base_url="https://one.example:443")
+    second = Candidate(auth(account_number="2"), '"2ugnot"', base_url="https://two.example:443")
+    third = Candidate(auth(account_number="3"), '"3ugnot"', base_url="https://three.example:443")
+    latency_order = [first, second, third]
+    config = ApiConfig("postgres://test", rpc_urls=tuple(c.client.base_url for c in latency_order))
+    with patch("api.account_service.probe_rpc_endpoints", return_value=[object()]), patch(
+        "api.account_service.suitable_rpc_candidates", return_value=latency_order,
+    ):
+        result = fetch_live_account(
+            UTSA, config, preferred_rpc_url=third.probes[0].url,
+        )
+    assert result["account_number"] == "3"
+    assert result["source"]["rpc_url"] == "https://three.example:443"
+    assert not first.client.calls and not second.client.calls
+    assert latency_order == [first, second, third]
+
+
+@pytest.mark.parametrize("auth_response,bank_response", [
+    (RpcError("auth failed"), '"9ugnot"'),
+    (auth(account_number="9"), RpcError("bank failed")),
+    ("malformed", '"9ugnot"'),
+    (auth(account_number="9"), "malformed"),
+])
+def test_preferred_failure_falls_back_in_remaining_latency_order_without_reprobe(
+    auth_response, bank_response,
+):
+    first = Candidate(auth(account_number="1"), '"1ugnot"', base_url="https://one.example")
+    preferred = Candidate(auth_response, bank_response, base_url="https://preferred.example")
+    last = Candidate(auth(account_number="3"), '"3ugnot"', base_url="https://last.example")
+    config = ApiConfig("postgres://test", rpc_urls=("one", "preferred", "last"))
+    with patch("api.account_service.probe_rpc_endpoints", return_value=[object()]) as probe, patch(
+        "api.account_service.suitable_rpc_candidates", return_value=[first, preferred, last],
+    ):
+        result = fetch_live_account(
+            UTSA, config, preferred_rpc_url=preferred.probes[0].url,
+        )
+    assert probe.call_count == 1
+    assert preferred.client.calls and first.client.calls and not last.client.calls
+    assert result["account_number"] == "1"
+    assert result["source"]["rpc_url"] == "https://one.example"
+
+
+def test_absent_or_exact_port_mismatch_preserves_latency_order():
+    faster = Candidate(auth(account_number="1"), '"1ugnot"', base_url="https://rpc.example:443")
+    other_port = Candidate(auth(account_number="2"), '"2ugnot"', base_url="https://rpc.example:8443")
+    config = ApiConfig("postgres://test", rpc_urls=("a", "b"))
+    with patch("api.account_service.probe_rpc_endpoints", return_value=[object()]), patch(
+        "api.account_service.suitable_rpc_candidates", return_value=[faster, other_port],
+    ):
+        result = fetch_live_account(
+            UTSA, config, preferred_rpc_url="https://rpc.example:9443",
+        )
+    assert result["account_number"] == "1"
+    assert not other_port.client.calls
 
 
 def test_service_failover_and_confirmed_missing():
@@ -485,12 +547,20 @@ def test_account_queries_run_in_parallel_at_finalized_height(caplog):
 
 
 class FakeDatabase:
-    def __init__(self, relation=None, error=None):
+    def __init__(self, relation=None, error=None, selected_url=None, selected_error=None):
         self.relation = relation or {"moniker": "UTSA", "operator_address": UTSA, "signing_address": "A"}
         self.error = error
         self.relation_calls = []
+        self.selected_url = selected_url
+        self.selected_error = selected_error
+        self.selected_calls = []
     def open(self, config): pass
     def close(self): pass
+    def fetch_selected_rpc_url(self, chain_id):
+        self.selected_calls.append(chain_id)
+        if self.selected_error:
+            raise self.selected_error
+        return self.selected_url
     def fetch_account_validator_relation(self, value):
         self.relation_calls.append(value)
         if self.error:
@@ -513,6 +583,8 @@ def test_endpoint_found_contract_and_invalid_short_circuit():
     assert response.model_dump()["validator_relation"]["moniker"] == "UTSA"
     assert invalid.value.status_code == 422 and invalid.value.detail == "Invalid account address"
     assert fetch.call_count == 1
+    fetch.assert_called_once_with(UTSA, config, preferred_rpc_url=None)
+    assert fake_database.selected_calls == ["topaz-1"]
     assert fake_database.relation_calls == [UTSA]
 
 
@@ -593,6 +665,7 @@ class FakeCursor:
     def __exit__(self, *args): pass
     def execute(self, sql, parameters): self.sql, self.parameters = sql, parameters
     def fetchall(self): return self.rows
+    def fetchone(self): return None if not self.rows else self.rows[0]
 
 
 class FakeConnection:
@@ -626,3 +699,58 @@ def test_validator_relation_duplicate_rows_are_rejected():
     database.pool = FakePool([{"operator_address": UTSA}, {"operator_address": UTSA}])
     with pytest.raises(RuntimeError):
         database.fetch_account_validator_relation(UTSA)
+
+
+@pytest.mark.parametrize("rows,expected", [
+    ([], None), ([{"url": "https://user:password@rpc.example.invalid/path"}],
+                 "https://user:password@rpc.example.invalid/path"),
+])
+def test_fetch_selected_rpc_url_is_narrow_read_only(rows, expected):
+    database = ApiDatabase()
+    database.pool = FakePool(rows)
+    assert database.fetch_selected_rpc_url("topaz-1") == expected
+    assert database.pool.cursor.parameters == ("default", "topaz-1")
+    sql = database.pool.cursor.sql
+    assert "selected_rpc_endpoint_id" in sql
+    assert "endpoint.chain_id = state.chain_id" in sql
+    assert "endpoint.is_selected = true" in sql
+    assert "endpoint.is_enabled = true" in sql
+    assert "UPDATE" not in sql and "INSERT" not in sql
+
+
+def test_selected_rpc_lookup_failure_is_safe_and_does_not_call_live_rpc(caplog):
+    from api import app as module
+    module.app.state.api_config = ApiConfig("postgres://database-secret")
+    secret = "https://user:password@rpc.example.invalid/private"
+    fake_database = FakeDatabase(selected_error=RuntimeError(f"SQL failed {secret}"))
+    with patch.object(module, "database", fake_database), patch.object(
+        module, "fetch_live_account",
+    ) as fetch, caplog.at_level("INFO"), pytest.raises(module.HTTPException) as response:
+        module.get_account(UTSA)
+    assert response.value.status_code == 503
+    assert response.value.detail == "Account data is temporarily unavailable"
+    assert fetch.call_count == 0 and fake_database.selected_calls == ["topaz-1"]
+    assert "Account selected RPC query failed" in caplog.text
+    assert "database-secret" not in caplog.text and secret not in caplog.text
+
+
+def test_route_passes_raw_selected_rpc_once_and_keeps_response_schema():
+    from api import app as module
+    raw = "https://user:password@rpc.example.invalid/private?token=secret"
+    module.app.state.api_config = ApiConfig("postgres://test")
+    live = {"address": UTSA, "found": False, "balances": [], "account_number": None,
+            "sequence": None, "public_key": None, "source": {"kind": "rpc",
+            "chain_id": "topaz-1", "rpc_url": "https://rpc.example.invalid"},
+            "observed_height": 100}
+    fake_database = FakeDatabase(selected_url=raw)
+    with patch.object(module, "database", fake_database), patch.object(
+        module, "fetch_live_account", return_value=live,
+    ) as fetch:
+        response = module.get_account(UTSA)
+    fetch.assert_called_once_with(UTSA, module.app.state.api_config, preferred_rpc_url=raw)
+    assert fake_database.selected_calls == ["topaz-1"]
+    assert set(response.model_dump()) == {
+        "address", "found", "account_number", "sequence", "public_key", "balances",
+        "validator_relation", "source", "observed_height",
+    }
+    assert raw not in str(response.model_dump())

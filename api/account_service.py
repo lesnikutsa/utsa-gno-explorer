@@ -142,14 +142,30 @@ def _timed_account_query(client, path: str, height: int) -> tuple[str, float]:
     return value, time.perf_counter() - started_at
 
 
-def fetch_live_account(address: str, config) -> dict:
+def _prefer_account_candidate(candidates: list, preferred_rpc_url: str | None) -> tuple[list, bool]:
+    """Return a stable copy with the exact suitable preferred probe first."""
+    ordered = list(candidates)
+    if preferred_rpc_url is None:
+        return ordered, False
+    preferred_index = next((
+        index for index, candidate in enumerate(ordered)
+        if candidate.probes and candidate.probes[0].url == preferred_rpc_url
+    ), None)
+    if preferred_index is None:
+        return ordered, False
+    return [ordered[preferred_index], *ordered[:preferred_index], *ordered[preferred_index + 1:]], True
+
+
+def fetch_live_account(address: str, config, *, preferred_rpc_url: str | None = None) -> dict:
     total_started_at = time.perf_counter()
     profile = topaz_profile(config.chain_id)
     try:
         try:
             lookup = _account_probes(config)
             probes = lookup.probes
-            candidates = suitable_rpc_candidates(probes)
+            candidates, preferred_suitable = _prefer_account_candidate(
+                suitable_rpc_candidates(probes), preferred_rpc_url,
+            )
         except Exception:
             LOGGER.warning("account_rpc_discovery rpc_probe_cache_hit=false")
             raise AccountUnavailableError from None
@@ -173,7 +189,16 @@ def fetch_live_account(address: str, config) -> dict:
                 else f"{probe.response_seconds:.6f}",
             )
 
+        LOGGER.info(
+            "account_rpc_preference preferred_rpc_present=%s preferred_candidate_suitable=%s",
+            preferred_rpc_url is not None, preferred_suitable,
+        )
+
         for candidate_number, candidate in enumerate(candidates, 1):
+            candidate_is_preferred = bool(
+                preferred_rpc_url is not None and candidate.probes
+                and candidate.probes[0].url == preferred_rpc_url
+            )
             query_height = candidate.finalized_tip
             parallel_started_at = time.perf_counter()
             try:
@@ -196,9 +221,13 @@ def fetch_live_account(address: str, config) -> dict:
                 LOGGER.info(
                     "account_rpc_query selected_rpc_hostname=%s selected_query_height=%s "
                     "auth_query_seconds=%.6f bank_query_seconds=%.6f "
-                    "account_query_parallel_total_seconds=%.6f failover_candidate_number=%s",
+                    "account_query_parallel_total_seconds=%.6f failover_candidate_number=%s "
+                    "successful_candidate_kind=%s",
                     _safe_rpc_hostname(candidate.client.base_url), query_height, auth_duration,
                     bank_duration, parallel_duration, candidate_number,
+                    "canonical" if candidate_is_preferred else (
+                        "fallback" if preferred_rpc_url is not None else "unowned"
+                    ),
                 )
                 return {
                     "address": address, "found": account["account_number"] is not None,

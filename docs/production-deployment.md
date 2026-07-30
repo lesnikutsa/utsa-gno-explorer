@@ -17,8 +17,14 @@ This guide packages the existing foreground continuous indexer without changing 
 ## Active Topaz runtime configuration
 
 The single-network runtime targets **Gno.land Topaz Testnet** with chain ID `topaz-1`.
-Configure `GNO_RPC_URLS` in this exact order: `https://rpc.topaz.testnets.gno.land`, `https://gnoland-testnet-rpc.itrocket.net`, and `https://topaz.rpc.onbloc.xyz`. Set
-`INDEXER_START_HEIGHT=1`. Topaz is a fresh chain, not a continuation or hardfork replay of
+Configure `GNO_RPC_URLS`, `GNO_CHAIN_ID`, and `RPC_MAX_HEIGHT_LAG` in the protected
+shared file `/etc/utsa-gno-explorer/rpc.env`. Configure the Topaz RPC URLs in this exact
+order: `https://rpc.topaz.testnets.gno.land`, `https://gnoland-testnet-rpc.itrocket.net`,
+and `https://topaz.rpc.onbloc.xyz`. Keep API database credentials, API-only settings,
+and `API_ACCOUNT_RPC_TIMEOUT_SECONDS` in `/etc/utsa-gno-explorer/api.env`. Keep indexer
+database credentials, indexer scheduling, Governance scheduling, and transaction-decoder
+settings in `/etc/utsa-gno-explorer/indexer.env`. Set `INDEXER_START_HEIGHT=1` there.
+Topaz is a fresh chain, not a continuation or hardfork replay of
 Testnet 13: create the Explorer database empty and never reuse Testnet 13 rows or checkpoints.
 Database replacement and production deployment remain explicit operator operations outside
 this repository change.
@@ -33,6 +39,7 @@ this repository change.
 - API systemd unit: `deploy/systemd/utsa-gno-api.service`
 - API environment example: `deploy/systemd/api.env.example`
 - Indexer environment example: `deploy/systemd/indexer.env.example`
+- Shared network environment example: `deploy/systemd/rpc.env.example`
 - External production secrets and environment: `/etc/utsa-gno-explorer/`
 - Default PostgreSQL data directory: `/var/lib/utsa-gno-explorer/postgres`
 - Default backup directory: `/var/backups/utsa-gno-explorer`
@@ -52,13 +59,48 @@ sudo install -d -o root -g root -m 755 /var/lib/utsa-gno-explorer
 sudo install -d -o 999 -g 999 -m 700 /var/lib/utsa-gno-explorer/postgres
 sudo install -o root -g root -m 600 deploy/postgres/postgres.env.example /etc/utsa-gno-explorer/postgres.env
 sudo install -o root -g utsa-gno -m 640 deploy/systemd/indexer.env.example /etc/utsa-gno-explorer/indexer.env
+sudo install -o root -g utsa-gno -m 0640 deploy/systemd/rpc.env.example /etc/utsa-gno-explorer/rpc.env
 sudo install -o root -g root -m 600 /dev/null /etc/utsa-gno-explorer/postgres-password
 sudo editor /etc/utsa-gno-explorer/postgres.env
 sudo editor /etc/utsa-gno-explorer/indexer.env
+sudo editor /etc/utsa-gno-explorer/rpc.env
 sudo sh -c 'umask 077; stty -echo; printf "PostgreSQL password: " >&2; read password; stty echo; printf "\n" >&2; printf "%s" "$password" > /etc/utsa-gno-explorer/postgres-password'
 ```
 
 Do not print or paste `DATABASE_URL`, database passwords, or credential-bearing RPC URLs in logs, tickets, or terminal transcripts. The PostgreSQL data directory must be writable only by the PostgreSQL container runtime identity. The repository and `.venv` under `/opt/utsa-gno-explorer` must be readable/executable by `utsa-gno` but must not be writable by the service user; use root-owned files with group/other read and execute bits as appropriate for the host policy.
+
+### Shared RPC environment migration
+
+`/etc/utsa-gno-explorer/rpc.env` is the single operator-controlled static source
+for `GNO_RPC_URLS`, `GNO_CHAIN_ID`, and `RPC_MAX_HEIGHT_LAG`. It is owned by
+`root:utsa-gno` with mode `0640`; treat it as sensitive because production RPC
+URLs may contain credentials. `api.env` and `indexer.env` remain separate because
+they contain different database credentials and service-specific settings.
+
+Create `rpc.env` before installing or reloading the updated units. Use the
+approved secret-handling process to determine the intended values without
+printing credential-bearing values. Then perform this migration in order:
+
+1. Install the example as `/etc/utsa-gno-explorer/rpc.env`, edit it securely, and
+   enforce `root:utsa-gno` ownership and mode `0640`.
+2. Validate access without printing the file: `sudo -u utsa-gno test -r
+   /etc/utsa-gno-explorer/rpc.env`.
+3. Install the updated API, continuous indexer, Governance updater, Valopers
+   refresh, and network-distribution unit files.
+4. Run `sudo systemctl daemon-reload`.
+5. Explicitly restart `utsa-gno-api.service`, `utsa-gno-indexer.service`, and
+   `utsa-gno-governance-updater.service`.
+6. Run the Valopers refresh and network-distribution services manually, or wait
+   for their timers as operationally appropriate.
+7. Verify all five consumers. Only after verification, remove duplicate shared
+   variables from the real `api.env` and `indexer.env` files.
+
+Every unit loads its service-specific environment first and the required
+`rpc.env` last. The last file therefore overrides stale duplicate shared values
+during migration; a missing `rpc.env` fails visibly. Later RPC-list changes
+require editing only `/etc/utsa-gno-explorer/rpc.env`, followed by explicit
+restarts of the long-running RPC consumers. Repository changes do not deploy,
+reload, enable, or restart production services automatically.
 
 ## PostgreSQL Compose architecture
 
@@ -99,7 +141,16 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now utsa-gno-indexer.service
 ```
 
-The service uses user and group `utsa-gno`, `WorkingDirectory=/opt/utsa-gno-explorer`, `EnvironmentFile=/etc/utsa-gno-explorer/indexer.env`, and `ExecStart=/opt/utsa-gno-explorer/.venv/bin/python scripts/run_indexer.py`. It does not pass `--start-height`; bootstrap height belongs in the external environment only for first initialization. `ExecStartPre` runs `scripts/wait_for_postgres.py`, `Restart=on-failure` handles process failures, `KillSignal=SIGTERM` requests graceful shutdown, and `TimeoutStopSec=180` allows the current atomic height transaction to finish. The existing PostgreSQL advisory lock remains the primary duplicate-indexer protection.
+The service uses user and group `utsa-gno`, `WorkingDirectory=/opt/utsa-gno-explorer`,
+and `ExecStart=/opt/utsa-gno-explorer/.venv/bin/python scripts/run_indexer.py`. It loads
+the required service-specific `EnvironmentFile=/etc/utsa-gno-explorer/indexer.env`
+first and the required shared `EnvironmentFile=/etc/utsa-gno-explorer/rpc.env` last.
+It does not pass `--start-height`; bootstrap height belongs in the external environment
+only for first initialization. `ExecStartPre` runs `scripts/wait_for_postgres.py`,
+`Restart=on-failure` handles process failures, `KillSignal=SIGTERM` requests graceful
+shutdown, and `TimeoutStopSec=180` allows the current atomic height transaction to
+finish. The existing PostgreSQL advisory lock remains the primary duplicate-indexer
+protection.
 
 ### Automatic Valopers profile refresh
 
@@ -166,11 +217,11 @@ systemd-analyze verify /etc/systemd/system/utsa-gno-indexer.service
 systemd-analyze security utsa-gno-indexer.service
 docker compose -f deploy/postgres/compose.yml --env-file /etc/utsa-gno-explorer/postgres.env exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select locktype, granted from pg_locks where locktype = chr(97)||chr(100)||chr(118)||chr(105)||chr(115)||chr(111)||chr(114)||chr(121);"'
 docker compose -f deploy/postgres/compose.yml --env-file /etc/utsa-gno-explorer/postgres.env exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select chain_id,last_finalized_height,finalized_tip_height,updated_at from indexer_state;"'
-python scripts/inspect_rpc.py
+sudo -u utsa-gno sh -c 'set -a; . /etc/utsa-gno-explorer/indexer.env; . /etc/utsa-gno-explorer/rpc.env; set +a; cd /opt/utsa-gno-explorer && .venv/bin/python scripts/inspect_rpc.py'
 sudo systemctl restart utsa-gno-indexer.service
 docker compose -f deploy/postgres/compose.yml --env-file /etc/utsa-gno-explorer/postgres.env restart postgres
 sudo reboot
-sudo -u utsa-gno sh -c 'set -a; . /etc/utsa-gno-explorer/indexer.env; set +a; cd /opt/utsa-gno-explorer && .venv/bin/python scripts/run_indexer.py --once'
+sudo -u utsa-gno sh -c 'set -a; . /etc/utsa-gno-explorer/indexer.env; . /etc/utsa-gno-explorer/rpc.env; set +a; cd /opt/utsa-gno-explorer && .venv/bin/python scripts/run_indexer.py --once'
 python scripts/backup_database.py --backup-dir /var/backups/utsa-gno-explorer
 pg_restore --list /var/backups/utsa-gno-explorer/utsa-gno-explorer-YYYYMMDDTHHMMSSZ.dump >/dev/null
 ```
@@ -343,7 +394,13 @@ sudo systemctl start utsa-gno-indexer.service
 
 ## Read-only API deployment
 
-The API is a host Python process supervised by systemd and logged by journald. It reads PostgreSQL only; it does not call Gno RPC. Its credentials must be separate from the PostgreSQL owner/admin and indexer roles: never reuse the indexer role or its `DATABASE_URL`. This procedure makes no schema changes.
+The API is a host Python process supervised by systemd and logged by journald. Its
+PostgreSQL role is strictly read-only, and the API exposes no mutation endpoint. Most
+Explorer endpoints serve persisted PostgreSQL data, while the Account endpoint performs
+bounded live read-only Gno RPC queries and reads the canonical selected endpoint from
+PostgreSQL. The API never writes indexer or canonical RPC selection state. Its credentials
+must be separate from the PostgreSQL owner/admin and indexer roles: never reuse the
+indexer role or its `DATABASE_URL`. This procedure makes no schema changes.
 
 ### Create and verify the API database role
 
@@ -493,30 +550,34 @@ sudo systemctl disable --now utsa-gno-api.service
 
 ### API-only update and rollback
 
-#### Account API RPC prerequisite
+#### Account API RPC configuration
 
-The API service receives its RPC configuration only from the protected
-`/etc/utsa-gno-explorer/api.env` file. Add these public settings, keeping the
-endpoints in preferred order:
+The API service loads API database credentials and API-only settings from the protected
+`/etc/utsa-gno-explorer/api.env` file first. Keep its request timeout there:
 
 ```dotenv
-GNO_RPC_URLS=https://rpc.topaz.testnets.gno.land,https://gnoland-testnet-rpc.itrocket.net
-GNO_CHAIN_ID=topaz-1
-RPC_MAX_HEIGHT_LAG=10
 API_ACCOUNT_RPC_TIMEOUT_SECONDS=10
 ```
 
-When changing networks, update both the chain ID and RPC list. Account state is
-read live and is not stored in PostgreSQL. The runtime selector rejects stale,
-catching-up, and wrong-chain endpoints. Never publish private RPC URLs, tokens,
-credentials, or the contents of the real environment file in documentation.
+The required shared `/etc/utsa-gno-explorer/rpc.env` file is loaded last and is the
+single static source for `GNO_RPC_URLS`, `GNO_CHAIN_ID`, and `RPC_MAX_HEIGHT_LAG`.
+Change shared network values only in that file. Account state is read live and is not
+stored in PostgreSQL. The runtime selector rejects stale, catching-up, and wrong-chain
+endpoints. Never publish private RPC URLs, tokens, credentials, or the contents of a
+real environment file in documentation.
 
-After changing only these settings, restart only the API service; do not stop or
-restart the indexer, PostgreSQL, or the Governance updater:
+After changing the shared RPC list, chain ID, or maximum lag, explicitly restart all
+affected long-running consumers:
 
 ```bash
+sudo systemctl restart utsa-gno-indexer.service
 sudo systemctl restart utsa-gno-api.service
+sudo systemctl restart utsa-gno-governance-updater.service
 ```
+
+Valopers refresh and network-distribution are oneshot/timer consumers. They use the new
+shared values on their next execution; start their service units manually when immediate
+verification is required.
 
 After the restart, smoke-check an existing and a confirmed missing account with
 addresses appropriate for the configured network:
@@ -1109,8 +1170,12 @@ Configure `GNO_RPC_URLS` in preference order. Each complete probe cycle synchron
 2. Stop only services required by the repository migration policy.
 3. Run `python scripts/migrate_network_distribution_schema.py`.
 4. Run `python scripts/init_database.py`.
-5. Perform `python scripts/collect_network_distribution.py --dry-run --pretty --rpc-limit 1` (and optionally compare `--rpc-limit 3`).
-6. Perform one persisted `python scripts/collect_network_distribution.py` run.
+5. In a protected `utsa-gno` shell, source `indexer.env` first, optional
+   `network-distribution.env` second when present, and `rpc.env` last without printing
+   them. Perform `.venv/bin/python scripts/collect_network_distribution.py --dry-run
+   --pretty --rpc-limit 1` (and optionally compare `--rpc-limit 3`).
+6. In the same loaded environment, perform one persisted `.venv/bin/python
+   scripts/collect_network_distribution.py` run.
 7. Inspect snapshot and source counts in PostgreSQL.
 8. Only after validation, install the service and timer into `/etc/systemd/system`, run `systemctl daemon-reload`, and enable `utsa-gno-network-distribution.timer`.
 
@@ -1128,8 +1193,8 @@ The last successful PostgreSQL data remains available if a cycle fails.
 ```bash
 sudo install -m 0644 deploy/systemd/utsa-gno-governance-updater.service /etc/systemd/system/
 sudo systemctl daemon-reload
-.venv/bin/python scripts/run_governance_updater.py --once
-.venv/bin/python scripts/run_governance_updater.py --full-once
+sudo -u utsa-gno sh -c 'set -a; . /etc/utsa-gno-explorer/indexer.env; . /etc/utsa-gno-explorer/rpc.env; set +a; cd /opt/utsa-gno-explorer && .venv/bin/python scripts/run_governance_updater.py --once'
+sudo -u utsa-gno sh -c 'set -a; . /etc/utsa-gno-explorer/indexer.env; . /etc/utsa-gno-explorer/rpc.env; set +a; cd /opt/utsa-gno-explorer && .venv/bin/python scripts/run_governance_updater.py --full-once'
 sudo systemctl enable --now utsa-gno-governance-updater
 sudo systemctl status utsa-gno-governance-updater
 sudo journalctl -u utsa-gno-governance-updater -f
@@ -1139,6 +1204,7 @@ sudo systemctl disable utsa-gno-governance-updater
 systemctl --no-pager --full status utsa-gno-indexer utsa-gno-api utsa-gno-governance-updater
 ```
 
-The updater reuses `/etc/utsa-gno-explorer/indexer.env`. It never runs a migration or
-pulls code automatically. Installation and activation remain explicit operator actions.
+The updater loads `/etc/utsa-gno-explorer/indexer.env` first and the required shared
+`/etc/utsa-gno-explorer/rpc.env` last. It never runs a migration or pulls code
+automatically. Installation and activation remain explicit operator actions.
 Frontend background polling is deferred to a separate change.

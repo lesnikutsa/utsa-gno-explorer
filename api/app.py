@@ -122,7 +122,14 @@ def get_account(address: str) -> AccountResponse:
     account_started_at = time.perf_counter()
     try:
         try:
-            result = fetch_live_account(address, config)
+            selected_rpc_url = database.fetch_selected_rpc_url(config.chain_id)
+        except Exception:
+            LOGGER.error("Account selected RPC query failed")
+            raise HTTPException(status_code=503, detail=ACCOUNT_UNAVAILABLE_DETAIL) from None
+        try:
+            result = fetch_live_account(
+                address, config, preferred_rpc_url=selected_rpc_url,
+            )
             relation_started_at = time.perf_counter()
             try:
                 result["validator_relation"] = (
