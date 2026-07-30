@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import math
+import numbers
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -192,8 +194,8 @@ def record_rpc_runtime_failure_cursor(cursor, chain_id: str, probe: RpcProbeResu
     })
     endpoint_id = _upsert_rpc_endpoint(cursor, chain_id, failed_probe, selected=False)
     cursor.execute(
-        "UPDATE rpc_endpoints SET is_enabled = true, is_selected = false, healthy = false, last_error = %s, last_checked_at = now(), updated_at = now() WHERE id = %s",
-        (reason[:80], endpoint_id),
+        "UPDATE rpc_endpoints SET is_enabled = true, is_selected = false, healthy = false, last_error = %s, latency_ms = %s, last_checked_at = now(), updated_at = now() WHERE id = %s",
+        (reason[:80], response_seconds_to_latency_ms(probe.response_seconds), endpoint_id),
     )
     _insert_rpc_endpoint_check(cursor, endpoint_id, chain_id, failed_probe, None)
     return endpoint_id, current_id == endpoint_id
@@ -213,9 +215,9 @@ def _upsert_rpc_endpoint(cursor, chain_id: str, probe: RpcProbeResult, selected:
         """
         INSERT INTO rpc_endpoints(
             url, chain_id, is_selected, last_checked_at, latest_observed_height,
-            observed_lag, catching_up, healthy, last_error
+            observed_lag, catching_up, healthy, last_error, latency_ms
         )
-        VALUES (%s, %s, %s, now(), %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, now(), %s, %s, %s, %s, %s, %s)
         ON CONFLICT (url) DO UPDATE SET
             is_enabled = true,
             last_checked_at = now(),
@@ -224,10 +226,11 @@ def _upsert_rpc_endpoint(cursor, chain_id: str, probe: RpcProbeResult, selected:
             catching_up = EXCLUDED.catching_up,
             healthy = EXCLUDED.healthy,
             last_error = EXCLUDED.last_error,
+            latency_ms = EXCLUDED.latency_ms,
             updated_at = now()
         RETURNING id
         """,
-        (probe.url, chain_id, selected, probe.latest_height, probe.observed_lag, probe.catching_up, probe.healthy, probe.error_message),
+        (probe.url, chain_id, selected, probe.latest_height, probe.observed_lag, probe.catching_up, probe.healthy, probe.error_message, response_seconds_to_latency_ms(probe.response_seconds)),
     )
     return int(cursor.fetchone()[0])
 
@@ -243,11 +246,22 @@ def _mark_rpc_endpoint_selected(cursor, endpoint_id: int, probe: RpcProbeResult)
             catching_up = %s,
             healthy = %s,
             last_error = %s,
+            latency_ms = %s,
             updated_at = now()
         WHERE id = %s
         """,
-        (probe.latest_height, probe.observed_lag, probe.catching_up, probe.healthy, probe.error_message, endpoint_id),
+        (probe.latest_height, probe.observed_lag, probe.catching_up, probe.healthy, probe.error_message, response_seconds_to_latency_ms(probe.response_seconds), endpoint_id),
     )
+
+
+def response_seconds_to_latency_ms(value: object) -> int | None:
+    """Convert a measured duration to the bounded current-snapshot value."""
+    if isinstance(value, bool) or not isinstance(value, numbers.Real):
+        return None
+    seconds = float(value)
+    if not math.isfinite(seconds) or seconds < 0:
+        return None
+    return min(math.floor(seconds * 1000 + 0.5), 30000)
 
 
 def _insert_rpc_endpoint_check(cursor, endpoint_id: int, chain_id: str, probe: RpcProbeResult, switch_reason: str | None) -> None:

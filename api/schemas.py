@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 JsonSafeScalar = str | int | float | bool | None
@@ -78,6 +78,33 @@ class SelectedRpc(BaseModel):
     observed_height: int | None
     lag: int | None
     last_checked_at: str | None
+    latency_ms: int | None = Field(default=None, ge=0, le=30000)
+
+
+class RpcPoolEndpoint(BaseModel):
+    model_config = ConfigDict(strict=True)
+    url: str = Field(min_length=1, max_length=2048)
+    selected: bool
+    state: Literal["healthy", "catching_up", "stale", "wrong_chain", "unavailable", "unknown"]
+    latency_ms: int | None = Field(default=None, ge=0, le=30000)
+    lag: int | None = Field(default=None, ge=0)
+    last_checked_at: str | None
+
+
+class RpcPool(BaseModel):
+    model_config = ConfigDict(strict=True)
+    total: int = Field(ge=0, le=32)
+    available: int = Field(ge=0, le=32)
+    last_checked_at: str | None
+    endpoints: list[RpcPoolEndpoint] = Field(max_length=32)
+
+    @model_validator(mode="after")
+    def available_not_above_total(self):
+        if self.available > self.total:
+            raise ValueError("available must not exceed total")
+        if len(self.endpoints) != self.total:
+            raise ValueError("total must match endpoints")
+        return self
 
 
 class NetworkResponse(BaseModel):
@@ -91,6 +118,7 @@ class NetworkResponse(BaseModel):
     latest_block: BlockSummary
     validators: NetworkValidators
     selected_rpc: SelectedRpc | None
+    rpc_pool: RpcPool
 
 
 class NetworkDistributionRpcSources(BaseModel):

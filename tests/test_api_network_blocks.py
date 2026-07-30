@@ -99,6 +99,11 @@ def network_row(**overrides):
         "rpc_observed_height": 869384,
         "rpc_lag": 0,
         "rpc_last_checked_at": RPC_CHECK_TIME,
+        "rpc_latency_ms": 43,
+        "rpc_pool_total": 1,
+        "rpc_pool_available": 1,
+        "rpc_pool_last_checked_at": RPC_CHECK_TIME,
+        "rpc_pool_endpoints": [{"url": "https://example-rpc", "selected": True, "state": "healthy", "latency_ms": 43, "lag": 0, "last_checked_at": RPC_CHECK_TIME}],
     }
     row.update(overrides)
     return row
@@ -153,6 +158,17 @@ class ApiNetworkBlocksTests(unittest.TestCase):
                     "observed_height": 869384,
                     "lag": 0,
                     "last_checked_at": "2026-07-16T13:59:51Z",
+                    "latency_ms": 43,
+                },
+                "rpc_pool": {
+                    "total": 1,
+                    "available": 1,
+                    "last_checked_at": "2026-07-16T13:59:51Z",
+                    "endpoints": [{
+                        "url": "https://example-rpc", "selected": True,
+                        "state": "healthy", "latency_ms": 43, "lag": 0,
+                        "last_checked_at": "2026-07-16T13:59:51Z",
+                    }],
                 },
             },
         )

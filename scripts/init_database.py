@@ -44,7 +44,7 @@ EXPECTED_COLUMNS = {
     "rpc_endpoints": {
         "id": ("bigint", "NO", "a", None), "url": ("text", "NO", "", None), "chain_id": ("text", "NO", "", None), "is_enabled": ("boolean", "NO", "", "true"), "is_selected": ("boolean", "NO", "", "false"),
         "last_checked_at": ("timestamp with time zone", "YES", "", None), "last_selected_at": ("timestamp with time zone", "YES", "", None), "latest_observed_height": ("bigint", "YES", "", None), "observed_lag": ("bigint", "YES", "", None),
-        "catching_up": ("boolean", "YES", "", None), "healthy": ("boolean", "YES", "", None), "last_error": ("text", "YES", "", None), "inserted_at": ("timestamp with time zone", "NO", "", "now()"), "updated_at": ("timestamp with time zone", "NO", "", "now()"),
+        "catching_up": ("boolean", "YES", "", None), "healthy": ("boolean", "YES", "", None), "last_error": ("text", "YES", "", None), "latency_ms": ("integer", "YES", "", None), "inserted_at": ("timestamp with time zone", "NO", "", "now()"), "updated_at": ("timestamp with time zone", "NO", "", "now()"),
     },
     "rpc_endpoint_checks": {
         "id": ("bigint", "NO", "a", None), "rpc_endpoint_id": ("bigint", "NO", "", None), "checked_at": ("timestamp with time zone", "NO", "", "now()"), "chain_id": ("text", "NO", "", None),
@@ -98,6 +98,7 @@ EXPECTED_CHECKS = {
     "rpc_endpoints_latest_observed_height_check": "CHECK (latest_observed_height IS NULL OR latest_observed_height >= 0)",
     "rpc_endpoints_observed_lag_check": "CHECK (observed_lag IS NULL OR observed_lag >= 0)",
     "rpc_endpoints_no_secret_url": "CHECK (url !~* '(password|token|apikey|api_key|secret)=')",
+    "rpc_endpoints_latency_ms_check": "CHECK (latency_ms IS NULL OR latency_ms BETWEEN 0 AND 30000)",
     "rpc_endpoint_checks_latest_observed_height_check": "CHECK (latest_observed_height IS NULL OR latest_observed_height >= 0)",
     "rpc_endpoint_checks_observed_lag_check": "CHECK (observed_lag IS NULL OR observed_lag >= 0)",
     "indexer_state_last_finalized_height_check": "CHECK (last_finalized_height >= 0)",

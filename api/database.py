@@ -45,12 +45,17 @@ SELECT
     COALESCE(v.total_voting_power, 0)::text AS validator_total_voting_power,
     block_time.average_block_time_seconds,
     block_time.average_block_time_sample_size,
-    r.url AS rpc_url,
+    regexp_replace(r.url, '[?#].*$', '') AS rpc_url,
     r.healthy AS rpc_healthy,
     r.catching_up AS rpc_catching_up,
     r.latest_observed_height AS rpc_observed_height,
     r.observed_lag AS rpc_lag,
-    r.last_checked_at AS rpc_last_checked_at
+    r.last_checked_at AS rpc_last_checked_at,
+    r.latency_ms AS rpc_latency_ms,
+    rpc_pool.endpoints AS rpc_pool_endpoints,
+    COALESCE(rpc_pool.total, 0) AS rpc_pool_total,
+    COALESCE(rpc_pool.available, 0) AS rpc_pool_available,
+    rpc_pool.last_checked_at AS rpc_pool_last_checked_at
 FROM indexer_state s
 JOIN blocks b ON b.height = s.last_finalized_height
 LEFT JOIN valoper_profiles profile
@@ -89,6 +94,37 @@ LEFT JOIN LATERAL (
     ) sampled_blocks
 ) block_time ON true
 LEFT JOIN rpc_endpoints r ON r.id = s.selected_rpc_endpoint_id
+LEFT JOIN LATERAL (
+    SELECT
+        count(*)::integer AS total,
+        count(*) FILTER (WHERE endpoint.state = 'healthy')::integer AS available,
+        max(endpoint.last_checked_at) AS last_checked_at,
+        jsonb_agg(jsonb_build_object(
+            'url', regexp_replace(endpoint.url, '[?#].*$', ''), 'selected', endpoint.is_selected,
+            'state', endpoint.state, 'latency_ms', endpoint.latency_ms,
+            'lag', endpoint.observed_lag, 'last_checked_at', endpoint.last_checked_at
+        ) ORDER BY
+            endpoint.is_selected DESC,
+            (endpoint.state = 'healthy') DESC,
+            endpoint.latency_ms ASC NULLS LAST,
+            endpoint.url ASC
+        ) AS endpoints
+    FROM (
+        SELECT bounded.*,
+            CASE
+                WHEN bounded.catching_up = true THEN 'catching_up'
+                WHEN bounded.healthy = true THEN 'healthy'
+                WHEN bounded.last_checked_at IS NULL OR bounded.healthy IS NULL THEN 'unknown'
+                WHEN bounded.last_error ~* '(wrong[ _-]?chain|chain[ _-]?id)' THEN 'wrong_chain'
+                WHEN bounded.last_error ~* 'stale' OR (bounded.healthy = false AND bounded.observed_lag > 1) THEN 'stale'
+                ELSE 'unavailable'
+            END AS state
+        FROM rpc_endpoints bounded
+        WHERE bounded.chain_id = s.chain_id AND bounded.is_enabled = true
+        ORDER BY bounded.is_selected DESC, bounded.url
+        LIMIT 32
+    ) endpoint
+) rpc_pool ON true
 WHERE s.state_key = %s
 """
 

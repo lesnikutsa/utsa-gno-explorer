@@ -6,6 +6,7 @@ import { StatusBadge } from '../components/StatusBadge'
 import { ValidatorSigningStrip } from '../components/ValidatorSigningStrip'
 import { ProposerIdentity } from '../components/ProposerIdentity'
 import { NetworkDistributionPanel } from '../components/NetworkDistributionPanel'
+import { RpcPoolStatus } from '../components/RpcPoolStatus'
 import { BlocksIcon, ChainIcon, NetworkIcon, ValidatorsIcon } from '../components/Icons'
 import { relativeTime } from '../utils/time'
 import { shortAddress } from '../utils/address'
@@ -24,16 +25,6 @@ const formatUptime = (value) => {
 }
 
 const sortableUptime = (value) => value === null || value === undefined || value === '' ? Infinity : Number(value)
-
-function RpcStatus({ rpc }) {
-  if (!rpc) return <span className="rpc-meta">RPC unavailable</span>
-
-  let hostname = rpc.url
-  try { hostname = new URL(rpc.url).hostname } catch { /* Preserve the API value when the URL cannot be parsed. */ }
-  const tone = rpc.healthy === true ? 'success' : 'error'
-
-  return <span className="rpc-meta" title={rpc.url}><span className={`rpc-meta__dot rpc-meta__dot--${tone}`} />RPC: {hostname}</span>
-}
 
 const blockColumns = [
   { key: 'height', label: 'Height', render: (row) => <a className="table-link" href={`/blocks/${row.height}`}><span className="accent-value mono">#{row.height.toLocaleString()}</span></a> },
@@ -111,7 +102,7 @@ export function Overview({ explorerData, mascotSrc = null }) {
         <Card eyebrow="Latest Block" icon={BlocksIcon} value={data.network ? `#${data.network.latest_block.height.toLocaleString()}` : errors.network ? 'Unavailable' : '—'} meta="Auto-refresh every 5s" updating={updatedLatestHeight === latestHeight} loading={loading} href={latestHeight === null ? undefined : `/blocks/${latestHeight}`} ariaLabel={latestHeight === null ? undefined : `View block ${latestHeight}`} />
         <Card eyebrow="Network Status" icon={NetworkIcon} value={networkLabel} tone={healthState} meta={errors.health ? 'API connection unavailable' : 'API connection status'} loading={loading} />
         <Card eyebrow="Active Validators" icon={ValidatorsIcon} value={data.network?.validators?.active_count?.toLocaleString() ?? (errors.network ? 'Unavailable' : '—')} meta="Current validator set" loading={loading} />
-        <Card eyebrow="Chain ID" icon={ChainIcon} value={data.network?.chain_id ?? (errors.network ? 'Unavailable' : '—')} meta={<RpcStatus rpc={data.network?.selected_rpc} />} loading={loading} />
+        <Card eyebrow="Chain ID" icon={ChainIcon} value={data.network?.chain_id ?? (errors.network ? 'Unavailable' : '—')} meta={<RpcPoolStatus pool={data.network?.rpc_pool} selectedRpc={data.network?.selected_rpc} />} loading={loading} />
       </section>
 
       <div className="dashboard-grid">

@@ -38,6 +38,8 @@ from api.schemas import (
     GovernanceStatusCounts,
     GovernanceVoteResponse,
     NetworkResponse,
+    RpcPool,
+    RpcPoolEndpoint,
     NetworkDistributionCountry,
     NetworkDistributionProvider,
     NetworkDistributionRegion,
@@ -511,6 +513,7 @@ def _network_response_from_row(row: dict) -> NetworkResponse:
             observed_height=row["rpc_observed_height"],
             lag=row["rpc_lag"],
             last_checked_at=isoformat_utc_z(row["rpc_last_checked_at"]),
+            latency_ms=row["rpc_latency_ms"],
         )
 
     return NetworkResponse(
@@ -541,6 +544,14 @@ def _network_response_from_row(row: dict) -> NetworkResponse:
             total_voting_power=str(row["validator_total_voting_power"]),
         ),
         selected_rpc=selected_rpc,
+        rpc_pool=RpcPool(
+            total=row["rpc_pool_total"],
+            available=row["rpc_pool_available"],
+            last_checked_at=isoformat_utc_z(row["rpc_pool_last_checked_at"]),
+            endpoints=[RpcPoolEndpoint(
+                **{**endpoint, "last_checked_at": isoformat_utc_z(endpoint.get("last_checked_at"))}
+            ) for endpoint in (row["rpc_pool_endpoints"] or [])],
+        ),
     )
 
 
