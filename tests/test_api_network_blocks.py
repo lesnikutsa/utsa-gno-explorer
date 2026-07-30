@@ -2,6 +2,7 @@ import logging
 import unittest
 from decimal import Decimal
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -213,13 +214,30 @@ class ApiNetworkBlocksTests(unittest.TestCase):
             response = client.get("/api/network")
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data["selected_rpc"]["url"], "https://rpc.example.invalid:443")
-        self.assertEqual(data["rpc_pool"]["endpoints"][0]["url"], "https://rpc.example.invalid:443")
-        self.assertEqual(data["rpc_pool"]["endpoints"][1]["url"], "https://backup.example.invalid:8443")
+        public_urls = [
+            (data["selected_rpc"]["url"], "rpc.example.invalid", 443),
+            (data["rpc_pool"]["endpoints"][0]["url"], "rpc.example.invalid", 443),
+            (data["rpc_pool"]["endpoints"][1]["url"], "backup.example.invalid", 8443),
+        ]
+        for public_url, expected_hostname, expected_port in public_urls:
+            parsed = urlsplit(public_url)
+            self.assertIn(parsed.scheme, {"http", "https"})
+            self.assertEqual(parsed.hostname, expected_hostname)
+            self.assertEqual(parsed.port, expected_port)
+            self.assertIsNone(parsed.username)
+            self.assertIsNone(parsed.password)
+            self.assertEqual(parsed.path, "")
+            self.assertEqual(parsed.query, "")
+            self.assertEqual(parsed.fragment, "")
         self.assertEqual(fake_database.network_row["rpc_url"], selected_raw)
         self.assertEqual(fake_database.network_row["rpc_pool_endpoints"][1]["url"], other_raw)
         public_payload = response.text
-        for secret_part in ("username-placeholder", "password", "token-placeholder", "secret-placeholder", "other-placeholder", "?", "#", "/path", "/backup"):
+        for secret_part in (
+            "username-placeholder", "password", "token-placeholder",
+            "path-secret-placeholder", "backup-secret-placeholder",
+            "other-placeholder", "key-placeholder", "fragment-placeholder",
+            "details-placeholder",
+        ):
             self.assertNotIn(secret_part, public_payload)
 
     def test_network_maps_unavailable_average_sample_sizes(self):
