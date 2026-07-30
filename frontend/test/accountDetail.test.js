@@ -37,6 +37,26 @@ test('hook maps safe states, supports retry and has no polling timer', () => {
   assert.equal(hook.includes('setTimeout'), false)
   assert.equal(hook.includes('setInterval'), false)
 })
+test('hook exposes the safely decoded requested address synchronously', () => {
+  assert.ok(hook.includes('const requestedAddress = decodeAccountRouteAddress(routeAddress)'))
+  assert.ok(hook.includes('return { ...state, requestedAddress, retry }'))
+})
+test('initial loading renders the account shell with accessible skeletons', () => {
+  assert.equal(page.includes('title="Loading account…"'), false)
+  for (const text of ['← Back to Overview', 'Account Balance', 'Account Summary', 'Technical details', '<TransactionsPlaceholder />', 'Loading current account state…']) assert.ok(page.includes(text))
+  assert.ok(page.includes("aria-busy={loading ? 'true' : 'false'}"))
+  assert.ok(page.includes('account?.address || requestedAddress'))
+  assert.ok(page.includes('initialLoading ? <Skeleton'))
+  assert.ok(page.includes('aria-hidden="true"'))
+  assert.match(styles, /@media \(prefers-reduced-motion: reduce\) \{[^}]*account-detail__placeholder \{ animation: none;/)
+  const initialBalance = page.slice(page.indexOf('aria-labelledby="account-balance-title"'), page.indexOf('aria-labelledby="account-summary-title"'))
+  assert.ok(initialBalance.indexOf('initialLoading ? <Skeleton') < initialBalance.indexOf('No native bank balance'))
+})
+test('manual refresh keeps loaded account values visible', () => {
+  assert.ok(hook.includes('account: current.account?.address === address ? current.account : null'))
+  assert.ok(page.includes("loading ? 'Refreshing…' : 'Refresh'"))
+  assert.ok(page.includes('loading && account && <p className="account-detail__updating"'))
+})
 test('network profile defines the native denom with an ugnot fallback', () => {
   assert.ok(profile.includes('import.meta.env.VITE_NATIVE_DENOM'))
   assert.match(profile, /nativeDenom:\s*publicValue\([\s\S]*?'ugnot'/)
@@ -76,7 +96,7 @@ test('page uses a compact balance and account summary overview', () => {
   assert.ok(balanceCard.includes('formatAmountString(primary.display_amount)'))
   assert.ok(balanceCard.includes('primary.symbol'))
   for (const label of ['Denom', 'Raw amount', 'Decimals', 'account-detail__compact-list']) assert.equal(balanceCard.includes(label), false)
-  const accountSummary = page.slice(page.indexOf('aria-labelledby="account-summary-title"'), page.indexOf('{account.validator_relation &&'))
+  const accountSummary = page.slice(page.indexOf('aria-labelledby="account-summary-title"'), page.indexOf('{initialLoading ? <section'))
   for (const value of ['Account number', 'Sequence', 'Denom', 'Decimals', 'Raw amount']) assert.ok(accountSummary.includes(value))
   assert.ok(accountSummary.includes("primary?.amount || '—'"))
   assert.equal(accountSummary.includes('formatAmountString(primary.amount)'), false)
@@ -108,7 +128,7 @@ test('page keeps technical and validator information compact', () => {
   assert.match(styles, /@media \(max-width: 760px\)[\s\S]*?account-detail__technical-grid \{ grid-template-columns: 1fr/)
 })
 test('validator relation is a compact message without exposed addresses', () => {
-  const validatorCard = page.slice(page.indexOf('{account.validator_relation &&'), page.indexOf('{otherBalances.length > 0'))
+  const validatorCard = page.slice(page.indexOf(': account.validator_relation &&'), page.indexOf('{otherBalances.length > 0'))
   assert.ok(validatorCard.includes('This account belongs to validator'))
   assert.ok(validatorCard.includes('>{account.validator_relation.moniker'))
   assert.ok(validatorCard.includes('/validators/${encodeURIComponent(account.validator_relation.signing_address)}'))
@@ -135,7 +155,7 @@ test('other balances exclude native denom and render only when non-native balanc
   assert.ok(page.includes('Other balances'))
 })
 test('page contains account content and all safe result states', () => {
-  for (const text of ['Loading account…', 'Invalid account address', 'Account data is temporarily unavailable', 'Account details are currently unavailable', 'Account not found']) assert.ok(page.includes(text))
+  for (const text of ['Invalid account address', 'Account data is temporarily unavailable', 'Account details are currently unavailable', 'Account not found']) assert.ok(page.includes(text))
   for (const text of ['Balance', 'Raw amount', 'Account number', 'Sequence', 'Technical details', 'Validator', 'No native bank balance', 'Public key not available']) assert.ok(page.includes(text))
   assert.ok(page.includes("primary.display_amount"))
   assert.ok(page.includes("balance.amount"))
