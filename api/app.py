@@ -80,6 +80,11 @@ SUMMARY_MESSAGE_FIELDS = SUMMARY_CORE_FIELDS + (
 SUMMARY_SCALAR_STRING_LIMIT = 160
 SUMMARY_INTEGER_LIMIT = (1 << 255) - 1
 SUMMARY_MAX_BYTES = 16384
+JSONB_TIMESTAMP_RE = re.compile(
+    r"^(?P<date>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})"
+    r"(?:\.(?P<fraction>\d{1,6}))?"
+    r"(?P<timezone>Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$"
+)
 
 
 @asynccontextmanager
@@ -567,8 +572,17 @@ def _jsonb_timestamp_utc_z(value: object) -> str | None:
         return isoformat_utc_z(value)
     if not isinstance(value, str):
         raise ValueError("Invalid RPC endpoint timestamp")
+    match = JSONB_TIMESTAMP_RE.fullmatch(value)
+    if match is None:
+        raise ValueError("Invalid RPC endpoint timestamp")
+    fraction = match.group("fraction")
+    normalized = match.group("date")
+    if fraction is not None:
+        normalized += f".{fraction.ljust(6, '0')}"
+    timezone_suffix = match.group("timezone")
+    normalized += "+00:00" if timezone_suffix == "Z" else timezone_suffix
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(normalized)
     except ValueError as exc:
         raise ValueError("Invalid RPC endpoint timestamp") from exc
     if parsed.tzinfo is None:
