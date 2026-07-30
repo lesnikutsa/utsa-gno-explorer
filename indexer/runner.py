@@ -454,10 +454,10 @@ def run_continuous(database: PostgresDatabase, chain_id: str, rpc_urls: list[str
     try:
         if not _acquire_lock_with_backoff(lock, config, stop, wait):
             return 1
-        selected_getter = getattr(database, "get_selected_rpc_url", None)
-        selection_state = RpcSelectionState(
-            selected_url=selected_getter(chain_id) if selected_getter is not None else None
-        )
+        selection_state = _load_rpc_selection_state(database, chain_id, lock, config, stop, wait)
+        if selection_state is None:
+            return 1
+        backoff = config.error_backoff_seconds
         while not stop.requested:
             if config.max_cycles is not None and cycle >= config.max_cycles:
                 reason = "max-cycles reached"
@@ -534,6 +534,39 @@ def run_continuous(database: PostgresDatabase, chain_id: str, rpc_urls: list[str
         return 1
     finally:
         lock.close()
+
+
+def _load_rpc_selection_state(
+    database: PostgresDatabase,
+    chain_id: str,
+    lock: AdvisoryLock,
+    config: ContinuousConfig,
+    stop: StopController,
+    wait: Waiter,
+) -> RpcSelectionState | None:
+    """Load persisted selection once, retrying transient startup read failures."""
+    selected_getter = getattr(database, "get_selected_rpc_url", None)
+    if selected_getter is None:
+        lock.ensure_alive()
+        return RpcSelectionState()
+    backoff = config.error_backoff_seconds
+    while not stop.requested:
+        lock.ensure_alive()
+        try:
+            selected_url = selected_getter(chain_id)
+        except Exception as exc:
+            if not _is_transient_error(exc):
+                raise
+            LOGGER.warning("transient selected RPC state read failure; backoff=%ss", backoff)
+            if config.once:
+                return None
+            if wait(backoff, stop):
+                return None
+            backoff = min(config.max_backoff_seconds, backoff * 2)
+            continue
+        lock.ensure_alive()
+        return RpcSelectionState(selected_url=selected_url)
+    return None
 
 
 def _acquire_lock_with_backoff(lock: AdvisoryLock, config: ContinuousConfig, stop: StopController, wait: Waiter) -> bool:

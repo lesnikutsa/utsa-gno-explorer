@@ -236,6 +236,105 @@ class ContinuousIndexerTests(unittest.TestCase):
         self.assertTrue(db.assert_lock)
         self.assertEqual([url for url, _reason in db.selection_calls], [selected_probe.url, selected_probe.url])
 
+    def test_selected_url_read_retries_once_then_initializes_state(self):
+        class RetryDb(SqlLikeDb):
+            def __init__(self):
+                super().__init__(10)
+                self.selected_reads = 0
+                self.lock_observations = []
+            def get_selected_rpc_url(self, chain_id):
+                self.selected_reads += 1
+                self.lock_observations.append(FakeLock.held)
+                if self.selected_reads == 1:
+                    raise psycopg.OperationalError("postgresql://user:secret@database.invalid/db")
+                return "https://selected.invalid"
+
+        db = RetryDb()
+        waits = []
+        selected_probe = RpcProbeResult("https://selected.invalid", True, False, "test-13", 11, 0, False, client=FakeClient(11), status_payload={}, response_seconds=0.30)
+        faster_probe = RpcProbeResult("https://faster.invalid", True, True, "test-13", 11, 0, False, client=FakeClient(11), status_payload={}, response_seconds=0.20)
+        with patch("indexer.runner.probe_rpc_endpoints", return_value=[faster_probe, selected_probe]), self.assertLogs("indexer.runner", level="WARNING") as captured:
+            code = run_continuous(
+                db, "test-13", [selected_probe.url, faster_probe.url], 10,
+                ContinuousConfig(10, 1, 1, 2, 8, max_cycles=1),
+                wait=lambda seconds, _stop: waits.append(seconds) or False, lock_factory=FakeLock,
+            )
+        self.assertEqual(code, 0)
+        self.assertEqual(waits, [2])
+        self.assertEqual(db.selected_reads, 2)
+        self.assertEqual(db.lock_observations, [True, True])
+        self.assertEqual(db.selection_calls[0][0], selected_probe.url)
+        self.assertNotIn("secret", " ".join(captured.output))
+        self.assertNotIn("postgresql://", " ".join(captured.output))
+
+    def test_selected_url_read_exponential_backoff_caps_without_using_cycles(self):
+        class RetryDb(SqlLikeDb):
+            def __init__(self):
+                super().__init__(10)
+                self.selected_reads = 0
+            def get_selected_rpc_url(self, chain_id):
+                self.selected_reads += 1
+                if self.selected_reads < 4:
+                    raise psycopg.InterfaceError("temporary")
+                return "https://selected.invalid"
+
+        db = RetryDb()
+        waits = []
+        probe = RpcProbeResult("https://selected.invalid", True, True, "test-13", 11, 0, False, client=FakeClient(11), status_payload={}, response_seconds=0.20)
+        with patch("indexer.runner.probe_rpc_endpoints", return_value=[probe]) as rpc_probe:
+            code = run_continuous(
+                db, "test-13", [probe.url], 10,
+                ContinuousConfig(10, 1, 1, 2, 3, max_cycles=1),
+                wait=lambda seconds, _stop: waits.append(seconds) or False, lock_factory=FakeLock,
+            )
+        self.assertEqual(code, 0)
+        self.assertEqual(waits, [2, 3, 3])
+        self.assertEqual(db.selected_reads, 4)
+        rpc_probe.assert_called_once()
+
+    def test_selected_url_read_stop_once_non_transient_and_lock_loss(self):
+        class FailingDb(SqlLikeDb):
+            selected_reads = 0
+            error = psycopg.OperationalError("temporary")
+            def get_selected_rpc_url(self, chain_id):
+                self.selected_reads += 1
+                raise self.error
+
+        db = FailingDb(10)
+        stop = StopController()
+        def stopping_wait(_seconds, controller):
+            controller.request_stop("SIGTERM")
+            return True
+        with patch("indexer.runner.probe_rpc_endpoints") as rpc_probe:
+            self.assertEqual(run_continuous(db, "test-13", ["x"], 10, self.config, stop=stop, wait=stopping_wait, lock_factory=FakeLock), 1)
+        self.assertEqual(db.selected_reads, 1)
+        rpc_probe.assert_not_called()
+
+        db = FailingDb(10)
+        waits = []
+        self.assertEqual(run_continuous(db, "test-13", ["x"], 10, ContinuousConfig(10, 1, 1, 1, 2, once=True), wait=lambda seconds, _stop: waits.append(seconds) or False, lock_factory=FakeLock), 1)
+        self.assertEqual((db.selected_reads, waits), (1, []))
+
+        db = FailingDb(10)
+        db.error = ValueError("invalid state")
+        waits = []
+        self.assertEqual(run_continuous(db, "test-13", ["x"], 10, self.config, wait=lambda seconds, _stop: waits.append(seconds) or False, lock_factory=FakeLock), 1)
+        self.assertEqual((db.selected_reads, waits), (1, []))
+
+        class LostDuringReadLock(FakeLock):
+            checks = 0
+            def ensure_alive(self):
+                self.checks += 1
+                if self.checks > 1:
+                    raise AdvisoryLockHeld("lost")
+                super().ensure_alive()
+        class SuccessfulDb(SqlLikeDb):
+            def get_selected_rpc_url(self, chain_id):
+                return "https://selected.invalid"
+        with patch("indexer.runner.probe_rpc_endpoints") as rpc_probe:
+            self.assertEqual(run_continuous(SuccessfulDb(10), "test-13", ["x"], 10, self.config, lock_factory=LostDuringReadLock), 1)
+        rpc_probe.assert_not_called()
+
     def test_cycle_performance_log_preserves_fields(self):
         with self.patch_select(12), self.assertLogs("indexer.runner", level="INFO") as captured:
             code = run_continuous(
