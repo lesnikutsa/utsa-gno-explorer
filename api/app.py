@@ -82,7 +82,8 @@ SUMMARY_INTEGER_LIMIT = (1 << 255) - 1
 SUMMARY_MAX_BYTES = 16384
 JSONB_TIMESTAMP_RE = re.compile(
     r"^(?P<date>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})"
-    r"(?:\.(?P<fraction>\d{1,6}))?(?P<timezone>Z|[+-]\d{2}:\d{2})$"
+    r"(?:\.(?P<fraction>\d{1,6}))?"
+    r"(?P<timezone>Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$"
 )
 
 
