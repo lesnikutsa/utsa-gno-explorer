@@ -57,6 +57,16 @@ class PostgresDatabase:
         with self.connect() as connection, connection.cursor() as cursor:
             return get_checkpoint_anchor_cursor(cursor, chain_id)
 
+    def get_selected_rpc_url(self, chain_id: str) -> str | None:
+        """Return the enabled persisted selection for one chain."""
+        with self.connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT url FROM rpc_endpoints WHERE chain_id = %s AND is_selected AND is_enabled LIMIT 1",
+                (chain_id,),
+            )
+            row = cursor.fetchone()
+        return str(row[0]) if row else None
+
     def record_rpc_probe_cycle(self, chain_id: str, probes: list[RpcProbeResult]) -> None:
         with self.connect() as connection:
             with connection.cursor() as cursor:

@@ -18,7 +18,9 @@ from indexer.runner import (
     ContinuousConfig,
     FatalIndexerError,
     StopController,
+    RpcSelectionState,
     advisory_lock_key,
+    order_indexer_candidates,
     run_continuous,
     run_cycle,
     validate_continuous_config,
@@ -204,6 +206,36 @@ class ContinuousIndexerTests(unittest.TestCase):
             run_continuous(db, "test-13", ["x"], 10, ContinuousConfig(10, 1, 1, 1, 2, once=True), lock_factory=FakeLock)
         self.assertEqual(db.checkpoint, 10)
 
+    def test_persisted_selected_url_is_loaded_once_after_lock(self):
+        class PersistedDb(SqlLikeDb):
+            def __init__(self):
+                super().__init__(10)
+                self.selected_reads = 0
+            def get_selected_rpc_url(self, chain_id):
+                self.selected_reads += 1
+                self.assert_lock = FakeLock.held
+                return "https://selected.invalid"
+
+        db = PersistedDb()
+        selected_probe = RpcProbeResult(
+            "https://selected.invalid", True, False, "test-13", 11, 0, False,
+            client=FakeClient(11), status_payload={}, response_seconds=0.30,
+        )
+        faster_probe = RpcProbeResult(
+            "https://faster.invalid", True, True, "test-13", 11, 0, False,
+            client=FakeClient(11), status_payload={}, response_seconds=0.20,
+        )
+        with patch("indexer.runner.probe_rpc_endpoints", return_value=[faster_probe, selected_probe]):
+            code = run_continuous(
+                db, "test-13", [selected_probe.url, faster_probe.url], 10,
+                ContinuousConfig(10, 1, 1, 1, 2, max_cycles=2),
+                wait=lambda _seconds, _stop: False, lock_factory=FakeLock,
+            )
+        self.assertEqual(code, 0)
+        self.assertEqual(db.selected_reads, 1)
+        self.assertTrue(db.assert_lock)
+        self.assertEqual([url for url, _reason in db.selection_calls], [selected_probe.url, selected_probe.url])
+
     def test_cycle_performance_log_preserves_fields(self):
         with self.patch_select(12), self.assertLogs("indexer.runner", level="INFO") as captured:
             code = run_continuous(
@@ -347,6 +379,67 @@ class ReviewSemanticsTests(unittest.TestCase):
         values = dict(start_height=10, batch_size=2, poll_interval_seconds=1, error_backoff_seconds=1, max_backoff_seconds=4, hard_max_heights=3)
         values.update(kwargs)
         return ContinuousConfig(**values)
+
+    def test_indexer_hysteresis_thresholds_streaks_and_invalid_latencies(self):
+        def probe(url, seconds):
+            return RpcProbeResult(
+                url, True, False, "test-13", 20, 0, False,
+                client=FakeClient(20), status_payload={}, response_seconds=seconds,
+            )
+
+        selected_probe = probe("https://selected.invalid/private?token=x#fragment", 0.2)
+        state = RpcSelectionState(selected_probe.url)
+
+        ordered, _ = order_indexer_candidates([probe("https://candidate.invalid", 0.151), selected_probe], state)
+        self.assertEqual(ordered[0].url, selected_probe.url)
+        self.assertEqual(state.candidate_streak, 0)
+        selected_probe = probe(selected_probe.url, 0.3)
+        ordered, _ = order_indexer_candidates([probe("https://candidate.invalid", 0.24), selected_probe], state)
+        self.assertEqual(ordered[0].url, selected_probe.url)
+        self.assertEqual(state.candidate_streak, 0)
+
+        selected_probe = probe(selected_probe.url, 0.2)
+        ordered, _ = order_indexer_candidates([probe("https://candidate.invalid", 0.15), selected_probe], state)
+        self.assertEqual(ordered[0].url, selected_probe.url)
+        self.assertEqual(state.candidate_streak, 1)  # exactly 50 ms and 25%
+
+        selected_probe = probe(selected_probe.url, 0.2)
+        candidate = probe("https://candidate.invalid", 0.15)
+        state = RpcSelectionState(selected_probe.url)
+        for expected_streak in (1, 2):
+            ordered, _ = order_indexer_candidates([candidate, selected_probe], state)
+            self.assertEqual(ordered[0].url, selected_probe.url)
+            self.assertEqual(state.candidate_streak, expected_streak)
+        ordered, reason = order_indexer_candidates([candidate, selected_probe], state)
+        self.assertEqual(ordered[0].url, candidate.url)
+        self.assertEqual(reason, "latency_hysteresis")
+
+        for invalid in (None, True, float("nan"), float("inf"), -0.1):
+            state = RpcSelectionState(selected_probe.url, candidate.url, 2)
+            invalid_selected = probe(selected_probe.url, invalid)
+            ordered, _ = order_indexer_candidates([candidate, invalid_selected], state)
+            self.assertEqual(ordered[0].url, selected_probe.url)
+            self.assertEqual(state.candidate_streak, 0)
+
+    def test_hysteresis_candidate_change_interruption_and_immediate_failover(self):
+        def probe(url, seconds):
+            return RpcProbeResult(url, True, False, "test-13", 20, 0, False, client=FakeClient(20), status_payload={}, response_seconds=seconds)
+        current = probe("https://user:secret@selected.invalid/private?token=x#fragment", 0.3)
+        first = probe("https://first.invalid", 0.2)
+        second = probe("https://second.invalid", 0.19)
+        state = RpcSelectionState(current.url)
+        order_indexer_candidates([first, current], state)
+        order_indexer_candidates([second, first, current], state)
+        self.assertEqual((state.candidate_url, state.candidate_streak), (second.url, 1))
+        order_indexer_candidates([probe("https://slow.invalid", 0.28), current], state)
+        self.assertEqual((state.candidate_url, state.candidate_streak), (None, 0))
+        with self.assertLogs("indexer.runner", level="INFO") as captured:
+            ordered, reason = order_indexer_candidates([first], state)
+        self.assertEqual((ordered[0].url, reason), (first.url, "selected_unavailable"))
+        log = " ".join(captured.output)
+        self.assertNotIn("secret", log)
+        self.assertNotIn("private", log)
+        self.assertNotIn("token", log)
 
     def test_all_unhealthy_cycle_persists_every_probe(self):
         db = SqlLikeDb(None)
