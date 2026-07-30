@@ -1,5 +1,12 @@
 # Production deployment
 
+## RPC latency snapshot migration
+
+For an existing database, apply the additive current-snapshot column explicitly with
+`python scripts/migrate_rpc_latency_schema.py`, then validate the complete schema with
+`python scripts/init_database.py`. The command is idempotent and does not migrate or
+rewrite endpoint health rows. Fresh databases need only the normal initialization command.
+
 ## Transaction-hash migration
 
 Stop the production indexer before running `python scripts/migrate_transaction_hashes.py`. The additive, transactional migration backfills historical decoded rows from `transactions.decoded_bytes`, checks format, validates constraints, and creates a non-unique partial lookup index. Repeated hashes are preserved because `(block_height, tx_index)`, not the hash, identifies an occurrence; future hash lookup may return multiple locations. Do not run it concurrently with ingestion. The safe order is: stop indexer, migrate/backfill, update application code, restart API, restart indexer, and verify historical and new hashes. No PostgreSQL extension or destructive table recreation is used, and Base64 decoding does not indicate execution success. Structured Type/message parsing remains deferred.

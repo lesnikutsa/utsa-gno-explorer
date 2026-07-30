@@ -2,6 +2,7 @@ import logging
 import unittest
 from decimal import Decimal
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -99,6 +100,11 @@ def network_row(**overrides):
         "rpc_observed_height": 869384,
         "rpc_lag": 0,
         "rpc_last_checked_at": RPC_CHECK_TIME,
+        "rpc_latency_ms": 43,
+        "rpc_pool_total": 1,
+        "rpc_pool_available": 1,
+        "rpc_pool_last_checked_at": RPC_CHECK_TIME,
+        "rpc_pool_endpoints": [{"url": "https://example-rpc", "selected": True, "state": "healthy", "latency_ms": 43, "lag": 0, "last_checked_at": RPC_CHECK_TIME}],
     }
     row.update(overrides)
     return row
@@ -153,9 +159,86 @@ class ApiNetworkBlocksTests(unittest.TestCase):
                     "observed_height": 869384,
                     "lag": 0,
                     "last_checked_at": "2026-07-16T13:59:51Z",
+                    "latency_ms": 43,
+                },
+                "rpc_pool": {
+                    "total": 1,
+                    "available": 1,
+                    "last_checked_at": "2026-07-16T13:59:51Z",
+                    "endpoints": [{
+                        "url": "https://example-rpc", "selected": True,
+                        "state": "healthy", "latency_ms": 43, "lag": 0,
+                        "last_checked_at": "2026-07-16T13:59:51Z",
+                    }],
                 },
             },
         )
+
+    def test_network_normalizes_jsonb_timestamp_string_and_keeps_datetime_support(self):
+        fake_database = FakeDatabase()
+        fake_database.network_row = network_row(
+            rpc_pool_last_checked_at=datetime(2026, 7, 30, 13, 45, tzinfo=timezone.utc),
+            rpc_pool_endpoints=[{
+                "url": "https://rpc.example", "selected": True, "state": "healthy",
+                "latency_ms": 12, "lag": 0,
+                "last_checked_at": "2026-07-30T13:45:00+00:00",
+            }],
+        )
+        with self.make_client(fake_database) as client:
+            response = client.get("/api/network")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["rpc_pool"]["last_checked_at"], "2026-07-30T13:45:00Z")
+        self.assertEqual(response.json()["rpc_pool"]["endpoints"][0]["last_checked_at"], "2026-07-30T13:45:00Z")
+
+    def test_network_rejects_malformed_jsonb_timestamp_without_echoing_it(self):
+        from api.app import _jsonb_timestamp_utc_z
+
+        malformed = "not-a-timestamp-with-private-data"
+        with self.assertRaisesRegex(ValueError, "Invalid RPC endpoint timestamp") as raised:
+            _jsonb_timestamp_utc_z(malformed)
+        self.assertNotIn(malformed, str(raised.exception))
+
+    def test_network_sanitizes_selected_and_pool_urls_without_mutating_database_row(self):
+        selected_raw = "https://username-placeholder:password@rpc.example.invalid:443/path-secret-placeholder?token-placeholder=value#fragment-placeholder"
+        other_raw = "https://other-placeholder:password@backup.example.invalid:8443/backup-secret-placeholder?key-placeholder=value#details-placeholder"
+        endpoints = [
+            {"url": selected_raw, "selected": True, "state": "healthy", "latency_ms": 12, "lag": 0, "last_checked_at": RPC_CHECK_TIME},
+            {"url": other_raw, "selected": False, "state": "unavailable", "latency_ms": None, "lag": None, "last_checked_at": RPC_CHECK_TIME},
+        ]
+        fake_database = FakeDatabase()
+        fake_database.network_row = network_row(
+            rpc_url=selected_raw, rpc_pool_total=2, rpc_pool_available=1,
+            rpc_pool_endpoints=endpoints,
+        )
+        with self.make_client(fake_database) as client:
+            response = client.get("/api/network")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        public_urls = [
+            (data["selected_rpc"]["url"], "rpc.example.invalid", 443),
+            (data["rpc_pool"]["endpoints"][0]["url"], "rpc.example.invalid", 443),
+            (data["rpc_pool"]["endpoints"][1]["url"], "backup.example.invalid", 8443),
+        ]
+        for public_url, expected_hostname, expected_port in public_urls:
+            parsed = urlsplit(public_url)
+            self.assertIn(parsed.scheme, {"http", "https"})
+            self.assertEqual(parsed.hostname, expected_hostname)
+            self.assertEqual(parsed.port, expected_port)
+            self.assertIsNone(parsed.username)
+            self.assertIsNone(parsed.password)
+            self.assertEqual(parsed.path, "")
+            self.assertEqual(parsed.query, "")
+            self.assertEqual(parsed.fragment, "")
+        self.assertEqual(fake_database.network_row["rpc_url"], selected_raw)
+        self.assertEqual(fake_database.network_row["rpc_pool_endpoints"][1]["url"], other_raw)
+        public_payload = response.text
+        for secret_part in (
+            "username-placeholder", "password", "token-placeholder",
+            "path-secret-placeholder", "backup-secret-placeholder",
+            "other-placeholder", "key-placeholder", "fragment-placeholder",
+            "details-placeholder",
+        ):
+            self.assertNotIn(secret_part, public_payload)
 
     def test_network_maps_unavailable_average_sample_sizes(self):
         fake_database = FakeDatabase()

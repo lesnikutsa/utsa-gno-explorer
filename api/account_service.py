@@ -2,7 +2,9 @@
 
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
+import ipaddress
 import logging
+import re
 import threading
 import time
 from urllib.parse import urlsplit, urlunsplit
@@ -35,19 +37,32 @@ class AccountUnavailableError(RuntimeError):
 
 
 def public_rpc_url(value: str) -> str:
-    """Return a bounded credential- and parameter-free public HTTP RPC URL."""
+    """Return a bounded public HTTP RPC origin without any private URL components."""
     if not isinstance(value, str) or not 1 <= len(value) <= 2048 or any(ord(char) < 33 for char in value):
         raise AccountParseError("invalid RPC URL")
     try:
         parsed = urlsplit(value)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
             raise ValueError
+        hostname_value = parsed.hostname
+        try:
+            ipaddress.ip_address(hostname_value)
+        except ValueError:
+            dns_name = hostname_value[:-1] if hostname_value.endswith(".") else hostname_value
+            labels = dns_name.split(".")
+            if (
+                not dns_name or len(dns_name) > 253
+                or any(not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label) for label in labels)
+            ):
+                raise ValueError
         port = parsed.port
+        if parsed.netloc.rsplit("@", 1)[-1].endswith(":"):
+            raise ValueError
     except ValueError as exc:
         raise AccountParseError("invalid RPC URL") from exc
     hostname = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
     netloc = f"{hostname}:{port}" if port is not None else hostname
-    result = urlunsplit((parsed.scheme, netloc, parsed.path, "", ""))
+    result = urlunsplit((parsed.scheme, netloc, "", "", ""))
     if len(result) > 2048:
         raise AccountParseError("invalid RPC URL")
     return result

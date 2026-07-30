@@ -193,6 +193,7 @@ CREATE TABLE rpc_endpoints (
     catching_up BOOLEAN,
     healthy BOOLEAN,
     last_error TEXT,
+    latency_ms INTEGER CONSTRAINT rpc_endpoints_latency_ms_check CHECK (latency_ms IS NULL OR latency_ms BETWEEN 0 AND 30000),
     inserted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT rpc_endpoints_url_unique UNIQUE (url),
