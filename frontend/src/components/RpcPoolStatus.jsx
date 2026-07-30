@@ -12,6 +12,9 @@ export function RpcPoolStatus({ pool: rawPool, selectedRpc }) {
   const selected = pool?.endpoints.find((endpoint) => endpoint.selected) || selectedRpc
   const selectedLatency = selected?.latency_ms == null ? '—' : `${selected.latency_ms} ms`
   const selectedName = selected ? endpointHostname(selected.url) : null
+  const selectedAria = selectedName
+    ? ` Selected endpoint ${selectedName}, ${selected?.latency_ms == null ? 'latency unavailable' : `${selected.latency_ms} milliseconds`}.`
+    : ''
 
   const cancelClose = () => { if (closeTimer.current) window.clearTimeout(closeTimer.current) }
   const delayedClose = () => { cancelClose(); closeTimer.current = window.setTimeout(() => setOpen(false), 140) }
@@ -30,9 +33,8 @@ export function RpcPoolStatus({ pool: rawPool, selectedRpc }) {
   }
 
   return <div className="rpc-pool" ref={rootRef} onPointerEnter={(event) => { cancelClose(); setOpen((value) => hoverPopoverState(value, event.pointerType)) }} onPointerLeave={delayedClose}>
-    <button className={`rpc-pool__trigger rpc-pool__trigger--${summary.tone}`} type="button" aria-expanded={open} aria-controls={id} aria-label={`RPC pool: ${pool.available} of ${pool.total} available`} onFocus={() => setOpen(true)} onClick={() => setOpen(togglePopoverState)}>
-      <span>RPC pool: {pool.available}/{pool.total} available</span>
-      <span className="rpc-pool__selected">{selectedName ? `Selected: ${selectedName} · ${selectedLatency}` : summary.label}</span>
+    <button className={`rpc-pool__trigger rpc-pool__trigger--${summary.tone}`} type="button" aria-expanded={open} aria-controls={id} aria-label={`RPC pool: ${pool.available} of ${pool.total} available.${selectedAria}`} onFocus={() => setOpen(true)} onClick={() => setOpen(togglePopoverState)}>
+      {selectedName ? <span className="rpc-pool__compact"><span>RPC:</span><span className="rpc-pool__selected">{selectedName}</span><span className="rpc-pool__latency">· {selectedLatency}</span></span> : <span>RPC unavailable</span>}
     </button>
     {open && <div className="rpc-pool__popover" id={id} role="region" aria-label="RPC endpoints" onPointerEnter={cancelClose} onPointerLeave={delayedClose}>
       <div className="rpc-pool__heading"><strong>RPC endpoints</strong><span>{pool.available}/{pool.total} available{pool.last_checked_at ? ` · Checked ${relativeTime(pool.last_checked_at)}` : ''}</span></div>

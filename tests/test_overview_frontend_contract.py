@@ -33,6 +33,31 @@ class OverviewRpcPoolContractTests(unittest.TestCase):
         self.assertIn("calc(100vw - 40px)", css)
         self.assertIn("prefers-reduced-motion: reduce", css)
 
+    def test_collapsed_rpc_trigger_is_one_compact_line(self):
+        component = (ROOT / "frontend/src/components/RpcPoolStatus.jsx").read_text()
+        css = (ROOT / "frontend/src/styles/app.css").read_text()
+        trigger = component.split('<button className={`rpc-pool__trigger', 1)[1].split('</button>', 1)[0]
+        self.assertEqual(trigger.count('rpc-pool__compact'), 1)
+        self.assertNotIn('<span>RPC pool:', trigger)
+        self.assertNotIn('/{pool.total} available</span>', trigger)
+        self.assertIn('<span>RPC:</span>', trigger)
+        self.assertIn('selectedName', trigger)
+        self.assertIn('selectedLatency', trigger)
+        self.assertIn('RPC unavailable', trigger)
+        self.assertIn('aria-label={`RPC pool: ${pool.available} of ${pool.total} available.', trigger)
+        self.assertIn('rpc-pool__trigger--${summary.tone}', trigger)
+        self.assertIn('.rpc-pool__compact { display: flex;', css)
+        self.assertIn('text-overflow: ellipsis', css)
+        self.assertIn('white-space: nowrap', css)
+        self.assertIn('min-width: 0', css)
+
+    def test_popover_keeps_pool_availability_and_checked_time(self):
+        component = (ROOT / "frontend/src/components/RpcPoolStatus.jsx").read_text()
+        popover = component.split('className="rpc-pool__popover"', 1)[1]
+        self.assertIn('<strong>RPC endpoints</strong>', popover)
+        self.assertIn('{pool.available}/{pool.total} available', popover)
+        self.assertIn('` · Checked ${relativeTime(pool.last_checked_at)}`', popover)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { readFileSync } from 'node:fs'
 import { endpointHostname, endpointStatus, hoverPopoverState, normalizeRpcPool, poolSummary, togglePopoverState } from '../src/utils/rpcPool.js'
 
 const pool = (total, available) => ({ total, available, last_checked_at: null, endpoints: [] })
@@ -45,4 +46,20 @@ test('touch pointer enter does not consume the first tap', () => {
   open = togglePopoverState(open)
   assert.equal(open, false)
   assert.equal(hoverPopoverState(false, 'mouse'), true)
+})
+
+test('collapsed trigger is compact while popover retains pool details', () => {
+  const component = readFileSync(new URL('../src/components/RpcPoolStatus.jsx', import.meta.url), 'utf8')
+  const trigger = component.split('<button className={`rpc-pool__trigger')[1].split('</button>')[0]
+  assert.equal((trigger.match(/rpc-pool__compact/g) || []).length, 1)
+  assert.doesNotMatch(trigger, /<span>RPC pool:/)
+  assert.doesNotMatch(trigger, /\{pool\.available\}\/\{pool\.total\} available<\/span>/)
+  assert.match(trigger, /<span>RPC:<\/span>/)
+  assert.match(trigger, /selectedName/)
+  assert.match(trigger, /selectedLatency/)
+  assert.match(trigger, /RPC unavailable/)
+  assert.match(trigger, /aria-label=\{`RPC pool: \$\{pool\.available\} of \$\{pool\.total\} available\./)
+  assert.match(component, /<strong>RPC endpoints<\/strong>/)
+  assert.match(component, /\{pool\.available\}\/\{pool\.total\} available/)
+  assert.match(component, /Checked \$\{relativeTime\(pool\.last_checked_at\)\}/)
 })
