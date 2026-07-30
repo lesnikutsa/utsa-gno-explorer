@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { relativeTime } from '../utils/time'
-import { endpointHostname, endpointStatus, normalizeRpcPool, poolSummary } from '../utils/rpcPool'
+import { endpointHostname, endpointStatus, hoverPopoverState, normalizeRpcPool, poolSummary, togglePopoverState } from '../utils/rpcPool'
 
 export function RpcPoolStatus({ pool: rawPool, selectedRpc }) {
   const pool = normalizeRpcPool(rawPool)
@@ -29,8 +29,8 @@ export function RpcPoolStatus({ pool: rawPool, selectedRpc }) {
     return <span className="rpc-meta" title={selectedRpc.url}>RPC: {endpointHostname(selectedRpc.url)}{selectedRpc.latency_ms == null ? '' : ` · ${selectedRpc.latency_ms} ms`}</span>
   }
 
-  return <div className="rpc-pool" ref={rootRef} onPointerEnter={() => { cancelClose(); setOpen(true) }} onPointerLeave={delayedClose}>
-    <button className={`rpc-pool__trigger rpc-pool__trigger--${summary.tone}`} type="button" aria-expanded={open} aria-controls={id} aria-label={`RPC pool: ${pool.available} of ${pool.total} available`} onFocus={() => setOpen(true)} onClick={() => setOpen((value) => !value)}>
+  return <div className="rpc-pool" ref={rootRef} onPointerEnter={(event) => { cancelClose(); setOpen((value) => hoverPopoverState(value, event.pointerType)) }} onPointerLeave={delayedClose}>
+    <button className={`rpc-pool__trigger rpc-pool__trigger--${summary.tone}`} type="button" aria-expanded={open} aria-controls={id} aria-label={`RPC pool: ${pool.available} of ${pool.total} available`} onFocus={() => setOpen(true)} onClick={() => setOpen(togglePopoverState)}>
       <span>RPC pool: {pool.available}/{pool.total} available</span>
       <span className="rpc-pool__selected">{selectedName ? `Selected: ${selectedName} · ${selectedLatency}` : summary.label}</span>
     </button>

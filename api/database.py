@@ -45,7 +45,7 @@ SELECT
     COALESCE(v.total_voting_power, 0)::text AS validator_total_voting_power,
     block_time.average_block_time_seconds,
     block_time.average_block_time_sample_size,
-    regexp_replace(r.url, '[?#].*$', '') AS rpc_url,
+    r.url AS rpc_url,
     r.healthy AS rpc_healthy,
     r.catching_up AS rpc_catching_up,
     r.latest_observed_height AS rpc_observed_height,
@@ -100,7 +100,7 @@ LEFT JOIN LATERAL (
         count(*) FILTER (WHERE endpoint.state = 'healthy')::integer AS available,
         max(endpoint.last_checked_at) AS last_checked_at,
         jsonb_agg(jsonb_build_object(
-            'url', regexp_replace(endpoint.url, '[?#].*$', ''), 'selected', endpoint.is_selected,
+            'url', endpoint.url, 'selected', endpoint.is_selected,
             'state', endpoint.state, 'latency_ms', endpoint.latency_ms,
             'lag', endpoint.observed_lag, 'last_checked_at', endpoint.last_checked_at
         ) ORDER BY

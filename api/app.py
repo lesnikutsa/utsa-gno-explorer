@@ -12,7 +12,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from fastapi import FastAPI, HTTPException, Path, Query
 
 from api.config import ConfigError, load_config
-from api.account_service import AccountUnavailableError, fetch_live_account
+from api.account_service import AccountUnavailableError, fetch_live_account, public_rpc_url
 from api.network_profile import topaz_profile, validate_account_address
 from api.database import (
     MissingIndexedBlockError,
@@ -507,7 +507,7 @@ def _network_response_from_row(row: dict) -> NetworkResponse:
     selected_rpc = None
     if row["rpc_url"] is not None:
         selected_rpc = SelectedRpc(
-            url=row["rpc_url"],
+            url=public_rpc_url(row["rpc_url"]),
             healthy=row["rpc_healthy"],
             catching_up=row["rpc_catching_up"],
             observed_height=row["rpc_observed_height"],
@@ -549,10 +549,31 @@ def _network_response_from_row(row: dict) -> NetworkResponse:
             available=row["rpc_pool_available"],
             last_checked_at=isoformat_utc_z(row["rpc_pool_last_checked_at"]),
             endpoints=[RpcPoolEndpoint(
-                **{**endpoint, "last_checked_at": isoformat_utc_z(endpoint.get("last_checked_at"))}
+                **{
+                    **endpoint,
+                    "url": public_rpc_url(endpoint.get("url")),
+                    "last_checked_at": _jsonb_timestamp_utc_z(endpoint.get("last_checked_at")),
+                }
             ) for endpoint in (row["rpc_pool_endpoints"] or [])],
         ),
     )
+
+
+def _jsonb_timestamp_utc_z(value: object) -> str | None:
+    """Normalize a timestamp decoded either directly or through PostgreSQL JSONB."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return isoformat_utc_z(value)
+    if not isinstance(value, str):
+        raise ValueError("Invalid RPC endpoint timestamp")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("Invalid RPC endpoint timestamp") from exc
+    if parsed.tzinfo is None:
+        raise ValueError("Invalid RPC endpoint timestamp")
+    return isoformat_utc_z(parsed)
 
 
 def _network_distribution_response_from_row(row: dict) -> NetworkDistributionResponse:

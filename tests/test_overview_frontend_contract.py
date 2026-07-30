@@ -20,6 +20,8 @@ class OverviewRpcPoolContractTests(unittest.TestCase):
             self.assertIn(required, component)
         self.assertNotIn("Select endpoint", component)
         self.assertNotIn("radio", component)
+        self.assertIn("event.pointerType", component)
+        self.assertIn("document.addEventListener('pointerdown'", component)
 
     def test_mobile_popover_is_viewport_bounded(self):
         css = (ROOT / "frontend/src/styles/app.css").read_text()
