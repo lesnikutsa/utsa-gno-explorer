@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
+import numbers
 import signal
 import threading
 import time
@@ -86,6 +88,112 @@ class CycleResult:
     planned_end: int | None
 
 
+@dataclass
+class RpcSelectionState:
+    """Process-local state for canonical indexer RPC selection hysteresis."""
+
+    selected_url: str | None = None
+    candidate_url: str | None = None
+    candidate_streak: int = 0
+
+
+RPC_HYSTERESIS_MIN_IMPROVEMENT_SECONDS = 0.050
+RPC_HYSTERESIS_MIN_RELATIVE_IMPROVEMENT = 0.25
+RPC_HYSTERESIS_CONFIRMATION_CYCLES = 3
+
+
+def _valid_latency(value: object) -> bool:
+    return (
+        isinstance(value, numbers.Real)
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+        and value >= 0
+    )
+
+
+def order_indexer_candidates(
+    candidates: list[RpcProbeResult], state: RpcSelectionState
+) -> tuple[list[RpcProbeResult], str]:
+    """Apply hysteresis without changing generic suitable-probe ordering."""
+    selected = next((probe for probe in candidates if probe.url == state.selected_url), None)
+    if selected is None:
+        had_selection = state.selected_url is not None
+        state.candidate_url = None
+        state.candidate_streak = 0
+        if had_selection and candidates:
+            LOGGER.info(
+                "rpc_selected_bypassed endpoint=%s candidate=%s reason=selected_unavailable",
+                sanitized_url(state.selected_url or ""), sanitized_url(candidates[0].url),
+            )
+        return candidates, "selected_unavailable" if had_selection else "initial_selection"
+
+    alternatives = [probe for probe in candidates if probe is not selected]
+    if not alternatives:
+        state.candidate_url = None
+        state.candidate_streak = 0
+        return [selected], "initial_selection"
+    candidate = alternatives[0]
+    if not (_valid_latency(selected.response_seconds) and _valid_latency(candidate.response_seconds)):
+        state.candidate_url = None
+        state.candidate_streak = 0
+        return [selected, *alternatives], "initial_selection"
+
+    improvement = float(selected.response_seconds) - float(candidate.response_seconds)
+    relative = improvement / float(selected.response_seconds) if selected.response_seconds else 0.0
+    qualifies = (
+        improvement >= RPC_HYSTERESIS_MIN_IMPROVEMENT_SECONDS
+        and relative >= RPC_HYSTERESIS_MIN_RELATIVE_IMPROVEMENT
+    )
+    if not qualifies:
+        state.candidate_url = None
+        state.candidate_streak = 0
+        return [selected, *alternatives], "initial_selection"
+
+    changed = state.candidate_url is not None and state.candidate_url != candidate.url
+    if state.candidate_url == candidate.url:
+        state.candidate_streak += 1
+    else:
+        state.candidate_url = candidate.url
+        state.candidate_streak = 1
+    LOGGER.info(
+        "rpc_hysteresis_candidate event=%s selected=%s candidate=%s improvement_ms=%.3f "
+        "relative_improvement_pct=%.2f streak=%s/%s",
+        "restarted" if changed else ("incremented" if state.candidate_streak > 1 else "started"),
+        sanitized_url(selected.url), sanitized_url(candidate.url), improvement * 1000,
+        relative * 100, state.candidate_streak, RPC_HYSTERESIS_CONFIRMATION_CYCLES,
+    )
+    if state.candidate_streak < RPC_HYSTERESIS_CONFIRMATION_CYCLES:
+        return [selected, *alternatives], "initial_selection"
+    LOGGER.info(
+        "rpc_hysteresis_candidate event=threshold_reached selected=%s candidate=%s streak=%s/%s",
+        sanitized_url(selected.url), sanitized_url(candidate.url),
+        state.candidate_streak, RPC_HYSTERESIS_CONFIRMATION_CYCLES,
+    )
+    return [candidate, selected, *[probe for probe in alternatives if probe is not candidate]], "latency_hysteresis"
+
+
+def record_selection_success(
+    state: RpcSelectionState,
+    successful_url: str,
+    *,
+    fallback_occurred: bool = False,
+    selection_reason: str = "initial_selection",
+) -> None:
+    """Adopt a successful RPC while retaining an uninterrupted pending streak."""
+    previous_url = state.selected_url
+    adopted = successful_url != previous_url
+    if adopted:
+        state.selected_url = successful_url
+    if adopted or fallback_occurred:
+        state.candidate_url = None
+        state.candidate_streak = 0
+    if adopted and previous_url is not None and selection_reason == "latency_hysteresis":
+        LOGGER.info(
+            "rpc_hysteresis_switch selected=%s candidate=%s reason=latency_hysteresis",
+            sanitized_url(previous_url), sanitized_url(successful_url),
+        )
+
+
 def validate_continuous_config(config: ContinuousConfig) -> None:
     positive = {
         "batch_size": config.batch_size,
@@ -112,7 +220,7 @@ def sanitized_url(url: str) -> str:
     netloc = parsed.hostname or ""
     if parsed.port:
         netloc = f"{netloc}:{parsed.port}"
-    return urlunsplit((parsed.scheme, netloc, parsed.path, "", ""))
+    return urlunsplit((parsed.scheme, netloc, "", "", ""))
 
 
 def advisory_lock_key(chain_id: str) -> int:
@@ -214,7 +322,7 @@ def _activate_candidate(database, chain_id: str, probe: RpcProbeResult, anchor: 
         selector(chain_id, probe, reason)
 
 
-def run_cycle(database, chain_id: str, rpc_urls: list[str], max_height_lag: int, config: ContinuousConfig, stop: StopController, transaction_decoder: TransactionDecoder | None = None) -> CycleResult:
+def run_cycle(database, chain_id: str, rpc_urls: list[str], max_height_lag: int, config: ContinuousConfig, stop: StopController, transaction_decoder: TransactionDecoder | None = None, selection_state: RpcSelectionState | None = None) -> CycleResult:
     anchor = _anchor(database, chain_id)
     checkpoint = anchor.height if anchor is not None else database.get_checkpoint(chain_id)
     if checkpoint is None and config.start_height is None:
@@ -226,7 +334,6 @@ def run_cycle(database, chain_id: str, rpc_urls: list[str], max_height_lag: int,
     candidates = _candidate_probes(probes, next_height)
     if not candidates:
         raise RpcError("All RPC endpoints are rejected or unavailable")
-
     highest_finalized_tip = max(probe.latest_height - 1 for probe in candidates)
     excluded_urls: set[str] = set()
     activated_urls: set[str] = set()
@@ -234,6 +341,9 @@ def run_cycle(database, chain_id: str, rpc_urls: list[str], max_height_lag: int,
     def reject(probe: RpcProbeResult, exc: BaseException) -> str:
         reason = _endpoint_failure_reason(exc)
         excluded_urls.add(probe.url)
+        if selection_state is not None:
+            selection_state.candidate_url = None
+            selection_state.candidate_streak = 0
         recorder = getattr(database, "record_rpc_runtime_failure", None)
         if recorder is not None:
             recorder(chain_id, probe, reason)
@@ -241,18 +351,33 @@ def run_cycle(database, chain_id: str, rpc_urls: list[str], max_height_lag: int,
         return reason
 
     if next_height > highest_finalized_tip:
+        selection_reason = "initial_selection"
+        if selection_state is not None:
+            candidates, selection_reason = order_indexer_candidates(candidates, selection_state)
         last_error = None
+        fallback_occurred = False
         for probe in candidates:
             try:
-                _activate_candidate(database, chain_id, probe, anchor, "initial_selection")
+                reason = selection_reason if probe is candidates[0] else "selected_unavailable"
+                _activate_candidate(database, chain_id, probe, anchor, reason)
+                if selection_state is not None:
+                    record_selection_success(
+                        selection_state, probe.url,
+                        fallback_occurred=fallback_occurred,
+                        selection_reason=reason,
+                    )
                 LOGGER.info("selected_rpc=%s latest_rpc_height=%s finalized_tip=%s checkpoint_before=%s", sanitized_url(probe.url), probe.latest_height, probe.latest_height - 1, checkpoint)
                 return CycleResult([], checkpoint, checkpoint, probe.latest_height - 1, None, None)
             except (RpcError, OSError) as exc:
                 last_error = exc
                 reject(probe, exc)
+                fallback_occurred = True
         raise RpcError("All RPC endpoints failed checkpoint continuity") from last_error
 
     candidates = [probe for probe in candidates if probe.latest_height - 1 >= next_height]
+    selection_reason = "initial_selection"
+    if selection_state is not None:
+        candidates, selection_reason = order_indexer_candidates(candidates, selection_state)
     processed: list[int] = []
     planned_end = min(max(probe.latest_height - 1 for probe in candidates), next_height + config.batch_size - 1)
     LOGGER.info("planned_range=%s-%s", next_height, planned_end)
@@ -275,8 +400,8 @@ def run_cycle(database, chain_id: str, rpc_urls: list[str], max_height_lag: int,
             try:
                 if probe.url not in activated_urls:
                     current_anchor = CheckpointAnchor(height - 1, expected_parent) if expected_parent is not None else None
-                    selection_reason = pending_reason or "initial_selection"
-                    _activate_candidate(database, chain_id, probe, current_anchor, selection_reason)
+                    activation_reason = pending_reason or (selection_reason if probe is candidates[0] else "selected_unavailable")
+                    _activate_candidate(database, chain_id, probe, current_anchor, activation_reason)
                     activated_urls.add(probe.url)
                 transition_from = pending_failed_url
                 transition_reason = pending_reason
@@ -285,6 +410,12 @@ def run_cycle(database, chain_id: str, rpc_urls: list[str], max_height_lag: int,
                 block_hash = verify_parent_continuity(block_payload, expected_parent) if expected_parent is not None else canonical_block_hash_hex(block_payload)
                 parsed = parse_height(height, block_payload, commit_payload, validators_payload, transaction_decoder)
                 database.write_height(parsed, chain_id, probe.latest_height - 1)
+                if selection_state is not None:
+                    record_selection_success(
+                        selection_state, probe.url,
+                        fallback_occurred=transition_from is not None,
+                        selection_reason=(transition_reason or selection_reason),
+                    )
                 if transition_from is not None:
                     LOGGER.info("rpc_failover height=%s from=%s to=%s reason=%s", height, sanitized_url(transition_from), sanitized_url(probe.url), transition_reason)
             except (RpcError, OSError) as exc:
@@ -323,6 +454,10 @@ def run_continuous(database: PostgresDatabase, chain_id: str, rpc_urls: list[str
     try:
         if not _acquire_lock_with_backoff(lock, config, stop, wait):
             return 1
+        selection_state = _load_rpc_selection_state(database, chain_id, lock, config, stop, wait)
+        if selection_state is None:
+            return 1
+        backoff = config.error_backoff_seconds
         while not stop.requested:
             if config.max_cycles is not None and cycle >= config.max_cycles:
                 reason = "max-cycles reached"
@@ -333,7 +468,7 @@ def run_continuous(database: PostgresDatabase, chain_id: str, rpc_urls: list[str
             LOGGER.info("cycle=%s starting", cycle)
             cycle_started_at = time.perf_counter()
             try:
-                result = run_cycle(database, chain_id, rpc_urls, max_height_lag, config, stop, transaction_decoder)
+                result = run_cycle(database, chain_id, rpc_urls, max_height_lag, config, stop, transaction_decoder, selection_state)
             except (FinalizedDataConflict, ChainIdentityError) as exc:
                 raise FatalIndexerError(str(exc)) from exc
             except Exception as exc:
@@ -399,6 +534,39 @@ def run_continuous(database: PostgresDatabase, chain_id: str, rpc_urls: list[str
         return 1
     finally:
         lock.close()
+
+
+def _load_rpc_selection_state(
+    database: PostgresDatabase,
+    chain_id: str,
+    lock: AdvisoryLock,
+    config: ContinuousConfig,
+    stop: StopController,
+    wait: Waiter,
+) -> RpcSelectionState | None:
+    """Load persisted selection once, retrying transient startup read failures."""
+    selected_getter = getattr(database, "get_selected_rpc_url", None)
+    if selected_getter is None:
+        lock.ensure_alive()
+        return RpcSelectionState()
+    backoff = config.error_backoff_seconds
+    while not stop.requested:
+        lock.ensure_alive()
+        try:
+            selected_url = selected_getter(chain_id)
+        except Exception as exc:
+            if not _is_transient_error(exc):
+                raise
+            LOGGER.warning("transient selected RPC state read failure; backoff=%ss", backoff)
+            if config.once:
+                return None
+            if wait(backoff, stop):
+                return None
+            backoff = min(config.max_backoff_seconds, backoff * 2)
+            continue
+        lock.ensure_alive()
+        return RpcSelectionState(selected_url=selected_url)
+    return None
 
 
 def _acquire_lock_with_backoff(lock: AdvisoryLock, config: ContinuousConfig, stop: StopController, wait: Waiter) -> bool:
