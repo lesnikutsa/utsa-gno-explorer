@@ -59,6 +59,74 @@ class DeploymentAssetTests(unittest.TestCase):
         self.assertIn("single operator-controlled static source", docs)
         self.assertIn("without printing", docs)
 
+    def test_account_rpc_documentation_uses_shared_ownership(self):
+        docs = self.text("docs/production-deployment.md")
+        section = docs.split("#### Account API RPC configuration", 1)[1].split(
+            "#### Network distribution API access prerequisite", 1,
+        )[0]
+        self.assertIn("/etc/utsa-gno-explorer/rpc.env", section)
+        self.assertIn("single static source", section)
+        self.assertIn("API_ACCOUNT_RPC_TIMEOUT_SECONDS=10", section)
+        self.assertIn("/etc/utsa-gno-explorer/api.env", section)
+        self.assertNotIn("receives its RPC configuration only", docs)
+        self.assertNotIn("Add these public settings", section)
+        self.assertNotIn("restart only the API", section)
+        for service in (
+            "utsa-gno-indexer.service",
+            "utsa-gno-api.service",
+            "utsa-gno-governance-updater.service",
+        ):
+            self.assertIn(f"sudo systemctl restart {service}", section)
+        self.assertIn("oneshot/timer consumers", section)
+
+    def test_manual_indexer_check_loads_shared_rpc_environment_last(self):
+        docs = self.text("docs/production-deployment.md")
+        command = next(
+            line for line in docs.splitlines()
+            if "scripts/run_indexer.py --once" in line
+        )
+        indexer_at = command.index(". /etc/utsa-gno-explorer/indexer.env")
+        rpc_at = command.index(". /etc/utsa-gno-explorer/rpc.env")
+        runner_at = command.index("scripts/run_indexer.py --once")
+        self.assertLess(indexer_at, rpc_at)
+        self.assertLess(rpc_at, runner_at)
+        for forbidden in ("cat ", "grep ", "sed ", "printenv", "set -x"):
+            self.assertNotIn(forbidden, command)
+
+    def test_indexer_lifecycle_documents_both_required_environment_files(self):
+        docs = self.text("docs/production-deployment.md")
+        section = docs.split("## systemd lifecycle", 1)[1].split(
+            "### Automatic Valopers profile refresh", 1,
+        )[0]
+        indexer_at = section.index("EnvironmentFile=/etc/utsa-gno-explorer/indexer.env")
+        rpc_at = section.index("EnvironmentFile=/etc/utsa-gno-explorer/rpc.env")
+        self.assertLess(indexer_at, rpc_at)
+        self.assertIn("first", section[indexer_at - 100:rpc_at])
+        self.assertIn("last", section[rpc_at:rpc_at + 100])
+
+    def test_account_architecture_documentation_matches_canonical_preference(self):
+        docs = self.text("docs/account-api.md")
+        normalized = " ".join(docs.split())
+        for value in (
+            "bounded concurrent discovery",
+            "15 seconds",
+            "prefers the canonical endpoint",
+            "latency advantage of a few milliseconds",
+            "immediately uses the next request-local suitable fallback",
+            "source.rpc_url",
+            "read-only with respect to canonical RPC selection",
+            "/etc/utsa-gno-explorer/rpc.env",
+            "API_ACCOUNT_RPC_TIMEOUT_SECONDS",
+            "never mixed between endpoints",
+        ):
+            self.assertIn(value, normalized)
+        self.assertNotIn("should provide an ordered comma-separated `GNO_RPC_URLS`", docs)
+        self.assertNotIn("`GNO_RPC_URLS` in `/etc/utsa-gno-explorer/api.env`", docs)
+
+    def test_changed_documentation_has_no_credential_bearing_rpc_url(self):
+        docs = self.text("docs/production-deployment.md") + self.text("docs/account-api.md")
+        self.assertNotRegex(docs, r"https?://[^\s/]+:[^\s/@]+@")
+
     def test_compose_postgres_runtime_is_pinned_local_and_persistent(self):
         compose = self.text("deploy/postgres/compose.yml")
         self.assertIn("image: postgres:16.14-bookworm", compose)

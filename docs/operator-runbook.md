@@ -234,9 +234,9 @@ After deploying this fix, verify a manual collection and cache reuse before re-e
 Manual comparison and collection:
 
 ```bash
-python scripts/collect_network_distribution.py --dry-run --pretty --rpc-limit 1
-python scripts/collect_network_distribution.py --dry-run --pretty --rpc-limit 3
-python scripts/collect_network_distribution.py
+sudo -u utsa-gno sh -c 'set -a; . /etc/utsa-gno-explorer/indexer.env; test ! -r /etc/utsa-gno-explorer/network-distribution.env || . /etc/utsa-gno-explorer/network-distribution.env; . /etc/utsa-gno-explorer/rpc.env; set +a; cd /opt/utsa-gno-explorer && .venv/bin/python scripts/collect_network_distribution.py --dry-run --pretty --rpc-limit 1'
+sudo -u utsa-gno sh -c 'set -a; . /etc/utsa-gno-explorer/indexer.env; test ! -r /etc/utsa-gno-explorer/network-distribution.env || . /etc/utsa-gno-explorer/network-distribution.env; . /etc/utsa-gno-explorer/rpc.env; set +a; cd /opt/utsa-gno-explorer && .venv/bin/python scripts/collect_network_distribution.py --dry-run --pretty --rpc-limit 3'
+sudo -u utsa-gno sh -c 'set -a; . /etc/utsa-gno-explorer/indexer.env; test ! -r /etc/utsa-gno-explorer/network-distribution.env || . /etc/utsa-gno-explorer/network-distribution.env; . /etc/utsa-gno-explorer/rpc.env; set +a; cd /opt/utsa-gno-explorer && .venv/bin/python scripts/collect_network_distribution.py'
 ```
 
 Configure `NETWORK_DISTRIBUTION_CHAIN_ID` (falling back to `GNO_CHAIN_ID`) and optional `NETWORK_DISTRIBUTION_RPC_HEALTH_MAX_AGE`, `NETWORK_DISTRIBUTION_RPC_TIMEOUT`, `NETWORK_DISTRIBUTION_GEO_API_URL`, `NETWORK_DISTRIBUTION_GEO_TIMEOUT`, `NETWORK_DISTRIBUTION_GEO_CACHE_TTL`, `NETWORK_DISTRIBUTION_GEO_FAILURE_TTL`, `NETWORK_DISTRIBUTION_GEO_MAX_LOOKUPS`, `NETWORK_DISTRIBUTION_GEO_CONCURRENCY`, and `NETWORK_DISTRIBUTION_SNAPSHOT_RETENTION` in the external environment file. RPC and GeoIP timeouts are independent and both default to 10 seconds.
@@ -262,7 +262,7 @@ Governance timer or cron entry.
 ```bash
 sudo install -m 0644 deploy/systemd/utsa-gno-governance-updater.service /etc/systemd/system/
 sudo systemctl daemon-reload
-.venv/bin/python scripts/run_governance_updater.py --once
+sudo -u utsa-gno sh -c 'set -a; . /etc/utsa-gno-explorer/indexer.env; . /etc/utsa-gno-explorer/rpc.env; set +a; cd /opt/utsa-gno-explorer && .venv/bin/python scripts/run_governance_updater.py --once'
 sudo systemctl enable --now utsa-gno-governance-updater
 sudo systemctl status utsa-gno-governance-updater
 sudo journalctl -u utsa-gno-governance-updater -f

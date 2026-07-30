@@ -1,6 +1,24 @@
 # Account API
 
-`GET /api/accounts/{address}` returns current Gno account metadata and native bank balances. The API reads this state live from the first suitable RPC endpoint selected by the existing chain-ID, catching-up, height-lag, and configured-order checks. Account state is not persisted in PostgreSQL. `observed_height` is the height seen while probing the selected RPC; it does not claim a cryptographic binding between that height and the subsequent ABCI responses.
+`GET /api/accounts/{address}` returns current Gno account metadata and native bank
+balances. Account state is read live and is not persisted in PostgreSQL. The Account
+service probes all configured RPC endpoints with bounded concurrent discovery, shares
+probe work between concurrent callers, and caches successful probe collections for 15
+seconds. Suitable candidates still pass chain-ID, catching-up, freshness, and height-lag
+validation.
+
+When suitable, Account prefers the canonical endpoint selected and persisted in
+PostgreSQL by the continuous indexer. A latency advantage of a few milliseconds does not
+move Account away from that canonical endpoint. If the canonical endpoint is unsuitable
+or its auth query, bank query, parsing, consistency validation, URL sanitization, or
+transport handling fails, Account immediately uses the next request-local suitable
+fallback without re-probing. Auth and bank data are always queried from the same
+candidate and are never mixed between endpoints. `source.rpc_url` is the sanitized URL
+of the endpoint that actually returned the successful consistent response. Account is
+read-only with respect to canonical RPC selection and never changes the indexer's
+selection. `observed_height` is the finalized height used for the successful candidate's
+queries; it does not claim a cryptographic binding between that height and the ABCI
+responses.
 
 Balances are native `bank/balances` results. The Topaz `ugnot` denomination is displayed as `GNOT` with six decimals, while unknown denominations retain their raw denomination and amount. Realm token holdings are not included.
 
@@ -8,4 +26,8 @@ The nullable validator relation is an exact match of the requested account addre
 
 The response uses `found=false` when the RPC confirms the normal missing-account representation (a null auth account and empty bank balance). Invalid Bech32 account addresses return HTTP 422. Missing fresh RPC data, inconsistent RPC responses, and unavailable or inconsistent validator profile data return HTTP 503 with a normalized detail message.
 
-The API process environment must provide `DATABASE_URL` and should provide an ordered comma-separated `GNO_RPC_URLS` list. `GNO_RPC_URL` is a legacy fallback only when `GNO_RPC_URLS` is absent. `GNO_CHAIN_ID` identifies the expected chain, `RPC_MAX_HEIGHT_LAG` controls the non-negative freshness tolerance, and `API_ACCOUNT_RPC_TIMEOUT_SECONDS` controls account RPC calls from 1 through 30 seconds (default 10).
+In production, static shared network configuration (`GNO_RPC_URLS`, `GNO_CHAIN_ID`,
+and `RPC_MAX_HEIGHT_LAG`) comes from `/etc/utsa-gno-explorer/rpc.env`. API database
+credentials and API-only settings remain in `/etc/utsa-gno-explorer/api.env`;
+`API_ACCOUNT_RPC_TIMEOUT_SECONDS` is API-specific and controls account RPC calls from
+1 through 30 seconds (default 10).
