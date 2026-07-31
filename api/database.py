@@ -249,12 +249,12 @@ WHERE vsm.height = %s
 
 BLOCK_TRANSACTIONS_SQL = """
 SELECT
-    tx_index,
-    tx_hash_hex,
-    raw_base64,
-    raw_base64_length,
-    decoded_byte_length,
-    decode_status,
+    transaction.tx_index,
+    transaction.tx_hash_hex,
+    transaction.raw_base64,
+    transaction.raw_base64_length,
+    transaction.decoded_byte_length,
+    transaction.decode_status,
     result.execution_status, result.gas_wanted::text AS gas_wanted,
     result.gas_used::text AS gas_used, result.error_text AS error,
     result.log_text AS log, result.info_text AS info
@@ -262,7 +262,7 @@ FROM transactions transaction
 LEFT JOIN transaction_execution_results result
   ON (result.block_height, result.tx_index) = (transaction.block_height, transaction.tx_index)
 WHERE transaction.block_height = %s
-ORDER BY tx_index ASC
+ORDER BY transaction.tx_index ASC
 """
 
 TRANSACTION_DETAIL_SQL = """
