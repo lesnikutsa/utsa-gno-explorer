@@ -166,10 +166,46 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         schema = (ROOT / "database/schema.sql").read_text()
         start = schema.index("CREATE TABLE transaction_participants")
         end = schema.index("END $$;", start) + len("END $$;")
-        pre_schema = schema[:start] + schema[end:]
+        execution_start = schema.index("BEGIN;\n\nCREATE TABLE transaction_execution_results")
+        pre_schema = schema[:start] + schema[end:execution_start]
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
             cursor.execute(pre_schema)
         return database_url
+
+    def create_pre_execution_result_database(self, name):
+        self.create_database(name)
+        database_url = self.database_url_for(name)
+        schema = (ROOT / "database/schema.sql").read_text()
+        execution_start = schema.index("BEGIN;\n\nCREATE TABLE transaction_execution_results")
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute(schema[:execution_start])
+        return database_url
+
+    def test_execution_result_upgrade_success_and_rerun_are_idempotent(self):
+        database_url = self.create_pre_execution_result_database(
+            f"utsa_execution_result_success_{os.getpid()}"
+        )
+        init_database.initialize_or_validate(database_url)
+        init_database.initialize_or_validate(database_url)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT to_regclass('public.transaction_execution_results')")
+            self.assertEqual(cursor.fetchone()[0], "transaction_execution_results")
+            cursor.execute("SELECT count(*) FROM transaction_execution_results")
+            self.assertEqual(cursor.fetchone()[0], 0)
+
+    def test_execution_result_upgrade_rolls_back_after_privilege_failure(self):
+        database_url = self.create_pre_execution_result_database(
+            f"utsa_execution_result_rollback_{os.getpid()}"
+        )
+        with patch.object(
+            init_database, "validate_participant_privileges",
+            side_effect=init_database.SchemaCompatibilityError("forced privilege failure"),
+        ):
+            with self.assertRaises(init_database.SchemaCompatibilityError):
+                init_database.initialize_or_validate(database_url)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT to_regclass('public.transaction_execution_results')")
+            self.assertIsNone(cursor.fetchone()[0])
 
     def test_participant_upgrade_rolls_back_after_final_schema_failure(self):
         database_url = self.create_pre_participant_database(f"utsa_participant_schema_rollback_{os.getpid()}")

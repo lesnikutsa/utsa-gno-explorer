@@ -11,7 +11,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from scripts.init_database import (FINAL_SCHEMA_EXPECTATIONS, PRE_GOVERNANCE_SCHEMA_EXPECTATIONS,
-    fetch_schema_snapshot, validate_schema_snapshot, validate_schema_stage)
+    PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS,
+    PRE_TRANSACTION_EXECUTION_RESULT_EXPECTATIONS, fetch_schema_snapshot,
+    validate_one_of_exact_schema_stages, validate_schema_snapshot, validate_schema_stage)
 
 MIGRATION = ROOT / "database/migrations/0004_add_governance_persistence.sql"
 TABLES = {"governance_proposals", "governance_votes", "governance_sync_state"}
@@ -34,7 +36,17 @@ def migrate(database_url: str, migration_path: Path = MIGRATION, connect=None) -
                     raise RuntimeError("empty public schema; use python scripts/init_database.py")
                 validate_schema_stage(snapshot, PRE_GOVERNANCE_SCHEMA_EXPECTATIONS)
                 cursor.execute(migration_path.read_text())
-            validate_schema_snapshot(fetch_schema_snapshot(cursor), FINAL_SCHEMA_EXPECTATIONS)
+            target = fetch_schema_snapshot(cursor)
+            candidates = (
+                PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS,
+                PRE_TRANSACTION_EXECUTION_RESULT_EXPECTATIONS,
+                FINAL_SCHEMA_EXPECTATIONS,
+            )
+            expectation = next(
+                (item for item in candidates if item["tables"] == target.get("tables", set())),
+                PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS,
+            )
+            validate_schema_snapshot(target, expectation)
         connection.commit()
     return "applied" if not present else "already-compatible"
 

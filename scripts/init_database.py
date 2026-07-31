@@ -13,6 +13,7 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = REPO_ROOT / "database" / "schema.sql"
 PARTICIPANT_MIGRATION = REPO_ROOT / "database" / "migrations" / "0006_add_transaction_participants.sql"
+EXECUTION_RESULT_MIGRATION = REPO_ROOT / "database" / "migrations" / "0007_add_transaction_execution_results.sql"
 EXPECTED_TABLES = {
     "blocks", "transactions", "validators", "validator_set_members", "validator_signatures", "rpc_endpoints", "rpc_endpoint_checks", "indexer_state", "valoper_profiles", "valopers_snapshot_state",
 }
@@ -244,9 +245,50 @@ EXPECTED_INDEXES["transaction_participants_address_position_idx"] = (
     TRANSACTION_PARTICIPANT_TABLE, False,
     (("address", "ASC"), ("block_height", "DESC"), ("tx_index", "DESC")), None,
 )
+PRE_TRANSACTION_EXECUTION_RESULT_EXPECTATIONS = schema_expectations()
+TRANSACTION_EXECUTION_RESULT_TABLE = "transaction_execution_results"
+EXPECTED_TABLES.add(TRANSACTION_EXECUTION_RESULT_TABLE)
+EXPECTED_COLUMNS[TRANSACTION_EXECUTION_RESULT_TABLE] = {
+    "block_height": ("bigint", "NO", "", None),
+    "tx_index": ("integer", "NO", "", None),
+    "execution_status": ("text", "NO", "", None),
+    "gas_wanted": ("numeric(78,0)", "NO", "", None),
+    "gas_used": ("numeric(78,0)", "NO", "", None),
+    "error_text": ("text", "YES", "", None),
+    "log_text": ("text", "YES", "", None),
+    "info_text": ("text", "YES", "", None),
+    "data_base64": ("text", "YES", "", None),
+    "events": ("jsonb", "YES", "", None),
+    "raw_result": ("jsonb", "YES", "", None),
+    "source_rpc_endpoint_id": ("bigint", "YES", "", None),
+    "inserted_at": ("timestamp with time zone", "NO", "", "now()"),
+    "updated_at": ("timestamp with time zone", "NO", "", "now()"),
+}
+EXPECTED_PRIMARY_KEYS[TRANSACTION_EXECUTION_RESULT_TABLE] = ("block_height", "tx_index")
+EXPECTED_FOREIGN_KEYS.update({
+    (TRANSACTION_EXECUTION_RESULT_TABLE, ("block_height", "tx_index"),
+     "transactions", ("block_height", "tx_index"), "c"),
+    (TRANSACTION_EXECUTION_RESULT_TABLE, ("source_rpc_endpoint_id",),
+     "rpc_endpoints", ("id",), "n"),
+})
+EXPECTED_CHECKS.update({
+    "transaction_execution_results_status_check": "CHECK (execution_status IN ('success', 'failed'))",
+    "transaction_execution_results_gas_wanted_check": "CHECK (gas_wanted >= 0)",
+    "transaction_execution_results_gas_used_check": "CHECK (gas_used >= 0)",
+    "transaction_execution_results_error_check": (
+        "CHECK ((execution_status = 'success' AND error_text IS NULL) OR "
+        "(execution_status = 'failed' AND error_text IS NOT NULL AND btrim(error_text) <> ''))"
+    ),
+})
 EXPECTED_TABLE_PRIVILEGES = {
-    "utsa_gno_api": {TRANSACTION_PARTICIPANT_TABLE: {"SELECT"}},
-    "utsa_gno_indexer": {TRANSACTION_PARTICIPANT_TABLE: {"SELECT", "INSERT", "DELETE"}},
+    "utsa_gno_api": {
+        TRANSACTION_PARTICIPANT_TABLE: {"SELECT"},
+        TRANSACTION_EXECUTION_RESULT_TABLE: {"SELECT"},
+    },
+    "utsa_gno_indexer": {
+        TRANSACTION_PARTICIPANT_TABLE: {"SELECT", "INSERT", "DELETE"},
+        TRANSACTION_EXECUTION_RESULT_TABLE: {"SELECT", "INSERT", "UPDATE"},
+    },
 }
 FINAL_SCHEMA_EXPECTATIONS = schema_expectations()
 
@@ -262,13 +304,14 @@ TRANSACTION_HASH_INDEXES = {"transactions_tx_hash_hex_idx"}
 
 
 
-PRE_NETWORK_DISTRIBUTION_EXPECTATIONS = schema_expectations(excluded_tables=NETWORK_DISTRIBUTION_TABLES | GOVERNANCE_TABLES | {TRANSACTION_PARTICIPANT_TABLE})
+LATE_TRANSACTION_TABLES = {TRANSACTION_PARTICIPANT_TABLE, TRANSACTION_EXECUTION_RESULT_TABLE}
+PRE_NETWORK_DISTRIBUTION_EXPECTATIONS = schema_expectations(excluded_tables=NETWORK_DISTRIBUTION_TABLES | GOVERNANCE_TABLES | LATE_TRANSACTION_TABLES)
 VALOPERS_ONLY_EXPECTATIONS = schema_expectations(
-    excluded_tables=NETWORK_DISTRIBUTION_TABLES | GOVERNANCE_TABLES | {TRANSACTION_PARTICIPANT_TABLE}, include_transaction_hash=False)
+    excluded_tables=NETWORK_DISTRIBUTION_TABLES | GOVERNANCE_TABLES | LATE_TRANSACTION_TABLES, include_transaction_hash=False)
 TRANSACTION_HASH_ONLY_EXPECTATIONS = schema_expectations(
-    excluded_tables=NETWORK_DISTRIBUTION_TABLES | VALOPERS_TABLES | GOVERNANCE_TABLES | {TRANSACTION_PARTICIPANT_TABLE})
+    excluded_tables=NETWORK_DISTRIBUTION_TABLES | VALOPERS_TABLES | GOVERNANCE_TABLES | LATE_TRANSACTION_TABLES)
 BASE_LEGACY_EXPECTATIONS = schema_expectations(
-    excluded_tables=NETWORK_DISTRIBUTION_TABLES | VALOPERS_TABLES | GOVERNANCE_TABLES | {TRANSACTION_PARTICIPANT_TABLE},
+    excluded_tables=NETWORK_DISTRIBUTION_TABLES | VALOPERS_TABLES | GOVERNANCE_TABLES | LATE_TRANSACTION_TABLES,
     include_transaction_hash=False)
 
 
@@ -277,7 +320,7 @@ class SchemaCompatibilityError(RuntimeError):
 
 
 def migration_body_for_outer_transaction(sql: str) -> str:
-    """Remove only migration 0006's strict transaction envelope.
+    """Remove an additive migration's strict transaction envelope.
 
     This is deliberately not a general SQL parser. Dollar-quoted procedural blocks are
     opaque, while top-level transaction-control statements must occupy their own line.
@@ -286,9 +329,9 @@ def migration_body_for_outer_transaction(sql: str) -> str:
     lines = [re.sub(r"--.*$", "", line).strip() for line in without_comments.splitlines()]
     executable = [line for line in lines if line]
     if len(executable) < 3 or executable[0].upper() != "BEGIN;":
-        raise SchemaCompatibilityError("participant migration must start with BEGIN")
+        raise SchemaCompatibilityError("additive migration must start with BEGIN")
     if executable[-1].upper() != "COMMIT;":
-        raise SchemaCompatibilityError("participant migration must end with COMMIT")
+        raise SchemaCompatibilityError("additive migration must end with COMMIT")
     body_lines = executable[1:-1]
     dollar_quote: str | None = None
     control = re.compile(
@@ -301,7 +344,7 @@ def migration_body_for_outer_transaction(sql: str) -> str:
         position = 0
         for match in dollar_token.finditer(line):
             if dollar_quote is None and control.search(line[position:match.start()]):
-                raise SchemaCompatibilityError("participant migration contains transaction control")
+                raise SchemaCompatibilityError("additive migration contains transaction control")
             token = match.group(0)
             if dollar_quote is None:
                 dollar_quote = token
@@ -309,9 +352,9 @@ def migration_body_for_outer_transaction(sql: str) -> str:
                 dollar_quote = None
             position = match.end()
         if dollar_quote is None and control.search(line[position:]):
-            raise SchemaCompatibilityError("participant migration contains transaction control")
+            raise SchemaCompatibilityError("additive migration contains transaction control")
     if dollar_quote is not None:
-        raise SchemaCompatibilityError("participant migration has an unterminated dollar quote")
+        raise SchemaCompatibilityError("additive migration has an unterminated dollar quote")
     return "\n".join(body_lines) + "\n"
 
 
@@ -691,6 +734,13 @@ def initialize_or_validate(database_url: str, schema_path: Path = SCHEMA, connec
                     validate_schema_snapshot(snapshot, PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS)
                     cursor.execute(migration_body_for_outer_transaction(PARTICIPANT_MIGRATION.read_text()))
                     snapshot = fetch_schema_snapshot(cursor)
+                    validate_schema_snapshot(snapshot, PRE_TRANSACTION_EXECUTION_RESULT_EXPECTATIONS)
+                    existing = snapshot["tables"]
+                if existing == PRE_TRANSACTION_EXECUTION_RESULT_EXPECTATIONS["tables"]:
+                    validate_schema_snapshot(snapshot, PRE_TRANSACTION_EXECUTION_RESULT_EXPECTATIONS)
+                    cursor.execute(migration_body_for_outer_transaction(EXECUTION_RESULT_MIGRATION.read_text()))
+                    snapshot = fetch_schema_snapshot(cursor)
+                    existing = snapshot["tables"]
                 if existing == PRE_GOVERNANCE_SCHEMA_EXPECTATIONS["tables"]:
                     try:
                         validate_schema_snapshot(snapshot, PRE_GOVERNANCE_SCHEMA_EXPECTATIONS)
@@ -716,8 +766,8 @@ def initialize_or_validate(database_url: str, schema_path: Path = SCHEMA, connec
         connection.commit()
 
 
-def validate_participant_privileges(cursor) -> None:
-    """Require participant-table grants for configured roles when those roles exist."""
+def validate_table_privileges(cursor) -> None:
+    """Require late transaction-table grants when configured roles exist."""
     for role, tables in EXPECTED_TABLE_PRIVILEGES.items():
         cursor.execute("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = %s)", (role,))
         if not cursor.fetchone()[0]:
@@ -733,9 +783,14 @@ def validate_participant_privileges(cursor) -> None:
                 if cursor.fetchone()[0]:
                     actual.add(privilege)
             if role == "utsa_gno_api" and actual != required:
-                raise SchemaCompatibilityError("API role has incompatible participant privileges")
+                raise SchemaCompatibilityError(f"API role has incompatible privileges for {table}")
             if role == "utsa_gno_indexer" and not required <= actual:
-                raise SchemaCompatibilityError("Indexer role lacks participant privileges")
+                raise SchemaCompatibilityError(f"Indexer role lacks privileges for {table}")
+
+
+def validate_participant_privileges(cursor) -> None:
+    """Compatibility entry point for generalized late-table validation."""
+    validate_table_privileges(cursor)
 
 
 def build_parser() -> argparse.ArgumentParser:

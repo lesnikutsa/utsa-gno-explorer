@@ -34,13 +34,54 @@ def test_participant_authoritative_contract_is_exact():
     assert init_database.EXPECTED_INDEXES["transaction_participants_address_position_idx"][2] == (("address", "ASC"), ("block_height", "DESC"), ("tx_index", "DESC"))
 
 
+def test_execution_result_authoritative_contract_is_exact():
+    table = "transaction_execution_results"
+    assert table not in init_database.PRE_TRANSACTION_EXECUTION_RESULT_EXPECTATIONS["tables"]
+    assert table in init_database.FINAL_SCHEMA_EXPECTATIONS["tables"]
+    assert init_database.EXPECTED_PRIMARY_KEYS[table] == ("block_height", "tx_index")
+    assert (table, ("block_height", "tx_index"), "transactions", ("block_height", "tx_index"), "c") in init_database.EXPECTED_FOREIGN_KEYS
+    assert (table, ("source_rpc_endpoint_id",), "rpc_endpoints", ("id",), "n") in init_database.EXPECTED_FOREIGN_KEYS
+    assert not any(index[0] == table for index in init_database.EXPECTED_INDEXES.values())
+
+
+def test_execution_result_migration_envelope_is_safe():
+    body = init_database.migration_body_for_outer_transaction(
+        init_database.EXECUTION_RESULT_MIGRATION.read_text()
+    )
+    assert "CREATE TABLE transaction_execution_results" in body
+    assert not body.lstrip().upper().startswith("BEGIN;")
+    assert not body.rstrip().upper().endswith("COMMIT;")
+
+
+def test_pre_0007_stage_runs_only_execution_result_migration():
+    connection = Connection(init_database.PRE_TRANSACTION_EXECUTION_RESULT_EXPECTATIONS["tables"])
+    snapshots = [
+        snapshot(init_database.PRE_TRANSACTION_EXECUTION_RESULT_EXPECTATIONS),
+        snapshot(init_database.FINAL_SCHEMA_EXPECTATIONS),
+    ]
+    with patch.object(init_database, "fetch_schema_snapshot", side_effect=snapshots):
+        init_database.initialize_or_validate(
+            "postgresql://example.invalid/db", connect=lambda _: connection
+        )
+    sql = "\n".join(statement for statement, _ in connection.cursor_value.executed)
+    assert "CREATE TABLE transaction_execution_results" in sql
+    assert "CREATE TABLE IF NOT EXISTS transaction_participants" not in sql
+    assert connection.commits == 1
+
+
 def test_checks_and_privilege_contract_are_registered():
     checks = init_database.EXPECTED_CHECKS
     for name in ("block_height", "tx_index", "message_index", "role", "address"):
         assert f"transaction_participants_{name}_check" in checks
     assert init_database.EXPECTED_TABLE_PRIVILEGES == {
-        "utsa_gno_api": {"transaction_participants": {"SELECT"}},
-        "utsa_gno_indexer": {"transaction_participants": {"SELECT", "INSERT", "DELETE"}},
+        "utsa_gno_api": {
+            "transaction_participants": {"SELECT"},
+            "transaction_execution_results": {"SELECT"},
+        },
+        "utsa_gno_indexer": {
+            "transaction_participants": {"SELECT", "INSERT", "DELETE"},
+            "transaction_execution_results": {"SELECT", "INSERT", "UPDATE"},
+        },
     }
 
 
@@ -115,12 +156,14 @@ def test_migration_envelope_loader_rejects_invalid_control(sql):
 
 def test_pre_0006_stage_runs_migration_before_final_verification():
     connection = Connection(init_database.PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS["tables"])
-    snapshots = [snapshot(init_database.PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS), snapshot(init_database.FINAL_SCHEMA_EXPECTATIONS)]
+    snapshots = [snapshot(init_database.PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS), snapshot(init_database.PRE_TRANSACTION_EXECUTION_RESULT_EXPECTATIONS), snapshot(init_database.FINAL_SCHEMA_EXPECTATIONS)]
     with patch.object(init_database, "fetch_schema_snapshot", side_effect=snapshots) as fetch:
         init_database.initialize_or_validate("postgresql://example.invalid/db", connect=lambda _: connection)
     migration_calls = [sql for sql, _ in connection.cursor_value.executed if "CREATE TABLE IF NOT EXISTS transaction_participants" in sql]
+    execution_calls = [sql for sql, _ in connection.cursor_value.executed if "CREATE TABLE transaction_execution_results" in sql]
     assert len(migration_calls) == 1
-    assert fetch.call_count == 2 and connection.commits == 1
+    assert len(execution_calls) == 1
+    assert fetch.call_count == 3 and connection.commits == 1
     executed = migration_calls[0].strip().upper()
     assert not executed.startswith("BEGIN;") and not executed.endswith("COMMIT;")
 
@@ -150,36 +193,56 @@ class PrivilegeCursor:
     def execute(self, sql, params=None): self.params = params
     def fetchone(self):
         if len(self.params) == 1: return (self.params[0] in self.grants,)
-        role, _table, privilege = self.params
-        return (privilege in self.grants.get(role, set()),)
+        role, table, privilege = self.params
+        table = table.removeprefix("public.")
+        return (privilege in self.grants.get(role, {}).get(table, set()),)
 
 
 def test_participant_privilege_validation_accepts_least_privilege():
     init_database.validate_participant_privileges(PrivilegeCursor({
-        "utsa_gno_api": {"SELECT"},
-        "utsa_gno_indexer": {"SELECT", "INSERT", "DELETE"},
+        "utsa_gno_api": {
+            "transaction_participants": {"SELECT"},
+            "transaction_execution_results": {"SELECT"},
+        },
+        "utsa_gno_indexer": {
+            "transaction_participants": {"SELECT", "INSERT", "DELETE"},
+            "transaction_execution_results": {"SELECT", "INSERT", "UPDATE"},
+        },
     }))
 
 
 def test_api_writes_and_missing_indexer_grants_fail_closed():
     with pytest.raises(init_database.SchemaCompatibilityError, match="API role"):
         init_database.validate_participant_privileges(PrivilegeCursor({
-            "utsa_gno_api": {"SELECT", "INSERT"},
-            "utsa_gno_indexer": {"SELECT", "INSERT", "DELETE"},
+            "utsa_gno_api": {
+                "transaction_participants": {"SELECT", "INSERT"},
+                "transaction_execution_results": {"SELECT"},
+            },
+            "utsa_gno_indexer": {
+                "transaction_participants": {"SELECT", "INSERT", "DELETE"},
+                "transaction_execution_results": {"SELECT", "INSERT", "UPDATE"},
+            },
         }))
     with pytest.raises(init_database.SchemaCompatibilityError, match="Indexer role"):
         init_database.validate_participant_privileges(PrivilegeCursor({
-            "utsa_gno_api": {"SELECT"}, "utsa_gno_indexer": {"SELECT", "INSERT"},
+            "utsa_gno_api": {
+                "transaction_participants": {"SELECT"},
+                "transaction_execution_results": {"SELECT"},
+            },
+            "utsa_gno_indexer": {
+                "transaction_participants": {"SELECT", "INSERT"},
+                "transaction_execution_results": {"SELECT", "INSERT", "UPDATE"},
+            },
         }))
 
 
 def test_final_schema_failure_occurs_after_body_and_before_commit():
     connection = Connection(init_database.PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS["tables"])
-    snapshots = [snapshot(init_database.PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS), snapshot(init_database.FINAL_SCHEMA_EXPECTATIONS)]
+    snapshots = [snapshot(init_database.PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS), snapshot(init_database.PRE_TRANSACTION_EXECUTION_RESULT_EXPECTATIONS), snapshot(init_database.FINAL_SCHEMA_EXPECTATIONS)]
     validations = []
     def validate(value, expectations=None):
         validations.append(expectations)
-        if len(validations) == 2:
+        if len(validations) == 3:
             raise init_database.SchemaCompatibilityError("forced final verification failure")
     with patch.object(init_database, "fetch_schema_snapshot", side_effect=snapshots), patch.object(init_database, "validate_schema_snapshot", side_effect=validate):
         with pytest.raises(init_database.SchemaCompatibilityError, match="forced final"):
@@ -190,7 +253,7 @@ def test_final_schema_failure_occurs_after_body_and_before_commit():
 
 def test_privilege_failure_occurs_before_single_commit():
     connection = Connection(init_database.PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS["tables"])
-    snapshots = [snapshot(init_database.PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS), snapshot(init_database.FINAL_SCHEMA_EXPECTATIONS)]
+    snapshots = [snapshot(init_database.PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS), snapshot(init_database.PRE_TRANSACTION_EXECUTION_RESULT_EXPECTATIONS), snapshot(init_database.FINAL_SCHEMA_EXPECTATIONS)]
     with patch.object(init_database, "fetch_schema_snapshot", side_effect=snapshots), patch.object(
         init_database, "validate_participant_privileges",
         side_effect=init_database.SchemaCompatibilityError("forced privilege failure"),
@@ -208,7 +271,7 @@ def test_success_verifies_privileges_before_exactly_one_commit():
             events.append("commit")
             super().commit()
     connection = OrderedConnection(init_database.PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS["tables"])
-    snapshots = [snapshot(init_database.PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS), snapshot(init_database.FINAL_SCHEMA_EXPECTATIONS)]
+    snapshots = [snapshot(init_database.PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS), snapshot(init_database.PRE_TRANSACTION_EXECUTION_RESULT_EXPECTATIONS), snapshot(init_database.FINAL_SCHEMA_EXPECTATIONS)]
     with patch.object(init_database, "fetch_schema_snapshot", side_effect=snapshots), patch.object(
         init_database, "validate_participant_privileges", side_effect=lambda cursor: events.append("privileges"),
     ):
