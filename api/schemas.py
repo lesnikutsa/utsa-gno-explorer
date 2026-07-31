@@ -188,6 +188,12 @@ class BlockTransactionSummary(BaseModel):
     raw_base64_length: int
     decoded_byte_length: int | None
     decode_status: str
+    execution_status: Literal["success", "failed"] | None = None
+    gas_wanted: str | None = None
+    gas_used: str | None = None
+    error: str | None = None
+    log: str | None = None
+    info: str | None = None
 
 
 class TransactionSummaryPrimary(BaseModel):
@@ -236,6 +242,12 @@ class TransactionDetailResponse(BaseModel):
     decoded_byte_length: int | None = Field(default=None, ge=0)
     decode_status: str
     summary: TransactionSummaryResponse | None = None
+    execution_status: Literal["success", "failed"] | None = None
+    gas_wanted: str | None = None
+    gas_used: str | None = None
+    error: str | None = None
+    log: str | None = None
+    info: str | None = None
 
 
 class TransactionHashLookupResponse(BaseModel):
@@ -273,6 +285,12 @@ class TransactionListItem(BaseModel):
     block_time: str
     type: str = Field(min_length=1, max_length=160)
     operation: str = Field(min_length=1, max_length=80)
+    execution_status: Literal["success", "failed"] | None = None
+    gas_wanted: str | None = None
+    gas_used: str | None = None
+    error: str | None = None
+    log: str | None = None
+    info: str | None = None
 
 
 class TransactionsPagination(BaseModel):

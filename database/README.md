@@ -167,3 +167,12 @@ Migration `0006_add_transaction_participants.sql` creates the bounded, address-p
 The supported initializer now upgrades an exact pre-0006 catalog by applying `0006_add_transaction_participants.sql` and then verifying the complete schema and participant-table privileges. It leaves an already compatible catalog unchanged and rejects partial or incompatible participant tables.
 
 For deployment, first create and verify a PostgreSQL backup, update the repository checkout, and stop or keep the continuous indexer stopped. Run `python scripts/init_database.py` with the existing indexer-role or appropriate administrative connection. Do not start the updated indexer until this command has applied migration 0006 and reported successful final verification. Then restart the indexer, restart the API only after its participant-table SELECT grant exists, build and deploy the frontend, and smoke-test the Account history API and Account page. The migration backfills only already stored parsed summaries; it does not decode NULL historical summaries.
+
+## Transaction execution results
+
+Migration `0007_add_transaction_execution_results.sql` adds the one-to-one
+`transaction_execution_results` table. Results are obtained from
+`result.results.deliver_tx`, matched strictly to `block.data.txs` by list position,
+and committed atomically with the block checkpoint. A missing row represents a
+legacy transaction that has not been backfilled; it is never stored as an
+`unknown` canonical result.

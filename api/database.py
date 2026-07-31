@@ -254,9 +254,14 @@ SELECT
     raw_base64,
     raw_base64_length,
     decoded_byte_length,
-    decode_status
-FROM transactions
-WHERE block_height = %s
+    decode_status,
+    result.execution_status, result.gas_wanted::text AS gas_wanted,
+    result.gas_used::text AS gas_used, result.error_text AS error,
+    result.log_text AS log, result.info_text AS info
+FROM transactions transaction
+LEFT JOIN transaction_execution_results result
+  ON (result.block_height, result.tx_index) = (transaction.block_height, transaction.tx_index)
+WHERE transaction.block_height = %s
 ORDER BY tx_index ASC
 """
 
@@ -273,12 +278,17 @@ SELECT
     block.block_hash_hex,
     block.time_utc,
     block.proposer_address,
-    profile.moniker AS proposer_moniker
+    profile.moniker AS proposer_moniker,
+    result.execution_status, result.gas_wanted::text AS gas_wanted,
+    result.gas_used::text AS gas_used, result.error_text AS error,
+    result.log_text AS log, result.info_text AS info
 FROM transactions transaction
 JOIN blocks block
   ON block.height = transaction.block_height
 LEFT JOIN valoper_profiles profile
   ON profile.signing_address = block.proposer_address
+LEFT JOIN transaction_execution_results result
+  ON (result.block_height, result.tx_index) = (transaction.block_height, transaction.tx_index)
 WHERE transaction.block_height = %s
   AND transaction.tx_index = %s
 """
@@ -300,10 +310,15 @@ SELECT
     transaction.tx_index,
     transaction.tx_hash_hex,
     transaction.payload_summary,
-    block.time_utc
+    block.time_utc,
+    result.execution_status, result.gas_wanted::text AS gas_wanted,
+    result.gas_used::text AS gas_used, result.error_text AS error,
+    result.log_text AS log, result.info_text AS info
 FROM transactions transaction
 JOIN blocks block
   ON block.height = transaction.block_height
+LEFT JOIN transaction_execution_results result
+  ON (result.block_height, result.tx_index) = (transaction.block_height, transaction.tx_index)
 WHERE (
     %s::bigint IS NULL
     OR transaction.block_height < %s::bigint
@@ -323,6 +338,9 @@ SELECT
     transaction.tx_hash_hex,
     transaction.payload_summary,
     block.time_utc,
+    result.execution_status, result.gas_wanted::text AS gas_wanted,
+    result.gas_used::text AS gas_used, result.error_text AS error,
+    result.log_text AS log, result.info_text AS info,
     jsonb_agg(jsonb_build_object(
         'message_index', participant.message_index,
         'role', participant.role
@@ -332,6 +350,8 @@ JOIN transactions transaction
   ON (transaction.block_height, transaction.tx_index) =
      (participant.block_height, participant.tx_index)
 JOIN blocks block ON block.height = participant.block_height
+LEFT JOIN transaction_execution_results result
+  ON (result.block_height, result.tx_index) = (transaction.block_height, transaction.tx_index)
 WHERE participant.address = %s
   AND (
       %s::bigint IS NULL
@@ -339,7 +359,9 @@ WHERE participant.address = %s
       OR (participant.block_height = %s::bigint AND participant.tx_index < %s::integer)
   )
 GROUP BY participant.block_height, participant.tx_index, transaction.tx_hash_hex,
-         transaction.payload_summary, block.time_utc
+         transaction.payload_summary, block.time_utc, result.execution_status,
+         result.gas_wanted, result.gas_used, result.error_text, result.log_text,
+         result.info_text
 ORDER BY participant.block_height DESC, participant.tx_index DESC
 LIMIT %s
 """

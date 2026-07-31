@@ -406,9 +406,9 @@ def run_cycle(database, chain_id: str, rpc_urls: list[str], max_height_lag: int,
                 transition_from = pending_failed_url
                 transition_reason = pending_reason
                 LOGGER.info("selected_rpc=%s latest_rpc_height=%s finalized_tip=%s checkpoint_before=%s", sanitized_url(probe.url), probe.latest_height, probe.latest_height - 1, checkpoint)
-                block_payload, commit_payload, validators_payload = fetch_height(probe.client, height)
+                block_payload, block_results_payload, commit_payload, validators_payload = fetch_height(probe.client, height)
                 block_hash = verify_parent_continuity(block_payload, expected_parent) if expected_parent is not None else canonical_block_hash_hex(block_payload)
-                parsed = parse_height(height, block_payload, commit_payload, validators_payload, transaction_decoder)
+                parsed = parse_height(height, block_payload, commit_payload, validators_payload, transaction_decoder, block_results_payload)
                 database.write_height(parsed, chain_id, probe.latest_height - 1)
                 if selection_state is not None:
                     record_selection_success(

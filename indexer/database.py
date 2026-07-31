@@ -293,7 +293,7 @@ def write_height_cursor(cursor, parsed, chain_id: str, finalized_tip: int, selec
     _verify_checkpoint_sequence(parsed.height, checkpoint)
     _verify_finalized_conflicts(cursor, parsed)
     _upsert_block(cursor, parsed)
-    _upsert_transactions(cursor, parsed)
+    _upsert_transactions(cursor, parsed, selected_rpc_endpoint_id)
     _upsert_validators_and_members(cursor, parsed)
     _upsert_signatures(cursor, parsed)
     _advance_checkpoint(cursor, parsed.height, checkpoint, chain_id, finalized_tip, selected_rpc_endpoint_id)
@@ -327,6 +327,7 @@ def _verify_finalized_conflicts(cursor, parsed) -> None:
     existing_height = _verify_block_conflict(cursor, parsed)
     _verify_child_key_sets(cursor, parsed, existing_height)
     _verify_transaction_conflicts(cursor, parsed)
+    _verify_execution_result_conflicts(cursor, parsed)
     _verify_validator_conflicts(cursor, parsed)
     _verify_member_conflicts(cursor, parsed)
     _verify_signature_conflicts(cursor, parsed)
@@ -374,6 +375,18 @@ def _verify_transaction_conflicts(cursor, parsed) -> None:
         expected = (transaction["raw_base64"], transaction["raw_base64_length"], transaction["decoded_byte_length"], transaction["decode_status"], transaction["tx_hash_hex"])
         if row and tuple(row) != expected:
             raise FinalizedDataConflict(f"Conflicting transaction at height {parsed.height} index {transaction['index']}")
+
+
+def _verify_execution_result_conflicts(cursor, parsed) -> None:
+    for result in getattr(parsed, "execution_results", []):
+        cursor.execute(
+            "SELECT execution_status, gas_wanted, gas_used, error_text, log_text, info_text, data_base64, events, raw_result FROM transaction_execution_results WHERE block_height = %s AND tx_index = %s",
+            (parsed.height, result["tx_index"]),
+        )
+        row = cursor.fetchone()
+        expected = (result["execution_status"], result["gas_wanted"], result["gas_used"], result["error_text"], result["log_text"], result["info_text"], result["data_base64"], result["events"], result["raw_result"])
+        if row and tuple(row) != expected:
+            raise FinalizedDataConflict(f"Conflicting execution result at height {parsed.height} index {result['tx_index']}")
 
 
 def _verify_validator_conflicts(cursor, parsed) -> None:
@@ -432,7 +445,7 @@ def _upsert_block(cursor, parsed) -> None:
     )
 
 
-def _upsert_transactions(cursor, parsed) -> None:
+def _upsert_transactions(cursor, parsed, selected_rpc_endpoint_id: int | None = None) -> None:
     for transaction in parsed.transactions:
         fallback_status = "invalid" if transaction["decode_status"] == "invalid_base64" else "unparsed"
         payload_summary = normalize_summary(transaction.get("payload_summary"), fallback_status)
@@ -463,6 +476,22 @@ def _upsert_transactions(cursor, parsed) -> None:
                     for participant in participants
                 ],
             )
+    for result in getattr(parsed, "execution_results", []):
+        cursor.execute(
+            """
+            INSERT INTO transaction_execution_results(
+                block_height, tx_index, execution_status, gas_wanted, gas_used,
+                error_text, log_text, info_text, data_base64, events, raw_result,
+                source_rpc_endpoint_id
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s)
+            ON CONFLICT (block_height, tx_index) DO UPDATE SET updated_at = now()
+            """,
+            (parsed.height, result["tx_index"], result["execution_status"],
+             result["gas_wanted"], result["gas_used"], result["error_text"],
+             result["log_text"], result["info_text"], result["data_base64"],
+             _json(result["events"]), _json(result["raw_result"]),
+             selected_rpc_endpoint_id),
+        )
 
 
 def _upsert_validators_and_members(cursor, parsed) -> None:

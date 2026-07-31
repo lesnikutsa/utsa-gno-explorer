@@ -269,7 +269,7 @@ def verify_checkpoint_anchor(client: GnoRpcClient, height: int, expected_hash_he
         raise RpcContinuityError("checkpoint_hash_mismatch")
 
 
-def fetch_height(client: GnoRpcClient, height: int) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+def fetch_height(client: GnoRpcClient, height: int) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
     started_at = time.perf_counter()
 
     def timed_get(method: str) -> tuple[dict[str, Any], float]:
@@ -277,18 +277,19 @@ def fetch_height(client: GnoRpcClient, height: int) -> tuple[dict[str, Any], dic
         payload = client.get(method, height=height)
         return payload, time.perf_counter() - request_started_at
 
-    methods = ("block", "commit", "validators")
-    with ThreadPoolExecutor(max_workers=3, thread_name_prefix=f"rpc-height-{height}") as executor:
+    methods = ("block", "block_results", "commit", "validators")
+    with ThreadPoolExecutor(max_workers=4, thread_name_prefix=f"rpc-height-{height}") as executor:
         futures = [executor.submit(timed_get, method) for method in methods]
         results = [future.result() for future in futures]
 
     total_duration = time.perf_counter() - started_at
     LOGGER.info(
-        "rpc_fetch height=%s total_seconds=%.6f block_seconds=%.6f commit_seconds=%.6f validators_seconds=%.6f",
+        "rpc_fetch height=%s total_seconds=%.6f block_seconds=%.6f block_results_seconds=%.6f commit_seconds=%.6f validators_seconds=%.6f",
         height,
         total_duration,
         results[0][1],
         results[1][1],
         results[2][1],
+        results[3][1],
     )
-    return results[0][0], results[1][0], results[2][0]
+    return results[0][0], results[1][0], results[2][0], results[3][0]
