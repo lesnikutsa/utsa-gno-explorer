@@ -11,8 +11,8 @@ def missing_heights(cursor, start: int | None, end: int | None, limit: int) -> l
         SELECT DISTINCT t.block_height FROM transactions t
         LEFT JOIN transaction_execution_results r
           ON (r.block_height,r.tx_index)=(t.block_height,t.tx_index)
-        WHERE r.block_height IS NULL AND (%s IS NULL OR t.block_height >= %s)
-          AND (%s IS NULL OR t.block_height <= %s)
+        WHERE r.block_height IS NULL AND (%s::bigint IS NULL OR t.block_height >= %s::bigint)
+          AND (%s::bigint IS NULL OR t.block_height <= %s::bigint)
         ORDER BY t.block_height LIMIT %s
     """, (start, start, end, end, limit))
     return [int(row[0]) for row in cursor.fetchall()]

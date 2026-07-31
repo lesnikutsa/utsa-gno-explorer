@@ -1,4 +1,5 @@
 import pytest
+from indexer.execution_backfill import missing_heights
 from indexer.parsers import MAX_RESULT_TEXT_BYTES, parse_execution_results
 from scripts.inspect_rpc import RpcError
 
@@ -9,6 +10,33 @@ def payload(items, height="7"):
 
 def item(error=None, wanted="5000000", used="934971"):
     return {"ResponseBase": {"Error": error, "Data": None, "Events": [], "Log": "log", "Info": ""}, "GasWanted": wanted, "GasUsed": used}
+
+
+class RecordingCursor:
+    def __init__(self, rows):
+        self.rows = rows
+        self.sql = None
+        self.params = None
+
+    def execute(self, sql, params):
+        self.sql = sql
+        self.params = params
+
+    def fetchall(self):
+        return self.rows
+
+
+def test_missing_heights_supports_unbounded_range():
+    cursor = RecordingCursor([(194640,), (333197,)])
+    assert missing_heights(cursor, None, None, 25) == [194640, 333197]
+    assert cursor.params == (None, None, None, None, 25)
+    assert cursor.sql.count("%s::bigint") == 4
+
+
+def test_missing_heights_preserves_explicit_bounds():
+    cursor = RecordingCursor([(333197,)])
+    assert missing_heights(cursor, 300000, 340000, 10) == [333197]
+    assert cursor.params == (300000, 300000, 340000, 340000, 10)
 
 
 def test_success_and_gas_normalization():
