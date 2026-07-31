@@ -65,7 +65,7 @@ function AccountTransactions({ address, history, retry, loadMore }) {
           <div className="account-detail__transaction-direction" data-label="Direction"><span className={`account-detail__direction account-detail__direction--${item.direction}`}>{direction}</span></div>
           <span className="account-detail__transaction-amount" data-label="Amount">{item.amount != null ? String(item.amount) : '—'}</span>
           <div className="account-detail__transaction-account" data-label="Account">{counterpartyValid ? <a className="account-detail__transaction-counterparty mono" href={`/accounts/${encodeURIComponent(item.counterparty)}`}>{item.counterparty}</a> : '—'}</div>
-          <div className="account-detail__transaction-block" data-label="Block"><a href={`/blocks/${item.block_height}`}>{item.block_height}</a></div>
+          <div className="account-detail__transaction-block" data-label="Block"><a href={`/blocks/${item.block_height}`}>#{item.block_height}</a></div>
           <div className="account-detail__transaction-hash-cell" data-label="Tx hash"><a className="account-detail__transaction-hash mono" href={`/blocks/${item.block_height}/transactions/${item.index}`} title={item.tx_hash} aria-label={`Transaction hash ${item.tx_hash}`}>{shortHash(item.tx_hash)}</a></div>
           <div className="account-detail__transaction-status-slot" data-label="Status" aria-hidden="true" />
         </article>

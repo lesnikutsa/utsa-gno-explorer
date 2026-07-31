@@ -659,17 +659,17 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
   .account-detail__field:nth-child(odd), .account-detail__balance:nth-child(odd) { border-right: 0; }
 }
 
-.account-detail__transaction-list { --transaction-columns: minmax(100px, 1.2fr) 86px minmax(100px, 1fr) minmax(140px, 1.5fr) 64px minmax(130px, 1.2fr) 54px; display: grid; gap: 6px; margin: 16px 0; }
-.account-detail__transaction-header, .account-detail__transaction { display: grid; grid-template-columns: var(--transaction-columns); gap: 12px; min-width: 0; align-items: center; }
+.account-detail__transaction-list { --transaction-columns: minmax(84px, .8fr) 82px minmax(100px, 1fr) minmax(180px, 1.8fr) 70px minmax(130px, 1.1fr) 54px; display: grid; gap: 6px; margin: 16px 0; }
+.account-detail__transaction-header, .account-detail__transaction { display: grid; grid-template-columns: var(--transaction-columns); gap: 8px; min-width: 0; align-items: center; }
 .account-detail__transaction-header { padding: 0 12px 2px; color: var(--color-text-secondary); font-size: 10px; font-weight: 700; text-transform: uppercase; }
 .account-detail__transaction { padding: 10px 12px; border: 1px solid var(--color-border); border-radius: 8px; color: var(--color-text); font-size: 11px; }
 .account-detail__transaction > * { min-width: 0; }
 .account-detail__transaction-operation { color: var(--color-text); font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
 .account-detail__transaction-amount { color: var(--color-text); font-size: 12px; font-weight: 600; cursor: default; }
-.account-detail__transaction-counterparty { min-width: 0; color: var(--color-accent); font-size: 12px; overflow-wrap: anywhere; }
+.account-detail__transaction-counterparty { min-width: 0; color: var(--color-text-bright); font-size: 12px; overflow-wrap: anywhere; }
 .account-detail__transaction-account, .account-detail__transaction-block, .account-detail__transaction-hash-cell { overflow-wrap: anywhere; }
-.account-detail__transaction-block a, .account-detail__transaction-hash { color: var(--color-accent); }
-.account-detail__transaction-counterparty:hover, .account-detail__transaction-block a:hover, .account-detail__transaction-hash:hover { color: var(--color-text-bright); text-decoration: underline; }
+.account-detail__transaction-block a, .account-detail__transaction-hash { color: var(--color-text-bright); }
+.account-detail__transaction-counterparty:hover, .account-detail__transaction-block a:hover, .account-detail__transaction-hash:hover { color: var(--color-text); text-decoration: underline; }
 .account-detail__transaction-counterparty:focus-visible, .account-detail__transaction-block a:focus-visible, .account-detail__transaction-hash:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
 .account-detail__transaction-hash { font-size: 11px; }
 .account-detail__direction { padding: 2px 7px; border: 1px solid var(--color-border); border-radius: 999px; background: var(--color-card); font-size: 11px; font-weight: 700; }
