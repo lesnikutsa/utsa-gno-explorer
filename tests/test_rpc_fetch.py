@@ -9,8 +9,8 @@ from scripts.inspect_rpc import RpcError
 
 class ControlledRpcClient:
     def __init__(self, failing_method=None):
-        self.barrier = threading.Barrier(3, timeout=2)
-        self.release = {method: threading.Event() for method in ("block", "commit", "validators")}
+        self.barrier = threading.Barrier(4, timeout=2)
+        self.release = {method: threading.Event() for method in ("block", "block_results", "commit", "validators")}
         self.started = {method: threading.Event() for method in self.release}
         self.finished = {method: threading.Event() for method in self.release}
         self.failing_method = failing_method
@@ -48,13 +48,13 @@ class FetchHeightTests(unittest.TestCase):
         for started in client.started.values():
             self.assertTrue(started.wait(1), "all methods must start before any is released")
         self.assertFalse(any(event.is_set() for event in client.finished.values()))
-        for method in ("validators", "block", "commit"):
+        for method in ("validators", "block_results", "block", "commit"):
             client.release[method].set()
         thread.join(2)
 
         self.assertFalse(thread.is_alive())
         self.assertEqual(error, [])
-        self.assertEqual([payload["method"] for payload in result[0]], ["block", "commit", "validators"])
+        self.assertEqual([payload["method"] for payload in result[0]], ["block", "block_results", "commit", "validators"])
 
     def test_one_request_error_fails_whole_fetch_after_workers_close(self):
         client = ControlledRpcClient(failing_method="commit")
@@ -72,7 +72,7 @@ class FetchHeightTests(unittest.TestCase):
         self.assertTrue(all(event.is_set() for event in client.finished.values()))
 
     def test_fake_delay_comparison_tracks_maximum_not_sum(self):
-        delays = {"block": 0.08, "commit": 0.12, "validators": 0.16}
+        delays = {"block": 0.08, "block_results": 0.10, "commit": 0.12, "validators": 0.16}
 
         class DelayedClient:
             def get(self, method, **params):
@@ -102,7 +102,7 @@ class FetchHeightTests(unittest.TestCase):
             thread.join(2)
         self.assertEqual(error, [])
         message = " ".join(captured.output)
-        for field in ("rpc_fetch height=42", "total_seconds=", "block_seconds=", "commit_seconds=", "validators_seconds="):
+        for field in ("rpc_fetch height=42", "total_seconds=", "block_seconds=", "block_results_seconds=", "commit_seconds=", "validators_seconds="):
             self.assertIn(field, message)
 
 

@@ -41,8 +41,8 @@ class FakeClient:
         height = params["height"]
         if height == self.fail_height:
             raise RpcError("timeout")
-        block, commit, validators = payloads(height)
-        return {"block": block, "commit": commit, "validators": validators}[method]
+        block, block_results, commit, validators = payloads(height)
+        return {"block": block, "block_results": block_results, "commit": commit, "validators": validators}[method]
 
 
 def selected(latest=105, fail_height=None):
@@ -112,6 +112,9 @@ class ContinuousIndexerTests(unittest.TestCase):
                     value = copy.deepcopy(value)
                     value["result"]["block"]["data"]["txs"] = ["YQ=="]
                     value["result"]["block"]["header"]["num_txs"] = "1"
+                elif method == "block_results":
+                    value = copy.deepcopy(value)
+                    value["result"]["results"]["deliver_tx"] = value["result"]["results"]["deliver_tx"][:1]
                 return value
 
         class CapturingDb(SqlLikeDb):
@@ -425,7 +428,7 @@ class ContinuousIndexerTests(unittest.TestCase):
 
         self.assertEqual(
             {call for call in calls if call[0] == "fetch"},
-            {("fetch", 9, "block"), ("fetch", 10, "block"), ("fetch", 10, "commit"), ("fetch", 10, "validators")},
+            {("fetch", 9, "block"), ("fetch", 10, "block"), ("fetch", 10, "block_results"), ("fetch", 10, "commit"), ("fetch", 10, "validators")},
         )
         self.assertEqual(parsed_heights, [])
         self.assertFalse(any(call[0] == "write" for call in calls))

@@ -81,7 +81,7 @@ class IndexerService:
             if height != expected_height:
                 raise RpcError("non-sequential height plan")
             block_payload, block_results_payload, commit_payload, validators_payload = fetch_height(self.rpc_client, height)
-            parsed = parse_height(height, block_payload, commit_payload, validators_payload, self.transaction_decoder, block_results_payload)
+            parsed = parse_height(height, block_payload, block_results_payload, commit_payload, validators_payload, self.transaction_decoder)
             if fail_after_parse_height == height:
                 raise RuntimeError("injected failure after parse")
             if not plan.dry_run:

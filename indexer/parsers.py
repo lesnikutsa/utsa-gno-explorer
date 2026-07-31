@@ -258,7 +258,6 @@ def _signature_row(
 
 MAX_RESULT_TEXT_BYTES = 64 * 1024
 MAX_RESULT_JSON_BYTES = 256 * 1024
-_MISSING = object()
 
 
 def _bounded(value: Any, name: str, limit: int = MAX_RESULT_TEXT_BYTES) -> Any:
@@ -330,7 +329,7 @@ def parse_execution_results(height: int, payload: dict[str, Any], tx_count: int)
     return normalized
 
 
-def parse_height(height: int, block_payload: dict[str, Any], commit_payload: dict[str, Any], validators_payload: dict[str, Any], transaction_decoder: TransactionDecoder | None = None, block_results_payload: Any = _MISSING) -> ParsedHeight:
+def parse_height(height: int, block_payload: dict[str, Any], block_results_payload: dict[str, Any], commit_payload: dict[str, Any], validators_payload: dict[str, Any], transaction_decoder: TransactionDecoder | None = None) -> ParsedHeight:
     block = parse_block(block_payload, transaction_decoder)
     commit = parse_commit(commit_payload)
     commit["raw"] = commit_payload
@@ -338,7 +337,5 @@ def parse_height(height: int, block_payload: dict[str, Any], commit_payload: dic
     if block["height"] != height or commit["height"] != height or validators_data["block_height"] != height:
         raise RpcError(f"Height mismatch while parsing {height}")
     signatures = classify_votes(height, commit, validators_data["validators"])
-    # The sentinel preserves the parser's historical unit-test API. Runtime callers
-    # always provide block_results and therefore cannot omit canonical results.
-    execution_results = [] if block_results_payload is _MISSING else parse_execution_results(height, block_results_payload, len(block["transactions"]))
+    execution_results = parse_execution_results(height, block_results_payload, len(block["transactions"]))
     return ParsedHeight(height, block, block["transactions"], execution_results, validators_data["validators"], signatures, block_payload)
