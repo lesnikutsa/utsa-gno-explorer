@@ -1,5 +1,6 @@
 import copy
 import hashlib
+import json
 import os
 import secrets
 import shutil
@@ -31,7 +32,7 @@ from governance.gno import (GovernanceDiscovery, GovernanceListDiscovery,
 from indexer.governance_persistence import (
     GovernancePersistenceError, GovernanceSnapshotConflict, StaleGovernanceSnapshot,
 )
-from indexer.parsers import parse_tx
+from indexer.parsers import ParsedHeight, parse_execution_results, parse_tx
 from indexer.transaction_summary import MAX_SUMMARY_BYTES, summary_size_bytes
 from indexer.rpc import RpcProbeResult
 from indexer.valopers_parser import ValoperProfile
@@ -533,6 +534,56 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             transaction_response = client.get("/api/blocks/334761/transactions/0")
             self.assertEqual(transaction_response.status_code, 200, transaction_response.text)
             self.assertEqual(transaction_response.json()["gas_used"], "934971")
+
+    def test_execution_result_with_nested_nuls_is_persisted(self):
+        name = f"utsa_execution_result_nul_{os.getpid()}"
+        self.create_database(name)
+        database_url = self.database_url_for(name)
+        self.assertEqual(self.run_init(database_url).returncode, 0)
+        raw_result = {
+            "ResponseBase": {
+                "Error": None,
+                "Data": None,
+                "Events": [{"counterparty\x00key": {"chain_id": "chain\x00id"}}],
+                "Log": "log\x00text",
+                "Info": "",
+            },
+            "GasWanted": "5000000",
+            "GasUsed": "934971",
+        }
+        execution_results = parse_execution_results(
+            1,
+            {"result": {"height": "1", "results": {"deliver_tx": [raw_result]}}},
+            1,
+        )
+        transaction = parse_tx(0, "YWJj")
+        parsed = ParsedHeight(
+            height=1,
+            block={
+                "hash_base64": "ZA==",
+                "hash_hex": "64",
+                "time": "2026-07-31T12:00:00Z",
+                "proposer_address": None,
+                "tx_count": 1,
+            },
+            transactions=[transaction],
+            execution_results=execution_results,
+            validators=[],
+            signatures=[],
+            raw_block={"result": {"block": "test"}},
+        )
+
+        PostgresDatabase(database_url).write_height(parsed, "test-chain", 1)
+
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT events, raw_result FROM transaction_execution_results "
+                "WHERE block_height = 1 AND tx_index = 0"
+            )
+            events, stored_raw_result = cursor.fetchone()
+        self.assertEqual(events[0]["counterparty\\u0000key"]["chain_id"], "chain\\u0000id")
+        self.assertEqual(stored_raw_result["ResponseBase"]["Log"], "log\\u0000text")
+        self.assertNotIn("\x00", json.dumps([events, stored_raw_result]))
 
     def test_exact_transaction_hash_lookup_is_read_only_and_deterministic(self):
         name = f"utsa_api_tx_hash_lookup_{os.getpid()}"

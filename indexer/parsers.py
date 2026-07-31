@@ -260,15 +260,29 @@ MAX_RESULT_TEXT_BYTES = 64 * 1024
 MAX_RESULT_JSON_BYTES = 256 * 1024
 
 
+def _sanitize_rpc_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return value.replace("\x00", "\\u0000")
+    if isinstance(value, dict):
+        return {
+            _sanitize_rpc_value(key): _sanitize_rpc_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_sanitize_rpc_value(item) for item in value]
+    return value
+
+
 def _bounded(value: Any, name: str, limit: int = MAX_RESULT_TEXT_BYTES) -> Any:
     if value is None:
         return None
     if not isinstance(value, (str, dict, list)):
         raise RpcError(f"Malformed block_results {name}")
-    encoded = json.dumps(value, separators=(",", ":")).encode() if not isinstance(value, str) else value.encode()
+    sanitized = _sanitize_rpc_value(value)
+    encoded = json.dumps(sanitized, separators=(",", ":")).encode() if not isinstance(sanitized, str) else sanitized.encode()
     if len(encoded) > limit:
         raise RpcError(f"block_results {name} exceeds {limit} bytes")
-    return value
+    return sanitized
 
 
 def _gas(value: Any, name: str) -> int:

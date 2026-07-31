@@ -1,3 +1,7 @@
+import copy
+import json
+import re
+
 import pytest
 from indexer.execution_backfill import missing_heights
 from indexer.parsers import MAX_RESULT_TEXT_BYTES, parse_execution_results
@@ -76,3 +80,37 @@ def test_rpc_controlled_text_is_bounded():
     oversized["ResponseBase"]["Log"] = "x" * (MAX_RESULT_TEXT_BYTES + 1)
     with pytest.raises(RpcError, match="exceeds"):
         parse_execution_results(7, payload([oversized]), 1)
+
+
+def test_rpc_controlled_nuls_are_recursively_sanitized_without_mutation():
+    transaction_result = item()
+    transaction_result["ResponseBase"].update({
+        "Log": "before\x00after Привет 🌍",
+        "Events": [{"nested": {"counterparty_chain_id": "chain\x00id"}}],
+    })
+    transaction_result["raw\x00key"] = {"value": "raw\x00result"}
+    original = copy.deepcopy(transaction_result)
+
+    result = parse_execution_results(7, payload([transaction_result]), 1)[0]
+
+    assert result["log_text"] == "before\\u0000after Привет 🌍"
+    assert result["events"] == [
+        {"nested": {"counterparty_chain_id": "chain\\u0000id"}}
+    ]
+    assert result["raw_result"]["raw\\u0000key"]["value"] == "raw\\u0000result"
+    assert transaction_result == original
+    serialized = json.dumps(result, ensure_ascii=False)
+    assert "\x00" not in serialized
+    assert re.search(r"(?<!\\)\\u0000", serialized) is None
+    assert "\\\\u0000" in serialized
+    assert json.loads(serialized) == result
+
+
+def test_size_validation_occurs_after_nul_expansion():
+    oversized_after_sanitizing = item()
+    oversized_after_sanitizing["ResponseBase"]["Log"] = (
+        "x" * (MAX_RESULT_TEXT_BYTES - 1) + "\x00"
+    )
+
+    with pytest.raises(RpcError, match="Log exceeds"):
+        parse_execution_results(7, payload([oversized_after_sanitizing]), 1)
