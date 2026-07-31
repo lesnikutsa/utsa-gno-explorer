@@ -1,4 +1,5 @@
 import { CopyButton } from '../components/CopyButton'
+import { TransactionTypeBadge } from '../components/TransactionTypeBadge'
 import { networkProfile } from '../config/networkProfile'
 import { findNativeBalance, findOtherBalances, formatAmountString, getAccountDetailView } from '../utils/account'
 
@@ -61,7 +62,7 @@ function AccountTransactions({ address, history, retry, loadMore }) {
         const counterpartyValid = item.counterparty && item.counterparty !== address && /^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$/.test(item.counterparty)
         const direction = item.direction === 'outgoing' ? 'Outgoing' : item.direction === 'incoming' ? 'Incoming' : 'Self'
         return <article className="account-detail__transaction" key={`${item.block_height}:${item.index}`}>
-          <span className="account-detail__transaction-operation" data-label="Type">{item.operation}</span>
+          <div className="account-detail__transaction-operation" data-label="Type"><TransactionTypeBadge>{item.operation}</TransactionTypeBadge></div>
           <div className="account-detail__transaction-direction" data-label="Direction"><span className={`account-detail__direction account-detail__direction--${item.direction}`}>{direction}</span></div>
           <span className="account-detail__transaction-amount" data-label="Amount">{item.amount != null ? String(item.amount) : '—'}</span>
           <div className="account-detail__transaction-account" data-label="Account">{counterpartyValid ? <a className="account-detail__transaction-counterparty mono" href={`/accounts/${encodeURIComponent(item.counterparty)}`}>{item.counterparty}</a> : '—'}</div>
