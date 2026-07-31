@@ -86,11 +86,31 @@ class Cursor:
 
 
 class Connection:
-    def __init__(self, existing): self.cursor_value, self.committed = Cursor(existing), False
+    def __init__(self, existing): self.cursor_value, self.commits = Cursor(existing), 0
     def __enter__(self): return self
     def __exit__(self, *args): return False
     def cursor(self): return self.cursor_value
-    def commit(self): self.committed = True
+    def commit(self): self.commits += 1
+
+
+def test_migration_envelope_loader_accepts_0006_without_returning_control_statements():
+    body = init_database.migration_body_for_outer_transaction(init_database.PARTICIPANT_MIGRATION.read_text())
+    assert "CREATE TABLE IF NOT EXISTS transaction_participants" in body
+    assert not body.lstrip().upper().startswith("BEGIN;")
+    assert not body.rstrip().upper().endswith("COMMIT;")
+
+
+@pytest.mark.parametrize("sql", [
+    "BEGIN;\nSELECT 1;\nCOMMIT;\nCOMMIT;",
+    "BEGIN;\nSELECT 1; COMMIT;\nCOMMIT;",
+    "BEGIN;\nSELECT 1;\nBEGIN;\nCOMMIT;",
+    "BEGIN;\nROLLBACK;\nCOMMIT;",
+    "SELECT 1;\nCOMMIT;",
+    "BEGIN;\nSELECT 1;",
+])
+def test_migration_envelope_loader_rejects_invalid_control(sql):
+    with pytest.raises(init_database.SchemaCompatibilityError):
+        init_database.migration_body_for_outer_transaction(sql)
 
 
 def test_pre_0006_stage_runs_migration_before_final_verification():
@@ -100,7 +120,9 @@ def test_pre_0006_stage_runs_migration_before_final_verification():
         init_database.initialize_or_validate("postgresql://example.invalid/db", connect=lambda _: connection)
     migration_calls = [sql for sql, _ in connection.cursor_value.executed if "CREATE TABLE IF NOT EXISTS transaction_participants" in sql]
     assert len(migration_calls) == 1
-    assert fetch.call_count == 2 and connection.committed
+    assert fetch.call_count == 2 and connection.commits == 1
+    executed = migration_calls[0].strip().upper()
+    assert not executed.startswith("BEGIN;") and not executed.endswith("COMMIT;")
 
 
 def test_post_0006_stage_does_not_reapply_migration():
@@ -121,7 +143,7 @@ def test_migration_failure_does_not_commit_or_report_ready():
     with patch.object(init_database, "fetch_schema_snapshot", return_value=snapshot(init_database.PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS)):
         with pytest.raises(RuntimeError, match="bounded migration failure"):
             init_database.initialize_or_validate("postgresql://example.invalid/db", connect=lambda _: connection)
-    assert not connection.committed
+    assert connection.commits == 0
 
 class PrivilegeCursor:
     def __init__(self, grants): self.grants, self.params = grants, None
@@ -149,3 +171,47 @@ def test_api_writes_and_missing_indexer_grants_fail_closed():
         init_database.validate_participant_privileges(PrivilegeCursor({
             "utsa_gno_api": {"SELECT"}, "utsa_gno_indexer": {"SELECT", "INSERT"},
         }))
+
+
+def test_final_schema_failure_occurs_after_body_and_before_commit():
+    connection = Connection(init_database.PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS["tables"])
+    snapshots = [snapshot(init_database.PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS), snapshot(init_database.FINAL_SCHEMA_EXPECTATIONS)]
+    validations = []
+    def validate(value, expectations=None):
+        validations.append(expectations)
+        if len(validations) == 2:
+            raise init_database.SchemaCompatibilityError("forced final verification failure")
+    with patch.object(init_database, "fetch_schema_snapshot", side_effect=snapshots), patch.object(init_database, "validate_schema_snapshot", side_effect=validate):
+        with pytest.raises(init_database.SchemaCompatibilityError, match="forced final"):
+            init_database.initialize_or_validate("postgresql://example.invalid/db", connect=lambda _: connection)
+    assert any("CREATE TABLE IF NOT EXISTS transaction_participants" in sql for sql, _ in connection.cursor_value.executed)
+    assert connection.commits == 0
+
+
+def test_privilege_failure_occurs_before_single_commit():
+    connection = Connection(init_database.PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS["tables"])
+    snapshots = [snapshot(init_database.PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS), snapshot(init_database.FINAL_SCHEMA_EXPECTATIONS)]
+    with patch.object(init_database, "fetch_schema_snapshot", side_effect=snapshots), patch.object(
+        init_database, "validate_participant_privileges",
+        side_effect=init_database.SchemaCompatibilityError("forced privilege failure"),
+    ) as privileges:
+        with pytest.raises(init_database.SchemaCompatibilityError, match="forced privilege"):
+            init_database.initialize_or_validate("postgresql://example.invalid/db", connect=lambda _: connection)
+    privileges.assert_called_once_with(connection.cursor_value)
+    assert connection.commits == 0
+
+
+def test_success_verifies_privileges_before_exactly_one_commit():
+    events = []
+    class OrderedConnection(Connection):
+        def commit(self):
+            events.append("commit")
+            super().commit()
+    connection = OrderedConnection(init_database.PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS["tables"])
+    snapshots = [snapshot(init_database.PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS), snapshot(init_database.FINAL_SCHEMA_EXPECTATIONS)]
+    with patch.object(init_database, "fetch_schema_snapshot", side_effect=snapshots), patch.object(
+        init_database, "validate_participant_privileges", side_effect=lambda cursor: events.append("privileges"),
+    ):
+        init_database.initialize_or_validate("postgresql://example.invalid/db", connect=lambda _: connection)
+    assert events == ["privileges", "commit"]
+    assert connection.commits == 1

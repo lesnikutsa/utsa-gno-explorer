@@ -12,6 +12,7 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = REPO_ROOT / "database" / "schema.sql"
+PARTICIPANT_MIGRATION = REPO_ROOT / "database" / "migrations" / "0006_add_transaction_participants.sql"
 EXPECTED_TABLES = {
     "blocks", "transactions", "validators", "validator_set_members", "validator_signatures", "rpc_endpoints", "rpc_endpoint_checks", "indexer_state", "valoper_profiles", "valopers_snapshot_state",
 }
@@ -273,6 +274,45 @@ BASE_LEGACY_EXPECTATIONS = schema_expectations(
 
 class SchemaCompatibilityError(RuntimeError):
     """Raised when an existing schema is not compatible with the expected explorer schema."""
+
+
+def migration_body_for_outer_transaction(sql: str) -> str:
+    """Remove only migration 0006's strict transaction envelope.
+
+    This is deliberately not a general SQL parser. Dollar-quoted procedural blocks are
+    opaque, while top-level transaction-control statements must occupy their own line.
+    """
+    without_comments = re.sub(r"/\*.*?\*/", "", sql, flags=re.DOTALL)
+    lines = [re.sub(r"--.*$", "", line).strip() for line in without_comments.splitlines()]
+    executable = [line for line in lines if line]
+    if len(executable) < 3 or executable[0].upper() != "BEGIN;":
+        raise SchemaCompatibilityError("participant migration must start with BEGIN")
+    if executable[-1].upper() != "COMMIT;":
+        raise SchemaCompatibilityError("participant migration must end with COMMIT")
+    body_lines = executable[1:-1]
+    dollar_quote: str | None = None
+    control = re.compile(
+        r"\b(?:BEGIN|START\s+TRANSACTION|COMMIT|ROLLBACK|SAVEPOINT|"
+        r"RELEASE\s+SAVEPOINT|PREPARE\s+TRANSACTION)\b",
+        re.IGNORECASE,
+    )
+    dollar_token = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$")
+    for line in body_lines:
+        position = 0
+        for match in dollar_token.finditer(line):
+            if dollar_quote is None and control.search(line[position:match.start()]):
+                raise SchemaCompatibilityError("participant migration contains transaction control")
+            token = match.group(0)
+            if dollar_quote is None:
+                dollar_quote = token
+            elif token == dollar_quote:
+                dollar_quote = None
+            position = match.end()
+        if dollar_quote is None and control.search(line[position:]):
+            raise SchemaCompatibilityError("participant migration contains transaction control")
+    if dollar_quote is not None:
+        raise SchemaCompatibilityError("participant migration has an unterminated dollar quote")
+    return "\n".join(body_lines) + "\n"
 
 
 def _is_wrapped(value: str) -> bool:
@@ -649,9 +689,7 @@ def initialize_or_validate(database_url: str, schema_path: Path = SCHEMA, connec
                 snapshot = fetch_schema_snapshot(cursor)
                 if existing == PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS["tables"]:
                     validate_schema_snapshot(snapshot, PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS)
-                    cursor.execute(
-                        (REPO_ROOT / "database/migrations/0006_add_transaction_participants.sql").read_text()
-                    )
+                    cursor.execute(migration_body_for_outer_transaction(PARTICIPANT_MIGRATION.read_text()))
                     snapshot = fetch_schema_snapshot(cursor)
                 if existing == PRE_GOVERNANCE_SCHEMA_EXPECTATIONS["tables"]:
                     try:
