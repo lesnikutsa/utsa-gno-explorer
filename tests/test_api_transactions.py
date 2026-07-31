@@ -35,6 +35,12 @@ def transaction_row(block_height, tx_index, **overrides):
         "payload_summary": summary(),
         "raw_base64": "secret-raw",
         "decoded_bytes": b"secret-decoded",
+        "execution_status": None,
+        "gas_wanted": None,
+        "gas_used": None,
+        "error": None,
+        "log": None,
+        "info": None,
     }
     row.update(overrides)
     return row
@@ -157,11 +163,38 @@ class ApiTransactionsTests(unittest.TestCase):
             "block_time": "2026-07-25T12:30:45Z",
             "type": "gno.bank.MsgSend",
             "operation": "Send Tokens",
+            "execution_status": None,
+            "gas_wanted": None,
+            "gas_used": None,
+            "error": None,
+            "log": None,
+            "info": None,
         })
         self.assertEqual(items[1]["type"], "unknown")
         self.assertEqual(items[1]["operation"], "Transaction")
         for private in ("raw_base64", "decoded_bytes", "payload_summary", "internal_error", "decoder_error"):
             self.assertNotIn(private, response.text)
+
+    def test_execution_fields_are_propagated_and_private_fields_stay_hidden(self):
+        fake = FakeDatabase([transaction_row(
+            10, 0, execution_status="failed", gas_wanted="5000000",
+            gas_used="934971", error="bounded failure", log="failed log", info="",
+            raw_result={"private": True}, events=[{"private": True}],
+            data_base64="cHJpdmF0ZQ==", source_rpc_endpoint_id=7,
+        )])
+        with self.make_client(fake) as client:
+            response = client.get("/api/transactions")
+        item = response.json()["items"][0]
+        self.assertEqual({key: item[key] for key in (
+            "execution_status", "gas_wanted", "gas_used", "error", "log", "info",
+        )}, {
+            "execution_status": "failed", "gas_wanted": "5000000",
+            "gas_used": "934971", "error": "bounded failure",
+            "log": "failed log", "info": "",
+        })
+        for private in ("raw_result", "events", "data_base64", "source_rpc_endpoint_id"):
+            self.assertNotIn(private, item)
+        self.assertNotIn({"private": True}, item.values())
 
     def test_database_failure_is_safe(self):
         fake = FakeDatabase()

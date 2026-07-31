@@ -14,7 +14,9 @@ if str(REPO_ROOT) not in sys.path:
 
 from scripts.init_database import (
     BASE_LEGACY_EXPECTATIONS, FINAL_SCHEMA_EXPECTATIONS,
-    PRE_GOVERNANCE_SCHEMA_EXPECTATIONS, PRE_NETWORK_DISTRIBUTION_EXPECTATIONS, TRANSACTION_HASH_ONLY_EXPECTATIONS,
+    PRE_GOVERNANCE_SCHEMA_EXPECTATIONS, PRE_NETWORK_DISTRIBUTION_EXPECTATIONS,
+    PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS,
+    PRE_TRANSACTION_EXECUTION_RESULT_EXPECTATIONS, TRANSACTION_HASH_ONLY_EXPECTATIONS,
     VALOPERS_ONLY_EXPECTATIONS, fetch_schema_snapshot,
     validate_one_of_exact_schema_stages, validate_schema_snapshot,
 )
@@ -154,6 +156,8 @@ def migrate_transaction_hashes(database_url: str, migration_path: Path = MIGRATI
                         "transaction-hash-only": TRANSACTION_HASH_ONLY_EXPECTATIONS,
                         "pre-network": PRE_NETWORK_DISTRIBUTION_EXPECTATIONS,
                         "pre-governance": PRE_GOVERNANCE_SCHEMA_EXPECTATIONS,
+                        "governance": PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS,
+                        "participants": PRE_TRANSACTION_EXECUTION_RESULT_EXPECTATIONS,
                         "final": FINAL_SCHEMA_EXPECTATIONS,
                     })
                 except Exception as exc:

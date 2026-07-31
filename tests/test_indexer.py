@@ -26,6 +26,22 @@ def load(name):
     return json.loads((FIXTURES / name).read_text())
 
 
+def block_results_payload(height, tx_count=0, results=None):
+    if results is None:
+        results = [{
+            "ResponseBase": {
+                "Error": None,
+                "Data": None,
+                "Events": None,
+                "Log": "msg:0,success:true,log:,events:[]",
+                "Info": "",
+            },
+            "GasWanted": "5000000",
+            "GasUsed": "934971",
+        } for _ in range(tx_count)]
+    return {"result": {"height": str(height), "results": {"deliver_tx": results}}}
+
+
 def payloads(height=122):
     block = load("block.json")
     commit = load("commit.json")
@@ -42,7 +58,8 @@ def payloads(height=122):
         {"validator_address": "VAL3", "signature": "c2lnMw==", "block_id": {"hash": "", "parts": {"total": "0"}}},
     ]
     validators["result"]["block_height"] = str(height)
-    return block, commit, validators
+    tx_count = len(block["result"]["block"]["data"].get("txs") or [])
+    return block, block_results_payload(height, tx_count), commit, validators
 
 
 class FakeRpc:
@@ -266,18 +283,18 @@ class ParserTests(unittest.TestCase):
                 self.assertEqual(parse_tx(0, "YWJj", decoder)["payload_summary"]["parse_status"], "unparsed")
 
     def test_parse_height_reuses_decoder_for_ordered_transactions(self):
-        block, commit, validators = payloads()
+        block, block_results, commit, validators = payloads()
         block["result"]["block"]["data"]["txs"] = ["YQ==", "Yg=="]
         decoder = MagicMock()
         decoder.decode.return_value = self.SUMMARY
-        parsed = parse_height(122, block, commit, validators, decoder)
+        parsed = parse_height(122, block, block_results, commit, validators, decoder)
         self.assertEqual(decoder.decode.call_args_list, [unittest.mock.call("YQ==", 1), unittest.mock.call("Yg==", 1)])
         self.assertEqual([tx["payload_summary"]["parse_status"] for tx in parsed.transactions], ["parsed", "parsed"])
 
     def statuses(self, commit_payload=None):
-        block, base_commit, validators = payloads()
+        block, block_results, base_commit, validators = payloads()
         commit = commit_payload or base_commit
-        return {row["signing_address"]: row for row in parse_height(122, block, commit, validators).signatures}
+        return {row["signing_address"]: row for row in parse_height(122, block, block_results, commit, validators).signatures}
 
     def test_commit_nil_absent_and_signed_rules(self):
         signatures = self.statuses()
@@ -287,77 +304,77 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(signatures["VAL3"]["vote_status"], "nil")
 
     def test_full_block_id_mismatch_is_invalid(self):
-        _, commit, _ = payloads()
+        _, _, commit, _ = payloads()
         commit["result"]["signed_header"]["commit"]["precommits"][0]["block_id"]["parts"]["hash"] = "CQkJCQ=="
         self.assertEqual(self.statuses(commit)["VAL1"]["vote_status"], "invalid")
 
     def test_complete_block_id_validation(self):
         self.assertEqual(self.statuses()["VAL1"]["vote_status"], "commit")
         for field in ("total", "hash"):
-            _, commit, _ = payloads()
+            _, _, commit, _ = payloads()
             commit["result"]["signed_header"]["commit"]["precommits"][0]["block_id"]["parts"].pop(field)
             self.assertEqual(self.statuses(commit)["VAL1"]["vote_status"], "invalid")
-        _, commit, _ = payloads()
+        _, _, commit, _ = payloads()
         commit["result"]["signed_header"]["commit"]["precommits"][0]["block_id"]["parts"]["hash"] = "not base64!!!"
         self.assertEqual(self.statuses(commit)["VAL1"]["vote_status"], "invalid")
-        block, commit, validators = payloads()
+        block, block_results, commit, validators = payloads()
         commit["result"]["signed_header"]["commit"]["block_id"]["parts"].pop("hash")
         with self.assertRaisesRegex(RpcError, "Commit.BlockID"):
-            parse_height(122, block, commit, validators)
+            parse_height(122, block, block_results, commit, validators)
 
     def test_signature_correctness(self):
         self.assertEqual(self.statuses()["VAL1"]["vote_status"], "commit")
-        block, commit, validators = payloads()
+        block, block_results, commit, validators = payloads()
         validators["result"]["validators"][0]["pub_key"]["@type"] = "/tm.PubKeySecp256k1"
-        secp_signature = parse_height(122, block, commit, validators).signatures[0]
+        secp_signature = parse_height(122, block, block_results, commit, validators).signatures[0]
         self.assertEqual(secp_signature["vote_status"], "commit")
         self.assertTrue(secp_signature["signed"])
 
         for value in (None, "", "not base64!!!", "c2hvcnQ=", "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0A="):
-            block, commit, validators = payloads()
+            block, block_results, commit, validators = payloads()
             validators["result"]["validators"][0]["pub_key"]["@type"] = "/tm.PubKeySecp256k1"
             if value is None:
                 commit["result"]["signed_header"]["commit"]["precommits"][0].pop("signature")
             else:
                 commit["result"]["signed_header"]["commit"]["precommits"][0]["signature"] = value
-            signature = parse_height(122, block, commit, validators).signatures[0]
+            signature = parse_height(122, block, block_results, commit, validators).signatures[0]
             self.assertEqual(signature["vote_status"], "invalid")
             self.assertFalse(signature["signed"])
             self.assertTrue(signature["block_id_matches_commit"])
 
-        block, commit, validators = payloads()
+        block, block_results, commit, validators = payloads()
         validators["result"]["validators"][0]["pub_key"]["@type"] = "/tm.PubKeyUnknown"
-        signature = parse_height(122, block, commit, validators).signatures[0]
+        signature = parse_height(122, block, block_results, commit, validators).signatures[0]
         self.assertEqual(signature["vote_status"], "invalid")
         self.assertFalse(signature["signed"])
         self.assertTrue(signature["block_id_matches_commit"])
 
     def test_duplicate_signer_and_signer_outside_set(self):
-        _, commit, _ = payloads()
+        _, _, commit, _ = payloads()
         commit["result"]["signed_header"]["commit"]["precommits"].append(copy.deepcopy(commit["result"]["signed_header"]["commit"]["precommits"][0]))
         self.assertEqual(self.statuses(commit)["VAL1"]["vote_status"], "invalid")
-        _, commit, validators = payloads()
+        _, _, commit, validators = payloads()
         commit["result"]["signed_header"]["commit"]["precommits"].append({"validator_address": "NOPE", "block_id": {"hash": COMMIT_HASH, "parts": {"total": "1", "hash": PARTS_HASH}}})
-        block, _, _ = payloads()
+        block, block_results, _, _ = payloads()
         with self.assertRaisesRegex(RpcError, "outside active"):
-            parse_height(122, block, commit, validators)
+            parse_height(122, block, block_results, commit, validators)
 
     def test_malformed_precommits_fail_clearly(self):
         for bad in ("bad", {"signature": VALID_SIGNATURE}):
-            block, commit, validators = payloads()
+            block, block_results, commit, validators = payloads()
             commit["result"]["signed_header"]["commit"]["precommits"].append(bad)
             with self.assertRaisesRegex(RpcError, "Malformed non-null precommit"):
-                parse_height(122, block, commit, validators)
+                parse_height(122, block, block_results, commit, validators)
 
     def test_transaction_count_mismatch_and_base64_status(self):
-        block, commit, validators = payloads()
+        block, block_results, commit, validators = payloads()
         block["result"]["block"]["data"]["txs"] = ["b2s=", "not base64!!!"]
         block["result"]["block"]["header"]["num_txs"] = "2"
-        transactions = parse_height(122, block, commit, validators).transactions
+        transactions = parse_height(122, block, block_results, commit, validators).transactions
         self.assertEqual([tx["decode_status"] for tx in transactions], ["decoded", "invalid_base64"])
         block["result"]["block"]["header"]["num_txs"] = "3"
         with self.assertRaisesRegex(RpcError, "transaction count mismatch"):
-            parse_height(122, block, commit, validators)
+            parse_height(122, block, block_results, commit, validators)
 
 
 class ServiceAndDatabaseSemanticsTests(unittest.TestCase):
@@ -421,17 +438,17 @@ class ServiceAndDatabaseSemanticsTests(unittest.TestCase):
             _verify_transaction_conflicts(cursor, type("Parsed", (), {"height": 7, "transactions": [parsed.transactions[0]]})())
 
     def test_equal_hashes_at_different_positions_advance_checkpoint(self):
-        block, commit, validators = payloads(122)
+        block, block_results, commit, validators = payloads(122)
         block["result"]["block"]["data"]["txs"] = ["YWJj", "YWJj"]
         block["result"]["block"]["header"]["num_txs"] = "2"
-        parsed = parse_height(122, block, commit, validators)
+        parsed = parse_height(122, block, block_results, commit, validators)
         db = SqlLikeDb(checkpoint=121)
         db.write_height(parsed, "test-13", 122)
         self.assertEqual(db.checkpoint, 122)
         self.assertEqual(db.transactions[(122, 0)][-1], db.transactions[(122, 1)][-1])
 
     def service(self, db, heights):
-        by_height = {height: dict(zip(["block", "commit", "validators"], payloads(height))) for height in heights}
+        by_height = {height: dict(zip(["block", "block_results", "commit", "validators"], payloads(height))) for height in heights}
         probes = [RpcProbeResult(url="http://rpc", healthy=True, selected=True, chain_id="test-13", latest_height=130, observed_lag=0)]
         return IndexerService(FakeRpc(by_height), db, "test-13", 130, probes)
 
@@ -469,7 +486,7 @@ class ServiceAndDatabaseSemanticsTests(unittest.TestCase):
             "missing_signature",
             "extra_signature",
         ):
-            block, commit, validators = payloads(122)
+            block, block_results, commit, validators = payloads(122)
             if mutate == "block":
                 block["result"]["block_meta"]["block_id"]["hash"] = "AgMEBQ=="
             if mutate == "transaction":
@@ -477,9 +494,13 @@ class ServiceAndDatabaseSemanticsTests(unittest.TestCase):
             if mutate == "missing_transaction":
                 block["result"]["block"]["data"]["txs"].pop()
                 block["result"]["block"]["header"]["num_txs"] = "1"
+                block_results["result"]["results"]["deliver_tx"].pop()
             if mutate == "extra_transaction":
                 block["result"]["block"]["data"]["txs"].append("ZXh0cmE=")
                 block["result"]["block"]["header"]["num_txs"] = "3"
+                block_results["result"]["results"]["deliver_tx"].append(
+                    copy.deepcopy(block_results["result"]["results"]["deliver_tx"][0])
+                )
             if mutate == "member":
                 validators["result"]["validators"][0]["voting_power"] = "999"
             if mutate == "missing_member":
@@ -500,7 +521,12 @@ class ServiceAndDatabaseSemanticsTests(unittest.TestCase):
                 extra = copy.deepcopy(commit["result"]["signed_header"]["commit"]["precommits"][0])
                 extra["validator_address"] = "VAL3"
                 commit["result"]["signed_header"]["commit"]["precommits"][2] = extra
-            retry = IndexerService(FakeRpc({122: {"block": block, "commit": commit, "validators": validators}}), db, "test-13", 130, [])
+            retry = IndexerService(FakeRpc({122: {
+                "block": block,
+                "block_results": block_results,
+                "commit": commit,
+                "validators": validators,
+            }}), db, "test-13", 130, [])
             with self.assertRaises(FinalizedDataConflict, msg=mutate):
                 retry.run(plan_range(130, 122, 122, None, 130, 100, False))
 

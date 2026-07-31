@@ -19,8 +19,8 @@ class Client:
         if self.fail == (method, height):
             from scripts.inspect_rpc import RpcError
             raise RpcError("timeout")
-        block, commit, validators = self.blocks[height]
-        return {"block": block, "commit": commit, "validators": validators}[method]
+        block, block_results, commit, validators = self.blocks[height]
+        return {"block": block, "block_results": block_results, "commit": commit, "validators": validators}[method]
 
 
 class ContinuityTests(unittest.TestCase):
@@ -92,7 +92,7 @@ class OperationalFailoverTests(unittest.TestCase):
         self.assertEqual(result.processed, [10, 11, 12])
         self.assertEqual(client.calls.count(("block", 9)), 1)
         for height in (10, 11, 12):
-            self.assertCountEqual([method for method, called_height in client.calls if called_height == height], ["block", "commit", "validators"])
+            self.assertCountEqual([method for method, called_height in client.calls if called_height == height], ["block", "block_results", "commit", "validators"])
         self.assertEqual(db.selection_calls, [(client.base_url, "initial_selection")])
 
     def test_failover_once_then_secondary_finishes_batch(self):
@@ -111,6 +111,32 @@ class OperationalFailoverTests(unittest.TestCase):
         self.assertEqual(secondary.calls.count(("block", 9)), 1)
         self.assertEqual(db.selection_calls, [(primary.base_url, "initial_selection"), (secondary.base_url, "rpc_error")])
         self.assertEqual(db.runtime_failures, [(primary.base_url, "rpc_error")])
+
+    def test_malformed_block_results_rejects_primary_without_advancing_checkpoint(self):
+        db = SqlLikeDb(9)
+        primary_blocks = {height: payloads(height) for height in (9, 10)}
+        primary_blocks[10][1]["result"]["height"] = "11"
+        primary = Client(primary_blocks, url="https://primary.test")
+        secondary = Client(
+            {height: payloads(height) for height in (9, 10)},
+            url="https://secondary.test",
+        )
+        probes = [self.probe(primary, True), self.probe(secondary)]
+
+        with patch("indexer.runner.probe_rpc_endpoints", return_value=probes):
+            result = run_cycle(
+                db,
+                "test-13",
+                [probe.url for probe in probes],
+                10,
+                ContinuousConfig(10, 1, 1, 1, 2),
+                StopController(),
+            )
+
+        self.assertEqual(result.processed, [10])
+        self.assertEqual(db.checkpoint, 10)
+        self.assertEqual(db.runtime_failures, [(primary.base_url, "rpc_error")])
+        self.assertEqual(db.selected_url, secondary.base_url)
 
     def test_wrong_parent_excludes_primary_and_uses_secondary(self):
         db = SqlLikeDb(9)

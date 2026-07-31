@@ -31,6 +31,7 @@ class ParsedHeight:
     height: int
     block: dict[str, Any]
     transactions: list[dict[str, Any]]
+    execution_results: list[dict[str, Any]]
     validators: list[dict[str, Any]]
     signatures: list[dict[str, Any]]
     raw_block: dict[str, Any]
@@ -255,7 +256,80 @@ def _signature_row(
     }
 
 
-def parse_height(height: int, block_payload: dict[str, Any], commit_payload: dict[str, Any], validators_payload: dict[str, Any], transaction_decoder: TransactionDecoder | None = None) -> ParsedHeight:
+MAX_RESULT_TEXT_BYTES = 64 * 1024
+MAX_RESULT_JSON_BYTES = 256 * 1024
+
+
+def _bounded(value: Any, name: str, limit: int = MAX_RESULT_TEXT_BYTES) -> Any:
+    if value is None:
+        return None
+    if not isinstance(value, (str, dict, list)):
+        raise RpcError(f"Malformed block_results {name}")
+    encoded = json.dumps(value, separators=(",", ":")).encode() if not isinstance(value, str) else value.encode()
+    if len(encoded) > limit:
+        raise RpcError(f"block_results {name} exceeds {limit} bytes")
+    return value
+
+
+def _gas(value: Any, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, (str, int)):
+        raise RpcError(f"Malformed block_results {name}")
+    if isinstance(value, str) and (not value or not value.isdigit()):
+        raise RpcError(f"Malformed block_results {name}")
+    parsed = int(value)
+    if parsed < 0 or len(str(parsed)) > 78:
+        raise RpcError(f"Malformed block_results {name}")
+    return parsed
+
+
+def parse_execution_results(height: int, payload: dict[str, Any], tx_count: int) -> list[dict[str, Any]]:
+    if not isinstance(payload, dict):
+        raise RpcError("Malformed block_results: expected object")
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        raise RpcError("Malformed block_results result")
+    result_height = result.get("height") or result.get("Height")
+    if _gas(result_height, "height") != height:
+        raise RpcError(f"block_results height mismatch while parsing {height}")
+    results = result.get("results")
+    if results is None:
+        deliver = None
+    elif not isinstance(results, dict):
+        raise RpcError("Malformed block_results results")
+    else:
+        deliver = results.get("deliver_tx", results.get("deliverTx"))
+    if deliver is None:
+        deliver = []
+    if not isinstance(deliver, list) or len(deliver) != tx_count:
+        raise RpcError(f"Transaction/result count mismatch at height {height}")
+    normalized = []
+    for index, item in enumerate(deliver):
+        if not isinstance(item, dict):
+            raise RpcError(f"Malformed deliver_tx[{index}]")
+        base = item.get("ResponseBase", item.get("response_base"))
+        if not isinstance(base, dict):
+            raise RpcError(f"Malformed deliver_tx[{index}].ResponseBase")
+        error = base.get("Error", base.get("error"))
+        error_text = None if error is None else (_bounded(error, "Error") if isinstance(error, str) else json.dumps(_bounded(error, "Error"), separators=(",", ":"), sort_keys=True))
+        if error_text is not None and not error_text.strip():
+            raise RpcError(f"Ambiguous deliver_tx[{index}] error")
+        raw = _bounded(item, "raw_result", MAX_RESULT_JSON_BYTES)
+        normalized.append({
+            "block_height": height, "tx_index": index,
+            "execution_status": "success" if error is None else "failed",
+            "gas_wanted": _gas(item.get("GasWanted", item.get("gas_wanted")), "GasWanted"),
+            "gas_used": _gas(item.get("GasUsed", item.get("gas_used")), "GasUsed"),
+            "error_text": error_text,
+            "log_text": _bounded(base.get("Log", base.get("log")), "Log"),
+            "info_text": _bounded(base.get("Info", base.get("info")), "Info"),
+            "data_base64": _bounded(base.get("Data", base.get("data")), "Data"),
+            "events": _bounded(base.get("Events", base.get("events")), "Events", MAX_RESULT_JSON_BYTES),
+            "raw_result": raw,
+        })
+    return normalized
+
+
+def parse_height(height: int, block_payload: dict[str, Any], block_results_payload: dict[str, Any], commit_payload: dict[str, Any], validators_payload: dict[str, Any], transaction_decoder: TransactionDecoder | None = None) -> ParsedHeight:
     block = parse_block(block_payload, transaction_decoder)
     commit = parse_commit(commit_payload)
     commit["raw"] = commit_payload
@@ -263,4 +337,5 @@ def parse_height(height: int, block_payload: dict[str, Any], commit_payload: dic
     if block["height"] != height or commit["height"] != height or validators_data["block_height"] != height:
         raise RpcError(f"Height mismatch while parsing {height}")
     signatures = classify_votes(height, commit, validators_data["validators"])
-    return ParsedHeight(height, block, block["transactions"], validators_data["validators"], signatures, block_payload)
+    execution_results = parse_execution_results(height, block_results_payload, len(block["transactions"]))
+    return ParsedHeight(height, block, block["transactions"], execution_results, validators_data["validators"], signatures, block_payload)

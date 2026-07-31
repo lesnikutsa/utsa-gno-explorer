@@ -147,3 +147,19 @@ Different networks must use separate PostgreSQL databases and runtime instances.
 ### Optional derived transaction summary
 
 After canonical Base64 decoding and hashing, the parser may ask the command-owned supervised decoder for a bounded derived summary. Failure retains `unparsed`; this optional step does not participate in RPC failover, finalized-data checks, checkpoint advancement, or consensus continuity.
+
+## Transaction execution phase
+
+For each height the selected endpoint serves `block`, `block_results`, `commit`,
+and `validators` concurrently. The indexer accepts `result.results.deliver_tx`
+only when its height and item count match the block, and associates each item by
+its zero-based block position. The block, transactions, participants, bounded
+execution results, validator set, signatures, and checkpoint share one database
+transaction. Invalid execution data rejects that endpoint before any write and
+allows the normal eligible-endpoint failover path to continue.
+
+Existing local rows can be populated explicitly with
+`scripts/backfill_transaction_results.py`; migration and service startup never
+run the backfill. Future transaction lookup will search PostgreSQL first and may
+query RPC by hash only outside a configurable retained range. RPC transaction
+indexes are not assumed, and no pruning depth has been selected.

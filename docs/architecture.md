@@ -121,3 +121,11 @@ If any step fails, the transaction rolls back and `indexer_state` is not advance
 - Full Gno transaction decoding is out of scope for this checkpoint.
 - Public RPC endpoint reliability and ordering should be revisited before production indexing.
 - This design stores no secrets and assumes private RPC credentials, if ever needed, are supplied only through runtime secret management.
+
+### Canonical transaction execution data
+
+PostgreSQL is authoritative for blocks and transactions in the indexed local
+range. Gno `deliver_tx` results are normalized into generic status, gas, error,
+log, info, data, and events fields so another execution adapter can later produce
+the same persisted shape without changing current Gno ingestion. Public API
+requests do not perform live RPC execution-result fallback.

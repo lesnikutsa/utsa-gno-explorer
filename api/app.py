@@ -311,6 +311,13 @@ def _block_summary_from_row(row: dict) -> BlockSummary:
     )
 
 
+def _execution_fields_from_row(row: dict) -> dict:
+    """Return only the bounded public execution-result projection."""
+    return {field: row.get(field) for field in (
+        "execution_status", "gas_wanted", "gas_used", "error", "log", "info",
+    )}
+
+
 def _block_detail_from_row(detail: dict) -> BlockDetailResponse:
     block = detail["block"]
     commit = detail["commit"]
@@ -339,6 +346,7 @@ def _block_detail_from_row(detail: dict) -> BlockDetailResponse:
                 raw_base64_length=row["raw_base64_length"],
                 decoded_byte_length=row["decoded_byte_length"],
                 decode_status=row["decode_status"],
+                **_execution_fields_from_row(row),
             )
             for row in detail["transactions"]
         ],
@@ -359,6 +367,7 @@ def _transaction_detail_from_row(row: dict) -> TransactionDetailResponse:
         decoded_byte_length=row["decoded_byte_length"],
         decode_status=row["decode_status"],
         summary=_public_transaction_summary(row.get("payload_summary")),
+        **_execution_fields_from_row(row),
     )
 
 
@@ -371,6 +380,7 @@ def _transaction_list_item_from_row(row: dict) -> TransactionListItem:
         block_time=isoformat_utc_z(row["time_utc"]),
         type=summary.primary.type if summary is not None else "unknown",
         operation=summary.primary.label if summary is not None else "Transaction",
+        **_execution_fields_from_row(row),
     )
 
 
@@ -422,6 +432,7 @@ def _account_transaction_item_from_row(row: dict, address: str, profile) -> Acco
         tx_hash=_normalize_tx_hash(row.get("tx_hash_hex")),
         block_time=isoformat_utc_z(row["time_utc"]), type=tx_type,
         operation=operation, direction=direction, counterparty=counterparty, amount=amount,
+        **_execution_fields_from_row(row),
     )
 
 

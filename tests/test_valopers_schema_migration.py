@@ -14,6 +14,11 @@ from scripts import init_database, migrate_valopers_schema
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def valopers_ddl(sql: str, migration: str) -> str:
+    start = sql.index("CREATE TABLE valoper_profiles")
+    return sql[start:start + len(migration)]
+
+
 def expected_snapshot(expectations=None):
     expectations = expectations or init_database.FINAL_SCHEMA_EXPECTATIONS
     return {
@@ -63,7 +68,7 @@ class CanonicalSchemaTests(unittest.TestCase):
     def test_schema_and_migration_have_identical_valopers_ddl(self):
         schema = (ROOT / "database/schema.sql").read_text()
         migration = (ROOT / "database/migrations/0001_add_valopers_persistence.sql").read_text()
-        self.assertEqual(schema[schema.index("CREATE TABLE valoper_profiles"):], migration)
+        self.assertEqual(valopers_ddl(schema, migration), migration)
 
     def test_required_schema_contract_is_present(self):
         sql = (ROOT / "database/schema.sql").read_text()
@@ -80,7 +85,8 @@ class CanonicalSchemaTests(unittest.TestCase):
             "profile_count BETWEEN 0 AND 1000",
         ]:
             self.assertIn(fragment, sql)
-        valopers_sql = sql[sql.index("CREATE TABLE valoper_profiles"):]
+        migration = (ROOT / "database/migrations/0001_add_valopers_persistence.sql").read_text()
+        valopers_sql = valopers_ddl(sql, migration)
         self.assertNotIn("REFERENCES validators", valopers_sql)
         self.assertNotIn("INSERT INTO valopers_snapshot_state", valopers_sql)
         for forbidden in ["DROP ", "TRUNCATE ", "DELETE FROM ", "ALTER TABLE", "CASCADE"]:

@@ -78,6 +78,16 @@ def block_detail(**overrides):
                 "decoded_bytes": b"abc",
                 "payload_summary": {"secret": SECRET_URL},
                 "inserted_at": BLOCK_TIME,
+                "execution_status": "success",
+                "gas_wanted": "5000000",
+                "gas_used": "934971",
+                "error": None,
+                "log": "msg:0,success:true,log:,events:[]",
+                "info": "",
+                "raw_result": {"private": True},
+                "events": [{"private": True}],
+                "data_base64": "cHJpdmF0ZQ==",
+                "source_rpc_endpoint_id": 99,
             },
         ],
     }
@@ -134,6 +144,12 @@ class ApiBlockDetailTests(unittest.TestCase):
                         "raw_base64_length": 5,
                         "decoded_byte_length": 3,
                         "decode_status": "decoded",
+                        "execution_status": "success",
+                        "gas_wanted": "5000000",
+                        "gas_used": "934971",
+                        "error": None,
+                        "log": "msg:0,success:true,log:,events:[]",
+                        "info": "",
                     },
                     {
                         "index": 1,
@@ -142,6 +158,12 @@ class ApiBlockDetailTests(unittest.TestCase):
                         "raw_base64_length": 6,
                         "decoded_byte_length": None,
                         "decode_status": "invalid_base64",
+                        "execution_status": None,
+                        "gas_wanted": None,
+                        "gas_used": None,
+                        "error": None,
+                        "log": None,
+                        "info": None,
                     },
                 ],
             },
@@ -212,13 +234,19 @@ class ApiBlockDetailTests(unittest.TestCase):
         detail["transactions"] = sorted(detail["transactions"], key=lambda row: row["tx_index"])
         fake_database.details[870117] = detail
         with self.make_client(fake_database) as client:
-            text = response_text = client.get("/api/blocks/870117").text
+            response = client.get("/api/blocks/870117")
+        payload = response.json()
+        text = response.text
         self.assertNotIn("decoded_bytes", text)
         self.assertNotIn("raw_block_response", text)
         self.assertNotIn("payload_summary", text)
         self.assertNotIn("inserted_at", text)
         self.assertNotIn("updated_at", text)
-        self.assertNotIn(SECRET_URL, response_text)
+        for transaction in payload["transactions"]:
+            for field in ("raw_result", "events", "data_base64", "source_rpc_endpoint_id"):
+                self.assertNotIn(field, transaction)
+            self.assertNotIn({"private": True}, transaction.values())
+        self.assertNotIn(SECRET_URL, text)
 
 
 if __name__ == "__main__":
