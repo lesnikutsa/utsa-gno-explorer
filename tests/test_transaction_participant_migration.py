@@ -11,7 +11,10 @@ def participant_definition(text):
 
 
 def test_migration_is_next_and_schema_columns_match():
-    assert [path.name for path in sorted((ROOT / "database/migrations").glob("*.sql"))][-1] == "0006_add_transaction_participants.sql"
+    migrations = [path.name for path in sorted((ROOT / "database/migrations").glob("*.sql"))]
+    assert "0006_add_transaction_participants.sql" in migrations
+    assert "0007_add_transaction_execution_results.sql" in migrations
+    assert migrations.index("0007_add_transaction_execution_results.sql") == migrations.index("0006_add_transaction_participants.sql") + 1
     for column in ("block_height", "tx_index", "message_index", "role", "address", "inserted_at"):
         assert column in participant_definition(MIGRATION.replace("IF NOT EXISTS ", ""))
         assert column in participant_definition(SCHEMA)

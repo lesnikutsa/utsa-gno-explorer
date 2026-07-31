@@ -94,6 +94,7 @@ class TransactionsFrontendContractTests(unittest.TestCase):
     def test_states_pagination_and_responsive_layout(self):
         page = self.read("frontend/src/pages/Transactions.jsx")
         styles = self.read("frontend/src/styles/app.css")
+        badge = self.read("frontend/src/components/TransactionTypeBadge.jsx")
         for text in ("Loading", "No transactions indexed yet.", "Transactions are currently unavailable.", "Retry", "Newer transactions", "Older transactions"):
             self.assertIn(text, page + self.read("frontend/src/components/DataTable.jsx"))
         self.assertIn("disabled={loading || pageIndex === 0}", page)
@@ -113,7 +114,11 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         self.assertIn(".transactions-table__hash { flex: 0 0 auto; color: var(--color-text-bright); font-weight: 600; white-space: nowrap; }", styles)
         self.assertNotIn("flex: 1 1 auto", transactions_rules)
         self.assertIn(".transactions-table__hash:hover { color: var(--color-accent); }", styles)
-        self.assertIn(".transactions-table__operation { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }", styles)
+        self.assertIn("import { TransactionTypeBadge }", page)
+        self.assertIn("<TransactionTypeBadge title={transaction.type !== 'unknown' ? transaction.type : undefined}>{transaction.operation}</TransactionTypeBadge>", page)
+        self.assertIn('className="transaction-type-badge"', badge)
+        self.assertIn(".transaction-type-badge {", styles)
+        self.assertNotIn("transactions-table__operation", page + styles)
         hash_rule = styles[styles.index(".transactions-table__hash {"):styles.index(".transactions-table__hash:hover")]
         self.assertNotIn("text-overflow", hash_rule)
         mobile = styles[styles.index("@media (max-width: 760px)"):]

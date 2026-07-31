@@ -58,6 +58,12 @@ def transaction_row(**overrides):
         "payload_summary": valid_summary(),
         "inserted_at": BLOCK_TIME,
         "updated_at": BLOCK_TIME,
+        "execution_status": None,
+        "gas_wanted": None,
+        "gas_used": None,
+        "error": None,
+        "log": None,
+        "info": None,
     }
     row.update(overrides)
     return row
@@ -94,7 +100,34 @@ class ApiTransactionDetailTests(unittest.TestCase):
             "decoded_byte_length": 10,
             "decode_status": "decoded",
             "summary": valid_summary(),
+            "execution_status": None,
+            "gas_wanted": None,
+            "gas_used": None,
+            "error": None,
+            "log": None,
+            "info": None,
         })
+
+    def test_failed_execution_fields_are_propagated_without_private_data(self):
+        fake = FakeDatabase()
+        fake.details[(984383, 0)] = transaction_row(
+            execution_status="failed", gas_wanted="5000000", gas_used="934971",
+            error="bounded failure", log="failed log", info="",
+            raw_result={"private": True}, events=[{"private": True}],
+            data_base64="cHJpdmF0ZQ==", source_rpc_endpoint_id=7,
+        )
+        with self.make_client(fake) as client:
+            response = client.get("/api/blocks/984383/transactions/0")
+        data = response.json()
+        self.assertEqual({key: data[key] for key in (
+            "execution_status", "gas_wanted", "gas_used", "error", "log", "info",
+        )}, {
+            "execution_status": "failed", "gas_wanted": "5000000",
+            "gas_used": "934971", "error": "bounded failure",
+            "log": "failed log", "info": "",
+        })
+        for private in ("raw_result", "events", "data_base64", "source_rpc_endpoint_id"):
+            self.assertNotIn(private, response.text)
 
     def test_nullable_fields_are_preserved(self):
         fake = FakeDatabase()

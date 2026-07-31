@@ -25,8 +25,10 @@ def message(sender=ADDRESS, recipient=OTHER, amount="12ugnot", send=None, label=
     return {"type": tx_type, "category": "bank", "action": "send", "label": label, "sender": sender, "recipient": recipient, "amount": amount, "send": send}
 
 
-def row(height, index, participation, payload=None):
-    return {"block_height": height, "tx_index": index, "tx_hash_hex": f"{height * 10 + index:064x}", "time_utc": TIME, "payload_summary": summary([message()]) if payload is None else payload, "participation": participation}
+def row(height, index, participation, payload=None, **overrides):
+    value = {"block_height": height, "tx_index": index, "tx_hash_hex": f"{height * 10 + index:064x}", "time_utc": TIME, "payload_summary": summary([message()]) if payload is None else payload, "participation": participation}
+    value.update(overrides)
+    return value
 
 
 class FakeDatabase:
@@ -113,3 +115,20 @@ def test_database_failure_is_safe_and_repeated_participation_is_one_item():
     assert request(FakeDatabase(error=RuntimeError("SQL DATABASE_URL"))).json() == {"detail": "Explorer database is unavailable"}
     participation = [{"message_index": 0, "role": "sender"}, {"message_index": 0, "role": "sender"}]
     assert len(request(FakeDatabase([row(2, 0, participation)])).json()["items"]) == 1
+
+
+def test_execution_fields_are_propagated_without_private_result_data():
+    response = request(FakeDatabase([row(
+        2, 0, [{"message_index": 0, "role": "sender"}],
+        execution_status="success", gas_wanted="5000000", gas_used="934971",
+        error=None, log="msg:0,success:true,log:,events:[]", info="",
+        raw_result={"private": True}, events=[{"private": True}],
+        data_base64="cHJpdmF0ZQ==", source_rpc_endpoint_id=7,
+    )]))
+    item = response.json()["items"][0]
+    assert {key: item[key] for key in ("execution_status", "gas_wanted", "gas_used", "error", "log", "info")} == {
+        "execution_status": "success", "gas_wanted": "5000000", "gas_used": "934971",
+        "error": None, "log": "msg:0,success:true,log:,events:[]", "info": "",
+    }
+    for private in ("raw_result", "events", "data_base64", "source_rpc_endpoint_id"):
+        assert private not in response.text
