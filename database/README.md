@@ -157,3 +157,7 @@ confirmed `empty` vote render may remove previously stored current votes.
 Migration has no destructive down migration. Restore the verified pre-migration
 backup for a complete schema rollback. Removing governance rows must be a
 separate, deliberate operator action.
+
+### Account transaction participants
+
+Migration `0006_add_transaction_participants.sql` creates the bounded, address-position-indexed `transaction_participants` relation and backfills sender/recipient rows from existing parsed summaries. The API role receives SELECT only; the indexer role receives SELECT, INSERT, and DELETE for atomic reprocessing.

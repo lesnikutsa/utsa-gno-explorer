@@ -10,6 +10,7 @@ from typing import Any
 
 from .rpc import RpcProbeResult
 from .transaction_summary import normalize_summary
+from .transaction_participants import extract_transaction_participants
 from .valopers_persistence import ValopersPersistenceResult, replace_valopers_snapshot_cursor
 from .valopers_snapshot import ValopersSnapshot
 from .governance_persistence import (GovernancePersistenceResult,
@@ -444,6 +445,24 @@ def _upsert_transactions(cursor, parsed) -> None:
             """,
             (parsed.height, transaction["index"], transaction["raw_base64"], transaction["raw_base64_length"], transaction["decoded_bytes"], transaction["decoded_byte_length"], transaction["decode_status"], transaction["tx_hash_hex"], _json(payload_summary)),
         )
+        cursor.execute(
+            "DELETE FROM transaction_participants WHERE block_height = %s AND tx_index = %s",
+            (parsed.height, transaction["index"]),
+        )
+        participants = extract_transaction_participants(payload_summary)
+        if participants:
+            cursor.executemany(
+                """
+                INSERT INTO transaction_participants(block_height, tx_index, message_index, role, address)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT DO NOTHING
+                """,
+                [
+                    (parsed.height, transaction["index"], participant.message_index,
+                     participant.role, participant.address)
+                    for participant in participants
+                ],
+            )
 
 
 def _upsert_validators_and_members(cursor, parsed) -> None:

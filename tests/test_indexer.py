@@ -377,7 +377,10 @@ class ServiceAndDatabaseSemanticsTests(unittest.TestCase):
                 cursor = MagicMock()
                 parsed = type("Parsed", (), {"height": 7, "transactions": [transaction]})()
                 _upsert_transactions(cursor, parsed)
-                sql, params = cursor.execute.call_args.args
+                sql, params = next(
+                    call.args for call in cursor.execute.call_args_list
+                    if "INSERT INTO transactions" in call.args[0]
+                )
                 self.assertEqual(json.loads(params[-1])["parse_status"], expected_status)
                 self.assertIn("payload_summary = EXCLUDED.payload_summary", sql)
                 self.assertNotIn("raw_base64 = EXCLUDED", sql)
@@ -389,9 +392,13 @@ class ServiceAndDatabaseSemanticsTests(unittest.TestCase):
         })()
         cursor = MagicMock()
         _upsert_transactions(cursor, parsed)
-        self.assertEqual(cursor.execute.call_count, 2)
-        decoded_sql, decoded_params = cursor.execute.call_args_list[0].args
-        invalid_sql, invalid_params = cursor.execute.call_args_list[1].args
+        self.assertEqual(cursor.execute.call_count, 4)
+        transaction_calls = [
+            call for call in cursor.execute.call_args_list
+            if "INSERT INTO transactions" in call.args[0]
+        ]
+        decoded_sql, decoded_params = transaction_calls[0].args
+        invalid_sql, invalid_params = transaction_calls[1].args
         self.assertIn("tx_hash_hex", decoded_sql)
         self.assertEqual(decoded_params[-2], "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD")
         self.assertEqual(json.loads(decoded_params[-1])["schema_version"], 1)

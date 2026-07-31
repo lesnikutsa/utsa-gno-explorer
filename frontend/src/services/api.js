@@ -1,10 +1,11 @@
 const API_ROOT = import.meta.env.VITE_API_ROOT || '/api'
 
-async function request(path) {
+async function request(path, options = {}) {
   let response
   try {
     response = await fetch(`${API_ROOT}${path}`, {
       headers: { Accept: 'application/json' },
+      signal: options.signal,
     })
   } catch (cause) {
     const error = new Error('Unable to reach the Explorer API', { cause })
@@ -65,6 +66,16 @@ export const searchValidators = ({ query, limit = 6 }) => {
 }
 export const getValidator = (address) => request(`/validators/${encodeURIComponent(address)}`)
 export const getAccount = (address) => request(`/accounts/${encodeURIComponent(address)}`)
+export const getAccountTransactions = (address, { limit, beforeHeight, beforeTxIndex, signal } = {}) => {
+  const query = new URLSearchParams()
+  if (limit !== undefined) query.set('limit', limit)
+  if (beforeHeight !== undefined && beforeTxIndex !== undefined) {
+    query.set('before_height', beforeHeight)
+    query.set('before_tx_index', beforeTxIndex)
+  }
+  const suffix = query.toString()
+  return request(`/accounts/${encodeURIComponent(address)}/transactions${suffix ? `?${suffix}` : ''}`, { signal })
+}
 export const getGovernanceProposals = ({ limit, beforeProposalId } = {}) => {
   const query = new URLSearchParams()
   if (limit !== undefined && limit !== null && limit !== '') query.set('limit', limit)
