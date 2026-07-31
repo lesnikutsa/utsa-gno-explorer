@@ -1251,7 +1251,7 @@ def get_block_detail(height: int = Path(gt=0)) -> BlockDetailResponse:
     try:
         detail = database.fetch_block_detail(height)
     except Exception:
-        LOGGER.error("Explorer database block detail query failed")
+        LOGGER.exception("Explorer database block detail query failed")
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
     if detail is None:
         raise HTTPException(status_code=404, detail="Block not found")

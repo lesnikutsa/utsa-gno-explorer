@@ -14,6 +14,7 @@ from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from api import app as app_module
 from api.app import _transaction_detail_from_row
 from api.config import ApiConfig
 from api.database import (
@@ -472,6 +473,66 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             before_tx_index=None,
         )
         self.assertEqual([(item["block_height"], item["tx_index"]) for item in list_rows], [(100, 0)])
+
+    def test_block_detail_with_transaction_execution_result(self):
+        from fastapi.testclient import TestClient
+
+        name = f"utsa_api_block_execution_result_{os.getpid()}"
+        self.create_database(name)
+        database_url = self.database_url_for(name)
+        self.assertEqual(self.run_init(database_url).returncode, 0)
+        tx_hash = "AB" * 32
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO blocks "
+                "(height, block_hash_base64, block_hash_hex, time_utc, tx_count) "
+                "VALUES (334761, 'ZA==', %s, '2026-07-31T12:00:00Z', 1)",
+                ("CD" * 32,),
+            )
+            cursor.execute(
+                "INSERT INTO transactions "
+                "(block_height, tx_index, tx_hash_hex, raw_base64, raw_base64_length, "
+                "decoded_bytes, decoded_byte_length, decode_status) "
+                "VALUES (334761, 0, %s, 'YWJj', 4, %s, 3, 'decoded')",
+                (tx_hash, b"abc"),
+            )
+            cursor.execute(
+                "INSERT INTO transaction_execution_results "
+                "(block_height, tx_index, execution_status, gas_wanted, gas_used) "
+                "VALUES (334761, 0, 'success', 5000000, 934971)"
+            )
+
+        api_database = ApiDatabase()
+        config = ApiConfig(database_url=database_url)
+        with (
+            patch.object(app_module, "database", api_database),
+            patch.object(app_module, "load_config", return_value=config),
+            TestClient(app_module.app) as client,
+        ):
+            detail = api_database.fetch_block_detail(334761)
+            self.assertIsNotNone(detail)
+            self.assertEqual(len(detail["transactions"]), 1)
+            self.assertEqual(
+                {key: detail["transactions"][0][key] for key in (
+                    "execution_status", "gas_wanted", "gas_used",
+                )},
+                {
+                    "execution_status": "success",
+                    "gas_wanted": "5000000",
+                    "gas_used": "934971",
+                },
+            )
+
+            block_response = client.get("/api/blocks/334761")
+            self.assertEqual(block_response.status_code, 200, block_response.text)
+            self.assertEqual(
+                block_response.json()["transactions"][0]["execution_status"],
+                "success",
+            )
+
+            transaction_response = client.get("/api/blocks/334761/transactions/0")
+            self.assertEqual(transaction_response.status_code, 200, transaction_response.text)
+            self.assertEqual(transaction_response.json()["gas_used"], "934971")
 
     def test_exact_transaction_hash_lookup_is_read_only_and_deterministic(self):
         name = f"utsa_api_tx_hash_lookup_{os.getpid()}"
