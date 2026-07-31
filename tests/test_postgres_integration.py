@@ -521,8 +521,37 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         schema = subprocess.check_output(
             ["git", "show", f"{BASE_SHA}:database/schema.sql"], cwd=ROOT, text=True
         )
+        latency_migration = (
+            ROOT / "database/migrations/0005_add_rpc_endpoint_latency.sql"
+        ).read_text()
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
             cursor.execute(schema)
+            cursor.execute("""
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = 'rpc_endpoints'
+                      AND column_name = 'latency_ms'
+                ), EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conrelid = 'rpc_endpoints'::regclass
+                      AND conname = 'rpc_endpoints_latency_ms_check'
+                )
+            """)
+            self.assertEqual(cursor.fetchone(), (False, False))
+            cursor.execute(latency_migration)
+            cursor.execute("""
+                SELECT data_type, is_nullable
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'rpc_endpoints'
+                  AND column_name = 'latency_ms'
+            """)
+            self.assertEqual(cursor.fetchone(), ("integer", "YES"))
+            cursor.execute("""
+                SELECT count(*) FROM pg_constraint
+                WHERE conrelid = 'rpc_endpoints'::regclass
+                  AND conname = 'rpc_endpoints_latency_ms_check'
+            """)
+            self.assertEqual(cursor.fetchone(), (1,))
             init_database.validate_schema_snapshot(
                 init_database.fetch_schema_snapshot(cursor),
                 init_database.BASE_LEGACY_EXPECTATIONS,
@@ -547,6 +576,21 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                 INSERT INTO indexer_state (state_key, chain_id, last_finalized_height)
                 VALUES ('default', 'test-chain', 1);
             """)
+            cursor.execute(latency_migration)
+            cursor.execute("SELECT count(*) FROM rpc_endpoints")
+            self.assertEqual(cursor.fetchone(), (1,))
+            normalized = init_database.fetch_schema_snapshot(cursor)
+            init_database.validate_schema_snapshot(
+                normalized, init_database.BASE_LEGACY_EXPECTATIONS,
+            )
+            self.assertNotIn("tx_hash_hex", normalized["columns"]["transactions"])
+            self.assertTrue(normalized["tables"].isdisjoint({
+                "valoper_profiles", "valopers_snapshot_state",
+                "network_distribution_geo_cache", "network_distribution_snapshots",
+                "network_distribution_snapshot_sources", "governance_proposals",
+                "governance_votes", "governance_sync_state",
+                "transaction_participants", "transaction_execution_results",
+            }))
         return database_url
 
     def table_names_and_counts(self, database_url):
