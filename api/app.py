@@ -182,16 +182,23 @@ def get_account_transactions(
     except Exception:
         LOGGER.error("Explorer database Account transactions query failed")
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
-    page_rows = rows[:limit]
-    last_row = page_rows[-1] if len(rows) > limit and page_rows else None
-    return AccountTransactionsResponse(
-        items=[_account_transaction_item_from_row(row, address) for row in page_rows],
-        pagination=AccountTransactionsPagination(
-            limit=limit,
-            next_before_height=last_row["block_height"] if last_row else None,
-            next_before_tx_index=last_row["tx_index"] if last_row else None,
-        ),
-    )
+    try:
+        page_rows = rows[:limit]
+        last_row = page_rows[-1] if len(rows) > limit and page_rows else None
+        return AccountTransactionsResponse(
+            items=[
+                _account_transaction_item_from_row(row, address, topaz_profile(config.chain_id))
+                for row in page_rows
+            ],
+            pagination=AccountTransactionsPagination(
+                limit=limit,
+                next_before_height=last_row["block_height"] if last_row else None,
+                next_before_tx_index=last_row["tx_index"] if last_row else None,
+            ),
+        )
+    except Exception:
+        LOGGER.error("Explorer database Account transaction data is inconsistent")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
 
 
 def _normalize_block_hash(block_hash_hex: str) -> str:
@@ -367,20 +374,32 @@ def _transaction_list_item_from_row(row: dict) -> TransactionListItem:
     )
 
 
-def _account_transaction_item_from_row(row: dict, address: str) -> AccountTransactionListItem:
+def _account_transaction_item_from_row(row: dict, address: str, profile) -> AccountTransactionListItem:
     participation = row.get("participation")
-    safe_participation = participation if isinstance(participation, list) else []
-    roles = {item.get("role") for item in safe_participation if isinstance(item, dict)}
-    direction = "self" if {"sender", "recipient"} <= roles else (
-        "outgoing" if "sender" in roles else "incoming"
-    )
+    if not isinstance(participation, list) or not participation:
+        raise ValueError("missing Account participation")
+    indexed: set[tuple[int, str]] = set()
+    for item in participation:
+        if not isinstance(item, dict) or set(item) != {"message_index", "role"}:
+            raise ValueError("malformed Account participation")
+        message_index, role = item["message_index"], item["role"]
+        if type(message_index) is not int or not 0 <= message_index <= 19:
+            raise ValueError("invalid participant message index")
+        if role not in ("sender", "recipient"):
+            raise ValueError("invalid participant role")
+        indexed.add((message_index, role))
+    roles = {role for _, role in indexed}
+    directions = {
+        frozenset({"sender"}): "outgoing",
+        frozenset({"recipient"}): "incoming",
+        frozenset({"sender", "recipient"}): "self",
+    }
+    direction = directions.get(frozenset(roles))
+    if direction is None:
+        raise ValueError("invalid Account participation roles")
     summary = _public_transaction_summary(row.get("payload_summary"))
     message = None
     if summary is not None:
-        indexed = {
-            (item.get("message_index"), item.get("role"))
-            for item in safe_participation if isinstance(item, dict)
-        }
         for message_index, candidate in enumerate(summary.messages):
             if ((message_index, "sender") in indexed and candidate.sender == address) or (
                 (message_index, "recipient") in indexed and candidate.recipient == address
@@ -396,7 +415,7 @@ def _account_transaction_item_from_row(row: dict, address: str) -> AccountTransa
         amount = message.amount if message.amount is not None else message.send
         candidate = message.recipient if direction == "outgoing" else message.sender
         if (direction != "self" and isinstance(candidate, str)
-                and validate_account_address(candidate, topaz_profile(""))):
+                and validate_account_address(candidate, profile)):
             counterparty = candidate
     return AccountTransactionListItem(
         block_height=row["block_height"], index=row["tx_index"],

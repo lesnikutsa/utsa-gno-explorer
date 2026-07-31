@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getAccount, getAccountTransactions } from '../services/api'
 import { decodeAccountRouteAddress } from '../utils/account'
+import { emptyAccountHistory, historyRequestIsCurrent, mergeAccountHistoryItems } from '../utils/accountHistory'
 
 const initialState = {
   account: null,
@@ -16,38 +17,67 @@ export function useAccountDetail(routeAddress) {
   const requestIdRef = useRef(0)
   const [retryCount, setRetryCount] = useState(0)
   const [state, setState] = useState(initialState)
-  const [history, setHistory] = useState({ items: [], pagination: null, loading: true, loadingMore: false, error: false })
+  const [history, setHistory] = useState(emptyAccountHistory)
   const [historyRetryCount, setHistoryRetryCount] = useState(0)
+  const historyGenerationRef = useRef(0)
+  const historyAddressRef = useRef(requestedAddress)
+  const historyControllersRef = useRef(new Set())
+  const loadMoreActiveRef = useRef(false)
   const retry = useCallback(() => setRetryCount((count) => count + 1), [])
   const retryHistory = useCallback(() => setHistoryRetryCount((count) => count + 1), [])
 
   useEffect(() => {
+    const generation = ++historyGenerationRef.current
+    historyAddressRef.current = requestedAddress
+    for (const pending of historyControllersRef.current) pending.abort()
+    historyControllersRef.current.clear()
+    loadMoreActiveRef.current = false
     if (requestedAddress === null) {
-      setHistory({ items: [], pagination: null, loading: false, loadingMore: false, error: false })
+      setHistory({ ...emptyAccountHistory(), loading: false })
       return undefined
     }
     const controller = new AbortController()
-    setHistory({ items: [], pagination: null, loading: true, loadingMore: false, error: false })
+    const address = requestedAddress
+    historyControllersRef.current.add(controller)
+    setHistory(emptyAccountHistory())
     getAccountTransactions(requestedAddress, { signal: controller.signal }).then((result) => {
-      setHistory({ items: result.items || [], pagination: result.pagination || null, loading: false, loadingMore: false, error: false })
+      if (!historyRequestIsCurrent({ controller, generation, currentGeneration: historyGenerationRef.current, address, currentAddress: historyAddressRef.current })) return
+      setHistory({ items: result.items || [], pagination: result.pagination || null, loading: false, loadingMore: false, initialError: false, loadMoreError: false })
     }).catch((requestError) => {
-      if (requestError.name !== 'AbortError') setHistory({ items: [], pagination: null, loading: false, loadingMore: false, error: true })
-    })
-    return () => controller.abort()
+      if (requestError.name === 'AbortError' || !historyRequestIsCurrent({ controller, generation, currentGeneration: historyGenerationRef.current, address, currentAddress: historyAddressRef.current })) return
+      setHistory({ items: [], pagination: null, loading: false, loadingMore: false, initialError: true, loadMoreError: false })
+    }).finally(() => historyControllersRef.current.delete(controller))
+    return () => {
+      ++historyGenerationRef.current
+      for (const pending of historyControllersRef.current) pending.abort()
+      historyControllersRef.current.clear()
+      loadMoreActiveRef.current = false
+    }
   }, [requestedAddress, historyRetryCount])
 
   const loadMoreHistory = useCallback(() => {
     const cursor = history.pagination
-    if (!requestedAddress || history.loadingMore || !cursor?.next_before_height) return
-    setHistory((current) => ({ ...current, loadingMore: true, error: false }))
+    if (!requestedAddress || loadMoreActiveRef.current || !cursor?.next_before_height) return
+    const controller = new AbortController()
+    const generation = historyGenerationRef.current
+    const address = requestedAddress
+    historyControllersRef.current.add(controller)
+    loadMoreActiveRef.current = true
+    setHistory((current) => ({ ...current, loadingMore: true, loadMoreError: false }))
     getAccountTransactions(requestedAddress, {
       beforeHeight: cursor.next_before_height,
       beforeTxIndex: cursor.next_before_tx_index,
+      signal: controller.signal,
     }).then((result) => setHistory((current) => {
-      const merged = new Map(current.items.map((item) => [`${item.block_height}:${item.index}`, item]))
-      for (const item of result.items || []) merged.set(`${item.block_height}:${item.index}`, item)
-      return { items: [...merged.values()], pagination: result.pagination || null, loading: false, loadingMore: false, error: false }
-    })).catch(() => setHistory((current) => ({ ...current, loadingMore: false, error: true })))
+      if (!historyRequestIsCurrent({ controller, generation, currentGeneration: historyGenerationRef.current, address, currentAddress: historyAddressRef.current })) return current
+      return { ...current, items: mergeAccountHistoryItems(current.items, result.items || []), pagination: result.pagination || null, loadingMore: false, loadMoreError: false }
+    })).catch((requestError) => {
+      if (requestError.name === 'AbortError' || !historyRequestIsCurrent({ controller, generation, currentGeneration: historyGenerationRef.current, address, currentAddress: historyAddressRef.current })) return
+      setHistory((current) => ({ ...current, loadingMore: false, loadMoreError: true }))
+    }).finally(() => {
+      historyControllersRef.current.delete(controller)
+      if (generation === historyGenerationRef.current) loadMoreActiveRef.current = false
+    })
   }, [history.pagination, history.loadingMore, requestedAddress])
 
   useEffect(() => {

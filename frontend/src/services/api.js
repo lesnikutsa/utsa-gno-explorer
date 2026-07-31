@@ -1,6 +1,6 @@
-const API_ROOT = import.meta.env.VITE_API_ROOT || '/api'
+const API_ROOT = import.meta.env?.VITE_API_ROOT || '/api'
 
-async function request(path, options = {}) {
+export async function request(path, options = {}) {
   let response
   try {
     response = await fetch(`${API_ROOT}${path}`, {
@@ -8,6 +8,7 @@ async function request(path, options = {}) {
       signal: options.signal,
     })
   } catch (cause) {
+    if (cause?.name === 'AbortError' || options.signal?.aborted) throw cause
     const error = new Error('Unable to reach the Explorer API', { cause })
     error.status = 0
     error.detail = 'Network request failed'

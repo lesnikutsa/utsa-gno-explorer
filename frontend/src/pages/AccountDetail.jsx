@@ -55,7 +55,7 @@ function AccountTransactions({ address, history, retry, loadMore }) {
       <h2 id="account-transactions-title">Transactions</h2>
       <p>Shows locally indexed transactions involving this account.</p>
       {history.loading && <div className="account-detail__skeleton" aria-label="Loading transaction history"><span /><span /><span /></div>}
-      {!history.loading && history.items.length === 0 && !history.error && <p>No indexed transactions found for this account.</p>}
+      {!history.loading && history.items.length === 0 && !history.initialError && <p>No indexed transactions found for this account.</p>}
       {history.items.length > 0 && <div className="account-detail__transaction-list">{history.items.map((item) => {
         const counterpartyValid = item.counterparty && item.counterparty !== address && /^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$/.test(item.counterparty)
         const direction = item.direction === 'outgoing' ? 'Outgoing' : item.direction === 'incoming' ? 'Incoming' : 'Self'
@@ -65,7 +65,8 @@ function AccountTransactions({ address, history, retry, loadMore }) {
           <div><a href={`/blocks/${item.block_height}`}>Block {item.block_height}</a><time dateTime={item.block_time}>{new Date(item.block_time).toLocaleString()}</time><a className="mono" href={`/blocks/${item.block_height}/transactions/${item.index}`}>{shortHash(item.tx_hash)}</a></div>
         </article>
       })}</div>}
-      {history.error && <div role="status"><p>Transaction history is temporarily unavailable.</p><button className="blocks-page__button" type="button" onClick={retry}>Retry history</button></div>}
+      {history.initialError && <div role="status"><p>Transaction history is temporarily unavailable.</p><button className="blocks-page__button" type="button" onClick={retry}>Retry history</button></div>}
+      {history.loadMoreError && <p role="status">Could not load more transactions. Retry with the same cursor.</p>}
       {history.pagination?.next_before_height && <button className="blocks-page__button" type="button" disabled={history.loadingMore} onClick={loadMore}>{history.loadingMore ? 'Loading…' : 'Load more'}</button>}
     </section>
   )

@@ -152,7 +152,7 @@ test('validator relation is a compact message without exposed addresses', () => 
 test('transactions use local paginated history without polling', () => {
   for (const value of ['Shows locally indexed transactions involving this account.', 'No indexed transactions found for this account.', 'Outgoing', 'Incoming', 'Self', 'Load more', 'Retry history']) assert.ok(page.includes(value))
   for (const value of ['getAccountTransactions', 'AbortController', 'next_before_height', 'next_before_tx_index']) assert.ok(api.includes(value) || hook.includes(value))
-  assert.ok(hook.includes('new Map(current.items.map'))
+  assert.ok(hook.includes('mergeAccountHistoryItems(current.items'))
   assert.equal(hook.includes('setInterval'), false)
   assert.ok(page.indexOf('<details className="panel account-detail__details">') < page.lastIndexOf('<AccountTransactions'))
 })

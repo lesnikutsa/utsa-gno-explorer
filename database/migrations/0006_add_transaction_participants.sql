@@ -1,7 +1,7 @@
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS transaction_participants (
-    block_height BIGINT NOT NULL,
+    block_height BIGINT NOT NULL CONSTRAINT transaction_participants_block_height_check CHECK (block_height > 0),
     tx_index INTEGER NOT NULL CONSTRAINT transaction_participants_tx_index_check CHECK (tx_index >= 0),
     message_index INTEGER NOT NULL CONSTRAINT transaction_participants_message_index_check CHECK (message_index BETWEEN 0 AND 19),
     role TEXT NOT NULL CONSTRAINT transaction_participants_role_check CHECK (role IN ('sender', 'recipient')),
