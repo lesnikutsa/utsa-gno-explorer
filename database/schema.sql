@@ -75,6 +75,16 @@ CREATE TABLE transaction_participants (
 CREATE INDEX transaction_participants_address_position_idx
     ON transaction_participants (address, block_height DESC, tx_index DESC);
 
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'utsa_gno_api') THEN
+        EXECUTE 'GRANT SELECT ON TABLE transaction_participants TO utsa_gno_api';
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'utsa_gno_indexer') THEN
+        EXECUTE 'GRANT SELECT, INSERT, DELETE ON TABLE transaction_participants TO utsa_gno_indexer';
+    END IF;
+END $$;
+
 -- Block detail pages use the unique constraint index on (block_height, tx_index).
 
 CREATE TABLE validators (

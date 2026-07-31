@@ -210,6 +210,43 @@ EXPECTED_CHECKS.update({
  "governance_votes_voter_key_check": "CHECK (char_length(voter_key) BETWEEN 1 AND 1100)", "governance_votes_voter_display_check": "CHECK (char_length(voter_display) BETWEEN 1 AND 1000)", "governance_votes_voter_address_check": "CHECK (voter_address IS NULL OR voter_address ~ '^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$')", "governance_votes_option_check": "CHECK (option IN ('YES', 'NO', 'ABSTAIN'))", "governance_votes_tier_check": "CHECK (char_length(tier) BETWEEN 1 AND 64)", "governance_votes_voting_power_check": "CHECK (voting_power >= 0)", "governance_votes_heights_check": "CHECK (first_observed_height >= 1 AND last_observed_height >= first_observed_height)", "governance_votes_times_check": "CHECK (last_observed_at >= first_observed_at)",
  "governance_sync_state_chain_id_check": "CHECK (char_length(chain_id) BETWEEN 1 AND 128)", "governance_sync_state_realm_path_check": "CHECK (char_length(realm_path) BETWEEN 1 AND 512)", "governance_sync_state_source_height_check": "CHECK (source_height >= 1)", "governance_sync_state_page_count_check": "CHECK (page_count BETWEEN 1 AND 100)", "governance_sync_state_proposal_count_check": "CHECK (proposal_count BETWEEN 0 AND 1000)", "governance_sync_state_counts_check": "CHECK ((proposal_count = 0 AND first_proposal_id IS NULL AND latest_proposal_id IS NULL AND page_count >= 1) OR (proposal_count > 0 AND first_proposal_id IS NOT NULL AND latest_proposal_id IS NOT NULL AND first_proposal_id >= 0 AND latest_proposal_id >= first_proposal_id AND page_count >= 1))"})
 EXPECTED_INDEXES.update({"governance_proposals_realm_id_idx": ("governance_proposals",False,(("chain_id","ASC"),("realm_path","ASC"),("proposal_id","DESC")),None), "governance_proposals_realm_status_id_idx": ("governance_proposals",False,(("chain_id","ASC"),("realm_path","ASC"),("status","ASC"),("proposal_id","DESC")),None), "governance_votes_voter_address_idx": ("governance_votes",False,(("voter_address","ASC"),),"voter_address IS NOT NULL")})
+PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS = schema_expectations()
+
+TRANSACTION_PARTICIPANT_TABLE = "transaction_participants"
+EXPECTED_TABLES.add(TRANSACTION_PARTICIPANT_TABLE)
+EXPECTED_COLUMNS[TRANSACTION_PARTICIPANT_TABLE] = {
+    "block_height": ("bigint", "NO", "", None),
+    "tx_index": ("integer", "NO", "", None),
+    "message_index": ("integer", "NO", "", None),
+    "role": ("text", "NO", "", None),
+    "address": ("text", "NO", "", None),
+    "inserted_at": ("timestamp with time zone", "NO", "", "now()"),
+}
+EXPECTED_PRIMARY_KEYS[TRANSACTION_PARTICIPANT_TABLE] = (
+    "block_height", "tx_index", "message_index", "role", "address",
+)
+EXPECTED_FOREIGN_KEYS.add((
+    TRANSACTION_PARTICIPANT_TABLE, ("block_height", "tx_index"),
+    "transactions", ("block_height", "tx_index"), "c",
+))
+EXPECTED_CHECKS.update({
+    "transaction_participants_block_height_check": "CHECK (block_height > 0)",
+    "transaction_participants_tx_index_check": "CHECK (tx_index >= 0)",
+    "transaction_participants_message_index_check": "CHECK (message_index BETWEEN 0 AND 19)",
+    "transaction_participants_role_check": "CHECK (role IN ('sender', 'recipient'))",
+    "transaction_participants_address_check": (
+        "CHECK (char_length(address) = 40 AND "
+        "address ~ '^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$')"
+    ),
+})
+EXPECTED_INDEXES["transaction_participants_address_position_idx"] = (
+    TRANSACTION_PARTICIPANT_TABLE, False,
+    (("address", "ASC"), ("block_height", "DESC"), ("tx_index", "DESC")), None,
+)
+EXPECTED_TABLE_PRIVILEGES = {
+    "utsa_gno_api": {TRANSACTION_PARTICIPANT_TABLE: {"SELECT"}},
+    "utsa_gno_indexer": {TRANSACTION_PARTICIPANT_TABLE: {"SELECT", "INSERT", "DELETE"}},
+}
 FINAL_SCHEMA_EXPECTATIONS = schema_expectations()
 
 NETWORK_DISTRIBUTION_TABLES = {
@@ -224,13 +261,13 @@ TRANSACTION_HASH_INDEXES = {"transactions_tx_hash_hex_idx"}
 
 
 
-PRE_NETWORK_DISTRIBUTION_EXPECTATIONS = schema_expectations(excluded_tables=NETWORK_DISTRIBUTION_TABLES | GOVERNANCE_TABLES)
+PRE_NETWORK_DISTRIBUTION_EXPECTATIONS = schema_expectations(excluded_tables=NETWORK_DISTRIBUTION_TABLES | GOVERNANCE_TABLES | {TRANSACTION_PARTICIPANT_TABLE})
 VALOPERS_ONLY_EXPECTATIONS = schema_expectations(
-    excluded_tables=NETWORK_DISTRIBUTION_TABLES | GOVERNANCE_TABLES, include_transaction_hash=False)
+    excluded_tables=NETWORK_DISTRIBUTION_TABLES | GOVERNANCE_TABLES | {TRANSACTION_PARTICIPANT_TABLE}, include_transaction_hash=False)
 TRANSACTION_HASH_ONLY_EXPECTATIONS = schema_expectations(
-    excluded_tables=NETWORK_DISTRIBUTION_TABLES | VALOPERS_TABLES | GOVERNANCE_TABLES)
+    excluded_tables=NETWORK_DISTRIBUTION_TABLES | VALOPERS_TABLES | GOVERNANCE_TABLES | {TRANSACTION_PARTICIPANT_TABLE})
 BASE_LEGACY_EXPECTATIONS = schema_expectations(
-    excluded_tables=NETWORK_DISTRIBUTION_TABLES | VALOPERS_TABLES | GOVERNANCE_TABLES,
+    excluded_tables=NETWORK_DISTRIBUTION_TABLES | VALOPERS_TABLES | GOVERNANCE_TABLES | {TRANSACTION_PARTICIPANT_TABLE},
     include_transaction_hash=False)
 
 
@@ -610,6 +647,12 @@ def initialize_or_validate(database_url: str, schema_path: Path = SCHEMA, connec
                 validate_schema_snapshot(fetch_schema_snapshot(cursor))
             else:
                 snapshot = fetch_schema_snapshot(cursor)
+                if existing == PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS["tables"]:
+                    validate_schema_snapshot(snapshot, PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS)
+                    cursor.execute(
+                        (REPO_ROOT / "database/migrations/0006_add_transaction_participants.sql").read_text()
+                    )
+                    snapshot = fetch_schema_snapshot(cursor)
                 if existing == PRE_GOVERNANCE_SCHEMA_EXPECTATIONS["tables"]:
                     try:
                         validate_schema_snapshot(snapshot, PRE_GOVERNANCE_SCHEMA_EXPECTATIONS)
@@ -631,7 +674,30 @@ def initialize_or_validate(database_url: str, schema_path: Path = SCHEMA, connec
                             "python scripts/migrate_network_distribution_schema.py"
                         )
                 validate_schema_snapshot(snapshot)
+            validate_participant_privileges(cursor)
         connection.commit()
+
+
+def validate_participant_privileges(cursor) -> None:
+    """Require participant-table grants for configured roles when those roles exist."""
+    for role, tables in EXPECTED_TABLE_PRIVILEGES.items():
+        cursor.execute("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = %s)", (role,))
+        if not cursor.fetchone()[0]:
+            continue
+        for table, required in tables.items():
+            privileges = {"SELECT", "INSERT", "UPDATE", "DELETE"}
+            actual = set()
+            for privilege in privileges:
+                cursor.execute(
+                    "SELECT has_table_privilege(%s, %s, %s)",
+                    (role, f"public.{table}", privilege),
+                )
+                if cursor.fetchone()[0]:
+                    actual.add(privilege)
+            if role == "utsa_gno_api" and actual != required:
+                raise SchemaCompatibilityError("API role has incompatible participant privileges")
+            if role == "utsa_gno_indexer" and not required <= actual:
+                raise SchemaCompatibilityError("Indexer role lacks participant privileges")
 
 
 def build_parser() -> argparse.ArgumentParser:

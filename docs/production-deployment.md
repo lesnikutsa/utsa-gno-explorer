@@ -7,6 +7,21 @@ For an existing database, apply the additive current-snapshot column explicitly 
 `python scripts/init_database.py`. The command is idempotent and does not migrate or
 rewrite endpoint health rows. Fresh databases need only the normal initialization command.
 
+## Account participant migration
+
+After creating and verifying a PostgreSQL backup, update the repository and stop or keep
+the continuous indexer stopped. Run `python scripts/init_database.py` with the established
+indexer-role or appropriate administrative connection. For an exact pre-0006 catalog the
+initializer transactionally applies `0006_add_transaction_participants.sql`, backfills only
+already stored parsed summaries, and verifies the complete catalog and participant grants.
+An already compatible catalog is only verified; a partial or incompatible table fails closed.
+
+Restart the indexer only after initialization reports success. Restart the API after the
+`utsa_gno_api` SELECT grant is verified, then build/deploy the frontend and smoke-test
+`GET /api/accounts/{address}/transactions` and the Account page. Do not start the updated
+indexer before migration 0006, and do not decode historical NULL summaries as part of this
+procedure.
+
 ## Transaction-hash migration
 
 Stop the production indexer before running `python scripts/migrate_transaction_hashes.py`. The additive, transactional migration backfills historical decoded rows from `transactions.decoded_bytes`, checks format, validates constraints, and creates a non-unique partial lookup index. Repeated hashes are preserved because `(block_height, tx_index)`, not the hash, identifies an occurrence; future hash lookup may return multiple locations. Do not run it concurrently with ingestion. The safe order is: stop indexer, migrate/backfill, update application code, restart API, restart indexer, and verify historical and new hashes. No PostgreSQL extension or destructive table recreation is used, and Base64 decoding does not indicate execution success. Structured Type/message parsing remains deferred.
