@@ -60,9 +60,18 @@ function AccountTransactions({ address, history, retry, loadMore }) {
         const counterpartyValid = item.counterparty && item.counterparty !== address && /^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$/.test(item.counterparty)
         const direction = item.direction === 'outgoing' ? 'Outgoing' : item.direction === 'incoming' ? 'Incoming' : 'Self'
         return <article className="account-detail__transaction" key={`${item.block_height}:${item.index}`}>
-          <div><a href={`/blocks/${item.block_height}/transactions/${item.index}`}><strong>{item.operation}</strong></a><span className={`account-detail__direction account-detail__direction--${item.direction}`}>{direction}</span></div>
-          <div>{item.amount != null && <span>{String(item.amount)}</span>}{counterpartyValid && <a className="mono" href={`/accounts/${encodeURIComponent(item.counterparty)}`}>{item.counterparty}</a>}</div>
-          <div><a href={`/blocks/${item.block_height}`}>Block {item.block_height}</a><time dateTime={item.block_time}>{new Date(item.block_time).toLocaleString()}</time><a className="mono" href={`/blocks/${item.block_height}/transactions/${item.index}`}>{shortHash(item.tx_hash)}</a></div>
+          <div className="account-detail__transaction-primary">
+            <div className="account-detail__transaction-heading"><a className="account-detail__transaction-operation" href={`/blocks/${item.block_height}/transactions/${item.index}`}>{item.operation}</a><span className={`account-detail__direction account-detail__direction--${item.direction}`}>{direction}</span></div>
+            <div className="account-detail__transaction-content">{item.amount != null && <span className="account-detail__transaction-amount">{String(item.amount)}</span>}{counterpartyValid && <a className="account-detail__transaction-counterparty mono" href={`/accounts/${encodeURIComponent(item.counterparty)}`}>{item.counterparty}</a>}</div>
+          </div>
+          <aside className="account-detail__transaction-aside">
+            <div className="account-detail__transaction-status-slot" aria-hidden="true" />
+            <dl className="account-detail__transaction-meta">
+              <div className="account-detail__transaction-meta-item"><dt className="account-detail__transaction-meta-label">Block</dt><dd className="account-detail__transaction-meta-value"><a href={`/blocks/${item.block_height}`}>{item.block_height}</a></dd></div>
+              <div className="account-detail__transaction-meta-item"><dt className="account-detail__transaction-meta-label">Time</dt><dd className="account-detail__transaction-meta-value"><time dateTime={item.block_time}>{new Date(item.block_time).toLocaleString()}</time></dd></div>
+              <div className="account-detail__transaction-meta-item"><dt className="account-detail__transaction-meta-label">Tx hash</dt><dd className="account-detail__transaction-meta-value"><a className="account-detail__transaction-hash mono" href={`/blocks/${item.block_height}/transactions/${item.index}`} title={item.tx_hash} aria-label={`Transaction hash ${item.tx_hash}`}>{shortHash(item.tx_hash)}</a></dd></div>
+            </dl>
+          </aside>
         </article>
       })}</div>}
       {history.initialError && <div role="status"><p>Transaction history is temporarily unavailable.</p><button className="blocks-page__button" type="button" onClick={retry}>Retry history</button></div>}
