@@ -13,7 +13,7 @@ from api.config import ApiConfig
 ADDRESS = "g16mldrfu90pe5r97cjm3xk02m7a3d0z8g9g3r75"
 OTHER = "g1jg8mtutu9khhfwc4nxmuhcpftf0pajdhfvsqf5"
 TIME = datetime(2026, 7, 31, tzinfo=timezone.utc)
-DATABASE_URL = "postgresql://api:test@example.invalid/explorer"
+DATABASE_URL = "postgresql://api:password@example.invalid/explorer"
 
 
 def summary(messages):
