@@ -1,5 +1,6 @@
 import { DataTable } from '../components/DataTable'
 import { CopyButton } from '../components/CopyButton'
+import { TransactionTypeBadge } from '../components/TransactionTypeBadge'
 import { relativeTime } from '../utils/time'
 
 const transactionHref = (transaction) => `/blocks/${encodeURIComponent(transaction.block_height)}/transactions/${encodeURIComponent(transaction.index)}`
@@ -35,7 +36,7 @@ const columns = [
   {
     key: 'operation',
     label: 'Type',
-    render: (transaction) => <span className="transactions-table__operation" title={transaction.type !== 'unknown' ? transaction.type : undefined}>{transaction.operation}</span>,
+    render: (transaction) => <TransactionTypeBadge title={transaction.type !== 'unknown' ? transaction.type : undefined}>{transaction.operation}</TransactionTypeBadge>,
   },
 ]
 

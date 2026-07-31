@@ -1,4 +1,5 @@
 import { CopyButton } from '../components/CopyButton'
+import { TransactionTypeBadge } from '../components/TransactionTypeBadge'
 import { networkProfile } from '../config/networkProfile'
 import { findNativeBalance, findOtherBalances, formatAmountString, getAccountDetailView } from '../utils/account'
 
@@ -53,16 +54,21 @@ function AccountTransactions({ address, history, retry, loadMore }) {
   return (
     <section className="panel account-detail__transactions" aria-labelledby="account-transactions-title">
       <h2 id="account-transactions-title">Transactions</h2>
-      <p>Shows locally indexed transactions involving this account.</p>
       {history.loading && <div className="account-detail__skeleton" aria-label="Loading transaction history"><span /><span /><span /></div>}
       {!history.loading && history.items.length === 0 && !history.initialError && <p>No indexed transactions found for this account.</p>}
-      {history.items.length > 0 && <div className="account-detail__transaction-list">{history.items.map((item) => {
+      {history.items.length > 0 && <div className="account-detail__transaction-list">
+        <div className="account-detail__transaction-header" aria-hidden="true"><span>Type</span><span>Direction</span><span>Amount</span><span>Account</span><span>Block</span><span>Tx hash</span><span>Status</span></div>
+        {history.items.map((item) => {
         const counterpartyValid = item.counterparty && item.counterparty !== address && /^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$/.test(item.counterparty)
         const direction = item.direction === 'outgoing' ? 'Outgoing' : item.direction === 'incoming' ? 'Incoming' : 'Self'
         return <article className="account-detail__transaction" key={`${item.block_height}:${item.index}`}>
-          <div><a href={`/blocks/${item.block_height}/transactions/${item.index}`}><strong>{item.operation}</strong></a><span className={`account-detail__direction account-detail__direction--${item.direction}`}>{direction}</span></div>
-          <div>{item.amount != null && <span>{String(item.amount)}</span>}{counterpartyValid && <a className="mono" href={`/accounts/${encodeURIComponent(item.counterparty)}`}>{item.counterparty}</a>}</div>
-          <div><a href={`/blocks/${item.block_height}`}>Block {item.block_height}</a><time dateTime={item.block_time}>{new Date(item.block_time).toLocaleString()}</time><a className="mono" href={`/blocks/${item.block_height}/transactions/${item.index}`}>{shortHash(item.tx_hash)}</a></div>
+          <div className="account-detail__transaction-operation" data-label="Type"><TransactionTypeBadge>{item.operation}</TransactionTypeBadge></div>
+          <div className="account-detail__transaction-direction" data-label="Direction"><span className={`account-detail__direction account-detail__direction--${item.direction}`}>{direction}</span></div>
+          <span className="account-detail__transaction-amount" data-label="Amount">{item.amount != null ? String(item.amount) : '—'}</span>
+          <div className="account-detail__transaction-account" data-label="Account">{counterpartyValid ? <a className="account-detail__transaction-counterparty mono" href={`/accounts/${encodeURIComponent(item.counterparty)}`}>{item.counterparty}</a> : '—'}</div>
+          <div className="account-detail__transaction-block" data-label="Block"><a className="table-link" href={`/blocks/${item.block_height}`} aria-label={`Open block #${item.block_height}`}><span className="blocks-table__height accent-value mono">#{item.block_height.toLocaleString()}</span></a></div>
+          <div className="account-detail__transaction-hash-cell" data-label="Tx hash"><a className="account-detail__transaction-hash mono" href={`/blocks/${item.block_height}/transactions/${item.index}`} title={item.tx_hash} aria-label={`Transaction hash ${item.tx_hash}`}>{shortHash(item.tx_hash)}</a></div>
+          <div className="account-detail__transaction-status-slot" data-label="Status" aria-hidden="true" />
         </article>
       })}</div>}
       {history.initialError && <div role="status"><p>Transaction history is temporarily unavailable.</p><button className="blocks-page__button" type="button" onClick={retry}>Retry history</button></div>}
