@@ -160,26 +160,51 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
     def database_url_for(self, name):
         return f"postgresql://utsa_test:{self.password}@{self.host}:{self.port}/{name}"
 
-    def create_pre_participant_database(self, name):
+    @staticmethod
+    def build_historical_schema(expectations):
+        """Remove every canonical DDL section later than an exact known stage."""
+        schema = (ROOT / "database/schema.sql").read_text()
+        sections = (
+            ("transaction_participants", "CREATE TABLE transaction_participants", "-- Block detail pages"),
+            ("network_distribution_geo_cache", "CREATE TABLE network_distribution_geo_cache", "CREATE TABLE governance_proposals"),
+            ("governance_proposals", "CREATE TABLE governance_proposals", "CREATE TABLE valoper_profiles"),
+            ("transaction_execution_results", "BEGIN;\n\nCREATE TABLE transaction_execution_results", None),
+        )
+        for table, start_marker, end_marker in sections:
+            if table in expectations["tables"]:
+                continue
+            if schema.count(start_marker) != 1:
+                raise AssertionError(f"historical schema marker must occur once: {start_marker}")
+            start = schema.index(start_marker)
+            if end_marker is None:
+                schema = schema[:start]
+                continue
+            if schema.count(end_marker) != 1:
+                raise AssertionError(f"historical schema marker must occur once: {end_marker}")
+            end = schema.index(end_marker, start)
+            schema = schema[:start] + schema[end:]
+        return schema
+
+    def create_exact_stage_database(self, name, expectations):
         self.create_database(name)
         database_url = self.database_url_for(name)
-        schema = (ROOT / "database/schema.sql").read_text()
-        start = schema.index("CREATE TABLE transaction_participants")
-        end = schema.index("END $$;", start) + len("END $$;")
-        execution_start = schema.index("BEGIN;\n\nCREATE TABLE transaction_execution_results")
-        pre_schema = schema[:start] + schema[end:execution_start]
+        schema = self.build_historical_schema(expectations)
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
-            cursor.execute(pre_schema)
+            cursor.execute(schema)
+            init_database.validate_schema_snapshot(
+                init_database.fetch_schema_snapshot(cursor), expectations,
+            )
         return database_url
 
+    def create_pre_participant_database(self, name):
+        return self.create_exact_stage_database(
+            name, init_database.PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS,
+        )
+
     def create_pre_execution_result_database(self, name):
-        self.create_database(name)
-        database_url = self.database_url_for(name)
-        schema = (ROOT / "database/schema.sql").read_text()
-        execution_start = schema.index("BEGIN;\n\nCREATE TABLE transaction_execution_results")
-        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
-            cursor.execute(schema[:execution_start])
-        return database_url
+        return self.create_exact_stage_database(
+            name, init_database.PRE_TRANSACTION_EXECUTION_RESULT_EXPECTATIONS,
+        )
 
     def test_execution_result_upgrade_success_and_rerun_are_idempotent(self):
         database_url = self.create_pre_execution_result_database(
@@ -192,6 +217,36 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             self.assertEqual(cursor.fetchone()[0], "transaction_execution_results")
             cursor.execute("SELECT count(*) FROM transaction_execution_results")
             self.assertEqual(cursor.fetchone()[0], 0)
+
+    def test_historical_fixture_table_sets_are_exact_and_ordered(self):
+        stages = (
+            ("pre_network", init_database.PRE_NETWORK_DISTRIBUTION_EXPECTATIONS),
+            ("pre_governance", init_database.PRE_GOVERNANCE_SCHEMA_EXPECTATIONS),
+            ("pre_participants", init_database.PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS),
+            ("pre_execution", init_database.PRE_TRANSACTION_EXECUTION_RESULT_EXPECTATIONS),
+            ("final", init_database.FINAL_SCHEMA_EXPECTATIONS),
+        )
+        observed = {}
+        for suffix, expectations in stages:
+            url = self.create_exact_stage_database(
+                f"utsa_exact_{suffix}_{os.getpid()}", expectations,
+            )
+            observed[suffix] = self.table_names_and_counts(url)[0]
+            self.assertEqual(observed[suffix], expectations["tables"])
+        late = {"transaction_participants", "transaction_execution_results"}
+        for suffix in ("pre_network", "pre_governance", "pre_participants"):
+            self.assertTrue(observed[suffix].isdisjoint(late))
+        self.assertIn("transaction_participants", observed["pre_execution"])
+        self.assertNotIn("transaction_execution_results", observed["pre_execution"])
+        self.assertTrue(late <= observed["final"])
+
+        impossible = copy.deepcopy(init_database.PRE_NETWORK_DISTRIBUTION_EXPECTATIONS)
+        impossible["tables"] = impossible["tables"] | {"transaction_participants"}
+        with self.assertRaises(init_database.SchemaCompatibilityError):
+            init_database.validate_schema_snapshot(
+                {**impossible, "columns": impossible["columns"]},
+                init_database.PRE_NETWORK_DISTRIBUTION_EXPECTATIONS,
+            )
 
     def test_execution_result_upgrade_rolls_back_after_privilege_failure(self):
         database_url = self.create_pre_execution_result_database(
@@ -468,6 +523,10 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         )
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
             cursor.execute(schema)
+            init_database.validate_schema_snapshot(
+                init_database.fetch_schema_snapshot(cursor),
+                init_database.BASE_LEGACY_EXPECTATIONS,
+            )
             cursor.execute("""
                 INSERT INTO blocks (height, block_hash_base64, block_hash_hex, time_utc, tx_count)
                 VALUES (1, 'AQ==', '01', '2026-01-01T00:00:00Z', 1);
@@ -1151,24 +1210,10 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
 
     def test_network_distribution_migration_and_existing_rows(self):
         name = f"utsa_distribution_migration_{os.getpid()}"
-        self.create_database(name)
-        database_url = self.database_url_for(name)
-        schema = (ROOT / "database/schema.sql").read_text()
-        network_migration = (ROOT / "database/migrations/0003_add_network_distribution.sql").read_text()
-        governance_migration = (ROOT / "database/migrations/0004_add_governance_persistence.sql").read_text()
-        pre_schema = schema.replace(network_migration, "").replace(governance_migration, "")
-        for table in (
-            "network_distribution_geo_cache", "network_distribution_snapshots",
-            "network_distribution_snapshot_sources", "governance_proposals",
-            "governance_votes", "governance_sync_state",
-        ):
-            self.assertNotIn(f"CREATE TABLE {table}", pre_schema)
+        database_url = self.create_exact_stage_database(
+            name, init_database.PRE_NETWORK_DISTRIBUTION_EXPECTATIONS,
+        )
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
-            cursor.execute(pre_schema)
-            init_database.validate_schema_snapshot(
-                init_database.fetch_schema_snapshot(cursor),
-                init_database.PRE_NETWORK_DISTRIBUTION_EXPECTATIONS,
-            )
             cursor.execute("INSERT INTO blocks (height,block_hash_base64,block_hash_hex,time_utc,tx_count) VALUES (1,'h',%s,now(),1)", ('A'*64,))
             cursor.execute("INSERT INTO transactions (block_height,tx_index,raw_base64,raw_base64_length,decode_status) VALUES (1,0,'x',1,'not_attempted')")
             cursor.execute("INSERT INTO validators (signing_address,public_key_type,public_key_value,first_seen_height,last_seen_height) VALUES ('validator','type','key',1,1)")
@@ -1313,15 +1358,9 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
 
     def test_governance_persistence_migration_and_constraints(self):
         name = f"utsa_governance_{os.getpid()}"
-        self.create_database(name)
-        database_url = self.database_url_for(name)
-        schema = (ROOT / "database/schema.sql").read_text()
-        start = schema.index("CREATE TABLE governance_proposals")
-        end = schema.index("CREATE TABLE valoper_profiles")
-        pre_governance_sql = schema[:start] + schema[end:]
-        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
-            cursor.execute(pre_governance_sql)
-            connection.commit()
+        database_url = self.create_exact_stage_database(
+            name, init_database.PRE_GOVERNANCE_SCHEMA_EXPECTATIONS,
+        )
         failing_migration = Path(self.temp.name) / "failing-governance-migration.sql"
         failing_migration.write_text(
             (ROOT / "database/migrations/0004_add_governance_persistence.sql").read_text()
@@ -1345,7 +1384,10 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         self.assertEqual(migrate_governance_schema(database_url), "applied")
         self.assertEqual(migrate_governance_schema(database_url), "already-compatible")
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
-            init_database.validate_schema_snapshot(init_database.fetch_schema_snapshot(cursor))
+            init_database.validate_schema_snapshot(
+                init_database.fetch_schema_snapshot(cursor),
+                init_database.PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS,
+            )
 
         def make_snapshot(height=100, count=21, status="ACTIVE", empty_votes=False,
                           parsed_empty=False, yes_percent=33.33333):
