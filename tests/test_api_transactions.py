@@ -193,7 +193,8 @@ class ApiTransactionsTests(unittest.TestCase):
             "log": "failed log", "info": "",
         })
         for private in ("raw_result", "events", "data_base64", "source_rpc_endpoint_id"):
-            self.assertNotIn(private, response.text)
+            self.assertNotIn(private, item)
+        self.assertNotIn({"private": True}, item.values())
 
     def test_database_failure_is_safe(self):
         fake = FakeDatabase()

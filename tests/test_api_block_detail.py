@@ -234,15 +234,19 @@ class ApiBlockDetailTests(unittest.TestCase):
         detail["transactions"] = sorted(detail["transactions"], key=lambda row: row["tx_index"])
         fake_database.details[870117] = detail
         with self.make_client(fake_database) as client:
-            text = response_text = client.get("/api/blocks/870117").text
+            response = client.get("/api/blocks/870117")
+        payload = response.json()
+        text = response.text
         self.assertNotIn("decoded_bytes", text)
         self.assertNotIn("raw_block_response", text)
         self.assertNotIn("payload_summary", text)
         self.assertNotIn("inserted_at", text)
         self.assertNotIn("updated_at", text)
-        for field in ("raw_result", "events", "data_base64", "source_rpc_endpoint_id"):
-            self.assertNotIn(field, text)
-        self.assertNotIn(SECRET_URL, response_text)
+        for transaction in payload["transactions"]:
+            for field in ("raw_result", "events", "data_base64", "source_rpc_endpoint_id"):
+                self.assertNotIn(field, transaction)
+            self.assertNotIn({"private": True}, transaction.values())
+        self.assertNotIn(SECRET_URL, text)
 
 
 if __name__ == "__main__":

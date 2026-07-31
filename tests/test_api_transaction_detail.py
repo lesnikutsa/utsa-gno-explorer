@@ -127,7 +127,8 @@ class ApiTransactionDetailTests(unittest.TestCase):
             "log": "failed log", "info": "",
         })
         for private in ("raw_result", "events", "data_base64", "source_rpc_endpoint_id"):
-            self.assertNotIn(private, response.text)
+            self.assertNotIn(private, data)
+        self.assertNotIn({"private": True}, data.values())
 
     def test_nullable_fields_are_preserved(self):
         fake = FakeDatabase()

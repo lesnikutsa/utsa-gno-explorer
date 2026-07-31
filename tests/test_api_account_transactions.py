@@ -125,10 +125,12 @@ def test_execution_fields_are_propagated_without_private_result_data():
         raw_result={"private": True}, events=[{"private": True}],
         data_base64="cHJpdmF0ZQ==", source_rpc_endpoint_id=7,
     )]))
-    item = response.json()["items"][0]
+    payload = response.json()
+    item = payload["items"][0]
     assert {key: item[key] for key in ("execution_status", "gas_wanted", "gas_used", "error", "log", "info")} == {
         "execution_status": "success", "gas_wanted": "5000000", "gas_used": "934971",
         "error": None, "log": "msg:0,success:true,log:,events:[]", "info": "",
     }
     for private in ("raw_result", "events", "data_base64", "source_rpc_endpoint_id"):
-        assert private not in response.text
+        assert private not in item
+    assert {"private": True} not in item.values()
