@@ -223,6 +223,8 @@ class ApiBlockDetailTests(unittest.TestCase):
         combined = response.text + "\n" + "\n".join(captured.output)
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.json(), {"detail": "Explorer database is unavailable"})
+        self.assertIn("traceback=", combined)
+        self.assertIn("fetch_block_detail", combined)
         self.assertNotIn(SECRET_URL, combined)
         self.assertNotIn("super-secret-password", combined)
         self.assertNotIn("db.internal", combined)

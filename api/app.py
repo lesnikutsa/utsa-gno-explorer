@@ -7,6 +7,7 @@ import re
 import json
 import math
 import time
+import traceback
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import FastAPI, HTTPException, Path, Query
@@ -1250,8 +1251,12 @@ def get_transactions(
 def get_block_detail(height: int = Path(gt=0)) -> BlockDetailResponse:
     try:
         detail = database.fetch_block_detail(height)
-    except Exception:
-        LOGGER.exception("Explorer database block detail query failed")
+    except Exception as exc:
+        stack = " | ".join(
+            f"{frame.filename}:{frame.lineno} in {frame.name}"
+            for frame in traceback.extract_tb(exc.__traceback__)
+        )
+        LOGGER.error("Explorer database block detail query failed; traceback=%s", stack)
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
     if detail is None:
         raise HTTPException(status_code=404, detail="Block not found")
