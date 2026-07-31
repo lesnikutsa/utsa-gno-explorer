@@ -286,6 +286,21 @@ class TransactionsResponse(BaseModel):
     pagination: TransactionsPagination
 
 
+class AccountTransactionListItem(TransactionListItem):
+    direction: Literal["outgoing", "incoming", "self"]
+    counterparty: str | None = Field(default=None, min_length=8, max_length=90)
+    amount: str | int | float | None = None
+
+
+class AccountTransactionsPagination(TransactionsPagination):
+    pass
+
+
+class AccountTransactionsResponse(BaseModel):
+    items: list[AccountTransactionListItem]
+    pagination: AccountTransactionsPagination
+
+
 class ValidatorUptime(BaseModel):
     network_blocks: int = Field(ge=0)
     active_blocks: int = Field(ge=0)

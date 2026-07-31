@@ -58,6 +58,33 @@ COMMENT ON COLUMN transactions.tx_hash_hex IS 'SHA-256 of the exact decoded Tend
 COMMENT ON COLUMN transactions.payload_summary IS 'Limited JSONB for future decoded payload summaries, not raw unbounded application data.';
 CREATE INDEX transactions_tx_hash_hex_idx ON transactions(tx_hash_hex) WHERE tx_hash_hex IS NOT NULL;
 
+CREATE TABLE transaction_participants (
+    block_height BIGINT NOT NULL CONSTRAINT transaction_participants_block_height_check CHECK (block_height > 0),
+    tx_index INTEGER NOT NULL CONSTRAINT transaction_participants_tx_index_check CHECK (tx_index >= 0),
+    message_index INTEGER NOT NULL CONSTRAINT transaction_participants_message_index_check CHECK (message_index BETWEEN 0 AND 19),
+    role TEXT NOT NULL CONSTRAINT transaction_participants_role_check CHECK (role IN ('sender', 'recipient')),
+    address TEXT NOT NULL CONSTRAINT transaction_participants_address_check CHECK (
+        char_length(address) = 40 AND address ~ '^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$'
+    ),
+    inserted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (block_height, tx_index, message_index, role, address),
+    FOREIGN KEY (block_height, tx_index)
+        REFERENCES transactions(block_height, tx_index) ON DELETE CASCADE
+);
+
+CREATE INDEX transaction_participants_address_position_idx
+    ON transaction_participants (address, block_height DESC, tx_index DESC);
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'utsa_gno_api') THEN
+        EXECUTE 'GRANT SELECT ON TABLE transaction_participants TO utsa_gno_api';
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'utsa_gno_indexer') THEN
+        EXECUTE 'GRANT SELECT, INSERT, DELETE ON TABLE transaction_participants TO utsa_gno_indexer';
+    END IF;
+END $$;
+
 -- Block detail pages use the unique constraint index on (block_height, tx_index).
 
 CREATE TABLE validators (

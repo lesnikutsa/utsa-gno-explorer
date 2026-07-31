@@ -90,3 +90,9 @@ Child stderr is discarded and never enters indexer logs.
 Configuration defaults are `TRANSACTION_DECODER_ENABLED=false`, `TRANSACTION_DECODER_PATH=/opt/utsa-gno-explorer/bin/gno-tx-decoder`, `TRANSACTION_DECODER_CHAIN_FAMILY=gno`, `TRANSACTION_DECODER_TIMEOUT_SECONDS=2`, and `TRANSACTION_DECODER_RESTART_BACKOFF_SECONDS=30`.
 
 Any decoder failure falls back to the bounded generic `unparsed` summary and never blocks consensus indexing. Adapter output is normalized in Python and again at the database boundary. The API boundary independently rebuilds the public allowlisted summary rather than returning JSONB directly. The generic frontend component displays that bounded contract; historical backfill remains deferred. A future Cosmos adapter can use the same generic client by configuring another executable and expected chain family, with deliberate public allowlist extensions as needed.
+
+## Normalized participant index
+
+The continuous indexer derives `transaction_participants` only from the bounded `messages` array of an already normalized summary. Valid `sender` and `recipient` Account addresses are stored independently with their zero-based message index; exact duplicate rows are discarded. Transaction upsert, stale participant deletion, and participant insertion share the block database transaction.
+
+Migration `0006_add_transaction_participants.sql` backfills only already stored, parsed summaries, inspecting at most 20 messages and only their sender and recipient fields. It does not call the decoder or modify `payload_summary`. The 590 audited transactions with NULL summaries remain deferred; any historical summary backfill is a separate controlled operation. Consequently, unsupported or undecoded transactions may be absent from local Account history, and involvement does not indicate execution success.

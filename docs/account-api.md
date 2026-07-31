@@ -31,3 +31,9 @@ and `RPC_MAX_HEIGHT_LAG`) comes from `/etc/utsa-gno-explorer/rpc.env`. API datab
 credentials and API-only settings remain in `/etc/utsa-gno-explorer/api.env`;
 `API_ACCOUNT_RPC_TIMEOUT_SECONDS` is API-specific and controls account RPC calls from
 1 through 30 seconds (default 10).
+
+## Local Account transaction history
+
+`GET /api/accounts/{address}/transactions` reads PostgreSQL only; it does not perform a Gno RPC request. The read-only API starts from `transaction_participants`, joins the stored transaction and block, and returns `block_height`, `index`, uppercase `tx_hash`, `block_time`, `type`, `operation`, `direction`, `counterparty`, and `amount`. Direction is `outgoing`, `incoming`, or `self` according to the independently indexed sender and recipient roles. This describes decoded transaction content and Account involvement, not execution success.
+
+Pages use descending `(block_height, tx_index)` keyset pagination. `limit` defaults to 20 and is bounded from 1 through 100. `before_height` and `before_tx_index` must be supplied together. Unsupported, undecoded, or address-free historical transactions can be absent, so this endpoint does not claim complete genesis coverage.

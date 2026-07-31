@@ -8,6 +8,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -158,6 +159,56 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
 
     def database_url_for(self, name):
         return f"postgresql://utsa_test:{self.password}@{self.host}:{self.port}/{name}"
+
+    def create_pre_participant_database(self, name):
+        self.create_database(name)
+        database_url = self.database_url_for(name)
+        schema = (ROOT / "database/schema.sql").read_text()
+        start = schema.index("CREATE TABLE transaction_participants")
+        end = schema.index("END $$;", start) + len("END $$;")
+        pre_schema = schema[:start] + schema[end:]
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute(pre_schema)
+        return database_url
+
+    def test_participant_upgrade_rolls_back_after_final_schema_failure(self):
+        database_url = self.create_pre_participant_database(f"utsa_participant_schema_rollback_{os.getpid()}")
+        original = init_database.validate_schema_snapshot
+        calls = 0
+        def fail_final(snapshot, expectations=None):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise init_database.SchemaCompatibilityError("forced final failure")
+            return original(snapshot, expectations)
+        with patch.object(init_database, "validate_schema_snapshot", side_effect=fail_final):
+            with self.assertRaises(init_database.SchemaCompatibilityError):
+                init_database.initialize_or_validate(database_url)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT to_regclass('public.transaction_participants')")
+            self.assertIsNone(cursor.fetchone()[0])
+
+    def test_participant_upgrade_rolls_back_after_privilege_failure(self):
+        database_url = self.create_pre_participant_database(f"utsa_participant_grant_rollback_{os.getpid()}")
+        with patch.object(
+            init_database, "validate_participant_privileges",
+            side_effect=init_database.SchemaCompatibilityError("forced privilege failure"),
+        ):
+            with self.assertRaises(init_database.SchemaCompatibilityError):
+                init_database.initialize_or_validate(database_url)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT to_regclass('public.transaction_participants')")
+            self.assertIsNone(cursor.fetchone()[0])
+
+    def test_participant_upgrade_success_and_rerun_are_idempotent(self):
+        database_url = self.create_pre_participant_database(f"utsa_participant_success_{os.getpid()}")
+        init_database.initialize_or_validate(database_url)
+        init_database.initialize_or_validate(database_url)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT to_regclass('public.transaction_participants')")
+            self.assertEqual(cursor.fetchone()[0], "transaction_participants")
+            cursor.execute("SELECT count(*) FROM transaction_participants")
+            self.assertEqual(cursor.fetchone()[0], 0)
 
     def test_average_block_time_network_query_guards_and_latest_window(self):
         name = f"utsa_average_block_time_{os.getpid()}"

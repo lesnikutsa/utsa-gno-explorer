@@ -39,11 +39,11 @@ test('hook maps safe states, supports retry and has no polling timer', () => {
 })
 test('hook exposes the safely decoded requested address synchronously', () => {
   assert.ok(hook.includes('const requestedAddress = decodeAccountRouteAddress(routeAddress)'))
-  assert.ok(hook.includes('return { ...state, requestedAddress, retry }'))
+  assert.ok(hook.includes('return { ...state, requestedAddress, retry, history, retryHistory, loadMoreHistory }'))
 })
 test('initial loading renders the account shell with accessible skeletons', () => {
   assert.equal(page.includes('title="Loading account…"'), false)
-  for (const text of ['← Back to Overview', 'Account Balance', 'Account Summary', 'Technical details', '<TransactionsPlaceholder />', 'Loading current account state…']) assert.ok(page.includes(text))
+  for (const text of ['← Back to Overview', 'Account Balance', 'Account Summary', 'Technical details', '<AccountTransactions', 'Loading current account state…']) assert.ok(page.includes(text))
   assert.ok(page.includes("aria-busy={loading ? 'true' : 'false'}"))
   assert.ok(page.includes('account?.address || requestedAddress'))
   assert.ok(page.includes('initialLoading ? <Skeleton'))
@@ -79,7 +79,7 @@ test('amount formatter groups integer digits without changing precision', () => 
 })
 test('missing account refresh reuses retry, preserves content, and reports errors safely', () => {
   assert.equal(getAccountDetailView({ account: { found: false, address }, requestedAddress: address, loading: true }), 'missing')
-  assert.ok(page.includes('function MissingAccount({ account, retry, loading, refreshError })'))
+  assert.ok(page.includes('function MissingAccount({ account, retry, loading, refreshError, history, retryHistory, loadMoreHistory })'))
   assert.ok(page.includes('onClick={retry} disabled={loading}'))
   assert.ok(page.includes("loading ? 'Refreshing…' : 'Refresh'"))
   assert.ok(page.includes('refreshError && <p className="account-detail__refresh-error"'))
@@ -87,7 +87,7 @@ test('missing account refresh reuses retry, preserves content, and reports error
   assert.ok(page.includes('This address has no account state on the current network.'))
   const missingState = page.slice(page.indexOf('function MissingAccount'), page.indexOf('export function AccountDetail'))
   for (const value of ['sourceLabel(', 'observed_height', 'chain_id', 'Fetched at block']) assert.equal(missingState.includes(value), false)
-  assert.ok(missingState.includes('<TransactionsPlaceholder />'))
+  assert.ok(missingState.includes('<AccountTransactions'))
   for (const value of ['Account Summary', 'No native bank balance', 'RPC endpoint', 'account-detail__main-balance']) assert.equal(missingState.includes(value), false)
 })
 test('account view selection preserves safe initial result states', () => {
@@ -149,12 +149,12 @@ test('validator relation is a compact message without exposed addresses', () => 
   assert.equal(validatorCard.includes('operator_address'), false)
   assert.equal(validatorCard.includes('<CopyValue'), false)
 })
-test('transactions are a static placeholder without history integration', () => {
-  for (const value of ['Transactions', 'Transaction history is not available yet.', 'Account transactions will appear here after local history indexing is enabled.']) assert.ok(page.includes(value))
-  for (const value of ['getAccountTransactions', 'useAccountTransactions', 'transaction rows']) assert.equal(page.includes(value), false)
-  assert.equal(api.includes('getAccountTransactions'), false)
-  assert.equal(hook.includes('transactions'), false)
-  assert.ok(page.indexOf('<details className="panel account-detail__details">') < page.lastIndexOf('<TransactionsPlaceholder />'))
+test('transactions use local paginated history without polling', () => {
+  for (const value of ['Shows locally indexed transactions involving this account.', 'No indexed transactions found for this account.', 'Outgoing', 'Incoming', 'Self', 'Load more', 'Retry history']) assert.ok(page.includes(value))
+  for (const value of ['getAccountTransactions', 'AbortController', 'next_before_height', 'next_before_tx_index']) assert.ok(api.includes(value) || hook.includes(value))
+  assert.ok(hook.includes('mergeAccountHistoryItems(current.items'))
+  assert.equal(hook.includes('setInterval'), false)
+  assert.ok(page.indexOf('<details className="panel account-detail__details">') < page.lastIndexOf('<AccountTransactions'))
 })
 test('other balances exclude native denom and render only when non-native balances exist', () => {
   const native = { denom: 'ugnot' }

@@ -21,6 +21,9 @@ from api.database import (
     isoformat_utc_z,
 )
 from api.schemas import (
+    AccountTransactionListItem,
+    AccountTransactionsPagination,
+    AccountTransactionsResponse,
     AccountResponse,
     BlockCommitSummary,
     BlockDetailResponse,
@@ -151,6 +154,51 @@ def get_account(address: str) -> AccountResponse:
             "account_request_timing account_total_seconds=%.6f",
             time.perf_counter() - account_started_at,
         )
+
+
+@app.get(
+    "/api/accounts/{address}/transactions",
+    response_model=AccountTransactionsResponse,
+)
+def get_account_transactions(
+    address: str,
+    limit: int = Query(default=20, ge=1, le=100),
+    before_height: int | None = Query(default=None, gt=0),
+    before_tx_index: int | None = Query(default=None, ge=0),
+) -> AccountTransactionsResponse:
+    config = app.state.api_config
+    if not validate_account_address(address, topaz_profile(config.chain_id)):
+        raise HTTPException(status_code=422, detail="Invalid account address")
+    if (before_height is None) != (before_tx_index is None):
+        raise HTTPException(
+            status_code=422,
+            detail="before_height and before_tx_index must be provided together",
+        )
+    try:
+        rows = database.fetch_account_transactions(
+            address, limit=limit, before_height=before_height,
+            before_tx_index=before_tx_index,
+        )
+    except Exception:
+        LOGGER.error("Explorer database Account transactions query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+    try:
+        page_rows = rows[:limit]
+        last_row = page_rows[-1] if len(rows) > limit and page_rows else None
+        return AccountTransactionsResponse(
+            items=[
+                _account_transaction_item_from_row(row, address, topaz_profile(config.chain_id))
+                for row in page_rows
+            ],
+            pagination=AccountTransactionsPagination(
+                limit=limit,
+                next_before_height=last_row["block_height"] if last_row else None,
+                next_before_tx_index=last_row["tx_index"] if last_row else None,
+            ),
+        )
+    except Exception:
+        LOGGER.error("Explorer database Account transaction data is inconsistent")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
 
 
 def _normalize_block_hash(block_hash_hex: str) -> str:
@@ -323,6 +371,57 @@ def _transaction_list_item_from_row(row: dict) -> TransactionListItem:
         block_time=isoformat_utc_z(row["time_utc"]),
         type=summary.primary.type if summary is not None else "unknown",
         operation=summary.primary.label if summary is not None else "Transaction",
+    )
+
+
+def _account_transaction_item_from_row(row: dict, address: str, profile) -> AccountTransactionListItem:
+    participation = row.get("participation")
+    if not isinstance(participation, list) or not participation:
+        raise ValueError("missing Account participation")
+    indexed: set[tuple[int, str]] = set()
+    for item in participation:
+        if not isinstance(item, dict) or set(item) != {"message_index", "role"}:
+            raise ValueError("malformed Account participation")
+        message_index, role = item["message_index"], item["role"]
+        if type(message_index) is not int or not 0 <= message_index <= 19:
+            raise ValueError("invalid participant message index")
+        if role not in ("sender", "recipient"):
+            raise ValueError("invalid participant role")
+        indexed.add((message_index, role))
+    roles = {role for _, role in indexed}
+    directions = {
+        frozenset({"sender"}): "outgoing",
+        frozenset({"recipient"}): "incoming",
+        frozenset({"sender", "recipient"}): "self",
+    }
+    direction = directions.get(frozenset(roles))
+    if direction is None:
+        raise ValueError("invalid Account participation roles")
+    summary = _public_transaction_summary(row.get("payload_summary"))
+    message = None
+    if summary is not None:
+        for message_index, candidate in enumerate(summary.messages):
+            if ((message_index, "sender") in indexed and candidate.sender == address) or (
+                (message_index, "recipient") in indexed and candidate.recipient == address
+            ):
+                message = candidate
+                break
+    counterparty = None
+    amount = None
+    tx_type = "unknown"
+    operation = "Transaction"
+    if message is not None:
+        tx_type, operation = message.type, message.label
+        amount = message.amount if message.amount is not None else message.send
+        candidate = message.recipient if direction == "outgoing" else message.sender
+        if (direction != "self" and isinstance(candidate, str)
+                and validate_account_address(candidate, profile)):
+            counterparty = candidate
+    return AccountTransactionListItem(
+        block_height=row["block_height"], index=row["tx_index"],
+        tx_hash=_normalize_tx_hash(row.get("tx_hash_hex")),
+        block_time=isoformat_utc_z(row["time_utc"]), type=tx_type,
+        operation=operation, direction=direction, counterparty=counterparty, amount=amount,
     )
 
 

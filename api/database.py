@@ -316,6 +316,34 @@ ORDER BY transaction.block_height DESC, transaction.tx_index DESC
 LIMIT %s
 """
 
+ACCOUNT_TRANSACTIONS_SQL = """
+SELECT
+    participant.block_height,
+    participant.tx_index,
+    transaction.tx_hash_hex,
+    transaction.payload_summary,
+    block.time_utc,
+    jsonb_agg(jsonb_build_object(
+        'message_index', participant.message_index,
+        'role', participant.role
+    ) ORDER BY participant.message_index, participant.role) AS participation
+FROM transaction_participants participant
+JOIN transactions transaction
+  ON (transaction.block_height, transaction.tx_index) =
+     (participant.block_height, participant.tx_index)
+JOIN blocks block ON block.height = participant.block_height
+WHERE participant.address = %s
+  AND (
+      %s::bigint IS NULL
+      OR participant.block_height < %s::bigint
+      OR (participant.block_height = %s::bigint AND participant.tx_index < %s::integer)
+  )
+GROUP BY participant.block_height, participant.tx_index, transaction.tx_hash_hex,
+         transaction.payload_summary, block.time_utc
+ORDER BY participant.block_height DESC, participant.tx_index DESC
+LIMIT %s
+"""
+
 VALIDATORS_CHECKPOINT_SQL = """
 SELECT
     s.last_finalized_height AS height,
@@ -797,6 +825,23 @@ class ApiDatabase:
                 cursor.execute(
                     TRANSACTIONS_SQL,
                     (before_height, before_height, before_height, before_tx_index, limit + 1),
+                )
+                rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    def fetch_account_transactions(
+        self, address: str, *, limit: int, before_height: int | None,
+        before_tx_index: int | None,
+    ) -> list[dict[str, Any]]:
+        """Read one deduplicated Account-history page from the participant index."""
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    ACCOUNT_TRANSACTIONS_SQL,
+                    (address, before_height, before_height, before_height,
+                     before_tx_index, limit + 1),
                 )
                 rows = cursor.fetchall()
         return [dict(row) for row in rows]

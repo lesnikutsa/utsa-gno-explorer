@@ -432,8 +432,10 @@ class SchemaValidationTests(unittest.TestCase):
             def __init__(self):
                 self.calls = []
                 self.snapshot = self_outer.snapshot()
-            def execute(self, sql):
-                self.calls.append(sql)
+            def execute(self, sql, params=None):
+                self.calls.append(str(sql))
+            def fetchone(self):
+                return (False,)
             def fetchall(self):
                 if "information_schema.tables" in self.calls[-1]:
                     return [] if len(self.calls) == 1 else [(t,) for t in self.snapshot["tables"]]
@@ -455,9 +457,9 @@ class SchemaValidationTests(unittest.TestCase):
             def __enter__(self): return self
             def __exit__(self, *a): return False
         class Conn:
-            def __init__(self): self.cursor_obj = Cursor(); self.committed = False
+            def __init__(self): self.cursor_obj = Cursor(); self.commits = 0
             def cursor(self): return self.cursor_obj
-            def commit(self): self.committed = True
+            def commit(self): self.commits += 1
             def __enter__(self): return self
             def __exit__(self, *a): return False
         self_outer = self
@@ -467,7 +469,7 @@ class SchemaValidationTests(unittest.TestCase):
             schema.flush()
             with patch("scripts.init_database.fetch_schema_snapshot", return_value=self.snapshot()):
                 init_database.initialize_or_validate("postgresql://user:secret@host/db", Path(schema.name), connect=lambda url: conn)
-        self.assertTrue(conn.committed)
+        self.assertEqual(conn.commits, 1)
         self.assertIn("CREATE TABLE blocks", "\n".join(conn.cursor_obj.calls))
 
     def test_missing_table_fails(self):
@@ -601,20 +603,21 @@ class SchemaValidationTests(unittest.TestCase):
     def test_compatible_existing_schema_executes_no_create(self):
         class Cursor:
             def __init__(self): self.calls = []
-            def execute(self, sql): self.calls.append(sql)
+            def execute(self, sql, params=None): self.calls.append(str(sql))
             def fetchall(self): return [("blocks",)] if len(self.calls) == 1 else []
+            def fetchone(self): return (False,)
             def __enter__(self): return self
             def __exit__(self, *a): return False
         class Conn:
-            def __init__(self): self.cursor_obj = Cursor(); self.committed = False
+            def __init__(self): self.cursor_obj = Cursor(); self.commits = 0
             def cursor(self): return self.cursor_obj
-            def commit(self): self.committed = True
+            def commit(self): self.commits += 1
             def __enter__(self): return self
             def __exit__(self, *a): return False
         conn = Conn()
         with patch("scripts.init_database.fetch_schema_snapshot", return_value=self.snapshot()):
             init_database.initialize_or_validate("postgresql://safe", connect=lambda url: conn)
-        self.assertTrue(conn.committed)
+        self.assertEqual(conn.commits, 1)
         self.assertFalse(any("CREATE TABLE" in call for call in conn.cursor_obj.calls))
 
     def test_schema_sql_failure_rolls_back_by_not_committing(self):
