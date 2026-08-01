@@ -92,7 +92,6 @@ export function Validators({ validatorsPage }) {
       <header className="validators-page__header">
         <div>
           <h1 id="validators-page-title">Validators</h1>
-          <p>Active validator set indexed by UTSA Explorer.</p>
         </div>
         <button className="blocks-page__button blocks-page__button--accent" type="button" onClick={refresh} disabled={loading || backgroundRefreshing || manualRefreshing}>
           {manualRefreshing ? 'Refreshing…' : 'Refresh'}

@@ -70,7 +70,6 @@ export function Blocks({ blocksPage }) {
       <header className="blocks-page__header">
         <div>
           <h1 id="blocks-page-title">Blocks</h1>
-          <p>Latest finalized blocks indexed by UTSA Explorer.</p>
         </div>
         {pageIndex === 0 && (
           <button className="blocks-page__button blocks-page__button--accent" type="button" onClick={refresh} disabled={loading || manualRefreshing}>

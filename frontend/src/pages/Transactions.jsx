@@ -60,7 +60,6 @@ export function Transactions({ transactionsPage }) {
       <header className="blocks-page__header">
         <div>
           <h1 id="transactions-page-title">Transactions</h1>
-          <p>Latest transactions indexed by UTSA Explorer.</p>
         </div>
         {error && <button className="blocks-page__button blocks-page__button--accent" type="button" onClick={retry} disabled={loading}>Retry</button>}
       </header>

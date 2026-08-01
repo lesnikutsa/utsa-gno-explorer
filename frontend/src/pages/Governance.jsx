@@ -70,7 +70,6 @@ export function Governance({ governancePage }) {
       <header className="blocks-page__header governance-page__header">
         <div>
           <h1 id="governance-page-title">Governance</h1>
-          <p>Governance proposals saved by UTSA Explorer.</p>
         </div>
         {error && <button className="blocks-page__button blocks-page__button--accent" type="button" onClick={retry}>Retry</button>}
       </header>

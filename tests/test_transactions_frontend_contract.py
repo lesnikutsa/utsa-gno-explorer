@@ -20,6 +20,33 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         self.assertIn("<TransactionsPage />", app)
         self.assertIn("transactionDetailMatch", app)
 
+    def test_active_navigation_and_page_headers(self):
+        styles = self.read("frontend/src/styles/app.css")
+        active_rule = styles[styles.index(".nav-item.is-active {"):styles.index("\n", styles.index(".nav-item.is-active {"))]
+        self.assertIn("font-weight: 600", active_rule)
+        self.assertNotIn("blocks", active_rule.lower())
+
+        pages = {
+            "frontend/src/pages/Blocks.jsx": ("Blocks", "Refresh"),
+            "frontend/src/pages/Transactions.jsx": ("Transactions", "Retry"),
+            "frontend/src/pages/Validators.jsx": ("Validators", "Refresh"),
+            "frontend/src/pages/Governance.jsx": ("Governance", "Retry"),
+        }
+        subtitles = (
+            "Latest finalized blocks indexed by UTSA Explorer.",
+            "Latest transactions indexed by UTSA Explorer.",
+            "Active validator set indexed by UTSA Explorer.",
+            "Governance proposals saved by UTSA Explorer.",
+        )
+        all_pages = "".join(self.read(path) for path in pages)
+        for subtitle in subtitles:
+            self.assertNotIn(subtitle, all_pages)
+        for path, (title, action) in pages.items():
+            page = self.read(path)
+            self.assertIn(f">{title}</h1>", page)
+            self.assertIn(action, page)
+        self.assertIn("All validators shown are members of the current active set.", self.read("frontend/src/pages/Validators.jsx"))
+
     def test_sidebar_assigns_transaction_detail_to_transactions(self):
         sidebar = self.read("frontend/src/components/Sidebar.jsx")
         self.assertIn("/^\\/blocks\\/[^/]+\\/transactions\\/[^/]+\\/?$/.test(pathname)", sidebar)
