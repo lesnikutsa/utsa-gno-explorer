@@ -4,6 +4,8 @@ import { CopyButton } from '../components/CopyButton'
 import { ProposerIdentity } from '../components/ProposerIdentity'
 import { DataTable } from '../components/DataTable'
 import { TransactionDecodeBadge } from '../components/TransactionDecodeBadge'
+import { TransactionExecutionBadge } from '../components/TransactionExecutionBadge'
+import { GasValue } from '../components/GasValue'
 import { relativeTime } from '../utils/time'
 
 const transactionColumns = (blockHeight) => [
@@ -37,8 +39,16 @@ const transactionColumns = (blockHeight) => [
       </a>
     ) : '—',
   },
-  { key: 'raw_base64_length', label: 'Base64 Length' },
-  { key: 'decoded_byte_length', label: 'Decoded Bytes', render: (transaction) => transaction.decoded_byte_length ?? '—' },
+  {
+    key: 'execution_status',
+    label: 'Status',
+    render: (transaction) => <TransactionExecutionBadge status={transaction.execution_status} />,
+  },
+  {
+    key: 'gas_used',
+    label: 'Gas Used',
+    render: (transaction) => <GasValue used={transaction.gas_used} wanted={transaction.gas_wanted} />,
+  },
   {
     key: 'decode_status',
     label: 'Base64 Decode',
