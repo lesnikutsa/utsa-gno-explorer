@@ -148,6 +148,9 @@ class TransactionsFrontendContractTests(unittest.TestCase):
 
     def test_transaction_detail_execution_and_technical_data(self):
         detail = self.read("frontend/src/pages/TransactionDetail.jsx")
+        styles = self.read("frontend/src/styles/app.css")
+        information = detail[detail.index('id="transaction-information-title"'):detail.index('aria-labelledby="execution-result-title"')]
+        technical = detail[detail.index('className="panel transaction-detail__section transaction-detail__technical"'):]
         self.assertIn('id="execution-result-title">Execution Result</h2>', detail)
         self.assertLess(detail.index("Execution Result"), detail.index("<TransactionSummary"))
         for label in ("Status", "Gas Used", "Gas Wanted", "Gas Utilization"):
@@ -164,6 +167,11 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         self.assertIn("{transaction.raw_base64}</pre>", detail)
         self.assertIn("Encoded length", detail)
         self.assertIn("Decoded size", detail)
+        self.assertNotIn("Base64 Decode", information)
+        self.assertIn("Base64 Decode status", technical)
+        self.assertIn('className="transaction-detail__field transaction-detail__field--full-width"><span className="transaction-detail__label">Block Hash', information)
+        self.assertIn(".transaction-detail__grid .transaction-detail__field--full-width { grid-column: 1 / -1; border-right: 0; }", styles)
+        self.assertNotIn(".transaction-detail__notice", styles)
 
     def test_gas_formatting_and_utilization(self):
         script = """

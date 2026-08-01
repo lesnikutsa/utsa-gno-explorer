@@ -61,8 +61,7 @@ export function TransactionDetail({ transactionDetail }) {
           <div className="transaction-detail__field"><span className="transaction-detail__label">Transaction Index</span><strong className="transaction-detail__value mono">#{transaction.index}</strong></div>
           <div className="transaction-detail__field"><span className="transaction-detail__label">Block Time</span><strong className="transaction-detail__value mono">{transaction.block_time}</strong><RelativeTransactionTime value={transaction.block_time} /></div>
           <div className="transaction-detail__field"><span className="transaction-detail__label">Proposer</span><ProposerIdentity address={transaction.proposer_address} moniker={transaction.proposer_moniker} showFullAddress /></div>
-          <div className="transaction-detail__field"><span className="transaction-detail__label">Block Hash</span><div className="transaction-detail__copy-row"><strong className="transaction-detail__value transaction-detail__hash mono">{transaction.block_hash}</strong><CopyButton value={transaction.block_hash} label="block hash" /></div></div>
-          <div className="transaction-detail__field"><span className="transaction-detail__label">Base64 Decode</span><TransactionDecodeBadge status={transaction.decode_status} /></div>
+          <div className="transaction-detail__field transaction-detail__field--full-width"><span className="transaction-detail__label">Block Hash</span><div className="transaction-detail__copy-row"><strong className="transaction-detail__value transaction-detail__hash mono">{transaction.block_hash}</strong><CopyButton value={transaction.block_hash} label="block hash" /></div></div>
         </div>
       </section>
 
