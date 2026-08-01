@@ -138,11 +138,11 @@ class ApiDeploymentAssetTests(unittest.TestCase):
 
     def valopers_schema_prerequisite_section(self):
         start = self.documentation.index("#### Valopers schema and API access prerequisite")
-        end = self.documentation.index("#### API 0.8.0 metadata update", start)
+        end = self.documentation.index("#### API 1.0.0 metadata update", start)
         return self.documentation[start:end]
 
     def api_080_metadata_update_section(self):
-        start = self.documentation.index("#### API 0.8.0 metadata update")
+        start = self.documentation.index("#### API 1.0.0 metadata update")
         end = self.documentation.index("For rollback,", start)
         return self.documentation[start:end]
 
@@ -281,10 +281,10 @@ class ApiDeploymentAssetTests(unittest.TestCase):
 
     def test_api_080_metadata_update_is_api_only(self):
         section = self.api_080_metadata_update_section()
-        self.assertIn("API_VERSION=0.8.0", section)
+        self.assertIn("API_VERSION=1.0.0", section)
         self.assertIn("sudo systemctl restart utsa-gno-api.service", section)
         self.assertIn("/api/health", section)
-        self.assertIn("`api_version` as `0.8.0`", section)
+        self.assertIn("`api_version` as `1.0.0`", section)
         for forbidden in (
             "migrate_valopers_schema.py",
             "init_database.py",

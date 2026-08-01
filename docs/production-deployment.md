@@ -1,5 +1,8 @@
 # Production deployment
 
+> **Documentation map:** New operators should begin with [Fresh production installation](install.md). Use [Production update](update.md) for routine updates and [Backup and restore](restore.md) for recovery. This document remains the exhaustive technical reference.
+
+
 ## RPC latency snapshot migration
 
 For an existing database, apply the additive current-snapshot column explicitly with
@@ -38,9 +41,8 @@ order: `https://rpc.topaz.testnets.gno.land`, `https://gnoland-testnet-rpc.itroc
 and `https://topaz.rpc.onbloc.xyz`. Keep API database credentials, API-only settings,
 and `API_ACCOUNT_RPC_TIMEOUT_SECONDS` in `/etc/utsa-gno-explorer/api.env`. Keep indexer
 database credentials, indexer scheduling, Governance scheduling, and transaction-decoder
-settings in `/etc/utsa-gno-explorer/indexer.env`. Set `INDEXER_START_HEIGHT=1` there.
-Topaz is a fresh chain, not a continuation or hardfork replay of
-Testnet 13: create the Explorer database empty and never reuse Testnet 13 rows or checkpoints.
+settings in `/etc/utsa-gno-explorer/indexer.env`. Set `INDEXER_START_HEIGHT=1` only when complete history is required; a new empty deployment may instead select a fixed recent finalized height as described in the installation guide.
+For either bootstrap mode, create the Explorer database empty unless following the verified restore procedure. Never reuse rows or checkpoints from another chain.
 Database replacement and production deployment remain explicit operator operations outside
 this repository change.
 
@@ -966,20 +968,20 @@ automatic grant path.
     semantics. Never create or modify production rows to manufacture an unmatched
     smoke-test case.
 
-#### API 0.8.0 metadata update
+#### API 1.0.0 metadata update
 
 For an already-compatible deployment, including production at commit
 `818cee6a5d0dc8c8817e8ef3fc03af97d35aeeab`, perform only this metadata update:
 
 1. Edit the protected `/etc/utsa-gno-explorer/api.env` through the approved operator process.
-2. Set `API_VERSION=0.8.0`.
+2. Set `API_VERSION=1.0.0`.
 3. Restart only `utsa-gno-api.service`:
 
    ```bash
    sudo systemctl restart utsa-gno-api.service
    ```
 
-4. Verify that `/api/health` reports `api_version` as `0.8.0`:
+4. Verify that `/api/health` reports `api_version` as `1.0.0`:
 
    ```bash
    curl --fail --silent --show-error http://127.0.0.1:18180/api/health

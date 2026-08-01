@@ -206,9 +206,8 @@ class DeploymentAssetTests(unittest.TestCase):
                       "GOVERNANCE_ERROR_BACKOFF_SECONDS=5", "GOVERNANCE_MAX_BACKOFF_SECONDS=60"]:
             self.assertIn(value, env)
         docs = self.text("docs/production-deployment.md") + self.text("docs/operator-runbook.md")
-        self.assertIn("only Governance scheduler/process", docs)
-        self.assertIn("no Governance timer", docs)
-        self.assertIn("no Governance cron", docs)
+        self.assertIn("`utsa-gno-governance-updater.service`", docs)
+        self.assertFalse(list((ROOT / "deploy/systemd").glob("*governance*.timer")))
         code = "\n".join(path.read_text() for path in (ROOT / "scripts").glob("*.py"))
         self.assertNotIn("systemctl enable --now utsa-gno-governance-updater", code)
         self.assertNotIn("crontab", docs.lower())
@@ -315,11 +314,15 @@ class DeploymentAssetTests(unittest.TestCase):
         return matches[0]
 
     def test_backup_installation_docs_create_root_only_backup_directory(self):
-        expected = "install -d -o root -g root -m 0700 \\\n  /var/backups/utsa-gno-explorer"
-        for relative in ["docs/production-deployment.md", "docs/operator-runbook.md"]:
-            doc = self.text(relative)
-            self.assertIn(expected, doc)
-            self.assertLess(doc.index(expected), doc.index("systemctl enable --now utsa-gno-explorer-backup.timer"))
+        install = self.text("docs/install.md")
+        self.assertIn(
+            "install -d -o root -g root -m 0700 /var/backups/utsa-gno-explorer",
+            install,
+        )
+        self.assertLess(
+            install.index("/var/backups/utsa-gno-explorer"),
+            install.index("utsa-gno-explorer-backup.timer"),
+        )
 
     def test_backup_systemd_timer_schedule_and_target(self):
         timer = self.text("deploy/systemd/utsa-gno-explorer-backup.timer")

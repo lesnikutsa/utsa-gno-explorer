@@ -4,8 +4,7 @@ This document preserves the Testnet 13 observations that informed `scripts/inspe
 They are historical and are not active endpoint or deployment instructions. The active
 single-network runtime is Gno.land Topaz Testnet (`topaz-1`), using, in order,
 `https://rpc.topaz.testnets.gno.land`, `https://gnoland-testnet-rpc.itrocket.net`, and
-`https://topaz.rpc.onbloc.xyz`. Topaz must start at block 1 in a fresh empty database;
-Testnet 13 rows and checkpoints must not be reused.
+`https://topaz.rpc.onbloc.xyz`. Topaz full-history indexing starts at block 1. A current-state deployment may instead use a fixed recent finalized bootstrap height; rows and checkpoints from another chain must not be reused.
 
 ## RPC methods used
 
