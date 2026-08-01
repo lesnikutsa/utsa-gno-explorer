@@ -101,7 +101,7 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .live-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--color-success); animation: live-pulse 1.7s ease-in-out infinite; }
 .table-scroll { overflow-x: auto; }
 .data-table { width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap; }
-.data-table th { padding: 10px 16px; color: #758b9d; font-size: 9px; letter-spacing: .1em; text-align: left; text-transform: uppercase; }
+.data-table th { padding: 10px 16px; color: #758b9d; font-size: 11px; font-weight: 700; letter-spacing: .1em; text-align: left; text-transform: uppercase; }
 .data-table__sort { display: inline-flex; align-items: center; gap: 5px; padding: 0; border: 0; background: none; color: inherit; cursor: pointer; font: inherit; letter-spacing: inherit; text-transform: inherit; }
 .data-table__sort:hover, .data-table__sort:focus-visible, .data-table__sort.is-active { color: var(--color-text-bright); }
 .data-table__sort:focus-visible { outline: 1px solid var(--color-accent); outline-offset: 3px; }
@@ -191,7 +191,7 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .transactions-page__table .data-table tr > :nth-child(4) { grid-column: 7; }
 .transactions-page__table .data-table tr > :nth-child(5) { grid-column: 9; }
 .transactions-page__table .data-table tr > :nth-child(6) { grid-column: 11; }
-.transactions-page__table .data-table th { padding: 10px 0; font-size: 11px; font-weight: 700; text-align: center; }
+.transactions-page__table .data-table th { padding: 10px 0; text-align: center; }
 .transactions-page__table .data-table td { padding: 6px 0; border-top: 0; text-align: center; }
 .transactions-page__table .data-table tbody tr { border-top: 1px solid rgba(40,64,86,.42); }
 .transactions-page__table .data-table tbody tr:has(.table-message) { grid-template-columns: 1fr; }

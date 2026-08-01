@@ -50,9 +50,10 @@ function sourceLabel(source) {
   }
 }
 
-function AccountTransactions({ address, history, retry, loadMore }) {
+function AccountTransactions({ address, history, retry, loadOlder, loadNewer }) {
   return (
-    <section className="panel account-detail__transactions" aria-labelledby="account-transactions-title">
+    <>
+      <section className="panel account-detail__transactions" aria-labelledby="account-transactions-title">
       <h2 id="account-transactions-title">Transactions</h2>
       {history.loading && <div className="account-detail__skeleton" aria-label="Loading transaction history"><span /><span /><span /></div>}
       {!history.loading && history.items.length === 0 && !history.initialError && <p>No indexed transactions found for this account.</p>}
@@ -72,13 +73,18 @@ function AccountTransactions({ address, history, retry, loadMore }) {
         </article>
       })}</div>}
       {history.initialError && <div role="status"><p>Transaction history is temporarily unavailable.</p><button className="blocks-page__button" type="button" onClick={retry}>Retry history</button></div>}
-      {history.loadMoreError && <p role="status">Could not load more transactions. Retry with the same cursor.</p>}
-      {history.pagination?.next_before_height && <button className="blocks-page__button" type="button" disabled={history.loadingMore} onClick={loadMore}>{history.loadingMore ? 'Loading…' : 'Load more'}</button>}
-    </section>
+      {history.pageError && <div role="status"><p>Transaction history page is temporarily unavailable.</p><button className="blocks-page__button" type="button" onClick={retry}>Retry history</button></div>}
+      </section>
+      <nav className="blocks-pagination account-detail__transactions-pagination" aria-label="Account transactions pagination">
+        <button className="blocks-page__button" type="button" onClick={loadNewer} disabled={history.loading || history.pageIndex === 0}>Newer transactions</button>
+        <span>{history.pageIndex === 0 ? 'Latest' : `Page ${history.pageIndex + 1}`}</span>
+        <button className="blocks-page__button" type="button" onClick={loadOlder} disabled={history.loading || !history.canLoadOlder}>Older transactions</button>
+      </nav>
+    </>
   )
 }
 
-function MissingAccount({ account, retry, loading, refreshError, history, retryHistory, loadMoreHistory }) {
+function MissingAccount({ account, retry, loading, refreshError, history, retryHistory, loadOlderHistory, loadNewerHistory }) {
   return (
     <article className="account-detail" aria-labelledby="account-detail-title">
       <a className="account-detail__back" href="/">← Back to Overview</a>
@@ -92,19 +98,19 @@ function MissingAccount({ account, retry, loading, refreshError, history, retryH
         <h2 id="account-request-title">Requested address</h2>
         <CopyValue value={account.address} label="account address" />
       </section>
-      <AccountTransactions address={account.address} history={history} retry={retryHistory} loadMore={loadMoreHistory} />
+      <AccountTransactions address={account.address} history={history} retry={retryHistory} loadOlder={loadOlderHistory} loadNewer={loadNewerHistory} />
     </article>
   )
 }
 
 export function AccountDetail({ accountDetail }) {
-  const { account, requestedAddress, loading, invalidAddress, unavailable, error, retry, history, retryHistory, loadMoreHistory } = accountDetail
+  const { account, requestedAddress, loading, invalidAddress, unavailable, error, retry, history, retryHistory, loadOlderHistory, loadNewerHistory } = accountDetail
   const view = getAccountDetailView(accountDetail)
 
   if (view === 'invalid') return <StatePanel title="Invalid account address" message="The requested account address is not valid for this network." />
   if (view === 'unavailable') return <StatePanel title="Account data is temporarily unavailable" message="The Explorer could not read current account state from a fresh RPC endpoint." retry={retry} />
   if (view === 'error') return <StatePanel title="Account details are currently unavailable" retry={retry} />
-  if (view === 'missing') return <MissingAccount account={account} retry={retry} loading={loading} refreshError={invalidAddress || unavailable || error} history={history} retryHistory={retryHistory} loadMoreHistory={loadMoreHistory} />
+  if (view === 'missing') return <MissingAccount account={account} retry={retry} loading={loading} refreshError={invalidAddress || unavailable || error} history={history} retryHistory={retryHistory} loadOlderHistory={loadOlderHistory} loadNewerHistory={loadNewerHistory} />
 
   const initialLoading = view === 'loading'
   const balances = Array.isArray(account?.balances) ? account.balances : []
@@ -162,7 +168,7 @@ export function AccountDetail({ accountDetail }) {
         </div>
       </details>
 
-      <AccountTransactions address={account?.address || requestedAddress} history={history} retry={retryHistory} loadMore={loadMoreHistory} />
+      <AccountTransactions address={account?.address || requestedAddress} history={history} retry={retryHistory} loadOlder={loadOlderHistory} loadNewer={loadNewerHistory} />
     </article>
   )
 }

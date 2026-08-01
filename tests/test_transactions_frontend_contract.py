@@ -46,6 +46,8 @@ class TransactionsFrontendContractTests(unittest.TestCase):
             self.assertIn(f">{title}</h1>", page)
             self.assertIn(action, page)
         self.assertIn("All validators shown are members of the current active set.", self.read("frontend/src/pages/Validators.jsx"))
+        for path in ("frontend/src/pages/Blocks.jsx", "frontend/src/pages/Transactions.jsx", "frontend/src/pages/Validators.jsx", "frontend/src/pages/Governance.jsx"):
+            self.assertIn("DataTable", self.read(path))
 
     def test_sidebar_assigns_transaction_detail_to_transactions(self):
         sidebar = self.read("frontend/src/components/Sidebar.jsx")
@@ -139,7 +141,10 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         for child, column in enumerate((1, 3, 5, 7, 9, 11), start=1):
             self.assertIn(f"tr > :nth-child({child}) {{ grid-column: {column}; }}", transactions_rules)
         self.assertIn("padding-right: 16px; padding-left: 16px", transactions_rules)
-        self.assertIn("font-size: 11px; font-weight: 700; text-align: center", transactions_rules)
+        shared_headers = styles[styles.index(".data-table th {"):styles.index("\n", styles.index(".data-table th {"))]
+        self.assertIn("font-size: 11px", shared_headers)
+        self.assertIn("font-weight: 700", shared_headers)
+        self.assertIn(".transactions-page__table .data-table th { padding: 10px 0; text-align: center; }", transactions_rules)
         self.assertNotIn("column-gap:", transactions_rules)
         self.assertNotIn("justify-content: center", transactions_rules)
         self.assertNotIn("justify-content: space-between", transactions_rules)

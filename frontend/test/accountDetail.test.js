@@ -50,7 +50,7 @@ test('hook maps safe states, supports retry and has no polling timer', () => {
 })
 test('hook exposes the safely decoded requested address synchronously', () => {
   assert.ok(hook.includes('const requestedAddress = decodeAccountRouteAddress(routeAddress)'))
-  assert.ok(hook.includes('return { ...state, requestedAddress, retry, history, retryHistory, loadMoreHistory }'))
+  assert.ok(hook.includes('return { ...state, requestedAddress, retry, history, retryHistory, loadOlderHistory, loadNewerHistory }'))
 })
 test('initial loading renders the account shell with accessible skeletons', () => {
   assert.equal(page.includes('title="Loading account…"'), false)
@@ -90,7 +90,7 @@ test('amount formatter groups integer digits without changing precision', () => 
 })
 test('missing account refresh reuses retry, preserves content, and reports errors safely', () => {
   assert.equal(getAccountDetailView({ account: { found: false, address }, requestedAddress: address, loading: true }), 'missing')
-  assert.ok(page.includes('function MissingAccount({ account, retry, loading, refreshError, history, retryHistory, loadMoreHistory })'))
+  assert.ok(page.includes('function MissingAccount({ account, retry, loading, refreshError, history, retryHistory, loadOlderHistory, loadNewerHistory })'))
   assert.ok(page.includes('onClick={retry} disabled={loading}'))
   assert.ok(page.includes("loading ? 'Refreshing…' : 'Refresh'"))
   assert.ok(page.includes('refreshError && <p className="account-detail__refresh-error"'))
@@ -160,11 +160,17 @@ test('validator relation is a compact message without exposed addresses', () => 
   assert.equal(validatorCard.includes('operator_address'), false)
   assert.equal(validatorCard.includes('<CopyValue'), false)
 })
-test('transactions use local paginated history without polling', () => {
-  for (const value of ['No indexed transactions found for this account.', 'Outgoing', 'Incoming', 'Self', 'Load more', 'Retry history']) assert.ok(page.includes(value))
-  assert.equal(page.includes('Shows locally indexed transactions involving this account.'), false)
-  for (const value of ['getAccountTransactions', 'AbortController', 'next_before_height', 'next_before_tx_index']) assert.ok(api.includes(value) || hook.includes(value))
-  assert.ok(hook.includes('mergeAccountHistoryItems(current.items'))
+test('transactions use page-by-page cursor history without polling', () => {
+  for (const value of ['No indexed transactions found for this account.', 'Outgoing', 'Incoming', 'Self', 'Retry history']) assert.ok(page.includes(value))
+  for (const value of ['Newer transactions', 'Older transactions', "history.pageIndex === 0 ? 'Latest'", 'blocks-pagination account-detail__transactions-pagination']) assert.ok(page.includes(value))
+  assert.equal(page.includes('Load more'), false)
+  assert.equal(page.includes('Could not load more transactions.'), false)
+  for (const value of ['getAccountTransactions', 'AbortController', 'next_before_height', 'next_before_tx_index', 'ACCOUNT_HISTORY_PAGE_SIZE = 20', 'cursorHistory']) assert.ok(api.includes(value) || hook.includes(value))
+  assert.ok(hook.includes('limit: ACCOUNT_HISTORY_PAGE_SIZE'))
+  assert.ok(hook.includes('items: (result.items || []).slice(0, ACCOUNT_HISTORY_PAGE_SIZE)'))
+  assert.equal(hook.includes('mergeAccountHistoryItems'), false)
+  assert.ok(page.includes('disabled={history.loading || history.pageIndex === 0}'))
+  assert.ok(page.includes('disabled={history.loading || !history.canLoadOlder}'))
   assert.equal(hook.includes('setInterval'), false)
   assert.ok(page.indexOf('<details className="panel account-detail__details">') < page.lastIndexOf('<AccountTransactions'))
 })
@@ -219,6 +225,10 @@ test('transaction account, block, and hash columns preserve their links', () => 
   assert.equal(transactions.includes('<time'), false)
   assert.equal(transactions.includes('item.block_time'), false)
   assert.equal(transactions.includes('CopyButton'), false)
+})
+test('shared data table headers use consistent typography', () => {
+  assert.ok(styles.includes('.data-table th { padding: 10px 16px; color: #758b9d; font-size: 11px; font-weight: 700;'))
+  assert.ok(styles.includes('.data-table__sort { display: inline-flex;'))
 })
 test('transaction headers and rows share desktop columns and become labeled field grids', () => {
   const transactionStyles = styles.slice(styles.indexOf('.account-detail__transaction-list'))
