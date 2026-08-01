@@ -49,8 +49,6 @@ function sourceLabel(source) {
   }
 }
 
-function shortHash(value) { return value ? `${value.slice(0, 10)}…${value.slice(-8)}` : '—' }
-
 function AccountTransactions({ address, history, retry, loadMore }) {
   return (
     <section className="panel account-detail__transactions" aria-labelledby="account-transactions-title">
@@ -65,10 +63,10 @@ function AccountTransactions({ address, history, retry, loadMore }) {
         return <article className="account-detail__transaction" key={`${item.block_height}:${item.index}`}>
           <div className="account-detail__transaction-operation" data-label="Type"><TransactionTypeBadge>{item.operation}</TransactionTypeBadge></div>
           <div className="account-detail__transaction-direction" data-label="Direction"><span className={`account-detail__direction account-detail__direction--${item.direction}`}>{direction}</span></div>
-          <div className="account-detail__transaction-account" data-label="Account">{counterpartyValid ? <a className="account-detail__transaction-counterparty mono" href={`/accounts/${encodeURIComponent(item.counterparty)}`}>{item.counterparty}</a> : '—'}</div>
+          <div className="account-detail__transaction-account" data-label="Account">{counterpartyValid ? <a className="account-detail__transaction-counterparty mono" href={`/accounts/${encodeURIComponent(item.counterparty)}`} title={item.counterparty}>{item.counterparty}</a> : '—'}</div>
           <span className="account-detail__transaction-amount" data-label="Amount">{item.amount != null ? String(item.amount) : '—'}</span>
           <div className="account-detail__transaction-block" data-label="Block"><a className="table-link" href={`/blocks/${item.block_height}`} aria-label={`Open block #${item.block_height}`}><span className="blocks-table__height accent-value mono">#{item.block_height.toLocaleString()}</span></a></div>
-          <div className="account-detail__transaction-hash-cell" data-label="TX Hash"><a className="account-detail__transaction-hash mono" href={`/blocks/${item.block_height}/transactions/${item.index}`} title={item.tx_hash} aria-label={`Transaction hash ${item.tx_hash}`}>{shortHash(item.tx_hash)}</a></div>
+          <div className="account-detail__transaction-hash-cell" data-label="TX Hash"><a className="account-detail__transaction-hash mono" href={`/blocks/${item.block_height}/transactions/${item.index}`} title={item.tx_hash} aria-label={`Transaction hash ${item.tx_hash}`}>{item.tx_hash || '—'}</a></div>
           <div className="account-detail__transaction-status" data-label="Status"><TransactionExecutionBadge status={item.execution_status} /></div>
         </article>
       })}</div>}

@@ -5,7 +5,6 @@ import { GasValue } from '../components/GasValue'
 import { relativeTime } from '../utils/time'
 
 const transactionHref = (transaction) => `/blocks/${encodeURIComponent(transaction.block_height)}/transactions/${encodeURIComponent(transaction.index)}`
-const shortHash = (value) => value ? `${value.slice(0, 10)}…${value.slice(-8)}` : 'Unavailable'
 
 const columns = [
   {
@@ -24,7 +23,7 @@ const columns = [
           title={transaction.tx_hash || undefined}
           aria-label={`Open transaction ${transaction.tx_hash || 'with unavailable hash'} in block #${transaction.block_height}`}
         >
-          <span className="transactions-table__hash-text">{shortHash(transaction.tx_hash)}</span>
+          <span className="transactions-table__hash-text">{transaction.tx_hash || 'Unavailable'}</span>
         </a>
       </div>
     ),
