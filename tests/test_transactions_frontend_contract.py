@@ -80,7 +80,9 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         self.assertNotIn("label: 'Height'", page)
         self.assertEqual(page.count("label: '"), 6)
         self.assertNotIn("shortAddress", page)
-        self.assertIn("{transaction.tx_hash || 'Unavailable'}", page)
+        self.assertNotIn(".slice(", page)
+        self.assertIn('<span className="transactions-table__hash-text">{transaction.tx_hash || \'Unavailable\'}</span>', page)
+        self.assertIn("title={transaction.tx_hash || undefined}", page)
         self.assertIn("<CopyButton value={transaction.tx_hash} label=\"transaction hash\" />", page)
         self.assertIn("{transaction.tx_hash && <CopyButton", page)
         self.assertLess(page.index('</a>'), page.index('<CopyButton'))
@@ -114,9 +116,10 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         for old_width in ("width: 1%", "width: 145px", "width: 125px"):
             self.assertNotIn(old_width, transactions_rules)
         self.assertNotIn(".transactions-page__table td {", transactions_rules)
-        self.assertIn(".transactions-table__hash-cell { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; vertical-align: middle; }", styles)
-        self.assertIn(".transactions-table__hash { flex: 0 0 auto; color: var(--color-text-bright); font-weight: 600; white-space: nowrap; }", styles)
-        self.assertNotIn("flex: 1 1 auto", transactions_rules)
+        self.assertIn(".transactions-table__hash-cell { display: inline-flex; width: 100%; max-width: 100%; min-width: 0; align-items: center; gap: 8px; vertical-align: middle; }", styles)
+        self.assertIn(".transactions-table__hash { min-width: 0; flex: 1 1 auto; overflow: hidden; color: var(--color-text-bright); font-weight: 600; }", styles)
+        self.assertIn(".transactions-table__hash-text { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }", styles)
+        self.assertIn(".transactions-table__hash-cell .copy-button { width: 24px; height: 24px; flex: 0 0 auto; }", styles)
         self.assertIn(".transactions-table__hash:hover { color: var(--color-accent); }", styles)
         self.assertIn("import { TransactionTypeBadge }", page)
         self.assertIn("<TransactionTypeBadge title={transaction.type !== 'unknown' ? transaction.type : undefined}>{transaction.operation}</TransactionTypeBadge>", page)
@@ -124,7 +127,7 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         self.assertIn(".transaction-type-badge {", styles)
         self.assertNotIn("transactions-table__operation", page + styles)
         hash_rule = styles[styles.index(".transactions-table__hash {"):styles.index(".transactions-table__hash:hover")]
-        self.assertNotIn("text-overflow", hash_rule)
+        self.assertIn("overflow: hidden", hash_rule)
         mobile = styles[styles.index("@media (max-width: 760px)"):]
         self.assertIn(".transactions-page__table .data-table { min-width: 1050px; }", mobile)
 

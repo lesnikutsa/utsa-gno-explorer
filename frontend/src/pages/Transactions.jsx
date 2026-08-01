@@ -19,7 +19,7 @@ const columns = [
           title={transaction.tx_hash || undefined}
           aria-label={`Open transaction ${transaction.tx_hash || 'with unavailable hash'} in block #${transaction.block_height}`}
         >
-          {transaction.tx_hash || 'Unavailable'}
+          <span className="transactions-table__hash-text">{transaction.tx_hash || 'Unavailable'}</span>
         </a>
         {transaction.tx_hash && <CopyButton value={transaction.tx_hash} label="transaction hash" />}
       </div>
