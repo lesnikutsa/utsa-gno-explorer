@@ -75,14 +75,17 @@ class TransactionDetailFrontendContractTests(unittest.TestCase):
         self.assertIn(".block-detail__transactions .transaction-hash__short { display: none; }", responsive)
         self.assertNotIn("\n.data-table { table-layout: fixed", styles)
 
-    def test_block_hash_and_balanced_information_grid(self):
+    def test_block_hash_and_information_grid(self):
         detail = self.read("frontend/src/pages/TransactionDetail.jsx")
-        information = detail[detail.index('className="transaction-detail__grid"'):detail.index("</section>", detail.index('className="transaction-detail__grid"'))]
-        self.assertEqual(information.count('className="transaction-detail__field"'), 6)
-        for label in ("Block", "Transaction Index", "Block Time", "Proposer", "Block Hash", "Base64 Decode"):
+        information = detail[detail.index('id="transaction-information-title"'):detail.index('aria-labelledby="execution-result-title"')]
+        technical = detail[detail.index('className="panel transaction-detail__section transaction-detail__technical"'):]
+        for label in ("Block", "Transaction Index", "Block Time", "Proposer", "Block Hash"):
             self.assertIn(f">{label}</span>", information)
+        self.assertNotIn("Base64 Decode", information)
         self.assertIn("{transaction.block_hash}", information)
         self.assertIn('<CopyButton value={transaction.block_hash} label="block hash" />', information)
+        self.assertIn("transaction-detail__field--full-width", information)
+        self.assertIn("Base64 Decode status", technical)
 
     def test_decode_badge_is_shared_and_never_implies_execution_success(self):
         block = self.read("frontend/src/pages/BlockDetail.jsx")
@@ -96,23 +99,38 @@ class TransactionDetailFrontendContractTests(unittest.TestCase):
         self.assertIn("{ label: 'Invalid Base64', tone: 'error' }", badge)
         self.assertIn("This is not transaction execution status", badge)
 
-    def test_execution_fields_are_notice_only(self):
+    def test_execution_result_fields_and_safe_text_rendering(self):
         block = self.read("frontend/src/pages/BlockDetail.jsx")
         detail = self.read("frontend/src/pages/TransactionDetail.jsx")
-        self.assertIn("The summary describes transaction contents only. Execution result, gas used, and fee are not indexed yet.", detail)
+        self.assertNotIn("The summary describes transaction contents only. Execution result, gas used, and fee are not indexed yet.", detail)
+        self.assertIn("Execution Result", detail)
+        self.assertIn("<TransactionExecutionBadge status={transaction.execution_status} />", detail)
+        for label in ("Gas Used", "Gas Wanted", "Gas Utilization"):
+            self.assertIn(f">{label}</span>", detail)
+        self.assertIn("transaction.execution_status === 'failed' && transaction.error", detail)
+        self.assertIn("The execution result is not available from the indexed RPC data.", detail)
+        for value in ("transaction.error", "transaction.log", "transaction.info"):
+            self.assertIn(f"{{{value}}}", detail)
+        self.assertNotIn("dangerouslySetInnerHTML", detail)
         self.assertNotIn("Transaction type, sender, execution result, gas, fee", detail)
         self.assertNotIn("label: 'Type'", block)
+        self.assertIn("label: 'Status'", block)
+        self.assertIn("label: 'Gas Used'", block)
         self.assertNotIn("Transaction Hash</span>", detail)
 
     def test_transaction_summary_placement_and_existing_data_flow(self):
         detail = self.read("frontend/src/pages/TransactionDetail.jsx")
         information = detail.index("Transaction Information")
+        execution = detail.index("Execution Result")
         summary = detail.index("<TransactionSummary summary={transaction.summary} />")
-        size = detail.index("Transaction Size")
-        raw = detail.index("Raw Transaction")
-        self.assertLess(information, summary)
-        self.assertLess(summary, size)
-        self.assertLess(size, raw)
+        technical = detail.index("<summary>Technical Data</summary>")
+        self.assertLess(information, execution)
+        self.assertLess(execution, summary)
+        self.assertLess(summary, technical)
+        self.assertIn('<details className="panel transaction-detail__section transaction-detail__technical">', detail)
+        self.assertNotIn('<details className="panel transaction-detail__section transaction-detail__technical" open', detail)
+        technical_section = detail[detail.index('<details className="panel transaction-detail__section transaction-detail__technical">'):]
+        self.assertIn("Raw Transaction Base64", technical_section)
 
     def test_transaction_summary_uses_explicit_safe_fields(self):
         summary = self.read("frontend/src/components/TransactionSummary.jsx")
