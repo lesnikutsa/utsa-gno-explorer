@@ -55,3 +55,12 @@ test('Developer Data keeps raw Base64 behind a nested disclosure', () => {
   assert.doesNotMatch(detail, /Technical Data|Encoded length|Low-level encoded transaction data/)
   assert.match(detail, /Execution Details/)
 })
+
+test('transaction hash copy control stays beside the wrapping heading hash', () => {
+  assert.match(detail, /<div className="transaction-detail__copy-row transaction-detail__copy-row--heading">\s*<h1 className="transaction-detail__heading-hash mono"[^>]*>\{transaction\.tx_hash\}<\/h1>\s*<CopyButton value=\{transaction\.tx_hash\} label="transaction hash" \/>/)
+  assert.match(styles, /\.transaction-detail__heading-hash \{ flex: 0 1 auto;/)
+  assert.match(styles, /\.transaction-detail__copy-row--heading \{ width: fit-content; max-width: 100%; \}/)
+  assert.match(styles, /\.transaction-detail__copy-row--heading \.copy-button \{ flex: 0 0 auto; \}/)
+  assert.match(styles, /\.transaction-detail__copy-row \{ display: flex; align-items: flex-start; gap: 8px; min-width: 0; \}/)
+  assert.match(styles, /\.transaction-detail__hash \{ flex: 1 1 auto;/)
+})

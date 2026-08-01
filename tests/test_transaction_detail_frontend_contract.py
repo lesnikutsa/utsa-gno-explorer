@@ -42,6 +42,7 @@ class TransactionDetailFrontendContractTests(unittest.TestCase):
         self.assertIn("<CopyButton value={transaction.raw_base64}", detail)
         self.assertIn("Transaction #{transaction.index}", detail)
         self.assertIn('<CopyButton value={transaction.tx_hash} label="transaction hash" />', detail)
+        self.assertIn('className="transaction-detail__copy-row transaction-detail__copy-row--heading"', detail)
         self.assertIn("title={transaction.tx_hash}", block)
         self.assertIn('className="transaction-hash__full" aria-hidden="true">{transaction.tx_hash}', block)
         self.assertIn('className="transaction-hash__short" aria-hidden="true"', block)
@@ -74,6 +75,14 @@ class TransactionDetailFrontendContractTests(unittest.TestCase):
         self.assertIn(".block-detail__transactions .transaction-hash__full { display: block; }", responsive)
         self.assertIn(".block-detail__transactions .transaction-hash__short { display: none; }", responsive)
         self.assertNotIn("\n.data-table { table-layout: fixed", styles)
+
+    def test_transaction_heading_hash_copy_layout_is_scoped(self):
+        styles = self.read("frontend/src/styles/app.css")
+        self.assertIn(".transaction-detail__heading-hash { flex: 0 1 auto;", styles)
+        self.assertNotIn(".transaction-detail__heading-hash { flex: 1 1 auto;", styles)
+        self.assertIn(".transaction-detail__copy-row--heading { width: fit-content; max-width: 100%; }", styles)
+        self.assertIn(".transaction-detail__copy-row--heading .copy-button { flex: 0 0 auto; }", styles)
+        self.assertIn(".transaction-detail__hash { flex: 1 1 auto;", styles)
 
     def test_block_hash_and_information_grid(self):
         detail = self.read("frontend/src/pages/TransactionDetail.jsx")

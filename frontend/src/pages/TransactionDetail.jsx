@@ -52,7 +52,7 @@ export function TransactionDetail({ transactionDetail }) {
       <header className="transaction-detail__header">
         {transaction.tx_hash ? <>
           <span className="transaction-detail__eyebrow">Transaction</span>
-          <div className="transaction-detail__copy-row">
+          <div className="transaction-detail__copy-row transaction-detail__copy-row--heading">
             <h1 className="transaction-detail__heading-hash mono" id="transaction-detail-title">{transaction.tx_hash}</h1>
             <CopyButton value={transaction.tx_hash} label="transaction hash" />
           </div>
