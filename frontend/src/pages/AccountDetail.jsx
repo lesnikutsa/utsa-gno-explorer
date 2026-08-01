@@ -3,6 +3,7 @@ import { TransactionTypeBadge } from '../components/TransactionTypeBadge'
 import { TransactionExecutionBadge } from '../components/TransactionExecutionBadge'
 import { networkProfile } from '../config/networkProfile'
 import { findNativeBalance, findOtherBalances, formatAmountString, getAccountDetailView } from '../utils/account'
+import { shortTransactionHash } from '../utils/transactionHash'
 
 const present = (value) => value !== null && value !== undefined && value !== ''
 
@@ -66,7 +67,7 @@ function AccountTransactions({ address, history, retry, loadMore }) {
           <div className="account-detail__transaction-account" data-label="Account">{counterpartyValid ? <a className="account-detail__transaction-counterparty mono" href={`/accounts/${encodeURIComponent(item.counterparty)}`} title={item.counterparty}>{item.counterparty}</a> : '—'}</div>
           <span className="account-detail__transaction-amount" data-label="Amount">{item.amount != null ? String(item.amount) : '—'}</span>
           <div className="account-detail__transaction-block" data-label="Block"><a className="table-link" href={`/blocks/${item.block_height}`} aria-label={`Open block #${item.block_height}`}><span className="blocks-table__height accent-value mono">#{item.block_height.toLocaleString()}</span></a></div>
-          <div className="account-detail__transaction-hash-cell" data-label="TX Hash"><a className="account-detail__transaction-hash mono" href={`/blocks/${item.block_height}/transactions/${item.index}`} title={item.tx_hash} aria-label={`Transaction hash ${item.tx_hash}`}>{item.tx_hash || '—'}</a></div>
+          <div className="account-detail__transaction-hash-cell" data-label="TX Hash"><a className="account-detail__transaction-hash mono" href={`/blocks/${item.block_height}/transactions/${item.index}`} title={item.tx_hash} aria-label={`Transaction hash ${item.tx_hash}`}>{shortTransactionHash(item.tx_hash, '—')}</a></div>
           <div className="account-detail__transaction-status" data-label="Status"><TransactionExecutionBadge status={item.execution_status} /></div>
         </article>
       })}</div>}

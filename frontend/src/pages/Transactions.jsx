@@ -3,6 +3,7 @@ import { TransactionTypeBadge } from '../components/TransactionTypeBadge'
 import { TransactionExecutionBadge } from '../components/TransactionExecutionBadge'
 import { GasValue } from '../components/GasValue'
 import { relativeTime } from '../utils/time'
+import { shortTransactionHash } from '../utils/transactionHash'
 
 const transactionHref = (transaction) => `/blocks/${encodeURIComponent(transaction.block_height)}/transactions/${encodeURIComponent(transaction.index)}`
 
@@ -23,7 +24,7 @@ const columns = [
           title={transaction.tx_hash || undefined}
           aria-label={`Open transaction ${transaction.tx_hash || 'with unavailable hash'} in block #${transaction.block_height}`}
         >
-          <span className="transactions-table__hash-text">{transaction.tx_hash || 'Unavailable'}</span>
+          <span className="transactions-table__hash-text">{shortTransactionHash(transaction.tx_hash, 'Unavailable')}</span>
         </a>
       </div>
     ),

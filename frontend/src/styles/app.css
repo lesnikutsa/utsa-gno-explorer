@@ -182,11 +182,11 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .blocks-page__table .data-table { min-width: 620px; }
 .blocks-page__table .data-table td { height: 34px; }
 .transactions-page { min-width: 0; }
-.transactions-page__table .data-table { display: block; width: 100%; min-width: 1400px; }
+.transactions-page__table .data-table { display: block; width: 100%; min-width: 1042px; }
 .transactions-page__table .data-table thead, .transactions-page__table .data-table tbody { display: block; }
-.transactions-page__table .data-table tr { display: grid; grid-template-columns: max-content 64ch max-content max-content max-content max-content; align-items: center; justify-content: space-between; column-gap: 32px; padding-right: 16px; padding-left: 16px; }
-.transactions-page__table .data-table th { padding: 10px 0; }
-.transactions-page__table .data-table td { padding: 6px 0; border-top: 0; text-align: left; }
+.transactions-page__table .data-table tr { display: grid; grid-template-columns: 120px 250px 120px 90px 100px 130px; align-items: center; justify-content: center; column-gap: 40px; padding-right: 16px; padding-left: 16px; }
+.transactions-page__table .data-table th { padding: 10px 0; font-size: 11px; font-weight: 700; text-align: center; }
+.transactions-page__table .data-table td { padding: 6px 0; border-top: 0; text-align: center; }
 .transactions-page__table .data-table tbody tr { border-top: 1px solid rgba(40,64,86,.42); }
 .transactions-page__table .data-table tbody tr:has(.table-message) { grid-template-columns: 1fr; }
 .transactions-table__hash-cell { white-space: nowrap; }
@@ -447,7 +447,7 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
   .topbar-block-time { display: none; }
   .main-content { padding: 12px; }.status-grid { grid-template-columns: 1fr 1fr; }.status-card__value { font-size: 16px; }
   .blocks-page__header { align-items: flex-start; }
-  .transactions-page__table .data-table { min-width: 1400px; }
+  .transactions-page__table .data-table { min-width: 1042px; }
   .validators-page__header { align-items: flex-start; flex-wrap: wrap; }
   .validators-page__summary { grid-template-columns: 1fr; }
   .validators-search { flex-wrap: wrap; }
@@ -680,10 +680,10 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
   .account-detail__field:nth-child(odd), .account-detail__balance:nth-child(odd) { border-right: 0; }
 }
 
-.account-detail__transaction-list { --transaction-columns: max-content max-content 40ch max-content max-content 64ch max-content; display: grid; gap: 6px; margin: 16px 0; overflow-x: auto; }
-.account-detail__transaction-header, .account-detail__transaction { display: grid; grid-template-columns: var(--transaction-columns); min-width: 1500px; align-items: center; justify-content: space-between; column-gap: 32px; }
-.account-detail__transaction-header { padding: 0 12px 2px; color: var(--color-text-secondary); font-size: 10px; font-weight: 700; text-align: left; text-transform: uppercase; }
-.account-detail__transaction { padding: 10px 12px; border: 1px solid var(--color-border); border-radius: 8px; color: var(--color-text); font-size: 11px; text-align: left; }
+.account-detail__transaction-list { --transaction-columns: 120px 105px 330px 140px 90px 235px 90px; display: grid; gap: 6px; margin: 16px 0; }
+.account-detail__transaction-header, .account-detail__transaction { display: grid; grid-template-columns: var(--transaction-columns); align-items: center; justify-content: center; column-gap: 24px; }
+.account-detail__transaction-header { padding: 0 12px 2px; color: var(--color-text-secondary); font-size: 11px; font-weight: 700; text-align: center; text-transform: uppercase; }
+.account-detail__transaction { padding: 10px 12px; border: 1px solid var(--color-border); border-radius: 8px; color: var(--color-text); font-size: 11px; text-align: center; }
 .account-detail__transaction > * { min-width: 0; }
 .account-detail__transaction-operation { overflow: hidden; }
 .account-detail__transaction-amount { color: var(--color-text); font-size: 12px; font-weight: 600; cursor: default; }

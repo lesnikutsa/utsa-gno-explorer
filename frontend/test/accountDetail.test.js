@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { decodeAccountRouteAddress, findNativeBalance, findOtherBalances, formatAmountString, getAccountDetailView } from '../src/utils/account.js'
+import { shortTransactionHash } from '../src/utils/transactionHash.js'
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
 const app = read('../src/App.jsx')
@@ -16,6 +17,14 @@ const styles = read('../src/styles/app.css')
 
 const address = 'g16mldrfu90pe5r97cjm3xk02m7a3d0z8g9g3r75'
 
+
+test('transaction hashes use the shared 16 plus 12 presentation', () => {
+  const hash = '32387673D9D18D4F000000000000000000000000000000000000C8749F247314'
+  assert.equal(shortTransactionHash(hash, '—'), '32387673D9D18D4F…C8749F247314')
+  assert.equal(shortTransactionHash(null, 'Unavailable'), 'Unavailable')
+  assert.ok(page.includes("shortTransactionHash(item.tx_hash, '—')"))
+  assert.ok(transactionsPage.includes("shortTransactionHash(transaction.tx_hash, 'Unavailable')"))
+})
 test('account route decoder accepts plain and encoded addresses', () => {
   assert.equal(decodeAccountRouteAddress(address), address)
   assert.equal(decodeAccountRouteAddress(encodeURIComponent(address)), address)
@@ -202,7 +211,7 @@ test('transaction account, block, and hash columns preserve their links', () => 
   assert.ok(transactions.includes('className="blocks-table__height accent-value mono">#{item.block_height.toLocaleString()}</span>'))
   assert.ok(transactions.includes('className="account-detail__transaction-hash mono" href={`/blocks/${item.block_height}/transactions/${item.index}`}'))
   assert.ok(transactions.includes('title={item.tx_hash} aria-label={`Transaction hash ${item.tx_hash}`}'))
-  assert.ok(transactions.includes("{item.tx_hash || '—'}"))
+  assert.ok(transactions.includes("shortTransactionHash(item.tx_hash, '—')"))
   assert.equal(transactions.includes('shortHash'), false)
   assert.ok(page.includes("import { TransactionExecutionBadge } from '../components/TransactionExecutionBadge'"))
   assert.ok(transactions.includes('<TransactionExecutionBadge status={item.execution_status} />'))
@@ -215,15 +224,18 @@ test('transaction headers and rows share desktop columns and become labeled fiel
   const transactionStyles = styles.slice(styles.indexOf('.account-detail__transaction-list'))
   assert.ok(transactionStyles.includes('--transaction-columns:'))
   assert.ok(transactionStyles.includes('.account-detail__transaction-header, .account-detail__transaction { display: grid; grid-template-columns: var(--transaction-columns)'))
-  assert.ok(transactionStyles.includes('--transaction-columns: max-content max-content 40ch max-content max-content 64ch max-content'))
-  assert.ok(transactionStyles.includes('grid-template-columns: var(--transaction-columns); min-width: 1500px; align-items: center; justify-content: space-between; column-gap: 32px'))
+  assert.ok(transactionStyles.includes('--transaction-columns: 120px 105px 330px 140px 90px 235px 90px'))
+  assert.ok(transactionStyles.includes('grid-template-columns: var(--transaction-columns); align-items: center; justify-content: center; column-gap: 24px'))
   assert.equal(transactionStyles.includes('repeat(7, 1fr)'), false)
-  assert.ok(transactionStyles.includes('.account-detail__transaction-header { padding: 0 12px 2px; color: var(--color-text-secondary); font-size: 10px'))
+  assert.ok(transactionStyles.includes('.account-detail__transaction-header { padding: 0 12px 2px; color: var(--color-text-secondary); font-size: 11px; font-weight: 700; text-align: center;'))
   assert.ok(transactionStyles.includes('.account-detail__transaction { padding: 10px 12px;'))
   assert.ok(transactionStyles.includes('.account-detail__transaction-amount { color: var(--color-text); font-size: 12px; font-weight: 600; cursor: default; }'))
   for (const className of ['account-detail__transaction-operation', 'account-detail__transaction-counterparty', 'account-detail__transaction-block', 'account-detail__transaction-hash']) assert.ok(transactionStyles.includes(`.${className}`))
   assert.ok(transactionStyles.includes('.account-detail__transaction-counterparty { color: var(--color-text-bright); font-size: 12px; white-space: nowrap; }'))
   assert.equal(transactionStyles.includes('text-overflow: ellipsis'), false)
+  assert.equal(transactionStyles.includes('justify-content: space-between'), false)
+  assert.equal(transactionStyles.includes('64ch'), false)
+  assert.equal(transactionStyles.includes('min-width: 1500px'), false)
   assert.ok(transactionStyles.includes('.account-detail__transaction-hash { color: var(--color-text-bright); font-size: 11px; white-space: nowrap; }'))
   assert.equal(transactionStyles.includes('.account-detail__transaction-block a, .account-detail__transaction-hash { color: var(--color-text-bright); }'), false)
   assert.equal(transactionStyles.includes('.account-detail__transaction-block a { color: var(--color-text-bright); }'), false)
