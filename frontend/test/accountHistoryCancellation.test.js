@@ -1,8 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 
 import { request } from '../src/services/api.js'
-import { emptyAccountHistory, historyRequestIsCurrent, mergeAccountHistoryItems } from '../src/utils/accountHistory.js'
+import { emptyAccountHistory, historyRequestIsCurrent } from '../src/utils/accountHistory.js'
 
 const originalFetch = globalThis.fetch
 
@@ -30,12 +31,20 @@ test('request generations reject aborted, navigated, and stale work', () => {
   assert.equal(historyRequestIsCurrent(current), false)
 })
 
-test('history state separates initial and load-more errors', () => {
-  assert.deepEqual(emptyAccountHistory(), { items: [], pagination: null, loading: true, loadingMore: false, initialError: false, loadMoreError: false })
+test('history state starts on the latest page', () => {
+  assert.deepEqual(emptyAccountHistory(), { items: [], pagination: null, loading: true, initialError: false, pageError: false, pageIndex: 0, canLoadOlder: false })
 })
 
-test('load-more merge preserves order and removes overlapping positions', () => {
-  const existing = [{ block_height: 10, index: 2 }, { block_height: 10, index: 1 }]
-  const incoming = [{ block_height: 10, index: 1, changed: true }, { block_height: 9, index: 0 }]
-  assert.deepEqual(mergeAccountHistoryItems(existing, incoming), [...existing, incoming[1]])
+
+test('account history pagination replaces pages and stores cursors', () => {
+  const hook = readFileSync(new URL('../src/hooks/useAccountDetail.js', import.meta.url), 'utf8')
+  assert.ok(hook.includes('export const ACCOUNT_HISTORY_PAGE_SIZE = 20'))
+  assert.ok(hook.includes('limit: ACCOUNT_HISTORY_PAGE_SIZE'))
+  assert.ok(hook.includes('const [cursorHistory, setCursorHistory] = useState([null])'))
+  assert.ok(hook.includes('items: (result.items || []).slice(0, ACCOUNT_HISTORY_PAGE_SIZE)'))
+  assert.ok(hook.includes('loadHistoryPage(cursorHistory[history.pageIndex - 1], history.pageIndex - 1)'))
+  assert.ok(hook.includes('setCursorHistory([null])'))
+  assert.ok(hook.includes('loadHistoryPage(null, 0, [null])'))
+  assert.equal(hook.includes('mergeAccountHistoryItems'), false)
+  assert.equal(hook.includes('items: [...'), false)
 })

@@ -20,6 +20,35 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         self.assertIn("<TransactionsPage />", app)
         self.assertIn("transactionDetailMatch", app)
 
+    def test_active_navigation_and_page_headers(self):
+        styles = self.read("frontend/src/styles/app.css")
+        active_rule = styles[styles.index(".nav-item.is-active {"):styles.index("\n", styles.index(".nav-item.is-active {"))]
+        self.assertIn("font-weight: 600", active_rule)
+        self.assertNotIn("blocks", active_rule.lower())
+
+        pages = {
+            "frontend/src/pages/Blocks.jsx": ("Blocks", "Refresh"),
+            "frontend/src/pages/Transactions.jsx": ("Transactions", "Retry"),
+            "frontend/src/pages/Validators.jsx": ("Validators", "Refresh"),
+            "frontend/src/pages/Governance.jsx": ("Governance", "Retry"),
+        }
+        subtitles = (
+            "Latest finalized blocks indexed by UTSA Explorer.",
+            "Latest transactions indexed by UTSA Explorer.",
+            "Active validator set indexed by UTSA Explorer.",
+            "Governance proposals saved by UTSA Explorer.",
+        )
+        all_pages = "".join(self.read(path) for path in pages)
+        for subtitle in subtitles:
+            self.assertNotIn(subtitle, all_pages)
+        for path, (title, action) in pages.items():
+            page = self.read(path)
+            self.assertIn(f">{title}</h1>", page)
+            self.assertIn(action, page)
+        self.assertIn("All validators shown are members of the current active set.", self.read("frontend/src/pages/Validators.jsx"))
+        for path in ("frontend/src/pages/Blocks.jsx", "frontend/src/pages/Transactions.jsx", "frontend/src/pages/Validators.jsx", "frontend/src/pages/Governance.jsx"):
+            self.assertIn("DataTable", self.read(path))
+
     def test_sidebar_assigns_transaction_detail_to_transactions(self):
         sidebar = self.read("frontend/src/components/Sidebar.jsx")
         self.assertIn("/^\\/blocks\\/[^/]+\\/transactions\\/[^/]+\\/?$/.test(pathname)", sidebar)
@@ -73,19 +102,18 @@ class TransactionsFrontendContractTests(unittest.TestCase):
 
     def test_six_column_transaction_table_and_links(self):
         page = self.read("frontend/src/pages/Transactions.jsx")
-        labels = ("label: 'TX Hash'", "label: 'Time'", "label: 'Type'", "label: 'Block'", "label: 'Status'", "label: 'Gas Used'")
+        labels = ("label: 'Type'", "label: 'TX Hash'", "label: 'Time'", "label: 'Block'", "label: 'Status'", "label: 'Gas Used'")
         for label in labels:
             self.assertIn(label, page)
         self.assertEqual([page.index(label) for label in labels], sorted(page.index(label) for label in labels))
         self.assertNotIn("label: 'Height'", page)
         self.assertEqual(page.count("label: '"), 6)
         self.assertNotIn("shortAddress", page)
-        self.assertNotIn(".slice(", page)
-        self.assertIn('<span className="transactions-table__hash-text">{transaction.tx_hash || \'Unavailable\'}</span>', page)
+        self.assertNotIn("shortHash", page)
+        self.assertIn("import { shortTransactionHash } from '../utils/transactionHash'", page)
+        self.assertIn("shortTransactionHash(transaction.tx_hash, 'Unavailable')", page)
         self.assertIn("title={transaction.tx_hash || undefined}", page)
-        self.assertIn("<CopyButton value={transaction.tx_hash} label=\"transaction hash\" />", page)
-        self.assertIn("{transaction.tx_hash && <CopyButton", page)
-        self.assertLess(page.index('</a>'), page.index('<CopyButton'))
+        self.assertNotIn("CopyButton", page)
         self.assertIn("/transactions/${encodeURIComponent(transaction.index)}", page)
         self.assertIn("/blocks/${encodeURIComponent(transaction.block_height)}", page)
         self.assertIn("{transaction.operation}", page)
@@ -106,30 +134,35 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         self.assertIn("disabled={loading || pageIndex === 0}", page)
         self.assertIn("disabled={loading || !canLoadOlder}", page)
         self.assertIn("pageIndex === 0 ? 'Latest' : `Page ${pageIndex + 1}`", page)
-        self.assertIn("table-layout: fixed", styles)
-        self.assertIn("min-width: 1050px", styles)
-        transactions_rules = styles[styles.index(".transactions-page {"):styles.index(".blocks-table__height")]
-        column_widths = (38, 13, 18, 10, 10, 11)
-        for column, width in enumerate(column_widths, start=1):
-            self.assertIn(f"th:nth-child({column}) {{ width: {width}%; }}", transactions_rules)
-        self.assertEqual(sum(column_widths), 100)
-        for old_width in ("width: 1%", "width: 145px", "width: 125px"):
-            self.assertNotIn(old_width, transactions_rules)
-        self.assertNotIn(".transactions-page__table td {", transactions_rules)
-        self.assertIn(".transactions-table__hash-cell { display: inline-flex; width: 100%; max-width: 100%; min-width: 0; align-items: center; gap: 8px; vertical-align: middle; }", styles)
-        self.assertIn(".transactions-table__hash { min-width: 0; flex: 1 1 auto; overflow: hidden; color: var(--color-text-bright); font-weight: 600; }", styles)
-        self.assertIn(".transactions-table__hash-text { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }", styles)
-        self.assertIn(".transactions-table__hash-cell .copy-button { width: 24px; height: 24px; flex: 0 0 auto; }", styles)
-        self.assertIn(".transactions-table__hash:hover { color: var(--color-accent); }", styles)
+        transactions_rules = styles[styles.index(".transactions-page {"):styles.index(".transaction-type-badge")]
+        template = "110px minmax(24px, 1fr) 250px minmax(24px, 1fr) 110px minmax(24px, 1fr) 90px minmax(24px, 1fr) 100px minmax(24px, 1fr) 120px"
+        self.assertIn(f"grid-template-columns: {template}", transactions_rules)
+        self.assertEqual(template.count("minmax(24px, 1fr)"), 5)
+        for child, column in enumerate((1, 3, 5, 7, 9, 11), start=1):
+            self.assertIn(f"tr > :nth-child({child}) {{ grid-column: {column}; }}", transactions_rules)
+        self.assertIn("padding-right: 16px; padding-left: 16px", transactions_rules)
+        shared_headers = styles[styles.index(".data-table th {"):styles.index("\n", styles.index(".data-table th {"))]
+        self.assertIn("font-size: 11px", shared_headers)
+        self.assertIn("font-weight: 700", shared_headers)
+        self.assertIn(".transactions-page__table .data-table th { padding: 10px 0; text-align: center; }", transactions_rules)
+        self.assertNotIn("column-gap:", transactions_rules)
+        self.assertNotIn("justify-content: center", transactions_rules)
+        self.assertNotIn("justify-content: space-between", transactions_rules)
+        self.assertNotIn("min-width: 1042px", transactions_rules)
+        self.assertIn("@media (max-width: 1180px)", transactions_rules)
+        self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr))", transactions_rules)
+        self.assertIn("@media (max-width: 520px)", transactions_rules)
+        self.assertIn("grid-template-columns: minmax(0, 1fr)", transactions_rules)
+        self.assertIn("td[data-label]::before", transactions_rules)
+        self.assertIn("data-label={column.label}", self.read("frontend/src/components/DataTable.jsx"))
+        self.assertIn(".transactions-table__hash-cell { white-space: nowrap; }", styles)
+        self.assertIn(".transactions-table__hash { color: var(--color-text-bright); font-weight: 600; white-space: nowrap; }", styles)
+        self.assertNotIn(".transactions-table__hash-cell .copy-button", styles)
         self.assertIn("import { TransactionTypeBadge }", page)
         self.assertIn("<TransactionTypeBadge title={transaction.type !== 'unknown' ? transaction.type : undefined}>{transaction.operation}</TransactionTypeBadge>", page)
         self.assertIn('className="transaction-type-badge"', badge)
         self.assertIn(".transaction-type-badge {", styles)
         self.assertNotIn("transactions-table__operation", page + styles)
-        hash_rule = styles[styles.index(".transactions-table__hash {"):styles.index(".transactions-table__hash:hover")]
-        self.assertIn("overflow: hidden", hash_rule)
-        mobile = styles[styles.index("@media (max-width: 760px)"):]
-        self.assertIn(".transactions-page__table .data-table { min-width: 1050px; }", mobile)
 
     def test_execution_status_badge_has_accessible_text_and_safe_fallback(self):
         badge = self.read("frontend/src/components/TransactionExecutionBadge.jsx")

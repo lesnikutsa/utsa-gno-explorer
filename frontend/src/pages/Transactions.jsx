@@ -1,13 +1,18 @@
 import { DataTable } from '../components/DataTable'
-import { CopyButton } from '../components/CopyButton'
 import { TransactionTypeBadge } from '../components/TransactionTypeBadge'
 import { TransactionExecutionBadge } from '../components/TransactionExecutionBadge'
 import { GasValue } from '../components/GasValue'
 import { relativeTime } from '../utils/time'
+import { shortTransactionHash } from '../utils/transactionHash'
 
 const transactionHref = (transaction) => `/blocks/${encodeURIComponent(transaction.block_height)}/transactions/${encodeURIComponent(transaction.index)}`
 
 const columns = [
+  {
+    key: 'operation',
+    label: 'Type',
+    render: (transaction) => <TransactionTypeBadge title={transaction.type !== 'unknown' ? transaction.type : undefined}>{transaction.operation}</TransactionTypeBadge>,
+  },
   {
     key: 'tx_hash',
     label: 'TX Hash',
@@ -19,9 +24,8 @@ const columns = [
           title={transaction.tx_hash || undefined}
           aria-label={`Open transaction ${transaction.tx_hash || 'with unavailable hash'} in block #${transaction.block_height}`}
         >
-          <span className="transactions-table__hash-text">{transaction.tx_hash || 'Unavailable'}</span>
+          <span className="transactions-table__hash-text">{shortTransactionHash(transaction.tx_hash, 'Unavailable')}</span>
         </a>
-        {transaction.tx_hash && <CopyButton value={transaction.tx_hash} label="transaction hash" />}
       </div>
     ),
   },
@@ -29,11 +33,6 @@ const columns = [
     key: 'block_time',
     label: 'Time',
     render: (transaction) => <time dateTime={transaction.block_time} title={transaction.block_time}>{relativeTime(transaction.block_time)}</time>,
-  },
-  {
-    key: 'operation',
-    label: 'Type',
-    render: (transaction) => <TransactionTypeBadge title={transaction.type !== 'unknown' ? transaction.type : undefined}>{transaction.operation}</TransactionTypeBadge>,
   },
   {
     key: 'block_height',
@@ -61,7 +60,6 @@ export function Transactions({ transactionsPage }) {
       <header className="blocks-page__header">
         <div>
           <h1 id="transactions-page-title">Transactions</h1>
-          <p>Latest transactions indexed by UTSA Explorer.</p>
         </div>
         {error && <button className="blocks-page__button blocks-page__button--accent" type="button" onClick={retry} disabled={loading}>Retry</button>}
       </header>
