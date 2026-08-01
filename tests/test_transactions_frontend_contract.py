@@ -108,10 +108,12 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         self.assertIn("table-layout: fixed", styles)
         self.assertIn("min-width: 1050px", styles)
         transactions_rules = styles[styles.index(".transactions-page {"):styles.index(".blocks-table__height")]
-        column_widths = (16, 30, 16, 12, 12, 14)
+        column_widths = (15, 22, 18, 13, 14, 18)
         for column, width in enumerate(column_widths, start=1):
             self.assertIn(f"th:nth-child({column}) {{ width: {width}%; }}", transactions_rules)
         self.assertEqual(sum(column_widths), 100)
+        self.assertIn("th:nth-child(4), .transactions-page__table .data-table td:nth-child(4), .transactions-page__table .data-table th:nth-child(6), .transactions-page__table .data-table td:nth-child(6) { text-align: right; }", transactions_rules)
+        self.assertIn("th:nth-child(5), .transactions-page__table .data-table td:nth-child(5) { text-align: center; }", transactions_rules)
         for old_width in ("width: 1%", "width: 145px", "width: 125px"):
             self.assertNotIn(old_width, transactions_rules)
         self.assertNotIn(".transactions-page__table td {", transactions_rules)

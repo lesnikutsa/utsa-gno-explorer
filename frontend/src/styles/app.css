@@ -183,12 +183,14 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .blocks-page__table .data-table td { height: 34px; }
 .transactions-page { min-width: 0; }
 .transactions-page__table .data-table { min-width: 1050px; table-layout: fixed; }
-.transactions-page__table .data-table th:nth-child(1) { width: 16%; }
-.transactions-page__table .data-table th:nth-child(2) { width: 30%; }
-.transactions-page__table .data-table th:nth-child(3) { width: 16%; }
-.transactions-page__table .data-table th:nth-child(4) { width: 12%; }
-.transactions-page__table .data-table th:nth-child(5) { width: 12%; }
-.transactions-page__table .data-table th:nth-child(6) { width: 14%; }
+.transactions-page__table .data-table th:nth-child(1) { width: 15%; }
+.transactions-page__table .data-table th:nth-child(2) { width: 22%; }
+.transactions-page__table .data-table th:nth-child(3) { width: 18%; }
+.transactions-page__table .data-table th:nth-child(4) { width: 13%; }
+.transactions-page__table .data-table th:nth-child(5) { width: 14%; }
+.transactions-page__table .data-table th:nth-child(6) { width: 18%; }
+.transactions-page__table .data-table th:nth-child(4), .transactions-page__table .data-table td:nth-child(4), .transactions-page__table .data-table th:nth-child(6), .transactions-page__table .data-table td:nth-child(6) { text-align: right; }
+.transactions-page__table .data-table th:nth-child(5), .transactions-page__table .data-table td:nth-child(5) { text-align: center; }
 .transactions-page__table .data-table td:nth-child(2), .transactions-page__table .data-table td:nth-child(3), .transactions-page__table .data-table td:nth-child(4), .transactions-page__table .data-table td:nth-child(5) { white-space: nowrap; }
 .transactions-table__hash-cell { display: inline-flex; width: 100%; max-width: 100%; min-width: 0; align-items: center; gap: 8px; vertical-align: middle; }
 .transactions-table__hash { min-width: 0; flex: 1 1 auto; overflow: hidden; color: var(--color-text-bright); font-weight: 600; }
@@ -683,11 +685,13 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
   .account-detail__field:nth-child(odd), .account-detail__balance:nth-child(odd) { border-right: 0; }
 }
 
-.account-detail__transaction-list { --transaction-columns: minmax(84px, .8fr) minmax(150px, 1.25fr) 70px 82px minmax(180px, 1.8fr) minmax(100px, 1fr) 76px; display: grid; gap: 6px; margin: 16px 0; }
+.account-detail__transaction-list { --transaction-columns: minmax(90px, .8fr) minmax(90px, .8fr) minmax(260px, 2.4fr) minmax(135px, 1.2fr) minmax(80px, .75fr) minmax(150px, 1.25fr) minmax(78px, .75fr); display: grid; gap: 6px; margin: 16px 0; }
 .account-detail__transaction-header, .account-detail__transaction { display: grid; grid-template-columns: var(--transaction-columns); gap: 8px; min-width: 0; align-items: center; }
 .account-detail__transaction-header { padding: 0 12px 2px; color: var(--color-text-secondary); font-size: 10px; font-weight: 700; text-transform: uppercase; }
 .account-detail__transaction { padding: 10px 12px; border: 1px solid var(--color-border); border-radius: 8px; color: var(--color-text); font-size: 11px; }
 .account-detail__transaction > * { min-width: 0; }
+.account-detail__transaction-header > :nth-child(4), .account-detail__transaction-header > :nth-child(5), .account-detail__transaction-amount, .account-detail__transaction-block { text-align: right; }
+.account-detail__transaction-header > :nth-child(7), .account-detail__transaction-status { text-align: center; }
 .account-detail__transaction-operation { overflow: hidden; }
 .account-detail__transaction-amount { color: var(--color-text); font-size: 12px; font-weight: 600; cursor: default; }
 .account-detail__transaction-counterparty { min-width: 0; color: var(--color-text-bright); font-size: 12px; overflow-wrap: anywhere; }

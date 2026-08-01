@@ -58,17 +58,17 @@ function AccountTransactions({ address, history, retry, loadMore }) {
       {history.loading && <div className="account-detail__skeleton" aria-label="Loading transaction history"><span /><span /><span /></div>}
       {!history.loading && history.items.length === 0 && !history.initialError && <p>No indexed transactions found for this account.</p>}
       {history.items.length > 0 && <div className="account-detail__transaction-list">
-        <div className="account-detail__transaction-header" aria-hidden="true"><span>Type</span><span>Tx hash</span><span>Block</span><span>Direction</span><span>Account</span><span>Amount</span><span>Status</span></div>
+        <div className="account-detail__transaction-header" aria-hidden="true"><span>Type</span><span>Direction</span><span>Account</span><span>Amount</span><span>Block</span><span>TX Hash</span><span>Status</span></div>
         {history.items.map((item) => {
         const counterpartyValid = item.counterparty && item.counterparty !== address && /^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$/.test(item.counterparty)
         const direction = item.direction === 'outgoing' ? 'Outgoing' : item.direction === 'incoming' ? 'Incoming' : 'Self'
         return <article className="account-detail__transaction" key={`${item.block_height}:${item.index}`}>
           <div className="account-detail__transaction-operation" data-label="Type"><TransactionTypeBadge>{item.operation}</TransactionTypeBadge></div>
-          <div className="account-detail__transaction-hash-cell" data-label="Tx hash"><a className="account-detail__transaction-hash mono" href={`/blocks/${item.block_height}/transactions/${item.index}`} title={item.tx_hash} aria-label={`Transaction hash ${item.tx_hash}`}>{shortHash(item.tx_hash)}</a></div>
-          <div className="account-detail__transaction-block" data-label="Block"><a className="table-link" href={`/blocks/${item.block_height}`} aria-label={`Open block #${item.block_height}`}><span className="blocks-table__height accent-value mono">#{item.block_height.toLocaleString()}</span></a></div>
           <div className="account-detail__transaction-direction" data-label="Direction"><span className={`account-detail__direction account-detail__direction--${item.direction}`}>{direction}</span></div>
           <div className="account-detail__transaction-account" data-label="Account">{counterpartyValid ? <a className="account-detail__transaction-counterparty mono" href={`/accounts/${encodeURIComponent(item.counterparty)}`}>{item.counterparty}</a> : '—'}</div>
           <span className="account-detail__transaction-amount" data-label="Amount">{item.amount != null ? String(item.amount) : '—'}</span>
+          <div className="account-detail__transaction-block" data-label="Block"><a className="table-link" href={`/blocks/${item.block_height}`} aria-label={`Open block #${item.block_height}`}><span className="blocks-table__height accent-value mono">#{item.block_height.toLocaleString()}</span></a></div>
+          <div className="account-detail__transaction-hash-cell" data-label="TX Hash"><a className="account-detail__transaction-hash mono" href={`/blocks/${item.block_height}/transactions/${item.index}`} title={item.tx_hash} aria-label={`Transaction hash ${item.tx_hash}`}>{shortHash(item.tx_hash)}</a></div>
           <div className="account-detail__transaction-status" data-label="Status"><TransactionExecutionBadge status={item.execution_status} /></div>
         </article>
       })}</div>}

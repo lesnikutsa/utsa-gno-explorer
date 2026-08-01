@@ -162,7 +162,7 @@ test('transactions use local paginated history without polling', () => {
 test('transaction list has one shared header in the same order as every row', () => {
   const transactions = page.slice(page.indexOf('function AccountTransactions'), page.indexOf('function MissingAccount'))
   const header = transactions.slice(transactions.indexOf('account-detail__transaction-header'), transactions.indexOf('{history.items.map'))
-  const labels = ['Type', 'Tx hash', 'Block', 'Direction', 'Account', 'Amount', 'Status']
+  const labels = ['Type', 'Direction', 'Account', 'Amount', 'Block', 'TX Hash', 'Status']
   const headerPositions = labels.map((label) => header.indexOf(`>${label}</span>`))
   assert.deepEqual(headerPositions, [...headerPositions].sort((a, b) => a - b))
   const row = transactions.slice(transactions.indexOf('return <article'), transactions.indexOf('</article>'))
@@ -214,10 +214,12 @@ test('transaction headers and rows share desktop columns and become labeled fiel
   const transactionStyles = styles.slice(styles.indexOf('.account-detail__transaction-list'))
   assert.ok(transactionStyles.includes('--transaction-columns:'))
   assert.ok(transactionStyles.includes('.account-detail__transaction-header, .account-detail__transaction { display: grid; grid-template-columns: var(--transaction-columns)'))
-  assert.ok(transactionStyles.includes('minmax(84px, .8fr) minmax(150px, 1.25fr) 70px 82px minmax(180px, 1.8fr) minmax(100px, 1fr) 76px'))
+  assert.ok(transactionStyles.includes('minmax(90px, .8fr) minmax(90px, .8fr) minmax(260px, 2.4fr) minmax(135px, 1.2fr) minmax(80px, .75fr) minmax(150px, 1.25fr) minmax(78px, .75fr)'))
   assert.ok(transactionStyles.includes('grid-template-columns: var(--transaction-columns); gap: 8px'))
   assert.ok(transactionStyles.includes('.account-detail__transaction-header { padding: 0 12px 2px; color: var(--color-text-secondary); font-size: 10px'))
   assert.ok(transactionStyles.includes('.account-detail__transaction { padding: 10px 12px;'))
+  assert.ok(transactionStyles.includes('.account-detail__transaction-header > :nth-child(4), .account-detail__transaction-header > :nth-child(5), .account-detail__transaction-amount, .account-detail__transaction-block { text-align: right; }'))
+  assert.ok(transactionStyles.includes('.account-detail__transaction-header > :nth-child(7), .account-detail__transaction-status { text-align: center; }'))
   assert.ok(transactionStyles.includes('.account-detail__transaction-amount { color: var(--color-text); font-size: 12px; font-weight: 600; cursor: default; }'))
   for (const className of ['account-detail__transaction-operation', 'account-detail__transaction-counterparty', 'account-detail__transaction-block', 'account-detail__transaction-hash']) assert.ok(transactionStyles.includes(`.${className}`))
   assert.ok(transactionStyles.includes('.account-detail__transaction-counterparty { min-width: 0; color: var(--color-text-bright)'))
