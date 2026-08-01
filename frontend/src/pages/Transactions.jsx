@@ -1,13 +1,18 @@
 import { DataTable } from '../components/DataTable'
-import { CopyButton } from '../components/CopyButton'
 import { TransactionTypeBadge } from '../components/TransactionTypeBadge'
 import { TransactionExecutionBadge } from '../components/TransactionExecutionBadge'
 import { GasValue } from '../components/GasValue'
 import { relativeTime } from '../utils/time'
 
 const transactionHref = (transaction) => `/blocks/${encodeURIComponent(transaction.block_height)}/transactions/${encodeURIComponent(transaction.index)}`
+const shortHash = (value) => value ? `${value.slice(0, 10)}…${value.slice(-8)}` : 'Unavailable'
 
 const columns = [
+  {
+    key: 'operation',
+    label: 'Type',
+    render: (transaction) => <TransactionTypeBadge title={transaction.type !== 'unknown' ? transaction.type : undefined}>{transaction.operation}</TransactionTypeBadge>,
+  },
   {
     key: 'tx_hash',
     label: 'TX Hash',
@@ -19,9 +24,8 @@ const columns = [
           title={transaction.tx_hash || undefined}
           aria-label={`Open transaction ${transaction.tx_hash || 'with unavailable hash'} in block #${transaction.block_height}`}
         >
-          <span className="transactions-table__hash-text">{transaction.tx_hash || 'Unavailable'}</span>
+          <span className="transactions-table__hash-text">{shortHash(transaction.tx_hash)}</span>
         </a>
-        {transaction.tx_hash && <CopyButton value={transaction.tx_hash} label="transaction hash" />}
       </div>
     ),
   },
@@ -29,11 +33,6 @@ const columns = [
     key: 'block_time',
     label: 'Time',
     render: (transaction) => <time dateTime={transaction.block_time} title={transaction.block_time}>{relativeTime(transaction.block_time)}</time>,
-  },
-  {
-    key: 'operation',
-    label: 'Type',
-    render: (transaction) => <TransactionTypeBadge title={transaction.type !== 'unknown' ? transaction.type : undefined}>{transaction.operation}</TransactionTypeBadge>,
   },
   {
     key: 'block_height',

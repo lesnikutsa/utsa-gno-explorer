@@ -73,19 +73,18 @@ class TransactionsFrontendContractTests(unittest.TestCase):
 
     def test_six_column_transaction_table_and_links(self):
         page = self.read("frontend/src/pages/Transactions.jsx")
-        labels = ("label: 'TX Hash'", "label: 'Time'", "label: 'Type'", "label: 'Block'", "label: 'Status'", "label: 'Gas Used'")
+        labels = ("label: 'Type'", "label: 'TX Hash'", "label: 'Time'", "label: 'Block'", "label: 'Status'", "label: 'Gas Used'")
         for label in labels:
             self.assertIn(label, page)
         self.assertEqual([page.index(label) for label in labels], sorted(page.index(label) for label in labels))
         self.assertNotIn("label: 'Height'", page)
         self.assertEqual(page.count("label: '"), 6)
         self.assertNotIn("shortAddress", page)
-        self.assertNotIn(".slice(", page)
-        self.assertIn('<span className="transactions-table__hash-text">{transaction.tx_hash || \'Unavailable\'}</span>', page)
+        self.assertIn("value.slice(0, 10)", page)
+        self.assertIn("value.slice(-8)", page)
+        self.assertIn('<span className="transactions-table__hash-text">{shortHash(transaction.tx_hash)}</span>', page)
         self.assertIn("title={transaction.tx_hash || undefined}", page)
-        self.assertIn("<CopyButton value={transaction.tx_hash} label=\"transaction hash\" />", page)
-        self.assertIn("{transaction.tx_hash && <CopyButton", page)
-        self.assertLess(page.index('</a>'), page.index('<CopyButton'))
+        self.assertNotIn("CopyButton", page)
         self.assertIn("/transactions/${encodeURIComponent(transaction.index)}", page)
         self.assertIn("/blocks/${encodeURIComponent(transaction.block_height)}", page)
         self.assertIn("{transaction.operation}", page)
@@ -109,7 +108,7 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         self.assertIn("table-layout: fixed", styles)
         self.assertIn("min-width: 1050px", styles)
         transactions_rules = styles[styles.index(".transactions-page {"):styles.index(".blocks-table__height")]
-        column_widths = (38, 13, 18, 10, 10, 11)
+        column_widths = (16, 30, 16, 12, 12, 14)
         for column, width in enumerate(column_widths, start=1):
             self.assertIn(f"th:nth-child({column}) {{ width: {width}%; }}", transactions_rules)
         self.assertEqual(sum(column_widths), 100)
@@ -119,7 +118,7 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         self.assertIn(".transactions-table__hash-cell { display: inline-flex; width: 100%; max-width: 100%; min-width: 0; align-items: center; gap: 8px; vertical-align: middle; }", styles)
         self.assertIn(".transactions-table__hash { min-width: 0; flex: 1 1 auto; overflow: hidden; color: var(--color-text-bright); font-weight: 600; }", styles)
         self.assertIn(".transactions-table__hash-text { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }", styles)
-        self.assertIn(".transactions-table__hash-cell .copy-button { width: 24px; height: 24px; flex: 0 0 auto; }", styles)
+        self.assertNotIn(".transactions-table__hash-cell .copy-button", styles)
         self.assertIn(".transactions-table__hash:hover { color: var(--color-accent); }", styles)
         self.assertIn("import { TransactionTypeBadge }", page)
         self.assertIn("<TransactionTypeBadge title={transaction.type !== 'unknown' ? transaction.type : undefined}>{transaction.operation}</TransactionTypeBadge>", page)
