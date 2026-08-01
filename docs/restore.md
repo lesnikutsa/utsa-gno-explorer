@@ -24,7 +24,8 @@ their services run.
    unverified live database.
 4. Follow the repository-supported validation/restore procedure in the detailed reference,
    including `pg_restore --list` and clean-room validation.
-5. Run `.venv/bin/python scripts/init_database.py` to validate the restored schema.
+5. Validate the restored schema with the real protected environment:
+   `sudo -u utsa-gno sh -c 'set -a; . /etc/utsa-gno-explorer/indexer.env; . /etc/utsa-gno-explorer/rpc.env; set +a; cd /opt/utsa-gno-explorer && exec .venv/bin/python scripts/init_database.py'`.
 6. Compare `indexer_state.last_finalized_height` with the highest stored block and matching
    block identity at the RPC. Resolve every discrepancy before writing.
 7. Start the API and read-only/one-shot components and verify health.

@@ -44,7 +44,7 @@ Check that `last_finalized_height` advances and does not exceed the RPC finalize
 Inspect configured RPCs safely with:
 
 ```bash
-sudo -u utsa-gno /opt/utsa-gno-explorer/.venv/bin/python scripts/inspect_rpc.py
+sudo -u utsa-gno sh -c 'set -a; . /etc/utsa-gno-explorer/rpc.env; set +a; cd /opt/utsa-gno-explorer && exec .venv/bin/python scripts/inspect_rpc.py'
 ```
 
 Do not print `rpc.env` because URLs may contain credentials.
@@ -52,9 +52,10 @@ Do not print `rpc.env` because URLs may contain credentials.
 ## Frontend publication
 
 ```bash
-cd /opt/utsa-gno-explorer/frontend
-npm ci && node --test test/*.test.js && npm run build
-cd ..
+cd /opt/utsa-gno-explorer
+sudo env "PATH=$PATH" npm --prefix frontend ci
+node --test frontend/test/*.test.js
+sudo env "PATH=$PATH" npm --prefix frontend run build
 sudo scripts/deploy_frontend.sh
 ```
 

@@ -35,11 +35,14 @@ cd tools/gno-tx-decoder
 go test ./...
 go build -o /tmp/gno-tx-decoder .
 sudo install -o root -g root -m 0755 /tmp/gno-tx-decoder /opt/utsa-gno-explorer/bin/gno-tx-decoder
-cd ../../frontend
-npm ci
-npm run build
-cd ..
+sudo env "PATH=$PATH" npm --prefix /opt/utsa-gno-explorer/frontend ci
+sudo env "PATH=$PATH" npm --prefix /opt/utsa-gno-explorer/frontend run build
+cd /opt/utsa-gno-explorer
 ```
+
+The virtual environment, dependency tree, and frontend output are written as root. Passing
+the already verified `PATH` explicitly keeps the Node.js 22 toolchain available through
+`sudo`; it does not make the checkout writable by the login user or `utsa-gno`.
 
 ## 4. Create protected storage and external configuration
 
@@ -80,17 +83,60 @@ chosen height; missing history cannot appear without indexing or restoring it. C
 Valopers, Governance, and observed network-distribution snapshots are populated separately
 by their respective services.
 
-## 6. Start PostgreSQL and initialize the database
+## 6. Start PostgreSQL and create the required roles
 
 ```bash
 sudo docker compose -f deploy/postgres/compose.yml --env-file /etc/utsa-gno-explorer/postgres.env up -d postgres
 sudo docker compose -f deploy/postgres/compose.yml --env-file /etc/utsa-gno-explorer/postgres.env ps
-sudo -u utsa-gno .venv/bin/python scripts/init_database.py
 ```
 
-The initializer uses the indexer configuration, creates/validates the schema and role
-separation, and must complete before writers start. Follow the detailed reference for role
-creation if the API role does not yet exist.
+On the first container initialization, Compose creates the `POSTGRES_USER` from
+`postgres.env` as the database owner/login and reads its password from
+`/etc/utsa-gno-explorer/postgres-password`. Keep this value as `utsa_gno_indexer`; it is the
+writer role named by `indexer.env`, owns `utsa_gno_explorer`, and therefore owns its schema,
+tables, and sequences. Do not create a second writer model.
+
+The separate API login is required on every fresh installation. Open the administrator
+session without placing either password in shell history:
+
+```bash
+sudo docker compose -f deploy/postgres/compose.yml \
+  --env-file /etc/utsa-gno-explorer/postgres.env \
+  exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+```
+
+At the `psql` prompt, create the login and enter the API password interactively:
+
+```sql
+CREATE ROLE utsa_gno_api LOGIN;
+\password utsa_gno_api
+ALTER ROLE utsa_gno_api SET default_transaction_read_only = on;
+ALTER ROLE utsa_gno_api SET statement_timeout = '5s';
+ALTER ROLE utsa_gno_api SET idle_in_transaction_session_timeout = '10s';
+GRANT CONNECT ON DATABASE utsa_gno_explorer TO utsa_gno_api;
+GRANT USAGE ON SCHEMA public TO utsa_gno_api;
+```
+
+Create the API role **before** schema initialization: `database/schema.sql` conditionally
+grants access to late tables when `utsa_gno_api` already exists. Then initialize with the
+real writer and RPC environments, without printing them:
+
+```bash
+sudo -u utsa-gno sh -c 'set -a; . /etc/utsa-gno-explorer/indexer.env; . /etc/utsa-gno-explorer/rpc.env; set +a; cd /opt/utsa-gno-explorer && exec .venv/bin/python scripts/init_database.py'
+```
+
+Return to the same administrator `psql` session after initialization and complete the
+required read-only grants:
+
+```sql
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO utsa_gno_api;
+```
+
+The API does not read sequences, so no sequence privilege is required or granted. The
+writer owns and may use the sequences; the API receives only database `CONNECT`, schema
+`USAGE`, and table `SELECT`. Do not grant API ownership, `CREATE`, write privileges,
+superuser, createdb, createrole, replication, or bypassrls. Ensure `api.env` uses the API
+password entered with `\password`, and `indexer.env` uses the password file's writer value.
 
 ## 7. Install all systemd units
 
@@ -124,7 +170,7 @@ curl --fail http://127.0.0.1:18180/api/health
 sudo systemctl status utsa-gno-api utsa-gno-indexer utsa-gno-governance-updater
 sudo systemctl list-timers 'utsa-gno-*'
 sudo journalctl -u utsa-gno-indexer.service -n 100 --no-pager
-sudo -u utsa-gno .venv/bin/python scripts/inspect_rpc.py
+sudo -u utsa-gno sh -c 'set -a; . /etc/utsa-gno-explorer/rpc.env; set +a; cd /opt/utsa-gno-explorer && exec .venv/bin/python scripts/inspect_rpc.py'
 sudo reboot
 ```
 

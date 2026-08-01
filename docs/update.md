@@ -7,13 +7,13 @@ Updates are operator-controlled: `git pull`, migrations, deployments, and restar
 
 ```bash
 cd /opt/utsa-gno-explorer
-git status --short --branch
-git fetch --prune origin
-git rev-parse HEAD
-git show --no-patch --oneline <EXPECTED_COMMIT>
-git diff --check
-git pull --ff-only origin main
-test "$(git rev-parse HEAD)" = "<EXPECTED_COMMIT>"
+sudo git status --short --branch
+sudo git fetch --prune origin
+sudo git rev-parse HEAD
+sudo git show --no-patch --oneline <EXPECTED_COMMIT>
+sudo git diff --check
+sudo git pull --ff-only origin main
+test "$(sudo git rev-parse HEAD)" = "<EXPECTED_COMMIT>"
 ```
 
 Stop if the worktree is dirty or the commit differs. Back up external configuration through
@@ -24,11 +24,9 @@ the approved secret process; never copy secrets into Git.
 With Node.js 22, run:
 
 ```bash
-cd frontend
-npm ci
-node --test test/*.test.js
-npm run build
-cd ..
+sudo env "PATH=$PATH" npm --prefix frontend ci
+node --test frontend/test/*.test.js
+sudo env "PATH=$PATH" npm --prefix frontend run build
 sudo scripts/deploy_frontend.sh
 ```
 
@@ -57,7 +55,8 @@ indexer unless indexer files changed.
 2. Stop `utsa-gno-indexer.service` and other writers affected by the release.
 3. Create a custom-format backup and verify it with `pg_restore --list`.
 4. Run only the explicit migration documented for that release; never infer a migration.
-5. Run `.venv/bin/python scripts/init_database.py` to validate the complete schema.
+5. Validate the complete schema with the protected production environment:
+   `sudo -u utsa-gno sh -c 'set -a; . /etc/utsa-gno-explorer/indexer.env; . /etc/utsa-gno-explorer/rpc.env; set +a; cd /opt/utsa-gno-explorer && exec .venv/bin/python scripts/init_database.py'`.
 6. Start the API/read-only services first and verify them, then start Governance and the
    indexer in the release-documented order.
 7. Verify the `indexer_state` checkpoint and `/api/health`.

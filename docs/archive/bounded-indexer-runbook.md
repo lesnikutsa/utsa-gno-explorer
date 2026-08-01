@@ -84,7 +84,7 @@ If advisory-lock acquisition fails after opening a PostgreSQL connection, the ru
 
 ## Production runtime
 
-Use [Production deployment](production-deployment.md) for the production-oriented runtime introduced for PostgreSQL 16 Compose plus host systemd. The production flow is separate from local development:
+Use [Production deployment](../production-deployment.md) for the production-oriented runtime introduced for PostgreSQL 16 Compose plus host systemd. The production flow is separate from local development:
 
 - development and tests may use `.env` and temporary databases;
 - production secrets live outside Git under `/etc/utsa-gno-explorer`;
