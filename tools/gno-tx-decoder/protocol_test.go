@@ -2,12 +2,127 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gnolang/gno/gno.land/pkg/sdk/vm"
+	"github.com/gnolang/gno/tm2/pkg/crypto"
+	"github.com/gnolang/gno/tm2/pkg/sdk/bank"
+	"github.com/gnolang/gno/tm2/pkg/std"
 )
+
+func protocolResponse(t *testing.T, includeArguments bool, messages ...std.Msg) response {
+	t.Helper()
+	line, err := json.Marshal(request{ID: "detail-1", TxBase64: encodeTx(t, messages...), IncludeArguments: includeArguments})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return handleLine(line, false)
+}
+
+func TestArgumentsAreOptionalAndOutsideSummary(t *testing.T) {
+	call := vm.MsgCall{Args: []string{"argument one", "", "argument two"}}
+	without := protocolResponse(t, false, call)
+	encoded, err := json.Marshal(without)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if without.Details != nil || bytes.Contains(encoded, []byte("details")) || bytes.Contains(encoded, []byte("argument one")) {
+		t.Fatalf("optional details changed legacy response: %s", encoded)
+	}
+	with := protocolResponse(t, true, call)
+	if !with.OK || with.Details == nil || len(with.Details.MessageArguments) != 1 {
+		t.Fatalf("%#v", with)
+	}
+	entry := with.Details.MessageArguments[0]
+	if entry.MessageIndex != 0 || entry.Truncated || strings.Join(entry.Values, "|") != "argument one||argument two" {
+		t.Fatalf("%#v", entry)
+	}
+	if with.Summary.Messages[0].ArgsCount == nil || *with.Summary.Messages[0].ArgsCount != 3 {
+		t.Fatalf("summary args_count changed: %#v", with.Summary.Messages[0])
+	}
+}
+
+func TestArgumentsKeepMessageIndexesAndSkipUnsupportedTypes(t *testing.T) {
+	response := protocolResponse(t, true,
+		vm.MsgCall{Args: []string{"first"}},
+		bank.MsgSend{FromAddress: crypto.Address{1}, ToAddress: crypto.Address{2}},
+		vm.MsgCall{Args: []string{"third"}},
+	)
+	entries := response.Details.MessageArguments
+	if len(entries) != 2 || entries[0].MessageIndex != 0 || entries[1].MessageIndex != 2 || entries[1].Values[0] != "third" {
+		t.Fatalf("%#v", entries)
+	}
+}
+
+func TestArgumentsAreLimitedToVisibleSummaryMessages(t *testing.T) {
+	messages := make([]std.Msg, maxMessages+2)
+	for index := range messages {
+		messages[index] = bank.MsgSend{}
+	}
+	messages[1] = vm.MsgCall{Args: []string{"visible"}}
+	messages[maxMessages-1] = vm.MsgCall{Args: []string{"last visible"}}
+	messages[maxMessages] = vm.MsgCall{Args: []string{"hidden"}}
+	entries := protocolResponse(t, true, messages...).Details.MessageArguments
+	if len(entries) != 2 || entries[0].MessageIndex != 1 || entries[1].MessageIndex != maxMessages-1 {
+		t.Fatalf("%#v", entries)
+	}
+	for _, entry := range entries {
+		if entry.MessageIndex >= maxMessages {
+			t.Fatalf("returned hidden message index: %#v", entry)
+		}
+	}
+}
+
+func TestArgumentBoundsFilteringAndTruncation(t *testing.T) {
+	arguments := make([]string, 17)
+	arguments[0] = "keep\x00line\ntext"
+	arguments[1] = strings.Repeat("界", maxArgumentRunes+1)
+	for index := 2; index < len(arguments); index++ {
+		arguments[index] = "value"
+	}
+	entry := protocolResponse(t, true, vm.MsgCall{Args: arguments}).Details.MessageArguments[0]
+	if len(entry.Values) != maxArgumentValues || entry.Values[0] != "keeplinetext" || len([]rune(entry.Values[1])) != maxArgumentRunes || !entry.Truncated {
+		t.Fatalf("%#v", entry)
+	}
+}
+
+func TestArgumentDetailsCompactJSONSizeBound(t *testing.T) {
+	messages := make([]std.Msg, maxMessages)
+	for index := range messages {
+		arguments := make([]string, maxArgumentValues)
+		for argumentIndex := range arguments {
+			arguments[argumentIndex] = strings.Repeat("🙂", maxArgumentRunes)
+		}
+		messages[index] = vm.MsgCall{Args: arguments}
+	}
+	detail := protocolResponse(t, true, messages...).Details
+	encoded, err := json.Marshal(detail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(encoded) > maxDetailsBytes {
+		t.Fatalf("details size %d", len(encoded))
+	}
+	if !detail.MessageArguments[len(detail.MessageArguments)-1].Truncated {
+		t.Fatal("expected trailing values to be marked truncated")
+	}
+}
+
+func TestRequestedArgumentsKeepMalformedInputsSafe(t *testing.T) {
+	invalidBase64, _ := json.Marshal(request{ID: "bad-base64", TxBase64: "%%%", IncludeArguments: true})
+	if response := handleLine(invalidBase64, false); response.OK || response.Details != nil || response.ErrorCode != "invalid_base64" {
+		t.Fatalf("%#v", response)
+	}
+	invalidAmino, _ := json.Marshal(request{ID: "bad-amino", TxBase64: base64.StdEncoding.EncodeToString([]byte{0}), IncludeArguments: true})
+	if response := handleLine(invalidAmino, false); response.OK || response.Details != nil || response.ErrorCode != "amino_decode_failed" {
+		t.Fatalf("%#v", response)
+	}
+}
 
 func TestProtocolContinuesAfterMalformedLine(t *testing.T) {
 	tx := encodeTx(t)

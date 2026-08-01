@@ -12,6 +12,8 @@ DEFAULT_GOVERNANCE_REALM = "gno.land/r/gov/dao"
 DEFAULT_CHAIN_ID = "topaz-1"
 DEFAULT_RPC_MAX_HEIGHT_LAG = 10
 DEFAULT_ACCOUNT_RPC_TIMEOUT_SECONDS = 10
+DEFAULT_TRANSACTION_DETAIL_DECODER_PATH = "/opt/utsa-gno-explorer/bin/gno-tx-decoder"
+DEFAULT_TRANSACTION_DETAIL_DECODER_TIMEOUT_SECONDS = 1.5
 
 
 class ConfigError(RuntimeError):
@@ -29,6 +31,8 @@ class ApiConfig:
     chain_id: str = DEFAULT_CHAIN_ID
     rpc_max_height_lag: int = DEFAULT_RPC_MAX_HEIGHT_LAG
     account_rpc_timeout_seconds: int = DEFAULT_ACCOUNT_RPC_TIMEOUT_SECONDS
+    transaction_detail_decoder_path: str = DEFAULT_TRANSACTION_DETAIL_DECODER_PATH
+    transaction_detail_decoder_timeout_seconds: float = DEFAULT_TRANSACTION_DETAIL_DECODER_TIMEOUT_SECONDS
 
 
 def _read_governance_realm() -> str:
@@ -88,6 +92,19 @@ def _read_account_timeout() -> int:
     return value
 
 
+def _read_transaction_detail_decoder_timeout() -> float:
+    raw_value = os.environ.get("API_TRANSACTION_DETAIL_DECODER_TIMEOUT_SECONDS")
+    if raw_value is None or raw_value == "":
+        return DEFAULT_TRANSACTION_DETAIL_DECODER_TIMEOUT_SECONDS
+    try:
+        value = float(raw_value)
+    except ValueError as exc:
+        raise ConfigError("API_TRANSACTION_DETAIL_DECODER_TIMEOUT_SECONDS must be a number") from exc
+    if not 0.1 <= value <= 5.0:
+        raise ConfigError("API_TRANSACTION_DETAIL_DECODER_TIMEOUT_SECONDS must be between 0.1 and 5.0")
+    return value
+
+
 def load_config() -> ApiConfig:
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
@@ -108,4 +125,9 @@ def load_config() -> ApiConfig:
         chain_id=_read_chain_id(),
         rpc_max_height_lag=_read_int("RPC_MAX_HEIGHT_LAG", DEFAULT_RPC_MAX_HEIGHT_LAG),
         account_rpc_timeout_seconds=_read_account_timeout(),
+        transaction_detail_decoder_path=os.environ.get(
+            "API_TRANSACTION_DETAIL_DECODER_PATH",
+            DEFAULT_TRANSACTION_DETAIL_DECODER_PATH,
+        ),
+        transaction_detail_decoder_timeout_seconds=_read_transaction_detail_decoder_timeout(),
     )

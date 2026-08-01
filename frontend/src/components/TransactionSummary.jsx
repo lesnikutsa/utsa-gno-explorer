@@ -1,5 +1,8 @@
+import { useState } from 'react'
+
 import { CopyButton } from './CopyButton'
 import { StatusBadge } from './StatusBadge'
+import { isValidArgumentValue } from '../utils/transactionArguments'
 
 const DETAIL_FIELDS = [
   { key: 'sender', label: 'From', copyLabel: 'sender address', mono: true },
@@ -9,7 +12,6 @@ const DETAIL_FIELDS = [
   { key: 'package_path', label: 'Package', mono: true },
   { key: 'package_name', label: 'Package Name' },
   { key: 'function', label: 'Function', mono: true },
-  { key: 'args_count', label: 'Arguments' },
   { key: 'file_count', label: 'Files' },
   { key: 'expires_at', label: 'Expires At' },
   { key: 'allow_paths_count', label: 'Allowed Paths' },
@@ -78,8 +80,11 @@ const humanize = (value) => typeof value === 'string'
   ? value.replace(/[_-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
   : '—'
 
-function DetailFields({ message }) {
+function DetailFields({ message, showArgumentFallback }) {
   const fields = DETAIL_FIELDS.filter(({ key }) => isScalar(message[key]))
+  if (showArgumentFallback && isScalar(message.args_count)) {
+    fields.push({ key: 'args_count', label: 'Arguments' })
+  }
   if (fields.length === 0) return null
 
   return (
@@ -97,11 +102,62 @@ function DetailFields({ message }) {
   )
 }
 
+function Arguments({ detail, count }) {
+  if (!detail) return null
+  return (
+    <section className="transaction-summary__arguments" aria-label="Message arguments">
+      <h4>Arguments · {isScalar(count) ? count : detail.values.length}</h4>
+      {detail.values.length > 0 && <ol>
+        {detail.values.map((value, index) => <li key={index}><code>{value === '' ? '—' : value}</code></li>)}
+      </ol>}
+      {detail.truncated && <p>Some argument values were shortened or are not shown.</p>}
+    </section>
+  )
+}
+
+function validArgumentDetails(messageArguments) {
+  if (!Array.isArray(messageArguments) || messageArguments.length > 20) return new Map()
+  const result = new Map()
+  let previous = -1
+  for (const detail of messageArguments) {
+    if (!isPlainObject(detail) || !isNonNegativeInteger(detail.message_index) || detail.message_index <= previous) return new Map()
+    if (!Array.isArray(detail.values) || detail.values.length > 16 || !detail.values.every(isValidArgumentValue)) return new Map()
+    if (typeof detail.truncated !== 'boolean') return new Map()
+    result.set(detail.message_index, detail)
+    previous = detail.message_index
+  }
+  return result
+}
+
 function UnavailableSummary() {
   return <p className="transaction-summary__notice">Human-readable summary was not indexed for this transaction.</p>
 }
 
-export function TransactionSummary({ summary }) {
+function MessageDisclosure({ message, index, argumentDetail }) {
+  const [open, setOpen] = useState(index === 0)
+  const location = isScalar(message.package_path) ? message.package_path : message.package_name
+  return (
+    <details
+      className="transaction-summary__message"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary id={`transaction-summary-message-${index + 1}`}>
+        <strong>Message #{index + 1}</strong>
+        <span>{isScalar(message.label) ? message.label : '—'}</span>
+        {isScalar(location) && <span className="mono">{location}</span>}
+        {isScalar(message.function) && <span className="mono">{message.function}</span>}
+        {isScalar(message.args_count) && <span>{message.args_count} arguments</span>}
+      </summary>
+      <div className="transaction-summary__message-content" aria-labelledby={`transaction-summary-message-${index + 1}`}>
+        <DetailFields message={message} showArgumentFallback={!argumentDetail} />
+        <Arguments detail={argumentDetail} count={message.args_count} />
+      </div>
+    </details>
+  )
+}
+
+export function TransactionSummary({ summary, messageArguments = null }) {
   if (!isValidSummary(summary)) {
     return (
       <section className="panel transaction-detail__section transaction-summary" aria-labelledby="transaction-summary-title">
@@ -119,7 +175,7 @@ export function TransactionSummary({ summary }) {
     ['Action', humanize(summary.primary.action)],
     ['Messages', isScalar(summary.message_count) ? summary.message_count : '—'],
   ]
-  const multipleMessages = summary.messages.length > 1
+  const argumentDetails = validArgumentDetails(messageArguments)
 
   return (
     <section className="panel transaction-detail__section transaction-summary" aria-labelledby="transaction-summary-title">
@@ -148,20 +204,16 @@ export function TransactionSummary({ summary }) {
         </p>
       )}
 
-      {multipleMessages ? (
+      {summary.messages.length > 0 && (
         <div className="transaction-summary__messages">
-          {summary.messages.map((message, index) => (
-            <section className="transaction-summary__message" aria-labelledby={`transaction-summary-message-${index + 1}`} key={index}>
-              <h3 id={`transaction-summary-message-${index + 1}`}>Message #{index + 1}</h3>
-              <div className="transaction-summary__message-core">
-                <strong>{isScalar(message.label) ? message.label : '—'}</strong>
-                <span className="mono">{isScalar(message.type) ? message.type : '—'}</span>
-              </div>
-              <DetailFields message={message} />
-            </section>
-          ))}
+          {summary.messages.map((message, index) => <MessageDisclosure
+            message={message}
+            index={index}
+            argumentDetail={argumentDetails.get(index)}
+            key={index}
+          />)}
         </div>
-      ) : summary.messages.length === 1 ? <DetailFields message={summary.messages[0]} /> : null}
+      )}
 
       {summary.messages_truncated === true && <p className="transaction-summary__notice">Some message summaries are not shown.</p>}
     </section>

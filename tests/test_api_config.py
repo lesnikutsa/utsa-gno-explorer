@@ -3,7 +3,12 @@ from unittest.mock import patch
 
 import pytest
 
-from api.config import ConfigError, DEFAULT_GOVERNANCE_REALM, load_config
+from api.config import (
+    ConfigError,
+    DEFAULT_GOVERNANCE_REALM,
+    DEFAULT_TRANSACTION_DETAIL_DECODER_PATH,
+    load_config,
+)
 
 
 def load(**environment):
@@ -43,6 +48,23 @@ def test_account_rpc_configuration():
 def test_legacy_and_missing_rpc_configuration():
     assert load(GNO_RPC_URL="https://legacy.example").rpc_urls == ("https://legacy.example",)
     assert load().rpc_urls == ()
+
+
+def test_transaction_detail_decoder_configuration():
+    assert load().transaction_detail_decoder_path == DEFAULT_TRANSACTION_DETAIL_DECODER_PATH
+    assert load().transaction_detail_decoder_timeout_seconds == 1.5
+    configured = load(
+        API_TRANSACTION_DETAIL_DECODER_PATH="/custom/gno-tx-decoder",
+        API_TRANSACTION_DETAIL_DECODER_TIMEOUT_SECONDS="0.25",
+    )
+    assert configured.transaction_detail_decoder_path == "/custom/gno-tx-decoder"
+    assert configured.transaction_detail_decoder_timeout_seconds == 0.25
+
+
+@pytest.mark.parametrize("value", ["bad", "nan", "0.09", "5.01"])
+def test_invalid_transaction_detail_decoder_timeout(value):
+    with pytest.raises(ConfigError):
+        load(API_TRANSACTION_DETAIL_DECODER_TIMEOUT_SECONDS=value)
 
 
 @pytest.mark.parametrize("environment", [

@@ -18,28 +18,41 @@ import (
 )
 
 const (
-	protocolVersion = 1
-	maxLineBytes    = 8 << 20
-	maxTxBytes      = 4 << 20
-	maxIDRunes      = 128
-	maxMessages     = 20
-	maxSummaryBytes = 16_384
-	maxLabelRunes   = 80
-	maxTypeRunes    = 160
-	maxTokenRunes   = 64
-	maxScalarRunes  = 160
+	protocolVersion   = 1
+	maxLineBytes      = 8 << 20
+	maxTxBytes        = 4 << 20
+	maxIDRunes        = 128
+	maxMessages       = 20
+	maxSummaryBytes   = 16_384
+	maxDetailsBytes   = 48 << 10
+	maxArgumentValues = 16
+	maxArgumentRunes  = 256
+	maxLabelRunes     = 80
+	maxTypeRunes      = 160
+	maxTokenRunes     = 64
+	maxScalarRunes    = 160
 )
 
 type request struct {
-	ID       string `json:"id"`
-	TxBase64 string `json:"tx_base64"`
+	ID               string `json:"id"`
+	TxBase64         string `json:"tx_base64"`
+	IncludeArguments bool   `json:"include_arguments,omitempty"`
 }
 type response struct {
 	ProtocolVersion int      `json:"protocol_version"`
 	ID              string   `json:"id,omitempty"`
 	OK              bool     `json:"ok"`
 	Summary         *summary `json:"summary,omitempty"`
+	Details         *details `json:"details,omitempty"`
 	ErrorCode       string   `json:"error_code,omitempty"`
+}
+type details struct {
+	MessageArguments []messageArguments `json:"message_arguments"`
+}
+type messageArguments struct {
+	MessageIndex int      `json:"message_index"`
+	Values       []string `json:"values"`
+	Truncated    bool     `json:"truncated"`
 }
 type summary struct {
 	SchemaVersion     int       `json:"schema_version"`
@@ -131,6 +144,7 @@ func safeHandleLine(line []byte, large bool, decodeFn decoderFunc) (result respo
 		if recover() != nil {
 			result.OK = false
 			result.Summary = nil
+			result.Details = nil
 			result.ErrorCode = "internal_error"
 		}
 	}()
@@ -179,7 +193,88 @@ func handleLineWithDecoder(line []byte, large bool, decodeFn decoderFunc) respon
 	}
 	base.OK = true
 	base.Summary = s
+	if req.IncludeArguments {
+		tx, detailErr := decodeTransaction(raw)
+		if detailErr != nil {
+			base.OK = false
+			base.Summary = nil
+			base.ErrorCode = "amino_decode_failed"
+			return base
+		}
+		base.Details = argumentDetails(tx)
+	}
 	return base
+}
+
+func argumentDetails(tx std.Tx) *details {
+	result := &details{MessageArguments: make([]messageArguments, 0, min(len(tx.Msgs), maxMessages))}
+	for index, msg := range tx.Msgs {
+		if index == maxMessages {
+			break
+		}
+		var args []string
+		switch value := msg.(type) {
+		case vm.MsgCall:
+			args = value.Args
+		case *vm.MsgCall:
+			if value == nil {
+				continue
+			}
+			args = value.Args
+		default:
+			continue
+		}
+		entry := messageArguments{MessageIndex: index, Values: make([]string, 0, min(len(args), maxArgumentValues)), Truncated: len(args) > maxArgumentValues}
+		for _, argument := range args[:min(len(args), maxArgumentValues)] {
+			bounded, shortened := printableArgument(argument, maxArgumentRunes)
+			entry.Values = append(entry.Values, bounded)
+			entry.Truncated = entry.Truncated || shortened
+		}
+		result.MessageArguments = append(result.MessageArguments, entry)
+	}
+	for detailsJSONSize(result) > maxDetailsBytes {
+		removed := false
+		for index := len(result.MessageArguments) - 1; index >= 0; index-- {
+			entry := &result.MessageArguments[index]
+			if len(entry.Values) > 0 {
+				entry.Values = entry.Values[:len(entry.Values)-1]
+				entry.Truncated = true
+				removed = true
+				break
+			}
+		}
+		if !removed {
+			break
+		}
+	}
+	return result
+}
+
+func detailsJSONSize(value *details) int {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return maxDetailsBytes + 1
+	}
+	return len(encoded)
+}
+
+func printableArgument(value string, limit int) (string, bool) {
+	var bounded strings.Builder
+	count := 0
+	shortened := false
+	for _, character := range value {
+		if !unicode.IsPrint(character) {
+			shortened = true
+			continue
+		}
+		if count == limit {
+			shortened = true
+			continue
+		}
+		bounded.WriteRune(character)
+		count++
+	}
+	return bounded.String(), shortened
 }
 
 func decode(raw []byte) (*summary, error) {

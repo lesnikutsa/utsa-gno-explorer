@@ -15,6 +15,7 @@ from fastapi import FastAPI, HTTPException, Path, Query
 from api.config import ConfigError, load_config
 from api.account_service import AccountUnavailableError, fetch_live_account, public_rpc_url
 from api.network_profile import topaz_profile, validate_account_address
+from api.transaction_argument_decoder import decode_transaction_arguments
 from api.database import (
     MissingIndexedBlockError,
     MissingIndexerStateError,
@@ -89,6 +90,7 @@ JSONB_TIMESTAMP_RE = re.compile(
     r"(?:\.(?P<fraction>\d{1,6}))?"
     r"(?P<timezone>Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$"
 )
+DEFAULT_TRANSACTION_DETAIL_SUMMARY = object()
 
 
 @asynccontextmanager
@@ -354,7 +356,13 @@ def _block_detail_from_row(detail: dict) -> BlockDetailResponse:
     )
 
 
-def _transaction_detail_from_row(row: dict) -> TransactionDetailResponse:
+def _transaction_detail_from_row(
+    row: dict,
+    message_arguments=None,
+    public_summary=DEFAULT_TRANSACTION_DETAIL_SUMMARY,
+) -> TransactionDetailResponse:
+    if public_summary is DEFAULT_TRANSACTION_DETAIL_SUMMARY:
+        public_summary = _public_transaction_summary(row.get("payload_summary"))
     return TransactionDetailResponse(
         block_height=row["block_height"],
         block_hash=_normalize_block_hash(row["block_hash_hex"]),
@@ -367,7 +375,8 @@ def _transaction_detail_from_row(row: dict) -> TransactionDetailResponse:
         raw_base64_length=row["raw_base64_length"],
         decoded_byte_length=row["decoded_byte_length"],
         decode_status=row["decode_status"],
-        summary=_public_transaction_summary(row.get("payload_summary")),
+        summary=public_summary,
+        message_arguments=message_arguments,
         **_execution_fields_from_row(row),
     )
 
@@ -1191,7 +1200,31 @@ def get_transaction_detail(
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
     if row is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
-    return _transaction_detail_from_row(row)
+    public_summary = _public_transaction_summary(row.get("payload_summary"))
+    raw_base64 = row.get("raw_base64")
+    decoded_byte_length = row.get("decoded_byte_length")
+    has_visible_call = (
+        public_summary is not None
+        and public_summary.parse_status == "parsed"
+        and bool(public_summary.messages)
+        and any(message.type == "gno.vm.MsgCall" for message in public_summary.messages)
+    )
+    message_arguments = None
+    if (
+        has_visible_call
+        and type(raw_base64) is str
+        and bool(raw_base64)
+        and type(decoded_byte_length) is int
+    ):
+        try:
+            message_arguments = decode_transaction_arguments(
+                raw_base64,
+                decoded_byte_length,
+                app.state.api_config,
+            )
+        except Exception:
+            LOGGER.warning("Transaction argument detail decoding failed")
+    return _transaction_detail_from_row(row, message_arguments, public_summary)
 
 
 @app.get("/api/transactions/by-hash/{tx_hash}", response_model=TransactionHashLookupResponse)

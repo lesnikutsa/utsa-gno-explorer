@@ -229,6 +229,19 @@ class TransactionSummaryResponse(BaseModel):
     messages: list[TransactionSummaryMessage] = Field(max_length=20)
 
 
+class TransactionMessageArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    message_index: int = Field(ge=0)
+    values: list[str] = Field(max_length=16)
+    truncated: bool
+
+    @model_validator(mode="after")
+    def validate_values(self):
+        if any(len(value) > 256 or (value != "" and not value.isprintable()) for value in self.values):
+            raise ValueError("argument values must be bounded printable strings")
+        return self
+
+
 class TransactionDetailResponse(BaseModel):
     block_height: int = Field(ge=1)
     block_hash: str
@@ -242,12 +255,21 @@ class TransactionDetailResponse(BaseModel):
     decoded_byte_length: int | None = Field(default=None, ge=0)
     decode_status: str
     summary: TransactionSummaryResponse | None = None
+    message_arguments: list[TransactionMessageArguments] | None = Field(default=None, max_length=20)
     execution_status: Literal["success", "failed"] | None = None
     gas_wanted: str | None = None
     gas_used: str | None = None
     error: str | None = None
     log: str | None = None
     info: str | None = None
+
+    @model_validator(mode="after")
+    def validate_message_argument_order(self):
+        if self.message_arguments is not None:
+            indexes = [entry.message_index for entry in self.message_arguments]
+            if indexes != sorted(set(indexes)):
+                raise ValueError("message argument indexes must be unique and sorted")
+        return self
 
 
 class TransactionHashLookupResponse(BaseModel):

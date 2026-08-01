@@ -272,7 +272,7 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .transaction-detail__header h1, .transaction-detail__state h1 { margin: 0 0 5px; color: var(--color-text-bright); font-size: 22px; font-weight: 600; }
 .transaction-detail__header p, .transaction-detail__state p { color: var(--color-text-secondary); font-size: 12px; }
 .transaction-detail__eyebrow { display: block; margin-bottom: 5px; color: var(--color-text-secondary); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
-.transaction-detail__heading-hash { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; user-select: text; }
+.transaction-detail__heading-hash { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; user-select: text; }
 .transaction-detail__section { margin-bottom: 10px; }
 .transaction-detail__grid, .transaction-detail__size-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .transaction-detail__field { min-width: 0; padding: 11px 13px; }
@@ -284,6 +284,8 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .transaction-detail__block-link { color: #dc795e; font-weight: 600; }
 .transaction-detail__field small { display: block; margin-top: 3px; color: var(--color-text-secondary); font-size: 9px; }
 .transaction-detail__copy-row { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.transaction-detail__copy-row--heading { width: fit-content; max-width: 100%; }
+.transaction-detail__copy-row--heading .copy-button { flex: 0 0 auto; }
 .transaction-detail__hash { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; user-select: text; }
 .transaction-detail__raw .panel__heading { align-items: center; }
 .transaction-detail__raw-value { max-width: 100%; margin: 0; padding: 13px; overflow: visible; color: var(--color-text); font-size: 11px; line-height: 1.65; overflow-wrap: anywhere; user-select: text; white-space: pre-wrap; word-break: break-word; }
@@ -302,10 +304,10 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .transaction-detail__details-content strong { color: var(--color-text-secondary); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
 .transaction-detail__details-content pre { max-width: 100%; margin: 5px 0 0; color: var(--color-text); font: 11px/1.55 var(--font-mono); overflow-wrap: anywhere; white-space: pre-wrap; word-break: break-word; }
 .transaction-detail__technical-content { border-top: 1px solid var(--color-border-soft); }
-.transaction-detail__technical-content > p { padding: 11px 13px 0; color: var(--color-text-secondary); font-size: 10px; line-height: 1.5; }
 .transaction-detail__technical .transaction-detail__size-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .transaction-detail__technical .transaction-detail__field + .transaction-detail__field { border-left: 1px solid var(--color-border-soft); }
 .transaction-detail__technical .transaction-detail__raw { border-top: 1px solid var(--color-border-soft); }
+.transaction-detail__raw-content { min-width: 0; border-top: 1px solid var(--color-border-soft); }
 .transaction-summary { min-width: 0; }
 .transaction-summary__heading small { display: block; margin-top: 3px; color: var(--color-text-secondary); font-size: 9px; }
 .transaction-summary__overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin: 0; }
@@ -320,10 +322,23 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .transaction-summary__messages { padding: 10px; border-top: 1px solid var(--color-border-soft); }
 .transaction-summary__message { min-width: 0; border: 1px solid var(--color-border-soft); border-radius: 5px; overflow: hidden; }
 .transaction-summary__message + .transaction-summary__message { margin-top: 8px; }
-.transaction-summary__message h3 { margin: 0; padding: 8px 10px; border-bottom: 1px solid var(--color-border-soft); color: var(--color-text-bright); font-size: 11px; }
-.transaction-summary__message-core { display: flex; min-width: 0; justify-content: space-between; gap: 12px; padding: 8px 10px; color: var(--color-text); font-size: 11px; }
-.transaction-summary__message-core > * { min-width: 0; overflow-wrap: anywhere; }
-.transaction-summary__message-core span { color: var(--color-text-secondary); }
+.transaction-summary__message > summary { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 9px 32px 9px 10px; color: var(--color-text); font-size: 11px; cursor: pointer; list-style: none; position: relative; }
+.transaction-summary__message > summary::-webkit-details-marker { display: none; }
+.transaction-summary__message > summary::after { content: '›'; position: absolute; right: 12px; color: var(--color-text-secondary); font-size: 17px; transform: rotate(90deg); transition: transform .15s ease; }
+.transaction-summary__message[open] > summary::after { transform: rotate(-90deg); }
+.transaction-summary__message > summary:hover { background: rgba(255,255,255,.025); }
+.transaction-summary__message > summary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.transaction-summary__message > summary > * { min-width: 0; overflow-wrap: anywhere; }
+.transaction-summary__message > summary strong { color: var(--color-text-bright); }
+.transaction-summary__message > summary span { color: var(--color-text-secondary); }
+.transaction-summary__message-content { border-top: 1px solid var(--color-border-soft); }
+.transaction-summary__arguments { min-width: 0; padding: 10px 13px; border-top: 1px solid var(--color-border-soft); }
+.transaction-summary__arguments h4 { margin: 0 0 8px; color: var(--color-text-bright); font-size: 11px; }
+.transaction-summary__arguments ol { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; counter-reset: argument; }
+.transaction-summary__arguments li { display: grid; min-width: 0; grid-template-columns: 28px minmax(0, 1fr); gap: 8px; counter-increment: argument; }
+.transaction-summary__arguments li::before { content: '#' counter(argument); color: var(--color-text-secondary); font: 10px/1.6 var(--font-mono); }
+.transaction-summary__arguments code { min-width: 0; color: var(--color-text); font: 11px/1.6 var(--font-mono); overflow-wrap: anywhere; white-space: pre-wrap; word-break: break-word; }
+.transaction-summary__arguments p { margin: 8px 0 0; color: var(--color-text-secondary); font-size: 10px; line-height: 1.5; }
 .transaction-summary__notice { padding: 9px 13px; border-top: 1px solid var(--color-border-soft); color: var(--color-text-secondary); font-size: 10px; line-height: 1.5; }
 .transaction-summary__notice--error { color: var(--color-error); }
 .transaction-detail__state { padding: 18px; }

@@ -69,10 +69,42 @@ most 160, category/action tokens at most 64, scalar details at most 160, and a
 message has no more than 16 explicit fields. Trailing summaries are removed
 when necessary without changing the primary message or full count.
 
-Only bounded identifying details and counts are emitted. The command never
+Without the explicit detail option, only bounded identifying details and counts are emitted. Normalized summaries never
 emits the original Base64, decoded bytes, signatures, public keys, the full
 memo, call arguments, session allow-path values, package file names or bodies,
 source code, raw Amino JSON, arbitrary transaction structs, or raw Go errors.
+
+## On-demand Transaction Detail arguments
+
+The JSONL protocol remains version 1 and accepts the backward-compatible optional
+`include_arguments` request field. Requests that omit it or set it to false return
+the original response shape exactly, so the indexer's normalized summary and stored
+`payload_summary` schema remain unchanged. The API uses `include_arguments: true`
+only after it has loaded a Transaction Detail row. The helper then adds a top-level
+`details.message_arguments` projection; argument arrays are never placed inside the
+summary.
+
+Argument details are decoded on demand from the row's stored `raw_base64` by a
+single-use, timeout-bounded decoder subprocess. No RPC request, database write,
+migration, historical backfill, or indexer flow is involved, and argument details
+are not persisted. The API-specific child is independent from the indexer's
+long-lived decoder, inherits only `PATH`, `LANG`, and `LC_ALL`, discards stderr, and
+is invoked directly without a shell. Missing executables, timeouts, malformed output,
+and all other decoder failures produce `message_arguments: null` without changing a
+successfully loaded Transaction Detail response.
+
+Only ordered `gno.vm.MsgCall` string arguments are exposed, associated with their
+zero-based transaction message index. Details contain at most 20 message entries and
+16 values per entry. Each value is limited to 256 printable Unicode characters;
+control characters are removed while empty strings are preserved. Compact details
+JSON is capped at 48 KiB. `truncated` is true when the original call has more than 16
+arguments, a value is shortened or filtered, or trailing values are removed to meet
+the total size limit. The normalized summary's `args_count` continues to report the
+original full count.
+
+The frontend places available values inside their matching collapsible message row.
+Raw Base64 remains available for debugging and verification under the collapsed
+Developer Data section and its nested **Show raw transaction** disclosure.
 
 This helper performs offline binary decoding only. It initializes no Gno
 application, VM keeper, node, database, RPC client, or other network client,
