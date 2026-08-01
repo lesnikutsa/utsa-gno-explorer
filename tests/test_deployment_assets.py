@@ -1,6 +1,7 @@
 import contextlib
 import io
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -17,6 +18,80 @@ ROOT = Path(__file__).resolve().parents[1]
 class DeploymentAssetTests(unittest.TestCase):
     def text(self, relative):
         return (ROOT / relative).read_text()
+
+    def test_fresh_install_commands_load_protected_runtime_environments(self):
+        install = self.text("docs/install.md")
+        init_command = next(
+            line for line in install.splitlines()
+            if "scripts/init_database.py" in line
+        )
+        self.assertIn("sudo -u utsa-gno sh -c", init_command)
+        self.assertLess(init_command.index("indexer.env"), init_command.index("rpc.env"))
+        self.assertLess(init_command.index("rpc.env"), init_command.index("cd /opt/utsa-gno-explorer"))
+        self.assertIn("exec .venv/bin/python scripts/init_database.py", init_command)
+
+        for relative in ("docs/install.md", "docs/operator-runbook.md"):
+            inspect_command = next(
+                line for line in self.text(relative).splitlines()
+                if "scripts/inspect_rpc.py" in line
+            )
+            self.assertIn("sudo -u utsa-gno sh -c", inspect_command)
+            self.assertIn(". /etc/utsa-gno-explorer/rpc.env", inspect_command)
+            self.assertIn("cd /opt/utsa-gno-explorer", inspect_command)
+            self.assertIn("exec .venv/bin/python scripts/inspect_rpc.py", inspect_command)
+            for forbidden in ("cat ", "grep ", "sed ", "printenv", "set -x"):
+                self.assertNotIn(forbidden, inspect_command)
+
+    def test_root_owned_checkout_builds_through_writable_root_commands(self):
+        install = self.text("docs/install.md")
+        self.assertIn("sudo python3 -m venv /opt/utsa-gno-explorer/.venv", install)
+        self.assertIn("sudo /opt/utsa-gno-explorer/.venv/bin/pip install", install)
+        self.assertIn(
+            'sudo env "PATH=$PATH" npm --prefix /opt/utsa-gno-explorer/frontend ci',
+            install,
+        )
+        self.assertIn(
+            'sudo env "PATH=$PATH" npm --prefix /opt/utsa-gno-explorer/frontend run build',
+            install,
+        )
+        self.assertIn("sudo install -o root -g root -m 0755 /tmp/gno-tx-decoder", install)
+        self.assertNotRegex(install, r"(?m)^(?:npm ci|npm run build)$")
+
+    def test_fresh_install_requires_separate_read_only_api_role(self):
+        install = self.text("docs/install.md")
+        role_at = install.index("CREATE ROLE utsa_gno_api LOGIN;")
+        init_at = install.index("scripts/init_database.py")
+        grants_at = install.index("GRANT SELECT ON ALL TABLES IN SCHEMA public")
+        self.assertLess(role_at, init_at)
+        self.assertLess(init_at, grants_at)
+        for required in (
+            "POSTGRES_USER", "utsa_gno_indexer", "\\password utsa_gno_api",
+            "default_transaction_read_only", "GRANT CONNECT", "GRANT USAGE",
+            "conditionally", "no sequence privilege is required or granted",
+        ):
+            self.assertIn(required, install)
+
+    def test_release_documentation_relative_links_resolve(self):
+        markdown_files = (
+            "README.md", "CHANGELOG.md", "docs/install.md", "docs/update.md",
+            "docs/restore.md", "docs/operator-runbook.md",
+            "docs/production-deployment.md", "docs/releases/v1.0.0.md",
+            "docs/archive/bounded-indexer-runbook.md",
+        )
+        for relative in markdown_files:
+            source = ROOT / relative
+            for target in re.findall(r"(?<!!)\[[^]]+\]\(([^)]+)\)", source.read_text()):
+                target = target.split("#", 1)[0]
+                if not target or "://" in target or target.startswith("mailto:"):
+                    continue
+                resolved = (source.parent / target).resolve()
+                self.assertTrue(resolved.exists(), f"{relative}: missing link {target}")
+
+    def test_frontend_remains_static_script_publication(self):
+        docs = self.text("docs/install.md") + self.text("docs/operator-runbook.md")
+        self.assertIn("scripts/deploy_frontend.sh", docs)
+        self.assertNotIn("frontend.service", docs)
+        self.assertFalse(list((ROOT / "deploy/systemd").glob("*frontend*")))
 
     def test_shared_rpc_environment_and_unit_precedence(self):
         rpc_env = self.text("deploy/systemd/rpc.env.example")
@@ -206,9 +281,8 @@ class DeploymentAssetTests(unittest.TestCase):
                       "GOVERNANCE_ERROR_BACKOFF_SECONDS=5", "GOVERNANCE_MAX_BACKOFF_SECONDS=60"]:
             self.assertIn(value, env)
         docs = self.text("docs/production-deployment.md") + self.text("docs/operator-runbook.md")
-        self.assertIn("only Governance scheduler/process", docs)
-        self.assertIn("no Governance timer", docs)
-        self.assertIn("no Governance cron", docs)
+        self.assertIn("`utsa-gno-governance-updater.service`", docs)
+        self.assertFalse(list((ROOT / "deploy/systemd").glob("*governance*.timer")))
         code = "\n".join(path.read_text() for path in (ROOT / "scripts").glob("*.py"))
         self.assertNotIn("systemctl enable --now utsa-gno-governance-updater", code)
         self.assertNotIn("crontab", docs.lower())
@@ -315,11 +389,15 @@ class DeploymentAssetTests(unittest.TestCase):
         return matches[0]
 
     def test_backup_installation_docs_create_root_only_backup_directory(self):
-        expected = "install -d -o root -g root -m 0700 \\\n  /var/backups/utsa-gno-explorer"
-        for relative in ["docs/production-deployment.md", "docs/operator-runbook.md"]:
-            doc = self.text(relative)
-            self.assertIn(expected, doc)
-            self.assertLess(doc.index(expected), doc.index("systemctl enable --now utsa-gno-explorer-backup.timer"))
+        install = self.text("docs/install.md")
+        self.assertIn(
+            "install -d -o root -g root -m 0700 /var/backups/utsa-gno-explorer",
+            install,
+        )
+        self.assertLess(
+            install.index("/var/backups/utsa-gno-explorer"),
+            install.index("utsa-gno-explorer-backup.timer"),
+        )
 
     def test_backup_systemd_timer_schedule_and_target(self):
         timer = self.text("deploy/systemd/utsa-gno-explorer-backup.timer")
