@@ -2,15 +2,26 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
+import { isValidArgumentValue } from '../src/utils/transactionArguments.js'
+
 const summary = readFileSync(new URL('../src/components/TransactionSummary.jsx', import.meta.url), 'utf8')
 const detail = readFileSync(new URL('../src/pages/TransactionDetail.jsx', import.meta.url), 'utf8')
 const styles = readFileSync(new URL('../src/styles/app.css', import.meta.url), 'utf8')
 
 test('message rows use independent native disclosures with only the first open initially', () => {
-  assert.match(summary, /<details className="transaction-summary__message" open=\{index === 0\}/)
+  assert.match(summary, /const \[open, setOpen\] = useState\(index === 0\)/)
+  assert.match(summary, /open=\{open\}/)
+  assert.match(summary, /onToggle=\{\(event\) => setOpen\(event\.currentTarget\.open\)\}/)
+  assert.match(summary, /function MessageDisclosure/)
   assert.match(summary, /<summary id=/)
-  assert.doesNotMatch(summary, /setOpen|accordion/i)
+  assert.doesNotMatch(summary, /accordion/i)
   assert.match(styles, /transaction-summary__message > summary:focus-visible/)
+})
+
+test('each message disclosure owns state that survives parent rerenders independently', () => {
+  assert.match(summary, /<MessageDisclosure[\s\S]*key=\{index\}/)
+  assert.doesNotMatch(summary, /open=\{index === 0\}/)
+  assert.doesNotMatch(summary, /setOpenMessage|activeMessage|openIndex/)
 })
 
 test('bounded arguments render as escaped message-local text with fallback and truncation notice', () => {
@@ -21,6 +32,14 @@ test('bounded arguments render as escaped message-local text with fallback and t
   assert.match(summary, /Some argument values were shortened or are not shown\./)
   assert.doesNotMatch(summary, /dangerouslySetInnerHTML/)
   assert.match(styles, /overflow-wrap: anywhere/)
+})
+
+test('argument limits count Unicode code points and reject controls', () => {
+  assert.equal(isValidArgumentValue('a'.repeat(256)), true)
+  assert.equal(isValidArgumentValue('🙂'.repeat(256)), true)
+  assert.equal(isValidArgumentValue('🙂'.repeat(257)), false)
+  assert.equal(isValidArgumentValue('control\nvalue'), false)
+  assert.equal(isValidArgumentValue(''), true)
 })
 
 test('Developer Data keeps raw Base64 behind a nested disclosure', () => {

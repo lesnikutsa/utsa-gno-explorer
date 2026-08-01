@@ -59,6 +59,25 @@ func TestArgumentsKeepMessageIndexesAndSkipUnsupportedTypes(t *testing.T) {
 	}
 }
 
+func TestArgumentsAreLimitedToVisibleSummaryMessages(t *testing.T) {
+	messages := make([]std.Msg, maxMessages+2)
+	for index := range messages {
+		messages[index] = bank.MsgSend{}
+	}
+	messages[1] = vm.MsgCall{Args: []string{"visible"}}
+	messages[maxMessages-1] = vm.MsgCall{Args: []string{"last visible"}}
+	messages[maxMessages] = vm.MsgCall{Args: []string{"hidden"}}
+	entries := protocolResponse(t, true, messages...).Details.MessageArguments
+	if len(entries) != 2 || entries[0].MessageIndex != 1 || entries[1].MessageIndex != maxMessages-1 {
+		t.Fatalf("%#v", entries)
+	}
+	for _, entry := range entries {
+		if entry.MessageIndex >= maxMessages {
+			t.Fatalf("returned hidden message index: %#v", entry)
+		}
+	}
+}
+
 func TestArgumentBoundsFilteringAndTruncation(t *testing.T) {
 	arguments := make([]string, 17)
 	arguments[0] = "keep\x00line\ntext"

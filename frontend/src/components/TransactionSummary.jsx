@@ -1,5 +1,8 @@
+import { useState } from 'react'
+
 import { CopyButton } from './CopyButton'
 import { StatusBadge } from './StatusBadge'
+import { isValidArgumentValue } from '../utils/transactionArguments'
 
 const DETAIL_FIELDS = [
   { key: 'sender', label: 'From', copyLabel: 'sender address', mono: true },
@@ -118,7 +121,7 @@ function validArgumentDetails(messageArguments) {
   let previous = -1
   for (const detail of messageArguments) {
     if (!isPlainObject(detail) || !isNonNegativeInteger(detail.message_index) || detail.message_index <= previous) return new Map()
-    if (!Array.isArray(detail.values) || detail.values.length > 16 || !detail.values.every((value) => typeof value === 'string' && value.length <= 256)) return new Map()
+    if (!Array.isArray(detail.values) || detail.values.length > 16 || !detail.values.every(isValidArgumentValue)) return new Map()
     if (typeof detail.truncated !== 'boolean') return new Map()
     result.set(detail.message_index, detail)
     previous = detail.message_index
@@ -128,6 +131,30 @@ function validArgumentDetails(messageArguments) {
 
 function UnavailableSummary() {
   return <p className="transaction-summary__notice">Human-readable summary was not indexed for this transaction.</p>
+}
+
+function MessageDisclosure({ message, index, argumentDetail }) {
+  const [open, setOpen] = useState(index === 0)
+  const location = isScalar(message.package_path) ? message.package_path : message.package_name
+  return (
+    <details
+      className="transaction-summary__message"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary id={`transaction-summary-message-${index + 1}`}>
+        <strong>Message #{index + 1}</strong>
+        <span>{isScalar(message.label) ? message.label : '—'}</span>
+        {isScalar(location) && <span className="mono">{location}</span>}
+        {isScalar(message.function) && <span className="mono">{message.function}</span>}
+        {isScalar(message.args_count) && <span>{message.args_count} arguments</span>}
+      </summary>
+      <div className="transaction-summary__message-content" aria-labelledby={`transaction-summary-message-${index + 1}`}>
+        <DetailFields message={message} showArgumentFallback={!argumentDetail} />
+        <Arguments detail={argumentDetail} count={message.args_count} />
+      </div>
+    </details>
+  )
 }
 
 export function TransactionSummary({ summary, messageArguments = null }) {
@@ -179,25 +206,12 @@ export function TransactionSummary({ summary, messageArguments = null }) {
 
       {summary.messages.length > 0 && (
         <div className="transaction-summary__messages">
-          {summary.messages.map((message, index) => {
-            const argumentDetail = argumentDetails.get(index)
-            const location = isScalar(message.package_path) ? message.package_path : message.package_name
-            return (
-              <details className="transaction-summary__message" open={index === 0} key={index}>
-                <summary id={`transaction-summary-message-${index + 1}`}>
-                  <strong>Message #{index + 1}</strong>
-                  <span>{isScalar(message.label) ? message.label : '—'}</span>
-                  {isScalar(location) && <span className="mono">{location}</span>}
-                  {isScalar(message.function) && <span className="mono">{message.function}</span>}
-                  {isScalar(message.args_count) && <span>{message.args_count} arguments</span>}
-                </summary>
-                <div className="transaction-summary__message-content" aria-labelledby={`transaction-summary-message-${index + 1}`}>
-                  <DetailFields message={message} showArgumentFallback={!argumentDetail} />
-                  <Arguments detail={argumentDetail} count={message.args_count} />
-                </div>
-              </details>
-            )
-          })}
+          {summary.messages.map((message, index) => <MessageDisclosure
+            message={message}
+            index={index}
+            argumentDetail={argumentDetails.get(index)}
+            key={index}
+          />)}
         </div>
       )}
 

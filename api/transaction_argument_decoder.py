@@ -4,7 +4,9 @@ import base64
 import binascii
 import json
 import os
+import selectors
 import subprocess
+import time
 import uuid
 
 from api.config import ApiConfig
@@ -17,6 +19,7 @@ MAX_DETAILS_BYTES = 48 << 10
 MAX_MESSAGE_ARGUMENTS = 20
 MAX_ARGUMENT_VALUES = 16
 MAX_ARGUMENT_CHARACTERS = 256
+PROCESS_CLEANUP_TIMEOUT_SECONDS = 0.2
 
 
 def _validate_message_arguments(value):
@@ -46,6 +49,94 @@ def _validate_message_arguments(value):
         previous_index = message_index
         result.append({"message_index": message_index, "values": values, "truncated": truncated})
     return result
+
+
+def _stop_process(process):
+    """Terminate, escalate when needed, and always reap a decoder child."""
+    if process.poll() is None:
+        try:
+            process.terminate()
+        except OSError:
+            pass
+        try:
+            process.wait(timeout=PROCESS_CLEANUP_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            try:
+                process.kill()
+            except OSError:
+                pass
+    try:
+        process.wait(timeout=PROCESS_CLEANUP_TIMEOUT_SECONDS)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    for stream in (process.stdin, process.stdout):
+        if stream is not None:
+            try:
+                stream.close()
+            except OSError:
+                pass
+
+
+def _bounded_exchange(process, request: bytes, timeout: float):
+    """Write one request and retain at most the response bound plus one byte."""
+    if process.stdin is None or process.stdout is None:
+        return None
+    selector = selectors.DefaultSelector()
+    response = bytearray()
+    request_offset = 0
+    stdout_open = True
+    deadline = time.monotonic() + timeout
+    try:
+        os.set_blocking(process.stdin.fileno(), False)
+        os.set_blocking(process.stdout.fileno(), False)
+        selector.register(process.stdin, selectors.EVENT_WRITE, "stdin")
+        selector.register(process.stdout, selectors.EVENT_READ, "stdout")
+        while stdout_open:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            events = selector.select(remaining)
+            if not events:
+                return None
+            for key, _mask in events:
+                if key.data == "stdin":
+                    try:
+                        written = os.write(process.stdin.fileno(), request[request_offset:])
+                    except (BrokenPipeError, OSError):
+                        return None
+                    if written <= 0:
+                        return None
+                    request_offset += written
+                    if request_offset == len(request):
+                        selector.unregister(process.stdin)
+                        process.stdin.close()
+                else:
+                    try:
+                        chunk = os.read(
+                            process.stdout.fileno(),
+                            min(64 << 10, MAX_RESPONSE_BYTES + 1 - len(response)),
+                        )
+                    except OSError:
+                        return None
+                    if not chunk:
+                        selector.unregister(process.stdout)
+                        stdout_open = False
+                        break
+                    response.extend(chunk)
+                    if len(response) > MAX_RESPONSE_BYTES:
+                        return None
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return None
+        try:
+            return_code = process.wait(timeout=remaining)
+        except subprocess.TimeoutExpired:
+            return None
+        if return_code != 0 or request_offset != len(request) or not response:
+            return None
+        return bytes(response)
+    finally:
+        selector.close()
 
 
 def decode_transaction_arguments(
@@ -79,22 +170,32 @@ def decode_transaction_arguments(
         if name in os.environ
     }
     try:
-        completed = subprocess.run(
+        process = subprocess.Popen(
             [config.transaction_detail_decoder_path],
-            input=request,
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-            timeout=config.transaction_detail_decoder_timeout_seconds,
-            check=False,
             shell=False,
             env=child_environment,
+            bufsize=0,
         )
     except (OSError, subprocess.SubprocessError):
         return None
-    if completed.returncode != 0 or not completed.stdout or len(completed.stdout) > MAX_RESPONSE_BYTES:
+    try:
+        try:
+            output = _bounded_exchange(
+                process,
+                request,
+                config.transaction_detail_decoder_timeout_seconds,
+            )
+        except Exception:
+            output = None
+    finally:
+        _stop_process(process)
+    if output is None:
         return None
     try:
-        response = json.loads(completed.stdout)
+        response = json.loads(output)
     except (UnicodeDecodeError, json.JSONDecodeError):
         return None
     if (

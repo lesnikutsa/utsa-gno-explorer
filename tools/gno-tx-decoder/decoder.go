@@ -209,7 +209,7 @@ func handleLineWithDecoder(line []byte, large bool, decodeFn decoderFunc) respon
 func argumentDetails(tx std.Tx) *details {
 	result := &details{MessageArguments: make([]messageArguments, 0, min(len(tx.Msgs), maxMessages))}
 	for index, msg := range tx.Msgs {
-		if len(result.MessageArguments) == maxMessages {
+		if index == maxMessages {
 			break
 		}
 		var args []string

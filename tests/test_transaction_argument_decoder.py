@@ -1,13 +1,17 @@
 import base64
 import json
 import logging
+import os
+from pathlib import Path
 import subprocess
+import sys
+import tempfile
+import time
 import unittest
-from types import SimpleNamespace
 from unittest.mock import patch
 
 from api.config import ApiConfig
-from api.transaction_argument_decoder import decode_transaction_arguments
+from api.transaction_argument_decoder import MAX_RESPONSE_BYTES, decode_transaction_arguments
 
 
 RAW = b"stored amino transaction"
@@ -17,55 +21,98 @@ SECRET_ENVIRONMENT = "secret-environment-value"
 
 
 class TransactionArgumentDecoderTests(unittest.TestCase):
-    def config(self, **overrides):
-        return ApiConfig(database_url="unused", transaction_detail_decoder_path="/safe/decoder", **overrides)
+    def setUp(self):
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
 
-    def successful_output(self, request, message_arguments=None):
-        request_value = json.loads(request)
-        return json.dumps({
-            "protocol_version": 1,
-            "id": request_value["id"],
-            "ok": True,
-            "summary": {"existing": "summary"},
-            "details": {"message_arguments": message_arguments if message_arguments is not None else [
-                {"message_index": 0, "values": [SECRET_ARGUMENT, ""], "truncated": False},
-            ]},
-        }).encode()
+    def config(self, path, **overrides):
+        return ApiConfig(database_url="unused", transaction_detail_decoder_path=str(path), **overrides)
+
+    def decoder_script(self, body):
+        path = Path(self.temporary_directory.name) / f"decoder-{len(list(Path(self.temporary_directory.name).iterdir()))}"
+        path.write_text(f"#!{sys.executable}\n{body}\n", encoding="utf-8")
+        path.chmod(0o755)
+        return path
+
+    def successful_script(self, message_arguments=None):
+        entries = message_arguments if message_arguments is not None else [
+            {"message_index": 0, "values": [SECRET_ARGUMENT, ""], "truncated": False},
+        ]
+        return self.decoder_script(
+            "import json, sys\n"
+            "request = json.loads(sys.stdin.readline())\n"
+            f"entries = {entries!r}\n"
+            "json.dump({'protocol_version': 1, 'id': request['id'], 'ok': True, "
+            "'summary': {'existing': 'summary'}, 'details': {'message_arguments': entries}}, sys.stdout)"
+        )
 
     def test_one_shot_request_and_sanitized_environment(self):
-        def run(command, **kwargs):
-            self.assertEqual(command, ["/safe/decoder"])
-            self.assertFalse(kwargs["shell"])
-            self.assertEqual(kwargs["stderr"], subprocess.DEVNULL)
-            self.assertEqual(kwargs["timeout"], 1.5)
-            self.assertTrue(json.loads(kwargs["input"])["include_arguments"])
-            self.assertNotIn("DATABASE_URL", kwargs["env"])
-            self.assertNotIn("SECRET_TEST_VALUE", kwargs["env"])
-            self.assertLessEqual(set(kwargs["env"]), {"PATH", "LANG", "LC_ALL"})
-            return SimpleNamespace(returncode=0, stdout=self.successful_output(kwargs["input"]))
-
-        with patch.dict("os.environ", {"SECRET_TEST_VALUE": SECRET_ENVIRONMENT}, clear=False), patch(
-            "api.transaction_argument_decoder.subprocess.run", side_effect=run,
-        ):
-            result = decode_transaction_arguments(RAW_BASE64, len(RAW), self.config())
+        path = self.successful_script()
+        real_popen = subprocess.Popen
+        with patch.dict(os.environ, {"SECRET_TEST_VALUE": SECRET_ENVIRONMENT}, clear=False), patch(
+            "api.transaction_argument_decoder.subprocess.Popen", wraps=real_popen,
+        ) as popen:
+            result = decode_transaction_arguments(RAW_BASE64, len(RAW), self.config(path))
         self.assertEqual(result[0]["values"], [SECRET_ARGUMENT, ""])
+        popen.assert_called_once()
+        _command, kwargs = popen.call_args
+        self.assertFalse(kwargs["shell"])
+        self.assertEqual(kwargs["stderr"], subprocess.DEVNULL)
+        self.assertEqual(kwargs["stdin"], subprocess.PIPE)
+        self.assertEqual(kwargs["stdout"], subprocess.PIPE)
+        self.assertNotIn("DATABASE_URL", kwargs["env"])
+        self.assertNotIn("SECRET_TEST_VALUE", kwargs["env"])
+        self.assertLessEqual(set(kwargs["env"]), {"PATH", "LANG", "LC_ALL"})
 
-    def test_unavailable_timeout_malformed_and_missing_details_return_none(self):
-        failures = [
-            OSError("not executable"),
-            subprocess.TimeoutExpired("decoder", 1.5),
-            SimpleNamespace(returncode=1, stdout=b""),
-            SimpleNamespace(returncode=0, stdout=b"not json"),
-            SimpleNamespace(returncode=0, stdout=json.dumps({"protocol_version": 1, "id": "wrong", "ok": True}).encode()),
+    def test_oversized_streaming_stdout_is_bounded_terminated_and_reaped(self):
+        pid_path = Path(self.temporary_directory.name) / "decoder.pid"
+        path = self.decoder_script(
+            "import os, sys, time\n"
+            f"open({str(pid_path)!r}, 'w').write(str(os.getpid()))\n"
+            "sys.stdin.readline()\n"
+            f"sys.stdout.buffer.write(b'x' * ({MAX_RESPONSE_BYTES} + 4096))\n"
+            "sys.stdout.flush()\n"
+            "time.sleep(10)"
+        )
+        started = time.monotonic()
+        self.assertIsNone(decode_transaction_arguments(RAW_BASE64, len(RAW), self.config(path)))
+        self.assertLess(time.monotonic() - started, 1.0)
+        pid = int(pid_path.read_text(encoding="utf-8"))
+        with self.assertRaises(ProcessLookupError):
+            os.kill(pid, 0)
+
+    def test_timeout_is_bounded_and_child_is_reaped(self):
+        pid_path = Path(self.temporary_directory.name) / "timeout.pid"
+        path = self.decoder_script(
+            "import os, sys, time\n"
+            f"open({str(pid_path)!r}, 'w').write(str(os.getpid()))\n"
+            "sys.stdin.readline()\n"
+            "time.sleep(10)"
+        )
+        started = time.monotonic()
+        self.assertIsNone(decode_transaction_arguments(
+            RAW_BASE64,
+            len(RAW),
+            self.config(path, transaction_detail_decoder_timeout_seconds=0.1),
+        ))
+        self.assertLess(time.monotonic() - started, 0.8)
+        pid = int(pid_path.read_text(encoding="utf-8"))
+        with self.assertRaises(ProcessLookupError):
+            os.kill(pid, 0)
+
+    def test_unavailable_malformed_and_missing_details_return_none(self):
+        paths = [
+            Path(self.temporary_directory.name) / "missing",
+            self.decoder_script("import sys\nsys.stdin.readline()\nsys.exit(1)"),
+            self.decoder_script("import sys\nsys.stdin.readline()\nsys.stdout.write('not json')"),
+            self.decoder_script(
+                "import json, sys\nsys.stdin.readline()\n"
+                "json.dump({'protocol_version': 1, 'id': 'wrong', 'ok': True}, sys.stdout)"
+            ),
         ]
-        for failure in failures:
-            effect = failure if isinstance(failure, BaseException) else None
-            with patch(
-                "api.transaction_argument_decoder.subprocess.run",
-                side_effect=effect,
-                return_value=None if effect else failure,
-            ):
-                self.assertIsNone(decode_transaction_arguments(RAW_BASE64, len(RAW), self.config()))
+        for path in paths:
+            with self.subTest(path=path):
+                self.assertIsNone(decode_transaction_arguments(RAW_BASE64, len(RAW), self.config(path)))
 
     def test_malformed_details_are_rejected(self):
         malformed = [
@@ -77,19 +124,22 @@ class TransactionArgumentDecoderTests(unittest.TestCase):
             [{"message_index": 0, "values": [], "truncated": 1}],
         ]
         for entries in malformed:
-            def run(_command, **kwargs):
-                return SimpleNamespace(returncode=0, stdout=self.successful_output(kwargs["input"], entries))
-            with patch("api.transaction_argument_decoder.subprocess.run", side_effect=run):
-                self.assertIsNone(decode_transaction_arguments(RAW_BASE64, len(RAW), self.config()))
+            with self.subTest(entries=entries):
+                path = self.successful_script(entries)
+                self.assertIsNone(decode_transaction_arguments(RAW_BASE64, len(RAW), self.config(path)))
 
     def test_invalid_stored_input_does_not_start_decoder(self):
-        with patch("api.transaction_argument_decoder.subprocess.run") as run:
+        with patch("api.transaction_argument_decoder.subprocess.Popen") as popen:
             for raw, length in (("%%%", 3), (RAW_BASE64, None), (RAW_BASE64, len(RAW) + 1)):
-                self.assertIsNone(decode_transaction_arguments(raw, length, self.config()))
-        run.assert_not_called()
+                self.assertIsNone(decode_transaction_arguments(raw, length, self.config("/safe/decoder")))
+        popen.assert_not_called()
 
     def test_failures_do_not_log_payload_arguments_environment_or_stderr(self):
         logger = logging.getLogger("api.transaction_argument_decoder")
-        with patch("api.transaction_argument_decoder.subprocess.run", side_effect=OSError(SECRET_ARGUMENT)):
+        with patch("api.transaction_argument_decoder.subprocess.Popen", side_effect=OSError(SECRET_ARGUMENT)):
             with self.assertNoLogs(logger):
-                self.assertIsNone(decode_transaction_arguments(RAW_BASE64, len(RAW), self.config()))
+                self.assertIsNone(decode_transaction_arguments(
+                    RAW_BASE64,
+                    len(RAW),
+                    self.config("/safe/decoder"),
+                ))

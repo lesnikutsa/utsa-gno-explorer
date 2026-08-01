@@ -193,7 +193,11 @@ class ApiTransactionDetailTests(unittest.TestCase):
 
     def test_valid_argument_details_are_attached_without_rpc(self):
         fake = FakeDatabase()
-        fake.details[(984383, 0)] = transaction_row()
+        primary = {"type": "gno.vm.MsgCall", "category": "contract", "action": "call", "label": "Contract Call"}
+        fake.details[(984383, 0)] = transaction_row(payload_summary=valid_summary(
+            primary=primary,
+            messages=[{**primary, "package_path": "gno.land/r/demo", "function": "Render", "args_count": 2}],
+        ))
         arguments = [{"message_index": 0, "values": ["first", ""], "truncated": False}]
         with patch("api.app.decode_transaction_arguments", return_value=arguments) as decoder:
             with self.make_client(fake) as client:
@@ -205,12 +209,33 @@ class ApiTransactionDetailTests(unittest.TestCase):
 
     def test_argument_decoder_failure_keeps_detail_available(self):
         fake = FakeDatabase()
-        fake.details[(984383, 0)] = transaction_row()
+        primary = {"type": "gno.vm.MsgCall", "category": "contract", "action": "call", "label": "Contract Call"}
+        fake.details[(984383, 0)] = transaction_row(payload_summary=valid_summary(
+            primary=primary, messages=[{**primary, "args_count": 1}],
+        ))
         with patch("api.app.decode_transaction_arguments", return_value=None):
             with self.make_client(fake) as client:
                 response = client.get("/api/blocks/984383/transactions/0")
         self.assertEqual(response.status_code, 200)
         self.assertIsNone(response.json()["message_arguments"])
+
+    def test_non_call_and_unavailable_summaries_skip_argument_decoder(self):
+        fallback_summaries = [
+            valid_summary(),
+            None,
+            {"malformed": "summary"},
+            valid_summary(parse_status="unsupported"),
+        ]
+        for stored_summary in fallback_summaries:
+            with self.subTest(summary=stored_summary):
+                fake = FakeDatabase()
+                fake.details[(984383, 0)] = transaction_row(payload_summary=stored_summary)
+                with patch("api.app.decode_transaction_arguments") as decoder:
+                    with self.make_client(fake) as client:
+                        response = client.get("/api/blocks/984383/transactions/0")
+                self.assertEqual(response.status_code, 200)
+                self.assertIsNone(response.json()["message_arguments"])
+                decoder.assert_not_called()
 
     def test_message_argument_schema_rejects_duplicate_unsorted_and_oversized_values(self):
         from pydantic import ValidationError
