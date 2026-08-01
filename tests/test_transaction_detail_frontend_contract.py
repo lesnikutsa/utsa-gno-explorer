@@ -85,14 +85,15 @@ class TransactionDetailFrontendContractTests(unittest.TestCase):
         self.assertIn("{transaction.block_hash}", information)
         self.assertIn('<CopyButton value={transaction.block_hash} label="block hash" />', information)
         self.assertIn("transaction-detail__field--full-width", information)
-        self.assertIn("Base64 Decode status", technical)
+        self.assertIn("Content decoding", technical)
+        self.assertNotIn("Base64 Decode status", technical)
 
     def test_decode_badge_is_shared_and_never_implies_execution_success(self):
         block = self.read("frontend/src/pages/BlockDetail.jsx")
         detail = self.read("frontend/src/pages/TransactionDetail.jsx")
         badge = self.read("frontend/src/components/TransactionDecodeBadge.jsx")
         self.assertIn("TransactionDecodeBadge", block)
-        self.assertIn("TransactionDecodeBadge", detail)
+        self.assertNotIn("TransactionDecodeBadge", detail)
         self.assertIn("status === 'decoded'", badge)
         self.assertIn("{ label: 'Decoded', tone: 'neutral' }", badge)
         self.assertNotIn("tone: 'success'", badge)
@@ -122,8 +123,8 @@ class TransactionDetailFrontendContractTests(unittest.TestCase):
         detail = self.read("frontend/src/pages/TransactionDetail.jsx")
         information = detail.index("Transaction Information")
         execution = detail.index("Execution Result")
-        summary = detail.index("<TransactionSummary summary={transaction.summary} />")
-        technical = detail.index("<summary>Technical Data</summary>")
+        summary = detail.index("<TransactionSummary summary={transaction.summary} messageArguments={transaction.message_arguments} />")
+        technical = detail.index("<summary>Developer Data</summary>")
         self.assertLess(information, execution)
         self.assertLess(execution, summary)
         self.assertLess(summary, technical)
@@ -131,6 +132,9 @@ class TransactionDetailFrontendContractTests(unittest.TestCase):
         self.assertNotIn('<details className="panel transaction-detail__section transaction-detail__technical" open', detail)
         technical_section = detail[detail.index('<details className="panel transaction-detail__section transaction-detail__technical">'):]
         self.assertIn("Raw Transaction Base64", technical_section)
+        self.assertIn("<summary>Show raw transaction</summary>", technical_section)
+        self.assertNotIn("Encoded length", technical_section)
+        self.assertIn('label="raw transaction"', technical_section)
 
     def test_transaction_summary_uses_explicit_safe_fields(self):
         summary = self.read("frontend/src/components/TransactionSummary.jsx")
@@ -185,7 +189,12 @@ class TransactionDetailFrontendContractTests(unittest.TestCase):
         self.assertIn('aria-labelledby="transaction-summary-title"', summary)
         self.assertIn("copyLabel: 'sender address'", summary)
         self.assertIn("copyLabel: 'recipient address'", summary)
-        self.assertIn("<h3 id=", summary)
+        self.assertIn('<details className="transaction-summary__message" open={index === 0}', summary)
+        self.assertIn("<summary id=", summary)
+        self.assertIn("messageArguments", summary)
+        self.assertIn("detail.values.map((value, index)", summary)
+        self.assertIn("value === '' ? '—' : value", summary)
+        self.assertIn("Some argument values were shortened or are not shown.", summary)
         self.assertIn(".transaction-summary { min-width: 0; }", styles)
         self.assertIn("overflow-wrap: anywhere", styles)
         mobile = styles[styles.index("@media (max-width: 760px)"):]

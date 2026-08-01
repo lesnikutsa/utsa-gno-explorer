@@ -100,6 +100,7 @@ class ApiTransactionDetailTests(unittest.TestCase):
             "decoded_byte_length": 10,
             "decode_status": "decoded",
             "summary": valid_summary(),
+            "message_arguments": None,
             "execution_status": None,
             "gas_wanted": None,
             "gas_used": None,
@@ -189,6 +190,42 @@ class ApiTransactionDetailTests(unittest.TestCase):
         with self.make_client(fake) as client:
             summary = client.get("/api/blocks/984383/transactions/0").json()["summary"]
         self.assertEqual(summary["messages"], [{key: value for key, value in message.items() if key != "args"}])
+
+    def test_valid_argument_details_are_attached_without_rpc(self):
+        fake = FakeDatabase()
+        fake.details[(984383, 0)] = transaction_row()
+        arguments = [{"message_index": 0, "values": ["first", ""], "truncated": False}]
+        with patch("api.app.decode_transaction_arguments", return_value=arguments) as decoder:
+            with self.make_client(fake) as client:
+                response = client.get("/api/blocks/984383/transactions/0")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["message_arguments"], arguments)
+        decoder.assert_called_once()
+        self.assertEqual(decoder.call_args.args[:2], (" exact+Base64== ", 10))
+
+    def test_argument_decoder_failure_keeps_detail_available(self):
+        fake = FakeDatabase()
+        fake.details[(984383, 0)] = transaction_row()
+        with patch("api.app.decode_transaction_arguments", return_value=None):
+            with self.make_client(fake) as client:
+                response = client.get("/api/blocks/984383/transactions/0")
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()["message_arguments"])
+
+    def test_message_argument_schema_rejects_duplicate_unsorted_and_oversized_values(self):
+        from pydantic import ValidationError
+        from api.app import _transaction_detail_from_row
+        from api.schemas import TransactionDetailResponse
+
+        base = _transaction_detail_from_row(transaction_row()).model_dump()
+        malformed = [
+            [{"message_index": 1, "values": [], "truncated": False}, {"message_index": 1, "values": [], "truncated": False}],
+            [{"message_index": 2, "values": [], "truncated": False}, {"message_index": 1, "values": [], "truncated": False}],
+            [{"message_index": 0, "values": ["x" * 257], "truncated": False}],
+        ]
+        for value in malformed:
+            with self.assertRaises(ValidationError):
+                TransactionDetailResponse.model_validate({**base, "message_arguments": value})
 
     def test_supported_fallback_statuses_and_null(self):
         for status, family in (("unsupported", "gno"), ("unparsed", "unknown"), ("invalid", "unknown")):

@@ -15,6 +15,7 @@ from fastapi import FastAPI, HTTPException, Path, Query
 from api.config import ConfigError, load_config
 from api.account_service import AccountUnavailableError, fetch_live_account, public_rpc_url
 from api.network_profile import topaz_profile, validate_account_address
+from api.transaction_argument_decoder import decode_transaction_arguments
 from api.database import (
     MissingIndexedBlockError,
     MissingIndexerStateError,
@@ -354,7 +355,7 @@ def _block_detail_from_row(detail: dict) -> BlockDetailResponse:
     )
 
 
-def _transaction_detail_from_row(row: dict) -> TransactionDetailResponse:
+def _transaction_detail_from_row(row: dict, message_arguments=None) -> TransactionDetailResponse:
     return TransactionDetailResponse(
         block_height=row["block_height"],
         block_hash=_normalize_block_hash(row["block_hash_hex"]),
@@ -368,6 +369,7 @@ def _transaction_detail_from_row(row: dict) -> TransactionDetailResponse:
         decoded_byte_length=row["decoded_byte_length"],
         decode_status=row["decode_status"],
         summary=_public_transaction_summary(row.get("payload_summary")),
+        message_arguments=message_arguments,
         **_execution_fields_from_row(row),
     )
 
@@ -1191,7 +1193,16 @@ def get_transaction_detail(
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
     if row is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
-    return _transaction_detail_from_row(row)
+    try:
+        message_arguments = decode_transaction_arguments(
+            row.get("raw_base64"),
+            row.get("decoded_byte_length"),
+            app.state.api_config,
+        )
+    except Exception:
+        LOGGER.warning("Transaction argument detail decoding failed")
+        message_arguments = None
+    return _transaction_detail_from_row(row, message_arguments)
 
 
 @app.get("/api/transactions/by-hash/{tx_hash}", response_model=TransactionHashLookupResponse)
