@@ -135,6 +135,10 @@ class TransactionDetailFrontendContractTests(unittest.TestCase):
         self.assertIn("<summary>Show raw transaction</summary>", technical_section)
         self.assertNotIn("Encoded length", technical_section)
         self.assertIn('label="raw transaction"', technical_section)
+        self.assertNotIn("transaction-detail__developer-actions", technical_section)
+        raw_disclosure = technical_section[technical_section.index("<summary>Show raw transaction</summary>"):]
+        self.assertLess(raw_disclosure.index("Raw Transaction Base64"), raw_disclosure.index('label="raw transaction"'))
+        self.assertLess(raw_disclosure.index('label="raw transaction"'), raw_disclosure.index("transaction.raw_base64}</pre>"))
 
     def test_transaction_summary_uses_explicit_safe_fields(self):
         summary = self.read("frontend/src/components/TransactionSummary.jsx")

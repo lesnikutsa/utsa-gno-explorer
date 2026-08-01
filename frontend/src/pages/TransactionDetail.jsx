@@ -104,13 +104,10 @@ export function TransactionDetail({ transactionDetail }) {
             <div className="transaction-detail__field"><span className="transaction-detail__label">Encoding</span><strong className="transaction-detail__value">Base64 / Gno Amino</strong></div>
             <div className="transaction-detail__field"><span className="transaction-detail__label">Payload size</span><strong className="transaction-detail__value mono">{transaction.decoded_byte_length == null ? '—' : `${transaction.decoded_byte_length} bytes`}</strong></div>
           </div>
-          <div className="transaction-detail__developer-actions">
-            <CopyButton value={transaction.raw_base64} label="raw transaction" />
-          </div>
           <details className="transaction-detail__nested-details transaction-detail__raw">
             <summary>Show raw transaction</summary>
             <div className="transaction-detail__raw-content">
-              <strong>Raw Transaction Base64</strong>
+              <div className="panel__heading"><h2>Raw Transaction Base64</h2><CopyButton value={transaction.raw_base64} label="raw transaction" /></div>
               <pre className="transaction-detail__raw-value mono">{transaction.raw_base64}</pre>
             </div>
           </details>

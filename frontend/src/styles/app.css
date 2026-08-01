@@ -305,9 +305,7 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .transaction-detail__technical .transaction-detail__size-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .transaction-detail__technical .transaction-detail__field + .transaction-detail__field { border-left: 1px solid var(--color-border-soft); }
 .transaction-detail__technical .transaction-detail__raw { border-top: 1px solid var(--color-border-soft); }
-.transaction-detail__developer-actions { display: flex; justify-content: flex-end; padding: 9px 13px; border-top: 1px solid var(--color-border-soft); }
 .transaction-detail__raw-content { min-width: 0; border-top: 1px solid var(--color-border-soft); }
-.transaction-detail__raw-content > strong { display: block; padding: 11px 13px 0; color: var(--color-text-secondary); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
 .transaction-summary { min-width: 0; }
 .transaction-summary__heading small { display: block; margin-top: 3px; color: var(--color-text-secondary); font-size: 9px; }
 .transaction-summary__overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin: 0; }

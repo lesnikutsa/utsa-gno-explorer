@@ -201,6 +201,8 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         self.assertIn("<summary>Developer Data</summary>", detail)
         self.assertIn("Raw Transaction Base64", detail)
         self.assertIn("<summary>Show raw transaction</summary>", detail)
+        self.assertNotIn("transaction-detail__developer-actions", detail)
+        self.assertNotIn("transaction-detail__developer-actions", styles)
         self.assertIn("{transaction.raw_base64}</pre>", detail)
         self.assertNotIn("Encoded length", detail)
         self.assertIn("Payload size", detail)
