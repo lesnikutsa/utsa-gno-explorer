@@ -25,7 +25,7 @@ export function DataTable({ columns, rows, rowKey, rowClassName, emptyMessage, l
           {loading && <tr><td className="table-message" colSpan={columns.length}>Loading live data…</td></tr>}
           {!loading && rows.length === 0 && <tr><td className="table-message" colSpan={columns.length}>{emptyMessage}</td></tr>}
           {!loading && rows.map((row, index) => (
-            <tr key={rowKey(row)} className={rowClassName?.(row, index) ?? ''}>{columns.map((column) => <td key={column.key}>{column.render ? column.render(row) : row[column.key]}</td>)}</tr>
+            <tr key={rowKey(row)} className={rowClassName?.(row, index) ?? ''}>{columns.map((column) => <td key={column.key} data-label={column.label}>{column.render ? column.render(row) : row[column.key]}</td>)}</tr>
           ))}
         </tbody>
       </table>
