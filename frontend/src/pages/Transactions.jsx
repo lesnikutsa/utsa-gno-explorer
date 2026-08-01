@@ -1,6 +1,8 @@
 import { DataTable } from '../components/DataTable'
 import { CopyButton } from '../components/CopyButton'
 import { TransactionTypeBadge } from '../components/TransactionTypeBadge'
+import { TransactionExecutionBadge } from '../components/TransactionExecutionBadge'
+import { GasValue } from '../components/GasValue'
 import { relativeTime } from '../utils/time'
 
 const transactionHref = (transaction) => `/blocks/${encodeURIComponent(transaction.block_height)}/transactions/${encodeURIComponent(transaction.index)}`
@@ -29,14 +31,24 @@ const columns = [
     render: (transaction) => <time dateTime={transaction.block_time} title={transaction.block_time}>{relativeTime(transaction.block_time)}</time>,
   },
   {
+    key: 'operation',
+    label: 'Type',
+    render: (transaction) => <TransactionTypeBadge title={transaction.type !== 'unknown' ? transaction.type : undefined}>{transaction.operation}</TransactionTypeBadge>,
+  },
+  {
     key: 'block_height',
     label: 'Block',
     render: (transaction) => <a className="table-link" href={`/blocks/${encodeURIComponent(transaction.block_height)}`} aria-label={`Open block #${transaction.block_height}`}><span className="blocks-table__height accent-value mono">#{transaction.block_height.toLocaleString()}</span></a>,
   },
   {
-    key: 'operation',
-    label: 'Type',
-    render: (transaction) => <TransactionTypeBadge title={transaction.type !== 'unknown' ? transaction.type : undefined}>{transaction.operation}</TransactionTypeBadge>,
+    key: 'execution_status',
+    label: 'Status',
+    render: (transaction) => <TransactionExecutionBadge status={transaction.execution_status} />,
+  },
+  {
+    key: 'gas_used',
+    label: 'Gas Used',
+    render: (transaction) => <GasValue used={transaction.gas_used} wanted={transaction.gas_wanted} />,
   },
 ]
 

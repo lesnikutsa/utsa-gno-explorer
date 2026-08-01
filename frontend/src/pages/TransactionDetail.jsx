@@ -4,7 +4,10 @@ import { CopyButton } from '../components/CopyButton'
 import { ProposerIdentity } from '../components/ProposerIdentity'
 import { TransactionDecodeBadge } from '../components/TransactionDecodeBadge'
 import { TransactionSummary } from '../components/TransactionSummary'
+import { TransactionExecutionBadge } from '../components/TransactionExecutionBadge'
+import { GasValue } from '../components/GasValue'
 import { relativeTime } from '../utils/time'
+import { formatGas, formatGasUtilization } from '../utils/gas'
 
 function RelativeTransactionTime({ value }) {
   const [now, setNow] = useState(() => Date.now())
@@ -63,22 +66,46 @@ export function TransactionDetail({ transactionDetail }) {
         </div>
       </section>
 
+      <section className="panel transaction-detail__section transaction-detail__execution" aria-labelledby="execution-result-title">
+        <div className="panel__heading"><h2 id="execution-result-title">Execution Result</h2></div>
+        <div className="transaction-detail__execution-grid">
+          <div className="transaction-detail__field"><span className="transaction-detail__label">Status</span><TransactionExecutionBadge status={transaction.execution_status} /></div>
+          <div className="transaction-detail__field"><span className="transaction-detail__label">Gas Used</span><strong className="transaction-detail__value"><GasValue used={transaction.gas_used} wanted={transaction.gas_wanted} /></strong></div>
+          <div className="transaction-detail__field"><span className="transaction-detail__label">Gas Wanted</span><strong className="transaction-detail__value mono">{formatGas(transaction.gas_wanted)}</strong></div>
+          <div className="transaction-detail__field"><span className="transaction-detail__label">Gas Utilization</span><strong className="transaction-detail__value mono">{formatGasUtilization(transaction.gas_used, transaction.gas_wanted)}</strong></div>
+        </div>
+        {transaction.execution_status === 'failed' && transaction.error && (
+          <div className="transaction-detail__execution-error" role="alert"><strong>Execution error</strong><p>{transaction.error}</p></div>
+        )}
+        {transaction.execution_status == null && <p className="transaction-detail__execution-unavailable">The execution result is not available from the indexed RPC data.</p>}
+        {(transaction.log || transaction.info) && (
+          <details className="transaction-detail__nested-details">
+            <summary>Execution Details</summary>
+            <div className="transaction-detail__details-content">
+              {transaction.log && <div><strong>Log</strong><pre>{transaction.log}</pre></div>}
+              {transaction.info && <div><strong>Info</strong><pre>{transaction.info}</pre></div>}
+            </div>
+          </details>
+        )}
+      </section>
+
       <TransactionSummary summary={transaction.summary} />
 
-      <section className="panel transaction-detail__section" aria-labelledby="transaction-size-title">
-        <div className="panel__heading"><h2 id="transaction-size-title">Transaction Size</h2></div>
-        <div className="transaction-detail__size-grid">
-          <div className="transaction-detail__field"><span className="transaction-detail__label">Base64 Length</span><strong className="transaction-detail__value mono">{transaction.raw_base64_length}</strong></div>
-          <div className="transaction-detail__field"><span className="transaction-detail__label">Decoded Bytes</span><strong className="transaction-detail__value mono">{transaction.decoded_byte_length ?? '—'}</strong></div>
+      <details className="panel transaction-detail__section transaction-detail__technical">
+        <summary>Technical Data</summary>
+        <div className="transaction-detail__technical-content">
+          <p>Low-level encoded transaction data intended for debugging and verification.</p>
+          <div className="transaction-detail__size-grid">
+            <div className="transaction-detail__field"><span className="transaction-detail__label">Base64 Decode status</span><TransactionDecodeBadge status={transaction.decode_status} /></div>
+            <div className="transaction-detail__field"><span className="transaction-detail__label">Encoded length</span><strong className="transaction-detail__value mono">{transaction.raw_base64_length} characters</strong></div>
+            <div className="transaction-detail__field"><span className="transaction-detail__label">Decoded size</span><strong className="transaction-detail__value mono">{transaction.decoded_byte_length == null ? '—' : `${transaction.decoded_byte_length} bytes`}</strong></div>
+          </div>
+          <div className="transaction-detail__raw">
+            <div className="panel__heading"><h2>Raw Transaction Base64</h2><CopyButton value={transaction.raw_base64} label="raw transaction Base64" /></div>
+            <pre className="transaction-detail__raw-value mono">{transaction.raw_base64}</pre>
+          </div>
         </div>
-      </section>
-
-      <section className="panel transaction-detail__section transaction-detail__raw" aria-labelledby="raw-transaction-title">
-        <div className="panel__heading"><h2 id="raw-transaction-title">Raw Transaction</h2><CopyButton value={transaction.raw_base64} label="raw transaction Base64" /></div>
-        <pre className="transaction-detail__raw-value mono">{transaction.raw_base64}</pre>
-      </section>
-
-      <p className="transaction-detail__notice">The summary describes transaction contents only. Execution result, gas used, and fee are not indexed yet.</p>
+      </details>
     </article>
   )
 }

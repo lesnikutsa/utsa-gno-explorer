@@ -1,4 +1,6 @@
 import unittest
+import json
+import subprocess
 from pathlib import Path
 
 
@@ -69,14 +71,14 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         self.assertIn("loadPage(request.cursor, request.targetIndex, request.history)", hook)
         self.assertIn("failedRequest.current = null", hook)
 
-    def test_aligned_four_column_table_and_links(self):
+    def test_six_column_transaction_table_and_links(self):
         page = self.read("frontend/src/pages/Transactions.jsx")
-        labels = ("label: 'TX Hash'", "label: 'Time'", "label: 'Block'", "label: 'Type'")
+        labels = ("label: 'TX Hash'", "label: 'Time'", "label: 'Type'", "label: 'Block'", "label: 'Status'", "label: 'Gas Used'")
         for label in labels:
             self.assertIn(label, page)
         self.assertEqual([page.index(label) for label in labels], sorted(page.index(label) for label in labels))
         self.assertNotIn("label: 'Height'", page)
-        self.assertEqual(page.count("label: '"), 4)
+        self.assertEqual(page.count("label: '"), 6)
         self.assertNotIn("shortAddress", page)
         self.assertIn("{transaction.tx_hash || 'Unavailable'}", page)
         self.assertIn("<CopyButton value={transaction.tx_hash} label=\"transaction hash\" />", page)
@@ -86,9 +88,11 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         self.assertIn("/blocks/${encodeURIComponent(transaction.block_height)}", page)
         self.assertIn("{transaction.operation}", page)
         self.assertIn("transaction.type !== 'unknown'", page)
+        self.assertIn("<TransactionExecutionBadge status={transaction.execution_status} />", page)
+        self.assertIn("<GasValue used={transaction.gas_used} wanted={transaction.gas_wanted} />", page)
         self.assertIn("'Unavailable'", page)
         self.assertIn("`${transaction.block_height}:${transaction.index}`", page)
-        for forbidden in ("sender", "recipient", "amount", "gas", "fee", "status"):
+        for forbidden in ("sender", "recipient", "amount", "fee"):
             self.assertNotIn(forbidden, page.lower())
 
     def test_states_pagination_and_responsive_layout(self):
@@ -103,7 +107,7 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         self.assertIn("table-layout: fixed", styles)
         self.assertIn("min-width: 1050px", styles)
         transactions_rules = styles[styles.index(".transactions-page {"):styles.index(".blocks-table__height")]
-        column_widths = (50, 14, 12, 24)
+        column_widths = (38, 13, 18, 10, 10, 11)
         for column, width in enumerate(column_widths, start=1):
             self.assertIn(f"th:nth-child({column}) {{ width: {width}%; }}", transactions_rules)
         self.assertEqual(sum(column_widths), 100)
@@ -123,6 +127,62 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         self.assertNotIn("text-overflow", hash_rule)
         mobile = styles[styles.index("@media (max-width: 760px)"):]
         self.assertIn(".transactions-page__table .data-table { min-width: 1050px; }", mobile)
+
+    def test_execution_status_badge_has_accessible_text_and_safe_fallback(self):
+        badge = self.read("frontend/src/components/TransactionExecutionBadge.jsx")
+        self.assertIn("status === 'success'", badge)
+        self.assertIn("label: 'Success', tone: 'success'", badge)
+        self.assertIn("status === 'failed'", badge)
+        self.assertIn("label: 'Failed', tone: 'error'", badge)
+        self.assertIn("label: 'Unavailable', tone: 'neutral'", badge)
+        self.assertNotIn("Pending", badge)
+
+    def test_block_transactions_show_execution_columns_instead_of_sizes(self):
+        page = self.read("frontend/src/pages/BlockDetail.jsx")
+        labels = ("label: 'Index'", "label: 'Tx Hash'", "label: 'Status'", "label: 'Gas Used'", "label: 'Base64 Decode'")
+        self.assertEqual([page.index(label) for label in labels], sorted(page.index(label) for label in labels))
+        self.assertNotIn("label: 'Base64 Length'", page)
+        self.assertNotIn("label: 'Decoded Bytes'", page)
+        self.assertIn("<TransactionExecutionBadge status={transaction.execution_status} />", page)
+        self.assertIn("<GasValue used={transaction.gas_used} wanted={transaction.gas_wanted} />", page)
+
+    def test_transaction_detail_execution_and_technical_data(self):
+        detail = self.read("frontend/src/pages/TransactionDetail.jsx")
+        self.assertIn('id="execution-result-title">Execution Result</h2>', detail)
+        self.assertLess(detail.index("Execution Result"), detail.index("<TransactionSummary"))
+        for label in ("Status", "Gas Used", "Gas Wanted", "Gas Utilization"):
+            self.assertIn(f">{label}</span>", detail)
+        self.assertIn("transaction.execution_status === 'failed' && transaction.error", detail)
+        self.assertIn("<p>{transaction.error}</p>", detail)
+        self.assertNotIn("dangerouslySetInnerHTML", detail)
+        self.assertIn("The execution result is not available from the indexed RPC data.", detail)
+        self.assertNotIn("not indexed yet", detail)
+        self.assertIn('<details className="panel transaction-detail__section transaction-detail__technical">', detail)
+        self.assertNotIn('<details className="panel transaction-detail__section transaction-detail__technical" open', detail)
+        self.assertIn("<summary>Technical Data</summary>", detail)
+        self.assertIn("Raw Transaction Base64", detail)
+        self.assertIn("{transaction.raw_base64}</pre>", detail)
+        self.assertIn("Encoded length", detail)
+        self.assertIn("Decoded size", detail)
+
+    def test_gas_formatting_and_utilization(self):
+        script = """
+          import { formatGas, formatGasUtilization } from './frontend/src/utils/gas.js';
+          console.log(JSON.stringify({
+            values: [formatGas('934971'), formatGas('128671780'), formatGas('9007199254740993123456789'), formatGas(null), formatGas('12x')],
+            utilization: [formatGasUtilization('934971', '5000000'), formatGasUtilization('1', '0'), formatGasUtilization('6000000', '5000000')]
+          }));
+        """
+        completed = subprocess.run(
+            ["node", "--input-type=module", "--eval", script],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        result = json.loads(completed.stdout)
+        self.assertEqual(result["values"], ["934,971", "128,671,780", "9,007,199,254,740,993,123,456,789", "—", "—"])
+        self.assertEqual(result["utilization"], ["18.7%", "—", "120%"])
 
     def test_blocks_local_search_removed_without_changing_pagination_or_polling(self):
         page = self.read("frontend/src/pages/Blocks.jsx")
