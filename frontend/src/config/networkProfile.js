@@ -11,6 +11,10 @@ const links = Object.freeze({
 export const networkProfile = Object.freeze({
   projectName: publicValue(import.meta.env.VITE_PROJECT_NAME, 'Gno.land'),
   networkName: publicValue(import.meta.env.VITE_NETWORK_NAME, 'Topaz'),
+  networkIconSrc: publicValue(
+    import.meta.env.VITE_NETWORK_ICON,
+    '/assets/networks/gnoland.png',
+  ),
   nativeDenom: publicValue(
     import.meta.env.VITE_NATIVE_DENOM,
     'ugnot',
