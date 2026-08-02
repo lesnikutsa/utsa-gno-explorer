@@ -86,11 +86,13 @@ function DetailFields({ message, showArgumentFallback }) {
     fields.push({ key: 'args_count', label: 'Arguments' })
   }
   if (fields.length === 0) return null
+  const hasCrowdedSender = fields.length >= 4
+    && fields.some(({ key }) => key === 'sender')
 
   return (
-    <dl className="transaction-summary__details">
+    <dl className={`transaction-summary__details${hasCrowdedSender ? ' transaction-summary__details--sender-priority' : ''}`}>
       {fields.map(({ key, label, copyLabel, mono }) => (
-        <div className="transaction-summary__detail" key={key}>
+        <div className={`transaction-summary__detail${key === 'sender' ? ' transaction-summary__detail--sender' : ''}`} key={key}>
           <dt>{label}</dt>
           <dd className={mono ? 'mono' : undefined}>
             <span>{displayValue(message[key])}</span>

@@ -34,6 +34,27 @@ test('bounded arguments render as escaped message-local text with fallback and t
   assert.match(styles, /overflow-wrap: anywhere/)
 })
 
+test('four-field sender details are prioritized while three-field MsgSend is not', () => {
+  assert.match(summary, /const hasCrowdedSender = fields\.length >= 4\s*&& fields\.some\(\(\{ key \}\) => key === 'sender'\)/)
+  assert.match(summary, /hasCrowdedSender \? ' transaction-summary__details--sender-priority' : ''/)
+  assert.match(summary, /key === 'sender' \? ' transaction-summary__detail--sender' : ''/)
+  assert.doesNotMatch(summary, /key === 'recipient' \? ' transaction-summary__detail--sender'/)
+
+  const hasCrowdedSender = (keys) => keys.length >= 4 && keys.includes('sender')
+  assert.equal(hasCrowdedSender(['sender', 'send', 'package_path', 'function']), true)
+  assert.equal(hasCrowdedSender(['sender', 'recipient', 'amount']), false)
+  assert.equal(hasCrowdedSender(['recipient', 'send', 'package_path', 'function']), false)
+})
+
+test('crowded sender layout preserves the default grid and uses a scoped responsive override', () => {
+  assert.match(styles, /\.transaction-summary__details \{ display: grid; grid-template-columns: repeat\(auto-fit, minmax\(240px, 1fr\)\); margin: 0; border-top: 1px solid var\(--color-border-soft\); \}/)
+  assert.match(styles, /\.transaction-summary__details--sender-priority \{ grid-template-columns: minmax\(300px, 1\.25fr\) repeat\(auto-fit, minmax\(210px, 1fr\)\); \}/)
+  assert.match(styles, /@media \(max-width: 700px\) \{\s*\.transaction-summary__details--sender-priority \{ grid-template-columns: 1fr; \}\s*\}/)
+
+  const scopedRules = `${summary}\n${styles.match(/\.transaction-summary__details--sender-priority[^}]*\}/g)?.join('\n')}`
+  assert.doesNotMatch(scopedRules, /text-overflow|ellipsis|font-size|overflow-x|white-space:\s*nowrap/)
+})
+
 test('argument limits count Unicode code points and reject controls', () => {
   assert.equal(isValidArgumentValue('a'.repeat(256)), true)
   assert.equal(isValidArgumentValue('🙂'.repeat(256)), true)
