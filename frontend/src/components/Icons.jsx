@@ -13,6 +13,8 @@ export const ChainIcon = () => <Icon><path d="M9.5 14.5 8 16a3 3 0 0 1-4-4l3-3a3
 export const SearchIcon = () => <Icon><circle cx="11" cy="11" r="6" /><path d="m16 16 4 4" /></Icon>
 export const MenuIcon = () => <Icon><path d="M4 7h16M4 12h16M4 17h16" /></Icon>
 export const ChevronDownIcon = () => <Icon><path d="m8 10 4 4 4-4" /></Icon>
+export const ChevronLeftIcon = () => <Icon><path d="m15 18-6-6 6-6" /></Icon>
+export const ChevronRightIcon = () => <Icon><path d="m9 18 6-6-6-6" /></Icon>
 export const ExternalLinkIcon = () => <Icon><path d="M14 5h5v5M19 5l-8 8" /><path d="M17 13v6H5V7h6" /></Icon>
 
 export const CopyIcon = () => <Icon><rect x="9" y="9" width="11" height="11" rx="1" /><path d="M15 9V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h4" /></Icon>
