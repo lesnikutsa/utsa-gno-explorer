@@ -323,6 +323,7 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .transaction-summary__overview-field dt, .transaction-summary__detail dt { margin-bottom: 5px; color: var(--color-text-secondary); font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
 .transaction-summary__overview-field dd, .transaction-summary__detail dd { min-width: 0; margin: 0; color: var(--color-text); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 .transaction-summary__details { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin: 0; border-top: 1px solid var(--color-border-soft); }
+.transaction-summary__details--sender-priority { grid-template-columns: minmax(300px, 1.25fr) repeat(auto-fit, minmax(210px, 1fr)); }
 .transaction-summary__detail { min-width: 0; padding: 10px 13px; border-right: 1px solid var(--color-border-soft); border-bottom: 1px solid var(--color-border-soft); }
 .transaction-summary__detail dd { display: flex; align-items: flex-start; gap: 8px; }
 .transaction-summary__detail dd span { min-width: 0; flex: 1 1 auto; overflow-wrap: anywhere; }
@@ -478,6 +479,9 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
   .validator-detail__grid--status { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .validator-detail__grid--status .validator-detail__field:nth-child(4) { border-left: 0; }
   .validator-detail__grid--status .validator-detail__field:nth-child(n+4) { border-top: 1px solid var(--color-border-soft); }
+}
+@media (max-width: 800px) {
+  .transaction-summary__details--sender-priority { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {
   .sidebar { transform: translateX(-100%); transition: transform .2s ease; }.sidebar.is-open { transform: translateX(0); }
