@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import test from 'node:test'
 
 const layout = readFileSync(new URL('../src/layouts/ExplorerLayout.jsx', import.meta.url), 'utf8')
@@ -8,6 +8,8 @@ const logo = readFileSync(new URL('../src/components/UtsaLogo.jsx', import.meta.
 const icons = readFileSync(new URL('../src/components/Icons.jsx', import.meta.url), 'utf8')
 const theme = readFileSync(new URL('../src/styles/theme.css', import.meta.url), 'utf8')
 const styles = readFileSync(new URL('../src/styles/app.css', import.meta.url), 'utf8')
+const profile = readFileSync(new URL('../src/config/networkProfile.js', import.meta.url), 'utf8')
+const networkDirectory = new URL('../public/assets/networks/', import.meta.url)
 
 test('desktop collapsed preference is separate, safe, and persistent', () => {
   assert.match(layout, /const \[sidebarOpen, setSidebarOpen\] = useState\(false\)/)
@@ -24,17 +26,34 @@ test('desktop collapsed preference is separate, safe, and persistent', () => {
 test('sidebar retains navigation contracts and exposes accessible state controls', () => {
   assert.match(sidebar, /export function Sidebar\(\{ open, onClose, chainId, collapsed, onToggleCollapsed \}\)/)
   assert.match(sidebar, /aria-current=\{active \? 'page' : undefined\}/)
-  assert.match(sidebar, /title=\{collapsed \? label : undefined\}/)
+  assert.match(sidebar, /data-sidebar-tooltip=\{collapsed \? label : undefined\}/)
   assert.match(sidebar, /className="nav-item__label"/)
   assert.match(sidebar, /'Collapse sidebar'/)
   assert.match(sidebar, /'Expand sidebar'/)
   assert.match(sidebar, /aria-expanded=\{!collapsed\}/)
   assert.match(sidebar, /collapsed \? <ChevronRightIcon \/> : <ChevronLeftIcon \/>/)
   assert.match(sidebar, /<ChainIcon \/>/)
+  assert.doesNotMatch(sidebar, /\btitle=/)
   assert.match(sidebar, /if \(href === '\/'\) return pathname === '\/'/)
   assert.match(sidebar, /if \(href === '\/transactions' && isTransactionDetail\) return true/)
   assert.match(icons, /export const ChevronLeftIcon/)
   assert.match(icons, /export const ChevronRightIcon/)
+})
+
+test('network icon is configurable and safely falls back without a placeholder asset', () => {
+  assert.equal(existsSync(new URL('.gitkeep', networkDirectory)), true)
+  assert.equal(existsSync(new URL('gnoland.svg', networkDirectory)), false)
+  assert.match(profile, /networkIconSrc: publicValue\(/)
+  assert.match(profile, /import\.meta\.env\.VITE_NETWORK_ICON/)
+  assert.match(profile, /'\/assets\/networks\/gnoland\.svg'/)
+  assert.match(sidebar, /src=\{networkProfile\.networkIconSrc\}/)
+  assert.doesNotMatch(sidebar, /\/assets\/networks\/gnoland\.svg/)
+  assert.match(sidebar, /className="chain-select__network-icon"/)
+  assert.match(sidebar, /alt=""/)
+  assert.match(sidebar, /onError=\{\(\) => setNetworkIconFailed\(true\)\}/)
+  assert.match(sidebar, /networkIconFailed \? \([\s\S]*?chain-select__network-icon-fallback[\s\S]*?<ChainIcon \/>/)
+  assert.match(sidebar, /className="chain-select__label">\{chainLabel\}<\/span>/)
+  assert.match(sidebar, /aria-label=\{`Current chain: \$\{chainLabel\}`\}/)
 })
 
 test('existing logo and shared responsive width contracts are preserved', () => {
@@ -48,6 +67,23 @@ test('existing logo and shared responsive width contracts are preserved', () => 
   assert.match(styles, /@media \(max-width: 760px\) \{[\s\S]*?--sidebar-current-width: var\(--sidebar-width\)/)
   assert.match(styles, /@media \(max-width: 760px\) \{[\s\S]*?\.sidebar__toggle \{ display: none; \}/)
   assert.match(styles, /@media \(max-width: 760px\) \{[\s\S]*?\.brand__product[\s\S]*?\.nav-item__label \{ display: block; \}/)
-  assert.match(styles, /@media \(prefers-reduced-motion: reduce\) \{ \.sidebar, \.app-frame \{ transition: none; \}/)
+  assert.match(styles, /@media \(prefers-reduced-motion: reduce\) \{ \.sidebar, \.app-frame,[^{]*\{ transition: none; \}/)
   assert.doesNotMatch(styles, /(?:html|body)\s*\{[^}]*overflow-x/)
+})
+
+test('Explorer-themed tooltips are desktop-only and preserve approved dimensions', () => {
+  assert.match(sidebar, /data-sidebar-tooltip=\{collapsed \? chainLabel : undefined\}/)
+  assert.match(sidebar, /data-sidebar-tooltip=\{collapsed \? 'Expand sidebar' : 'Collapse sidebar'\}/)
+  assert.match(styles, /\[data-sidebar-tooltip\]::before/)
+  assert.match(styles, /\[data-sidebar-tooltip\]::after/)
+  assert.match(styles, /background: #0d2133/)
+  assert.match(styles, /border: 1px solid var\(--color-border\)/)
+  assert.match(styles, /\[data-sidebar-tooltip\]:hover::before/)
+  assert.match(styles, /\[data-sidebar-tooltip\]:focus-visible::before/)
+  assert.match(styles, /@media \(max-width: 760px\) \{[\s\S]*?\[data-sidebar-tooltip\]::before, \[data-sidebar-tooltip\]::after \{ display: none; content: none; \}/)
+  assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[^{]*\{[^}]*\[data-sidebar-tooltip\]::before[^}]*transition: none/)
+  assert.match(styles, /\.chain-select__network-icon \{ display: block; width: 24px; height: 24px; object-fit: contain; \}/)
+  assert.match(styles, /\.sidebar__toggle \{ position: absolute; top: 22px; right: -14px; display: none; width: 28px; height: 28px;/)
+  assert.match(styles, /\.app-shell\.is-sidebar-collapsed \.brand__asset \{ width: 42px; \}/)
+  assert.match(theme, /--sidebar-width: 204px;[\s\S]*--sidebar-collapsed-width: 68px;/)
 })

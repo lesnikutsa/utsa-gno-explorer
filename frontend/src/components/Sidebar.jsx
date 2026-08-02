@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { UtsaLogo } from './UtsaLogo'
 import { BlocksIcon, ChainIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, GovernanceIcon, HomeIcon, TransactionsIcon, ValidatorsIcon } from './Icons'
 import { networkProfile } from '../config/networkProfile'
@@ -11,6 +12,7 @@ const items = [
 ]
 
 export function Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed }) {
+  const [networkIconFailed, setNetworkIconFailed] = useState(false)
   const pathname = window.location.pathname
   const isTransactionDetail = /^\/blocks\/[^/]+\/transactions\/[^/]+\/?$/.test(pathname)
   const chainLabel = chainId ? `${networkProfile.projectName} · ${chainId}` : `${networkProfile.projectName} network`
@@ -28,8 +30,19 @@ export function Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed }
         <UtsaLogo />
         <div className="chain-select">
           <span className="sidebar__label">Current chain</span>
-          <button type="button" title={chainLabel} aria-label={`Current chain: ${chainLabel}`}>
-            <span className="chain-select__compact-icon"><ChainIcon /></span>
+          <button type="button" data-sidebar-tooltip={collapsed ? chainLabel : undefined} aria-label={`Current chain: ${chainLabel}`}>
+            <span className="chain-select__compact-icon">
+              {networkIconFailed ? (
+                <span className="chain-select__network-icon-fallback"><ChainIcon /></span>
+              ) : (
+                <img
+                  className="chain-select__network-icon"
+                  src={networkProfile.networkIconSrc}
+                  alt=""
+                  onError={() => setNetworkIconFailed(true)}
+                />
+              )}
+            </span>
             <span className="chain-select__label">{chainLabel}</span>
             <span className="chain-select__chevron"><ChevronDownIcon /></span>
           </button>
@@ -37,7 +50,7 @@ export function Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed }
         <nav className="sidebar__nav" aria-label="Explorer navigation">
           {items.map(({ label, Icon, href }) => {
             const active = isActive(href)
-            return <a key={label} className={`nav-item ${active ? 'is-active' : ''}`} href={href} onClick={onClose} aria-current={active ? 'page' : undefined} title={collapsed ? label : undefined}><Icon /><span className="nav-item__label">{label}</span></a>
+            return <a key={label} className={`nav-item ${active ? 'is-active' : ''}`} href={href} onClick={onClose} aria-current={active ? 'page' : undefined} data-sidebar-tooltip={collapsed ? label : undefined}><Icon /><span className="nav-item__label">{label}</span></a>
           })}
         </nav>
         <button
@@ -45,7 +58,7 @@ export function Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed }
           type="button"
           onClick={onToggleCollapsed}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          data-sidebar-tooltip={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           aria-expanded={!collapsed}
         >
           {collapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
