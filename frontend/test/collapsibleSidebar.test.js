@@ -26,7 +26,7 @@ test('desktop collapsed preference is separate, safe, and persistent', () => {
 test('sidebar retains navigation contracts and exposes accessible state controls', () => {
   assert.match(sidebar, /export function Sidebar\(\{ open, onClose, chainId, collapsed, onToggleCollapsed \}\)/)
   assert.match(sidebar, /aria-current=\{active \? 'page' : undefined\}/)
-  assert.match(sidebar, /data-sidebar-tooltip=\{collapsed \? label : undefined\}/)
+  assert.match(sidebar, /data-sidebar-tooltip=\{collapsed && !active \? label : undefined\}/)
   assert.match(sidebar, /className="nav-item__label"/)
   assert.match(sidebar, /'Collapse sidebar'/)
   assert.match(sidebar, /'Expand sidebar'/)
@@ -38,6 +38,13 @@ test('sidebar retains navigation contracts and exposes accessible state controls
   assert.match(sidebar, /if \(href === '\/transactions' && isTransactionDetail\) return true/)
   assert.match(icons, /export const ChevronLeftIcon/)
   assert.match(icons, /export const ChevronRightIcon/)
+})
+
+test('active navigation styling stays quiet and does not use a stripe', () => {
+  assert.doesNotMatch(styles, /\.nav-item\.is-active::(?:before|after)/)
+  assert.match(styles, /\.nav-item\.is-active \{ border-color: rgba\(200,75,49,\.35\); background: var\(--color-accent-soft\); color: var\(--color-text-bright\); font-weight: 600; \}/)
+  assert.match(styles, /\.nav-item\.is-active:hover \{ border-color: rgba\(200,75,49,\.65\); background: var\(--color-accent-soft\); color: var\(--color-text-bright\); \}/)
+  assert.match(styles, /\.nav-item:hover \{ color: var\(--color-text\); background: rgba\(255,255,255,\.025\); \}/)
 })
 
 test('network icon is configurable and safely falls back to ChainIcon', () => {
