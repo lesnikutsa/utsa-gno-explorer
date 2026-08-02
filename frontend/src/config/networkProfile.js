@@ -13,7 +13,7 @@ export const networkProfile = Object.freeze({
   networkName: publicValue(import.meta.env.VITE_NETWORK_NAME, 'Topaz'),
   networkIconSrc: publicValue(
     import.meta.env.VITE_NETWORK_ICON,
-    '/assets/networks/gnoland.svg',
+    '/assets/networks/gnoland.png',
   ),
   nativeDenom: publicValue(
     import.meta.env.VITE_NATIVE_DENOM,
