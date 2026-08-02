@@ -49,7 +49,8 @@ test('four-field sender details are prioritized while three-field MsgSend is not
 test('crowded sender layout preserves the default grid and uses a scoped responsive override', () => {
   assert.match(styles, /\.transaction-summary__details \{ display: grid; grid-template-columns: repeat\(auto-fit, minmax\(240px, 1fr\)\); margin: 0; border-top: 1px solid var\(--color-border-soft\); \}/)
   assert.match(styles, /\.transaction-summary__details--sender-priority \{ grid-template-columns: minmax\(300px, 1\.25fr\) repeat\(auto-fit, minmax\(210px, 1fr\)\); \}/)
-  assert.match(styles, /@media \(max-width: 700px\) \{\s*\.transaction-summary__details--sender-priority \{ grid-template-columns: 1fr; \}\s*\}/)
+  assert.match(styles, /@media \(max-width: 800px\) \{\s*\.transaction-summary__details--sender-priority \{ grid-template-columns: 1fr; \}\s*\}/)
+  assert.doesNotMatch(styles, /@media \(max-width: 700px\) \{\s*\.transaction-summary__details--sender-priority/)
 
   const scopedRules = `${summary}\n${styles.match(/\.transaction-summary__details--sender-priority[^}]*\}/g)?.join('\n')}`
   assert.doesNotMatch(scopedRules, /text-overflow|ellipsis|font-size|overflow-x|white-space:\s*nowrap/)
