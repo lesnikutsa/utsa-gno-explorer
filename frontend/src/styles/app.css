@@ -33,7 +33,7 @@
 .nav-item:hover { color: var(--color-text); background: rgba(255,255,255,.025); }
 .nav-item:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .nav-item.is-active { border-color: rgba(200,75,49,.35); background: var(--color-accent-soft); color: var(--color-text-bright); font-weight: 600; }
-.nav-item.is-active::before { position: absolute; left: -1px; width: 3px; height: 22px; border-radius: 3px; background: var(--color-accent); content: ""; }
+.nav-item.is-active:hover { border-color: rgba(200,75,49,.65); background: var(--color-accent-soft); color: var(--color-text-bright); }
 .nav-item.is-disabled { cursor: default; opacity: .7; }
 .icon { width: 16px; height: 16px; flex: 0 0 auto; }
 .chain-select { padding: 10px; border: 1px solid var(--color-border-soft); border-radius: 6px; background: rgba(15,34,53,.65); }
@@ -516,7 +516,6 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
   .app-shell.is-sidebar-collapsed .sidebar__nav { align-items: center; gap: 4px; }
   .app-shell.is-sidebar-collapsed .nav-item { width: 42px; height: 38px; justify-content: center; gap: 0; padding: 0; }
   .app-shell.is-sidebar-collapsed .nav-item__label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-  .app-shell.is-sidebar-collapsed .nav-item.is-active::before { left: -1px; }
 }
 @media (max-width: 760px) {
   .app-shell { --sidebar-current-width: var(--sidebar-width); }

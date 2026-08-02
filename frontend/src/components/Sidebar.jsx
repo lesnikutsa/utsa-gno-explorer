@@ -50,7 +50,7 @@ export function Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed }
         <nav className="sidebar__nav" aria-label="Explorer navigation">
           {items.map(({ label, Icon, href }) => {
             const active = isActive(href)
-            return <a key={label} className={`nav-item ${active ? 'is-active' : ''}`} href={href} onClick={onClose} aria-current={active ? 'page' : undefined} data-sidebar-tooltip={collapsed ? label : undefined}><Icon /><span className="nav-item__label">{label}</span></a>
+            return <a key={label} className={`nav-item ${active ? 'is-active' : ''}`} href={href} onClick={onClose} aria-current={active ? 'page' : undefined} data-sidebar-tooltip={collapsed && !active ? label : undefined}><Icon /><span className="nav-item__label">{label}</span></a>
           })}
         </nav>
         <button
