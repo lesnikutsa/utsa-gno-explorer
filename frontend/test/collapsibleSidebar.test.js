@@ -40,14 +40,15 @@ test('sidebar retains navigation contracts and exposes accessible state controls
   assert.match(icons, /export const ChevronRightIcon/)
 })
 
-test('network icon is configurable and safely falls back without a placeholder asset', () => {
+test('network icon is configurable and safely falls back to ChainIcon', () => {
   assert.equal(existsSync(new URL('.gitkeep', networkDirectory)), true)
+  assert.equal(existsSync(new URL('gnoland.png', networkDirectory)), true)
   assert.equal(existsSync(new URL('gnoland.svg', networkDirectory)), false)
   assert.match(profile, /networkIconSrc: publicValue\(/)
   assert.match(profile, /import\.meta\.env\.VITE_NETWORK_ICON/)
-  assert.match(profile, /'\/assets\/networks\/gnoland\.svg'/)
+  assert.match(profile, /'\/assets\/networks\/gnoland\.png'/)
   assert.match(sidebar, /src=\{networkProfile\.networkIconSrc\}/)
-  assert.doesNotMatch(sidebar, /\/assets\/networks\/gnoland\.svg/)
+  assert.doesNotMatch(sidebar, /\/assets\/networks\/gnoland\.png/)
   assert.match(sidebar, /className="chain-select__network-icon"/)
   assert.match(sidebar, /alt=""/)
   assert.match(sidebar, /onError=\{\(\) => setNetworkIconFailed\(true\)\}/)
