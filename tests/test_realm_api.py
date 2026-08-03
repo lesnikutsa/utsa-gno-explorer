@@ -27,7 +27,11 @@ class RealmApiTests(unittest.TestCase):
   with patch.object(module.database,'fetch_realm_catalog',return_value=result()) as fetch:self.call(q=r'%_\\')
   self.assertEqual(fetch.call_args.kwargs['chain_id'],'topaz-1'); self.assertEqual(fetch.call_args.kwargs['q'],r'%_\\')
   self.assertIn('WHERE s.chain_id=%s',REALM_CATALOG_SUMMARY_SQL)
-  self.assertIn('strpos(lower(path), lower(%s)) > 0',REALM_CATALOG_ITEMS_SQL)
+  self.assertIn('%s::text IS NULL',REALM_CATALOG_ITEMS_SQL)
+  self.assertIn('strpos(lower(path), lower(%s::text)) > 0',REALM_CATALOG_ITEMS_SQL)
+  self.assertIn('%s::bigint IS NULL',REALM_CATALOG_ITEMS_SQL)
+  self.assertIn('COALESCE(last_activity_height,-1) < %s::bigint',REALM_CATALOG_ITEMS_SQL)
+  self.assertIn('COALESCE(last_activity_height,-1) = %s::bigint AND path > %s::text',REALM_CATALOG_ITEMS_SQL)
   self.assertNotIn(' LIKE ',REALM_CATALOG_ITEMS_SQL)
  def test_success_rate_excludes_unknown_and_null_when_undecided(self):
   with patch.object(module.database,'fetch_realm_catalog',return_value=result([row(),row('gno.land/r/y',None,0,0,2)])):

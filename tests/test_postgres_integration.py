@@ -1822,7 +1822,7 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
               ('utsa_gno_api',False,True,False,False,False,False),
               ('utsa_gno_indexer',False,True,False,False,False,False)])
 
-    def test_realm_api_summary_is_scoped_to_requested_chain(self):
+    def test_realm_api_queries_are_scoped_searchable_and_cursor_ordered(self):
         name = f"utsa_realm_chains_{os.getpid()}"
         self.create_database(name)
         url = self.database_url_for(name)
@@ -1831,11 +1831,45 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             cursor.execute("INSERT INTO indexer_state(state_key,chain_id,last_finalized_height) VALUES ('default','topaz-1',0)")
             cursor.execute("""INSERT INTO realm_catalog_state(chain_id,observed_height,rpc_path_count,refreshed_at)
               VALUES ('topaz-1',10,1,now()),('other-1',20,1,now())""")
-            cursor.execute("INSERT INTO realm_catalog(chain_id,path,path_kind,seen_via_rpc,rpc_visible,last_rpc_seen_at) VALUES ('topaz-1','gno.land/r/topaz','realm',true,true,now()),('other-1','gno.land/r/other','realm',true,true,now())")
+            cursor.execute("""INSERT INTO realm_catalog(
+              chain_id,path,path_kind,seen_via_rpc,seen_via_transactions,rpc_visible,last_rpc_seen_at,
+              last_activity_height,last_activity_tx_index,last_activity_at,call_count,
+              successful_call_count,last_counted_height)
+              VALUES
+              ('topaz-1','gno.land/r/alpha','realm',true,true,true,now(),10,0,now(),1,1,10),
+              ('topaz-1','gno.land/r/beta','realm',true,true,true,now(),10,1,now(),1,1,10),
+              ('topaz-1','gno.land/r/percent%marker','realm',true,true,true,now(),8,0,now(),1,1,8),
+              ('topaz-1','gno.land/p/inactive','package',true,false,true,now(),NULL,NULL,NULL,0,0,NULL),
+              ('other-1','gno.land/r/other','realm',true,false,true,now(),NULL,NULL,NULL,0,0,NULL)""")
             cursor.execute(REALM_CATALOG_SUMMARY_SQL, ('topaz-1',))
             rows = cursor.fetchall()
             self.assertEqual(len(rows), 1)
-            self.assertEqual((rows[0][0], rows[0][6]), ('topaz-1', 1))
+            self.assertEqual((rows[0][0], rows[0][6]), ('topaz-1', 4))
+
+        database = ApiDatabase()
+        database.open(ApiConfig(database_url=url))
+        self.addCleanup(database.close)
+        first_page = database.fetch_realm_catalog(
+            chain_id='topaz-1', limit=10, kind='all', q=None,
+            before_activity_height=None, before_path=None,
+        )
+        self.assertEqual(
+            [item['path'] for item in first_page['items']],
+            ['gno.land/r/alpha', 'gno.land/r/beta', 'gno.land/r/percent%marker', 'gno.land/p/inactive'],
+        )
+        search_page = database.fetch_realm_catalog(
+            chain_id='topaz-1', limit=10, kind='all', q='%MARKER',
+            before_activity_height=None, before_path=None,
+        )
+        self.assertEqual([item['path'] for item in search_page['items']], ['gno.land/r/percent%marker'])
+        cursor_page = database.fetch_realm_catalog(
+            chain_id='topaz-1', limit=10, kind='all', q=None,
+            before_activity_height=10, before_path='gno.land/r/alpha',
+        )
+        self.assertEqual(
+            [item['path'] for item in cursor_page['items']],
+            ['gno.land/r/beta', 'gno.land/r/percent%marker', 'gno.land/p/inactive'],
+        )
 
     def test_partial_realm_catalogs_are_rejected_and_rolled_back(self):
         for suffix, ddl in (
