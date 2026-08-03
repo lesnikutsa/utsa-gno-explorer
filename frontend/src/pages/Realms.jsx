@@ -1,12 +1,7 @@
 import { DataTable } from '../components/DataTable'
 import { StatusBadge } from '../components/StatusBadge'
+import { formatSuccessRate } from '../utils/realm'
 import { relativeTime } from '../utils/time'
-
-export function formatSuccessRate(value) {
-  if (value === null || value === undefined || typeof value !== 'number' || !Number.isFinite(value)) return '—'
-  const percentage = Math.round(value * 1000) / 10
-  return `${Number.isInteger(percentage) ? percentage.toFixed(0) : percentage.toFixed(1)}%`
-}
 
 const formatCount = (value) => typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString() : '—'
 
@@ -84,7 +79,7 @@ export function Realms({ realmsPage }) {
         </div>
         <form className="realms-page__search" onSubmit={submitSearch}>
           <label className="sr-only" htmlFor="realm-path-search">Search realm or package path</label>
-          <input id="realm-path-search" type="search" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search realm or package path" />
+          <input id="realm-path-search" type="search" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} maxLength={128} placeholder="Search realm or package path" />
           <button className="blocks-page__button blocks-page__button--accent" type="submit" disabled={loading}>Search</button>
           {appliedSearch && <button className="blocks-page__button" type="button" onClick={clearSearch} disabled={loading}>Clear</button>}
         </form>
