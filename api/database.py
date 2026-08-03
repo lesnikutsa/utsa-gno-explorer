@@ -214,7 +214,7 @@ WHERE chain_id = %s
 ORDER BY
     call_count DESC,
     COALESCE(last_activity_height, -1) DESC,
-    path ASC
+    path COLLATE "C" ASC
 LIMIT %s
 """
 
@@ -820,7 +820,7 @@ class ApiDatabase:
         if self.pool is None:
             raise RuntimeError("Database pool is not open")
         with self.pool.connection(timeout=2.0) as connection, connection.transaction(), connection.cursor() as cursor:
-            cursor.execute("SET TRANSACTION READ ONLY")
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
             cursor.execute(REALM_CATALOG_SUMMARY_SQL, (chain_id,))
             source = cursor.fetchone()
             if source is None:

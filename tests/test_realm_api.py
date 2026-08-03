@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 from fastapi import HTTPException
 import api.app as module
-from api.database import REALM_CATALOG_ITEMS_SQL, REALM_CATALOG_SUMMARY_SQL, REALM_TOP_ITEMS_SQL
+from api.database import ApiDatabase, REALM_CATALOG_ITEMS_SQL, REALM_CATALOG_SUMMARY_SQL, REALM_TOP_ITEMS_SQL
 
 NOW=datetime(2026,1,1,tzinfo=timezone.utc)
 def result(rows=None):
@@ -50,7 +50,29 @@ class RealmApiTests(unittest.TestCase):
  def test_top_sql_has_exact_filters_order_and_limit(self):
   normalized=' '.join(REALM_TOP_ITEMS_SQL.split())
   self.assertIn("WHERE chain_id = %s AND path_kind = 'realm' AND rpc_visible = true AND call_count > 0",normalized)
-  self.assertIn("ORDER BY call_count DESC, COALESCE(last_activity_height, -1) DESC, path ASC LIMIT %s",normalized)
+  self.assertIn('ORDER BY call_count DESC, COALESCE(last_activity_height, -1) DESC, path COLLATE "C" ASC LIMIT %s',normalized)
+
+ def test_top_database_sets_stable_read_only_snapshot_before_queries(self):
+  statements=[]
+  class Cursor:
+   def __enter__(self): return self
+   def __exit__(self,*_args): return False
+   def execute(self,sql,params=None): statements.append((sql,params))
+   def fetchone(self): return result()['summary'] | {'chain_id':'topaz-1'}
+   def fetchall(self): return []
+  class Context:
+   def __init__(self,value): self.value=value
+   def __enter__(self): return self.value
+   def __exit__(self,*_args): return False
+  class Connection:
+   def transaction(self): return Context(None)
+   def cursor(self): return Cursor()
+  database=ApiDatabase(); database.pool=SimpleNamespace(connection=lambda **_kwargs:Context(Connection()))
+  response=database.fetch_top_realms(chain_id='topaz-1',limit=5)
+  self.assertEqual(response['items'],[])
+  self.assertEqual(statements[0],('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY',None))
+  self.assertEqual(statements[1],(REALM_CATALOG_SUMMARY_SQL,('topaz-1',)))
+  self.assertEqual(statements[2],(REALM_TOP_ITEMS_SQL,('topaz-1',5)))
 
  def top_result(self,rows=None):
   source=result()['summary']; source['chain_id']='topaz-1'
@@ -91,3 +113,15 @@ class RealmApiTests(unittest.TestCase):
   rows=[row('gno.land/r/a',9),row('gno.land/r/b',8),row('gno.land/r/c',8)]
   with patch.object(module.database,'fetch_top_realms',return_value=self.top_result(rows)):
    self.assertEqual([item.path for item in module.get_top_realms(limit=5).items],[entry['path'] for entry in rows])
+
+ def test_top_rejects_increasing_activity_height_with_equal_calls(self):
+  rows=[row('gno.land/r/a',8),row('gno.land/r/b',9)]
+  with patch.object(module.database,'fetch_top_realms',return_value=self.top_result(rows)):
+   with self.assertRaises(HTTPException) as raised:module.get_top_realms(limit=5)
+  self.assertEqual(raised.exception.status_code,503)
+
+ def test_top_rejects_descending_path_with_equal_calls_and_height(self):
+  rows=[row('gno.land/r/b',8),row('gno.land/r/a',8)]
+  with patch.object(module.database,'fetch_top_realms',return_value=self.top_result(rows)):
+   with self.assertRaises(HTTPException) as raised:module.get_top_realms(limit=5)
+  self.assertEqual(raised.exception.status_code,503)

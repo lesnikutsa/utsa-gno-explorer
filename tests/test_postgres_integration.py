@@ -1829,8 +1829,9 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         init_database.initialize_or_validate(url)
         with psycopg.connect(url) as connection, connection.cursor() as cursor:
             cursor.execute("INSERT INTO indexer_state(state_key,chain_id,last_finalized_height) VALUES ('default','topaz-1',0)")
-            cursor.execute("""INSERT INTO realm_catalog_state(chain_id,observed_height,rpc_path_count,refreshed_at)
-              VALUES ('topaz-1',10,1,now()),('other-1',20,1,now())""")
+            cursor.execute("""INSERT INTO realm_catalog_state(
+              chain_id,observed_height,rpc_path_count,refreshed_at,activity_from_height,activity_through_height)
+              VALUES ('topaz-1',10,1,now(),3,10),('other-1',20,1,now(),3,20)""")
             cursor.execute("""INSERT INTO realm_catalog(
               chain_id,path,path_kind,seen_via_rpc,seen_via_transactions,rpc_visible,last_rpc_seen_at,
               last_activity_height,last_activity_tx_index,last_activity_at,call_count,
@@ -1840,7 +1841,7 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
               ('topaz-1','gno.land/r/beta','realm',true,true,true,now(),10,1,now(),1,1,10),
               ('topaz-1','gno.land/r/percent%marker','realm',true,true,true,now(),8,0,now(),1,1,8),
               ('topaz-1','gno.land/p/inactive','package',true,false,true,now(),NULL,NULL,NULL,0,0,NULL),
-              ('other-1','gno.land/r/other','realm',true,false,true,now(),NULL,NULL,NULL,0,0,NULL)""")
+              ('other-1','gno.land/r/other','realm',true,true,true,now(),20,0,now(),100,100,20)""")
             cursor.execute(REALM_CATALOG_SUMMARY_SQL, ('topaz-1',))
             rows = cursor.fetchall()
             self.assertEqual(len(rows), 1)
@@ -1878,9 +1879,11 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
               VALUES
               ('topaz-1','gno.land/r/high','realm',true,true,true,now(),9,0,now(),3,3,9),
               ('topaz-1','gno.land/p/high-package','package',true,true,true,now(),20,0,now(),99,99,20),
-              ('topaz-1','gno.land/r/historical','realm',true,true,false,now(),20,0,now(),99,99,20)""")
+              ('topaz-1','gno.land/r/historical','realm',true,true,false,now(),20,0,now(),99,99,20),
+              ('topaz-1','gno.land/r/zero-visible','realm',true,false,true,now(),NULL,NULL,NULL,0,0,NULL)""")
         top = database.fetch_top_realms(chain_id='topaz-1', limit=10)
         self.assertEqual(top['source']['chain_id'], 'topaz-1')
+        self.assertEqual((top['source']['activity_from_height'], top['source']['activity_through_height']), (3, 10))
         self.assertEqual(
             [item['path'] for item in top['items']],
             ['gno.land/r/high', 'gno.land/r/alpha', 'gno.land/r/beta', 'gno.land/r/percent%marker'],
