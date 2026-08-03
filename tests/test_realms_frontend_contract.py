@@ -58,7 +58,7 @@ class RealmsFrontendContractTests(unittest.TestCase):
 
     def test_presentation_contract(self):
         page = self.read("frontend/src/pages/Realms.jsx")
-        labels = ["label: 'Path'", "label: 'Type'", "label: 'Calls'", "label: 'Success Rate'", "label: 'Last Activity'", "label: 'Visibility'"]
+        labels = ["label: 'Path'", "label: 'Type'", "label: 'Direct Calls'", "label: 'Success Rate'", "label: 'Last Activity'", "label: 'Visibility'"]
         self.assertEqual(page.count("label: '"), 6)
         self.assertEqual([page.index(label) for label in labels], sorted(page.index(label) for label in labels))
         for fragment in ("summary?.total_realms", "summary?.total_packages", "summary?.active_24h", "summary?.rpc_visible_items", "aria-pressed={kind === value}", "import { formatSuccessRate } from '../utils/realm'", ": 'Never'", "rowKey={(item) => item.path}"):
@@ -70,6 +70,11 @@ class RealmsFrontendContractTests(unittest.TestCase):
         self.assertNotIn("href=", page)
         self.assertNotIn("Verified", page)
         self.assertNotIn("Unverified", page)
+        self.assertIn("item.kind === 'package' ? packageMetricPlaceholder() : formatCount(item.call_count)", page)
+        self.assertIn("item.kind === 'package' ? packageMetricPlaceholder() : formatSuccessRate(item.success_rate)", page)
+        self.assertIn("packageMetricPlaceholder('Not tracked')", page)
+        self.assertIn("Package usage through imports is not indexed yet. Direct-call metrics apply to realms only.", page)
+        self.assertIn('title="Package usage through imports is not indexed yet."', page)
 
     def test_states_and_scoped_responsive_css(self):
         page = self.read("frontend/src/pages/Realms.jsx")
@@ -79,6 +84,12 @@ class RealmsFrontendContractTests(unittest.TestCase):
         section = styles[styles.index("/* Realms catalog */"):styles.index("/* Account detail */")]
         self.assertIn("@media (max-width: 760px)", section)
         self.assertIn("content: attr(data-label)", section)
+        self.assertIn(".realms-table__type--realm .status-badge", section)
+        self.assertIn(".realms-table__type--package .status-badge", section)
+        realm_badge = section[section.index(".realms-table__type--realm .status-badge"):section.index("\n", section.index(".realms-table__type--realm .status-badge"))]
+        self.assertNotIn("var(--color-success)", realm_badge)
+        self.assertIn(".realms-page__metric > span", section)
+        self.assertIn("font-size: 12px", section[section.index(".realms-page__metric > span"):section.index("\n", section.index(".realms-page__metric > span"))])
         for selector in section.split("{")[:-1]:
             if selector.strip().startswith("@") or selector.strip().endswith("*/"):
                 continue

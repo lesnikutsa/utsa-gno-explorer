@@ -4,6 +4,7 @@ import { formatSuccessRate } from '../utils/realm'
 import { relativeTime } from '../utils/time'
 
 const formatCount = (value) => typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString() : '—'
+const packageMetricPlaceholder = (label = '—') => <span className="realms-table__package-placeholder" title="Package usage through imports is not indexed yet.">{label}</span>
 
 const columns = [
   {
@@ -14,14 +15,20 @@ const columns = [
   {
     key: 'kind',
     label: 'Type',
-    render: (item) => <StatusBadge tone="neutral">{item.kind === 'realm' ? 'Realm' : item.kind === 'package' ? 'Package' : 'Unknown'}</StatusBadge>,
+    render: (item) => item.kind === 'realm'
+      ? <span className="realms-table__type realms-table__type--realm"><StatusBadge tone="neutral">Realm</StatusBadge></span>
+      : item.kind === 'package'
+        ? <span className="realms-table__type realms-table__type--package"><StatusBadge tone="neutral">Package</StatusBadge></span>
+        : <StatusBadge tone="neutral">Unknown</StatusBadge>,
   },
-  { key: 'call_count', label: 'Calls', render: (item) => formatCount(item.call_count) },
-  { key: 'success_rate', label: 'Success Rate', render: (item) => formatSuccessRate(item.success_rate) },
+  { key: 'call_count', label: 'Direct Calls', render: (item) => item.kind === 'package' ? packageMetricPlaceholder() : formatCount(item.call_count) },
+  { key: 'success_rate', label: 'Success Rate', render: (item) => item.kind === 'package' ? packageMetricPlaceholder() : formatSuccessRate(item.success_rate) },
   {
     key: 'last_activity_at',
     label: 'Last Activity',
-    render: (item) => item.last_activity_at
+    render: (item) => item.kind === 'package'
+      ? packageMetricPlaceholder('Not tracked')
+      : item.last_activity_at
       ? <time dateTime={item.last_activity_at} title={item.last_activity_at}>{relativeTime(item.last_activity_at)}</time>
       : 'Never',
   },
@@ -84,6 +91,8 @@ export function Realms({ realmsPage }) {
           {appliedSearch && <button className="blocks-page__button" type="button" onClick={clearSearch} disabled={loading}>Clear</button>}
         </form>
       </div>
+
+      <p className="realms-page__package-note">Package usage through imports is not indexed yet. Direct-call metrics apply to realms only.</p>
 
       <div className="panel blocks-page__table realms-page__table">
         <DataTable columns={columns} rows={items} rowKey={(item) => item.path} loading={loading} emptyMessage={emptyMessage({ error, snapshotMissing, appliedSearch, kind })} />
