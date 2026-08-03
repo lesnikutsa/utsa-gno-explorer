@@ -56,9 +56,13 @@ export function useRealmsPage() {
     } catch (requestError) {
       if (!mounted.current || id !== requestId.current || requestError?.name === 'AbortError') return
       failedRequest.current = attemptedRequest
-      if (requestError?.status === 404) setSnapshotMissing(true)
-      else setError(true)
-      setHealthState('error')
+      if (requestError?.status === 404) {
+        setSnapshotMissing(true)
+        setHealthState('healthy')
+      } else {
+        setError(true)
+        setHealthState('error')
+      }
     } finally {
       if (mounted.current && id === requestId.current) setLoading(false)
     }

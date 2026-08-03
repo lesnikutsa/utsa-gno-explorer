@@ -44,8 +44,15 @@ class RealmsFrontendContractTests(unittest.TestCase):
 
     def test_hook_state_pagination_concurrency_retry_and_errors(self):
         hook = self.read("frontend/src/hooks/useRealmsPage.js")
-        for fragment in ("export const PAGE_SIZE = 25", "setCursorHistory(history)", "setPageIndex(0)", "setAppliedSearch(nextSearch)", "id !== requestId.current", "controller.current?.abort()", "failedRequest.current = attemptedRequest", "loadPage(failedRequest.current)", "requestError?.status === 404", "setSnapshotMissing(true)", "setHealthState('error')"):
+        for fragment in ("export const PAGE_SIZE = 25", "setCursorHistory(history)", "setPageIndex(0)", "setAppliedSearch(nextSearch)", "id !== requestId.current", "controller.current?.abort()", "failedRequest.current = attemptedRequest", "loadPage(failedRequest.current)"):
             self.assertIn(fragment, hook)
+        error_handling = hook[hook.index("if (requestError?.status === 404)"):hook.index("} finally {")]
+        snapshot_branch, generic_branch = error_handling.split("} else {")
+        self.assertIn("setSnapshotMissing(true)", snapshot_branch)
+        self.assertIn("setHealthState('healthy')", snapshot_branch)
+        self.assertNotIn("setError(true)", snapshot_branch)
+        self.assertIn("setError(true)", generic_branch)
+        self.assertIn("setHealthState('error')", generic_branch)
         self.assertNotIn("MAX_CURSOR_HISTORY", hook)
         self.assertIn("[...cursorHistory.slice(0, pageIndex + 1), nextCursor]", hook)
 
