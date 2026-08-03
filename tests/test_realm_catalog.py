@@ -1,5 +1,6 @@
 import unittest
 from indexer.realm_catalog import aggregate_block, extract_observations, parse_qpaths, path_kind
+from indexer.transaction_summary import MAX_SUMMARY_BYTES, normalize_summary, summary_size_bytes
 
 def summary(messages,status='parsed'):
  return {'parse_status':status,'messages':messages}
@@ -29,4 +30,40 @@ class RealmCatalogTests(unittest.TestCase):
  def test_qpaths_unique_limit(self):
   payload='\n'.join(f'gno.land/r/x{i}' for i in range(10001))
   with self.assertRaisesRegex(ValueError,'too_many'): parse_qpaths(payload)
+ def test_package_path_completeness_rules(self):
+  prefix='gno.land/r/'
+  path160=prefix+('a'*(160-len(prefix)))
+  path256=prefix+('b'*(256-len(prefix)))
+  def observed(path,marker='missing'):
+   message={'type':'gno.vm.MsgCall','package_path':path}
+   if marker != 'missing': message['package_path_complete']=marker
+   return extract_observations(summary([message]))
+  self.assertEqual(len(observed(prefix+'short')),1)
+  self.assertEqual(len(observed(path160,True)),1)
+  self.assertEqual(len(observed(path256,True)),1)
+  self.assertEqual(observed(path160),())
+  self.assertEqual(observed(prefix+'short',False),())
+  self.assertEqual(observed(path256+'x',False),())
+ def test_distinct_long_paths_do_not_merge(self):
+  shared='gno.land/r/'+('a'*160)
+  first=shared+'x'; second=shared+'y'
+  aggregates=aggregate_block([(0,summary([
+   {'type':'gno.vm.MsgCall','package_path':first,'package_path_complete':True},
+   {'type':'gno.vm.MsgCall','package_path':second,'package_path_complete':True},
+  ]),'success')])
+  self.assertEqual({item.path for item in aggregates},{first,second})
+ def test_normalization_preserves_path_limit_only(self):
+  prefix='gno.land/r/'; path=prefix+('x'*(256-len(prefix)))
+  candidate={'schema_version':1,'chain_family':'gno','parse_status':'parsed','message_count':1,
+   'messages_truncated':False,'primary':{'type':'x','category':'x','action':'x','label':'x'},
+   'messages':[{'type':'gno.vm.MsgCall','package_path':path,'package_path_complete':True,
+                'function':'f'*200}]}
+  normalized=normalize_summary(candidate)
+  self.assertEqual(normalized['messages'][0]['package_path'],path)
+  self.assertIs(normalized['messages'][0]['package_path_complete'],True)
+  self.assertEqual(len(normalized['messages'][0]['function']),160)
+  self.assertLessEqual(summary_size_bytes(normalized),MAX_SUMMARY_BYTES)
+ def test_qpaths_retains_256_character_path(self):
+  path='gno.land/r/'+('q'*(256-len('gno.land/r/')))
+  self.assertEqual(parse_qpaths(path),((path,'realm'),))
 if __name__=='__main__': unittest.main()

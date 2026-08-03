@@ -43,6 +43,11 @@ def extract_observations(payload_summary: Any) -> tuple[RealmObservation, ...]:
             continue
         message_type = message.get("type")
         path = message.get("package_path")
+        completeness = message.get("package_path_complete")
+        if completeness is not True and not (
+            completeness is None and isinstance(path, str) and len(path) < 160
+        ):
+            continue
         kind = path_kind(path)
         sender = message.get("sender")
         sender = sender if isinstance(sender, str) and _ADDRESS_RE.fullmatch(sender) else None

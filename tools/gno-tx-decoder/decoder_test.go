@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"strings"
@@ -200,6 +201,30 @@ func TestPrintableClipsUnicodeRunes(t *testing.T) {
 	got := printable("界🙂éabc", 3)
 	if got != "界🙂é" || !utf8.ValidString(got) {
 		t.Fatalf("%q", got)
+	}
+}
+
+func TestPackagePathHasIndependentBoundAndCompleteness(t *testing.T) {
+	for _, length := range []int{160, 256} {
+		path := "gno.land/r/" + strings.Repeat("x", length-len("gno.land/r/"))
+		got := cleanMessage(message{Type: "gno.vm.MsgCall", PackagePath: path})
+		if got.PackagePath != path || got.PackagePathComplete == nil || !*got.PackagePathComplete {
+			t.Fatalf("length=%d message=%#v", length, got)
+		}
+		encoded, err := json.Marshal(got)
+		if err != nil || !bytes.Contains(encoded, []byte(`"package_path_complete":true`)) {
+			t.Fatalf("missing explicit completeness marker: %s error=%v", encoded, err)
+		}
+	}
+	path := "gno.land/r/" + strings.Repeat("x", 257-len("gno.land/r/"))
+	got := cleanMessage(message{Type: "gno.vm.MsgCall", PackagePath: path})
+	if utf8.RuneCountInString(got.PackagePath) != maxPackagePathRunes || got.PackagePathComplete == nil || *got.PackagePathComplete {
+		t.Fatalf("overlong package path was not marked incomplete: %#v", got)
+	}
+	other := strings.Repeat("y", maxScalarRunes+1)
+	got = cleanMessage(message{Type: "gno.vm.MsgCall", PackagePath: "gno.land/r/x", Function: other})
+	if utf8.RuneCountInString(got.Function) != maxScalarRunes {
+		t.Fatalf("unrelated scalar limit changed: %d", utf8.RuneCountInString(got.Function))
 	}
 }
 

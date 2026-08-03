@@ -36,6 +36,11 @@ class RebuildSafetyTests(unittest.TestCase):
         rows=[(3,0,message,'success','t3'),(4,0,message,'failed','t4')]
         cursor=Cursor([(1,),(10,),(2,3,4),rows])
         self.assertEqual(rebuild_cursor(cursor,"topaz-1",3,4,True),1)
+    def test_rebuild_skips_ambiguous_legacy_path(self):
+        path='gno.land/r/'+('x'*(160-len('gno.land/r/')))
+        message={'parse_status':'parsed','messages':[{'type':'gno.vm.MsgCall','package_path':path}]}
+        cursor=Cursor([(1,),(10,),(1,3,3),[(3,0,message,'success','t3')]])
+        self.assertEqual(rebuild_cursor(cursor,"topaz-1",3,3,True),0)
 
 class RefreshPersistenceTests(unittest.TestCase):
     def test_invalid_set_is_rejected_before_visibility_update(self):
