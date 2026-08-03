@@ -666,6 +666,55 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
   .governance-detail__metrics { grid-template-columns: 1fr; }
 }
 
+/* Realms catalog */
+.realms-page { min-width: 0; }
+.realms-page__header { margin-bottom: 12px; }
+.realms-page__summary { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 8px; }
+.realms-page__metric { padding: 12px 14px; }
+.realms-page__metric > span { display: block; margin-bottom: 5px; color: var(--color-text-secondary); font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.realms-page__metric strong { color: var(--color-text-bright); font-size: 17px; }
+.realms-page__metadata { margin: 0 0 12px; color: var(--color-text-secondary); font-size: 10px; }
+.realms-page__toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.realms-page__filters, .realms-page__search { display: flex; flex-wrap: wrap; min-width: 0; gap: 6px; }
+.realms-page__filter { min-height: 36px; padding: 6px 12px; border: 1px solid var(--color-border); border-radius: 4px; background: var(--color-card); color: var(--color-text); font-size: 14px; font-weight: 600; line-height: 1.2; cursor: pointer; }
+.realms-page__filter small { margin-left: 6px; color: var(--color-text-secondary); font-size: 12px; font-weight: 500; }
+.realms-page__filter:not(.is-active):hover { border-color: var(--color-text-secondary); background: rgb(255 255 255 / 3%); }
+.realms-page__filter.is-active { border-color: var(--color-accent); background: rgb(220 121 94 / 9%); box-shadow: 0 1px 2px rgb(0 0 0 / 18%); color: var(--color-text-bright); font-weight: 600; }
+.realms-page__filter:focus-visible { outline: 2px solid var(--color-text-bright); outline-offset: 2px; }
+.realms-page__search { flex: 1 1 330px; justify-content: flex-end; }
+.realms-page__search input { min-width: 180px; flex: 1 1 230px; min-height: 34px; padding: 6px 10px; border: 1px solid var(--color-border); border-radius: 4px; background: var(--color-card); color: var(--color-text-bright); font: inherit; }
+.realms-page__package-note { margin: 0 0 10px; color: var(--color-text-secondary); font-size: 10px; line-height: 1.5; }
+.realms-page__table .data-table { min-width: 850px; table-layout: fixed; }
+.realms-page__table th:nth-child(1) { width: 42%; }
+.realms-page__table th:nth-child(2) { width: 11%; }
+.realms-page__table th:nth-child(3) { width: 9%; }
+.realms-page__table th:nth-child(4) { width: 12%; }
+.realms-page__table th:nth-child(5) { width: 15%; }
+.realms-page__table th:nth-child(6) { width: 11%; }
+.realms-table__path { display: block; min-width: 0; color: var(--color-text-bright); overflow-wrap: anywhere; }
+.realms-table__type--realm .status-badge { border-color: #b85f48; background: rgb(184 95 72 / 12%); color: #ef9a7e; }
+.realms-table__type--package .status-badge { border-color: #387f9d; background: rgb(56 127 157 / 12%); color: #75c8e8; }
+.realms-table__package-placeholder { color: var(--color-text-secondary); }
+@media (max-width: 760px) {
+  .realms-page__summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .realms-page__toolbar { align-items: stretch; }
+  .realms-page__filters, .realms-page__search { flex: 1 1 100%; }
+  .realms-page__filter { flex: 1 1 auto; }
+  .realms-page__table .table-scroll { overflow: visible; }
+  .realms-page__table .data-table { display: block; min-width: 0; }
+  .realms-page__table thead { display: none; }
+  .realms-page__table tbody, .realms-page__table tr, .realms-page__table td { display: block; }
+  .realms-page__table tr { padding: 8px 12px; border-bottom: 1px solid var(--color-border-soft); }
+  .realms-page__table td { display: grid; grid-template-columns: minmax(90px, .35fr) minmax(0, 1fr); gap: 10px; padding: 6px 0; border: 0; }
+  .realms-page__table td::before { color: var(--color-text-secondary); content: attr(data-label); font-size: 9px; font-weight: 700; text-transform: uppercase; }
+  .realms-page__table .table-message { display: block; }
+  .realms-page__table .table-message::before { content: none; }
+}
+@media (max-width: 480px) {
+  .realms-page__summary { grid-template-columns: 1fr; }
+  .realms-page__search input { min-width: 0; flex-basis: 100%; }
+}
+
 /* Account detail */
 .account-detail { min-width: 0; }
 .account-detail__back { display: inline-flex; margin-bottom: 10px; color: #dc795e; font-size: 11px; font-weight: 600; }

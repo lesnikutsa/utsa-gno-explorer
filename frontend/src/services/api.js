@@ -55,6 +55,21 @@ export const getTransactions = ({ limit, beforeHeight, beforeTxIndex } = {}) => 
   const queryString = query.toString()
   return request(`/transactions${queryString ? `?${queryString}` : ''}`)
 }
+export const getRealms = ({ limit, kind, q, beforeActivityHeight, beforePath, signal } = {}) => {
+  const query = new URLSearchParams()
+  if (limit !== undefined && limit !== null && limit !== '') query.set('limit', limit)
+  if (kind !== undefined && kind !== null && kind !== '') query.set('kind', kind)
+  const trimmedQuery = typeof q === 'string' ? q.trim() : ''
+  if (trimmedQuery) query.set('q', trimmedQuery)
+  const hasCompleteCursor = beforeActivityHeight !== undefined && beforeActivityHeight !== null && beforeActivityHeight !== ''
+    && beforePath !== undefined && beforePath !== null && beforePath !== ''
+  if (hasCompleteCursor) {
+    query.set('before_activity_height', beforeActivityHeight)
+    query.set('before_path', beforePath)
+  }
+  const queryString = query.toString()
+  return request(`/realms${queryString ? `?${queryString}` : ''}`, { signal })
+}
 export const getBlock = (height) => request(`/blocks/${encodeURIComponent(height)}`)
 export const getTransaction = (blockHeight, index) => request(`/blocks/${encodeURIComponent(blockHeight)}/transactions/${encodeURIComponent(index)}`)
 export const getTransactionByHash = (txHash) => request(`/transactions/by-hash/${encodeURIComponent(txHash)}`)

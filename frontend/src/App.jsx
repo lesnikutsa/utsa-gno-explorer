@@ -5,6 +5,7 @@ import { Blocks } from './pages/Blocks'
 import { BlockDetail } from './pages/BlockDetail'
 import { TransactionDetail } from './pages/TransactionDetail'
 import { Transactions } from './pages/Transactions'
+import { Realms } from './pages/Realms'
 import { Overview } from './pages/Overview'
 import { ValidatorDetail } from './pages/ValidatorDetail'
 import { Validators } from './pages/Validators'
@@ -15,6 +16,7 @@ import { useBlocksPage } from './hooks/useBlocksPage'
 import { useBlockDetail } from './hooks/useBlockDetail'
 import { useTransactionDetail } from './hooks/useTransactionDetail'
 import { useTransactionsPage } from './hooks/useTransactionsPage'
+import { useRealmsPage } from './hooks/useRealmsPage'
 import { useExplorerData } from './hooks/useExplorerData'
 import { useValidatorDetail } from './hooks/useValidatorDetail'
 import { useValidatorsPage } from './hooks/useValidatorsPage'
@@ -87,6 +89,16 @@ function TransactionsPage() {
   )
 }
 
+function RealmsPage() {
+  const realmsPage = useRealmsPage()
+
+  return (
+    <ExplorerLayout healthState={realmsPage.healthState} showRefreshCountdown={false}>
+      <Realms realmsPage={realmsPage} />
+    </ExplorerLayout>
+  )
+}
+
 function ValidatorsPage() {
   const validatorsPage = useValidatorsPage()
 
@@ -154,6 +166,9 @@ export default function App() {
 
   if (path === '/transactions' || path === '/transactions/') {
     return <TransactionsPage />
+  }
+  if (path === '/realms' || path === '/realms/') {
+    return <RealmsPage />
   }
   if (path === '/governance' || path === '/governance/') {
     return <GovernancePage />
