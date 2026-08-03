@@ -190,8 +190,24 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             schema = schema[:start] + schema[end:]
         return schema
 
-    def create_exact_stage_database(self, name, expectations):
+    def ensure_application_roles(self):
+        """Create the non-login application roles before conditional schema grants."""
+        with self.connect("postgres") as connection, connection.cursor() as cursor:
+            cursor.execute("""DO $roles$ BEGIN
+              IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'utsa_gno_api') THEN
+                CREATE ROLE utsa_gno_api NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+              END IF;
+              IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'utsa_gno_indexer') THEN
+                CREATE ROLE utsa_gno_indexer NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+              END IF;
+            END $roles$""")
+
+    def create_exact_stage_database(
+        self, name, expectations, *, create_roles_before_schema=False
+    ):
         self.create_database(name)
+        if create_roles_before_schema:
+            self.ensure_application_roles()
         database_url = self.database_url_for(name)
         schema = self.build_historical_schema(expectations)
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
@@ -1754,14 +1770,25 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             database.persist_governance_incremental(stale, [], "topaz-1")
 
 
+    def test_realm_catalog_0007_late_roles_remain_fail_closed(self):
+        database_url = self.create_exact_stage_database(
+            f"utsa_realm_late_roles_{os.getpid()}",
+            init_database.PRE_REALM_CATALOG_EXPECTATIONS,
+        )
+        self.ensure_application_roles()
+        with self.assertRaises(init_database.SchemaCompatibilityError):
+            init_database.initialize_or_validate(database_url)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT to_regclass('public.realm_catalog'),to_regclass('public.realm_catalog_state')")
+            self.assertEqual(cursor.fetchone(), (None, None))
+
     def test_realm_catalog_0008_upgrade_and_exact_grants(self):
         name = f"utsa_realm_upgrade_{os.getpid()}"
         database_url = self.create_exact_stage_database(
             name, init_database.PRE_REALM_CATALOG_EXPECTATIONS,
+            create_roles_before_schema=True,
         )
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
-            cursor.execute("CREATE ROLE utsa_gno_api")
-            cursor.execute("CREATE ROLE utsa_gno_indexer")
             cursor.execute("INSERT INTO blocks(height,block_hash_base64,block_hash_hex,time_utc,tx_count) VALUES (1,'a',repeat('A',64),now(),0)")
         init_database.initialize_or_validate(database_url)
         init_database.initialize_or_validate(database_url)
@@ -1772,12 +1799,28 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             cursor.execute("SELECT to_regclass('public.realm_calls'),to_regclass('public.realm_activity')")
             self.assertEqual(cursor.fetchone(), (None, None))
             cursor.execute("""SELECT grantee,table_name,privilege_type FROM information_schema.role_table_grants
-              WHERE grantee IN ('utsa_gno_api','utsa_gno_indexer') AND table_name IN ('realm_catalog','realm_catalog_state')
+              WHERE grantee IN ('utsa_gno_api','utsa_gno_indexer')
+                AND table_name IN ('transaction_participants','transaction_execution_results','realm_catalog','realm_catalog_state')
               ORDER BY grantee,table_name,privilege_type""")
             self.assertEqual(cursor.fetchall(), [
               ('utsa_gno_api','realm_catalog','SELECT'),('utsa_gno_api','realm_catalog_state','SELECT'),
+              ('utsa_gno_api','transaction_execution_results','SELECT'),('utsa_gno_api','transaction_participants','SELECT'),
               ('utsa_gno_indexer','realm_catalog','INSERT'),('utsa_gno_indexer','realm_catalog','SELECT'),('utsa_gno_indexer','realm_catalog','UPDATE'),
-              ('utsa_gno_indexer','realm_catalog_state','INSERT'),('utsa_gno_indexer','realm_catalog_state','SELECT'),('utsa_gno_indexer','realm_catalog_state','UPDATE')])
+              ('utsa_gno_indexer','realm_catalog_state','INSERT'),('utsa_gno_indexer','realm_catalog_state','SELECT'),('utsa_gno_indexer','realm_catalog_state','UPDATE'),
+              ('utsa_gno_indexer','transaction_execution_results','INSERT'),('utsa_gno_indexer','transaction_execution_results','SELECT'),('utsa_gno_indexer','transaction_execution_results','UPDATE'),
+              ('utsa_gno_indexer','transaction_participants','DELETE'),('utsa_gno_indexer','transaction_participants','INSERT'),('utsa_gno_indexer','transaction_participants','SELECT')])
+            for table in ('transaction_participants', 'transaction_execution_results',
+                          'realm_catalog', 'realm_catalog_state'):
+                cursor.execute(
+                    "SELECT has_table_privilege('utsa_gno_api', %s, 'INSERT,UPDATE,DELETE')",
+                    (table,),
+                )
+                self.assertFalse(cursor.fetchone()[0], table)
+            cursor.execute("""SELECT rolname,rolsuper,rolinherit,rolcreaterole,rolcreatedb,rolcanlogin,rolbypassrls
+              FROM pg_roles WHERE rolname IN ('utsa_gno_api','utsa_gno_indexer') ORDER BY rolname""")
+            self.assertEqual(cursor.fetchall(), [
+              ('utsa_gno_api',False,True,False,False,False,False),
+              ('utsa_gno_indexer',False,True,False,False,False,False)])
 
     def test_realm_api_summary_is_scoped_to_requested_chain(self):
         name = f"utsa_realm_chains_{os.getpid()}"
