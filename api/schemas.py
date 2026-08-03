@@ -559,3 +559,16 @@ class RealmCatalogResponse(BaseModel):
     summary: RealmCatalogSummary
     items: list[RealmCatalogItem]
     pagination: RealmCatalogPagination
+
+class RealmRankingSource(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    chain_id: str = Field(min_length=1, max_length=128)
+    indexed_height: int = Field(ge=0)
+    catalog_observed_height: int = Field(gt=0)
+    activity_from_height: int | None
+    activity_through_height: int | None
+
+class RealmTopResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    source: RealmRankingSource
+    items: list[RealmCatalogItem] = Field(max_length=10)

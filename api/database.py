@@ -202,6 +202,21 @@ FROM realm_catalog WHERE chain_id=%s AND (%s='all' OR path_kind=%s)
       (COALESCE(last_activity_height,-1) = %s::bigint AND path > %s::text))
 ORDER BY COALESCE(last_activity_height,-1) DESC,path ASC LIMIT %s
 """
+REALM_TOP_ITEMS_SQL = """
+SELECT path,path_kind,rpc_visible,deployer_address,deploy_height,deploy_tx_index,first_seen_height,
+ last_activity_height,last_activity_tx_index,last_activity_at,call_count,successful_call_count,
+ failed_call_count,unknown_result_call_count
+FROM realm_catalog
+WHERE chain_id = %s
+  AND path_kind = 'realm'
+  AND rpc_visible = true
+  AND call_count > 0
+ORDER BY
+    call_count DESC,
+    COALESCE(last_activity_height, -1) DESC,
+    path ASC
+LIMIT %s
+"""
 
 BLOCK_COLUMNS = """
     block.height,
@@ -799,6 +814,20 @@ class ApiDatabase:
                 before_activity_height, before_activity_height, before_activity_height, before_path, limit + 1))
             rows = cursor.fetchall()
         return {"summary": dict(summary), "items": [dict(row) for row in rows]}
+
+    def fetch_top_realms(self, *, chain_id: str, limit: int) -> dict[str, Any] | None:
+        """Read ranking rows and their catalog source from one read-only snapshot."""
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection, connection.transaction(), connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION READ ONLY")
+            cursor.execute(REALM_CATALOG_SUMMARY_SQL, (chain_id,))
+            source = cursor.fetchone()
+            if source is None:
+                return None
+            cursor.execute(REALM_TOP_ITEMS_SQL, (chain_id, limit))
+            rows = cursor.fetchall()
+        return {"source": dict(source), "items": [dict(row) for row in rows]}
 
     def _default_indexer_state_exists(self) -> bool:
         if self.pool is None:

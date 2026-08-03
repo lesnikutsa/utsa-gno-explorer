@@ -674,6 +674,18 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .realms-page__metric > span { display: block; margin-bottom: 5px; color: var(--color-text-secondary); font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .realms-page__metric strong { color: var(--color-text-bright); font-size: 17px; }
 .realms-page__metadata { margin: 0 0 12px; color: var(--color-text-secondary); font-size: 10px; }
+.realms-page__top { min-width: 0; margin-bottom: 12px; overflow: hidden; }
+.realms-page__top-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 11px 14px 8px; }
+.realms-page__top-header h2 { margin: 0 0 3px; color: var(--color-text-bright); font-size: 14px; }
+.realms-page__top-note { margin: 0; color: var(--color-text-secondary); font-size: 10px; }
+.realms-page__top-table .data-table { min-width: 650px; table-layout: fixed; }
+.realms-page__top-table th, .realms-page__top-table td { padding-top: 7px; padding-bottom: 7px; }
+.realms-page__top-table th:nth-child(1) { width: 7%; }
+.realms-page__top-table th:nth-child(2) { width: 48%; }
+.realms-page__top-table th:nth-child(3) { width: 13%; }
+.realms-page__top-table th:nth-child(4) { width: 14%; }
+.realms-page__top-table th:nth-child(5) { width: 18%; }
+.realms-page__top-rank { color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }
 .realms-page__toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .realms-page__filters, .realms-page__search { display: flex; flex-wrap: wrap; min-width: 0; gap: 6px; }
 .realms-page__filter { min-height: 36px; padding: 6px 12px; border: 1px solid var(--color-border); border-radius: 4px; background: var(--color-card); color: var(--color-text); font-size: 14px; font-weight: 600; line-height: 1.2; cursor: pointer; }
@@ -709,6 +721,15 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
   .realms-page__table td::before { color: var(--color-text-secondary); content: attr(data-label); font-size: 9px; font-weight: 700; text-transform: uppercase; }
   .realms-page__table .table-message { display: block; }
   .realms-page__table .table-message::before { content: none; }
+  .realms-page__top-table .table-scroll { overflow: visible; }
+  .realms-page__top-table .data-table { display: block; min-width: 0; }
+  .realms-page__top-table thead { display: none; }
+  .realms-page__top-table tbody, .realms-page__top-table tr, .realms-page__top-table td { display: block; }
+  .realms-page__top-table tr { padding: 7px 12px; border-bottom: 1px solid var(--color-border-soft); }
+  .realms-page__top-table td { display: grid; grid-template-columns: minmax(90px, .35fr) minmax(0, 1fr); gap: 10px; padding: 4px 0; border: 0; }
+  .realms-page__top-table td::before { color: var(--color-text-secondary); content: attr(data-label); font-size: 9px; font-weight: 700; text-transform: uppercase; }
+  .realms-page__top-table .table-message { display: block; }
+  .realms-page__top-table .table-message::before { content: none; }
 }
 @media (max-width: 480px) {
   .realms-page__summary { grid-template-columns: 1fr; }

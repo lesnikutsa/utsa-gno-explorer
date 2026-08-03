@@ -1870,6 +1870,21 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             [item['path'] for item in cursor_page['items']],
             ['gno.land/r/beta', 'gno.land/r/percent%marker', 'gno.land/p/inactive'],
         )
+        with psycopg.connect(url) as connection, connection.cursor() as cursor:
+            cursor.execute("""INSERT INTO realm_catalog(
+              chain_id,path,path_kind,seen_via_rpc,seen_via_transactions,rpc_visible,last_rpc_seen_at,
+              last_activity_height,last_activity_tx_index,last_activity_at,call_count,
+              successful_call_count,last_counted_height)
+              VALUES
+              ('topaz-1','gno.land/r/high','realm',true,true,true,now(),9,0,now(),3,3,9),
+              ('topaz-1','gno.land/p/high-package','package',true,true,true,now(),20,0,now(),99,99,20),
+              ('topaz-1','gno.land/r/historical','realm',true,true,false,now(),20,0,now(),99,99,20)""")
+        top = database.fetch_top_realms(chain_id='topaz-1', limit=10)
+        self.assertEqual(top['source']['chain_id'], 'topaz-1')
+        self.assertEqual(
+            [item['path'] for item in top['items']],
+            ['gno.land/r/high', 'gno.land/r/alpha', 'gno.land/r/beta', 'gno.land/r/percent%marker'],
+        )
 
     def test_partial_realm_catalogs_are_rejected_and_rolled_back(self):
         for suffix, ddl in (

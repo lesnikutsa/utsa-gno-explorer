@@ -70,6 +70,11 @@ export const getRealms = ({ limit, kind, q, beforeActivityHeight, beforePath, si
   const queryString = query.toString()
   return request(`/realms${queryString ? `?${queryString}` : ''}`, { signal })
 }
+export const getTopRealms = ({ limit = 5, signal } = {}) => {
+  const query = new URLSearchParams()
+  query.set('limit', limit)
+  return request(`/realms/top?${query.toString()}`, { signal })
+}
 export const getBlock = (height) => request(`/blocks/${encodeURIComponent(height)}`)
 export const getTransaction = (blockHeight, index) => request(`/blocks/${encodeURIComponent(blockHeight)}/transactions/${encodeURIComponent(index)}`)
 export const getTransactionByHash = (txHash) => request(`/transactions/by-hash/${encodeURIComponent(txHash)}`)
