@@ -129,3 +129,7 @@ range. Gno `deliver_tx` results are normalized into generic status, gas, error,
 log, info, data, and events fields so another execution adapter can later produce
 the same persisted shape without changing current Gno ingestion. Public API
 requests do not perform live RPC execution-result fallback.
+
+## Compact Realm catalog
+
+The Gno-specific Realm catalog uses one aggregate row per chain and validated `/r/` or `/p/` path. The continuous indexer observes only the existing bounded `payload_summary`; it stores no per-call history. An operator may run `scripts/refresh_realm_catalog.py` for one fixed-height `vm/qpaths?limit=0` snapshot and `scripts/rebuild_realm_activity.py --from-height HEIGHT` to repair decoded-history aggregates. Neither command is scheduled, started by the API, nor run at startup. This minimizes database growth while preserving disappeared paths as historical metadata. Token classification is deferred, as are bounded on-demand source, documentation, function, Render, and storage details.

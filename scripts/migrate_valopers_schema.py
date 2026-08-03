@@ -16,6 +16,7 @@ from scripts.init_database import (
     PRE_GOVERNANCE_SCHEMA_EXPECTATIONS, PRE_NETWORK_DISTRIBUTION_EXPECTATIONS,
     PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS,
     PRE_TRANSACTION_EXECUTION_RESULT_EXPECTATIONS, TRANSACTION_HASH_ONLY_EXPECTATIONS,
+    PRE_REALM_CATALOG_EXPECTATIONS,
     VALOPERS_ONLY_EXPECTATIONS, fetch_schema_snapshot,
     validate_one_of_exact_schema_stages, validate_schema_snapshot,
 )
@@ -60,6 +61,7 @@ def migrate_valopers_schema(database_url: str, migration_path: Path = MIGRATION,
                     PRE_GOVERNANCE_SCHEMA_EXPECTATIONS,
                     PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS,
                     PRE_TRANSACTION_EXECUTION_RESULT_EXPECTATIONS,
+                    PRE_REALM_CATALOG_EXPECTATIONS,
                     FINAL_SCHEMA_EXPECTATIONS,
                 )
             }
@@ -75,11 +77,12 @@ def migrate_valopers_schema(database_url: str, migration_path: Path = MIGRATION,
                     "pre-governance": PRE_GOVERNANCE_SCHEMA_EXPECTATIONS,
                     "governance": PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS,
                     "participants": PRE_TRANSACTION_EXECUTION_RESULT_EXPECTATIONS,
+                    "execution-results": PRE_REALM_CATALOG_EXPECTATIONS,
                     "final": FINAL_SCHEMA_EXPECTATIONS,
                 })
             except Exception as exc:
                 raise MigrationPreconditionError("public schema is not an exact supported stage") from exc
-            if stage in {"valopers-only", "pre-network", "pre-governance", "governance", "participants", "final"}:
+            if stage in {"valopers-only", "pre-network", "pre-governance", "governance", "participants", "execution-results", "final"}:
                 return "already-compatible"
 
             cursor.execute(migration_sql)

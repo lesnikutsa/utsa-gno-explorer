@@ -179,6 +179,29 @@ LEFT JOIN LATERAL (
 WHERE state.state_key = %s
 """
 
+REALM_CATALOG_SUMMARY_SQL = """
+SELECT s.chain_id, i.last_finalized_height AS indexed_height, s.observed_height,
+ s.refreshed_at, s.activity_from_height, s.activity_through_height,
+ count(c.*)::bigint AS total_items,
+ count(*) FILTER (WHERE c.path_kind='realm')::bigint AS total_realms,
+ count(*) FILTER (WHERE c.path_kind='package')::bigint AS total_packages,
+ count(*) FILTER (WHERE c.rpc_visible)::bigint AS rpc_visible_items,
+ count(*) FILTER (WHERE c.last_activity_at >= now() - interval '24 hours')::bigint AS active_24h
+FROM realm_catalog_state s JOIN indexer_state i ON i.state_key='default' AND i.chain_id=s.chain_id
+LEFT JOIN realm_catalog c ON c.chain_id=s.chain_id
+GROUP BY s.chain_id,i.last_finalized_height,s.observed_height,s.refreshed_at,s.activity_from_height,s.activity_through_height
+"""
+REALM_CATALOG_ITEMS_SQL = """
+SELECT path,path_kind,rpc_visible,deployer_address,deploy_height,deploy_tx_index,first_seen_height,
+ last_activity_height,last_activity_tx_index,last_activity_at,call_count,successful_call_count,
+ failed_call_count,unknown_result_call_count
+FROM realm_catalog WHERE chain_id=%s AND (%s='all' OR path_kind=%s)
+ AND (%s IS NULL OR lower(path) LIKE '%%' || lower(%s) || '%%')
+ AND (%s IS NULL OR COALESCE(last_activity_height,-1) < %s OR
+      (COALESCE(last_activity_height,-1) = %s AND path > %s))
+ORDER BY COALESCE(last_activity_height,-1) DESC,path ASC LIMIT %s
+"""
+
 BLOCK_COLUMNS = """
     block.height,
     block.block_hash_hex,
@@ -759,6 +782,22 @@ class ApiDatabase:
         if row is None:
             raise MissingIndexerStateError("Default indexer state is missing")
         return dict(row)
+
+    def fetch_realm_catalog(self, *, limit: int, kind: str, q: str | None,
+                            before_activity_height: int | None, before_path: str | None) -> dict[str, Any] | None:
+        """Read one consistent PostgreSQL-only catalog page."""
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection, connection.transaction(), connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION READ ONLY")
+            cursor.execute(REALM_CATALOG_SUMMARY_SQL)
+            summary = cursor.fetchone()
+            if summary is None:
+                return None
+            cursor.execute(REALM_CATALOG_ITEMS_SQL, (summary["chain_id"], kind, kind, q, q,
+                before_activity_height, before_activity_height, before_activity_height, before_path, limit + 1))
+            rows = cursor.fetchall()
+        return {"summary": dict(summary), "items": [dict(row) for row in rows]}
 
     def _default_indexer_state_exists(self) -> bool:
         if self.pool is None:

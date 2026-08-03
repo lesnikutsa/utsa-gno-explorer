@@ -171,3 +171,7 @@ including its chain, pinned height, page count, and profile count. No default ro
 is installed. Future persistence work will replace profiles and state in one
 transaction. This change does not write snapshot data, and the API and frontend
 do not query these tables yet.
+
+## Realm catalog
+
+`realm_catalog` has primary key `(chain_id, path)` and contains one compact aggregate row for each validated Gno Realm or Package path. It deliberately has no block/transaction foreign keys and no per-call table, so metadata survives pruning. `realm_catalog_state` records the fixed qpaths observation and optional explicit local activity range. Migration 0008 is additive, transactional, and does not populate either table. The API role receives `SELECT`; the indexer role receives `SELECT`, `INSERT`, and `UPDATE` only.

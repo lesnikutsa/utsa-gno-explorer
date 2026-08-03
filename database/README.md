@@ -176,3 +176,7 @@ Migration `0007_add_transaction_execution_results.sql` adds the one-to-one
 and committed atomically with the block checkpoint. A missing row represents a
 legacy transaction that has not been backfilled; it is never stored as an
 `unknown` canonical result.
+
+## Realm catalog (migration 0008)
+
+`realm_catalog` grows by at most one row per unique `(chain_id, path)` and stores aggregate deployment/call metadata only. `realm_catalog_state` grows by at most one row per chain. Migration `0008_add_realm_catalog.sql` is additive and transactional: it creates both empty tables, constraints, indexes, and least-privilege grants, without RPC, backfill, default state, deletion, or service startup. Apply and verify it before restarting updated indexer code.

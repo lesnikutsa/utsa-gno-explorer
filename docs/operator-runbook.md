@@ -84,3 +84,20 @@ is not sufficient.
 4. Confirm timers are active and no oneshot failed during downtime.
 5. Verify API health, checkpoint progress, RPC inspection, `nginx -t`, and the public site.
 6. Review boot logs before declaring recovery complete.
+
+## Realm catalog rollout and maintenance
+
+Production rollout order is:
+
+1. Back up and verify PostgreSQL.
+2. Stop the indexer.
+3. Update the repository.
+4. Apply and verify migration `0008`.
+5. Optionally run `python scripts/rebuild_realm_activity.py --from-height HEIGHT` with an explicit local range.
+6. Run `python scripts/refresh_realm_catalog.py`.
+7. Restart the indexer.
+8. Restart the API.
+9. Smoke-test `GET /api/realms`.
+10. Leave the frontend unchanged in this release.
+
+The commands are foreground, one-shot operations with dedicated transaction advisory locks; there is no automatic schedule. Decoded-history statistics are limited to available blocks and valid bounded summaries. The qpaths command changes visibility atomically and never deletes historical rows.
