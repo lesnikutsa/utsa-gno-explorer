@@ -1,7 +1,7 @@
 """Focused non-PostgreSQL contracts for Realm operator commands."""
 import unittest
 from scripts.rebuild_realm_activity import RebuildError, rebuild_cursor
-from scripts.refresh_realm_catalog import persist_refresh
+from scripts.refresh_realm_catalog import fetch_realm_paths, persist_refresh
 
 class Cursor:
     def __init__(self, responses):
@@ -41,6 +41,47 @@ class RebuildSafetyTests(unittest.TestCase):
         message={'parse_status':'parsed','messages':[{'type':'gno.vm.MsgCall','package_path':path}]}
         cursor=Cursor([(1,),(10,),(1,3,3),[(3,0,message,'success','t3')]])
         self.assertEqual(rebuild_cursor(cursor,"topaz-1",3,3,True),0)
+
+class RefreshQueryTests(unittest.TestCase):
+    class Client:
+        def __init__(self, payload):
+            self.payload = payload
+            self.calls = []
+
+        def abci_query(self, path, data, height):
+            self.calls.append((path, data, height))
+            return self.payload
+
+    def test_query_uses_bounded_gnoland_prefix(self):
+        client = self.Client(
+            "gno.land/p/demo/pkg\ngno.land/r/demo/realm"
+        )
+
+        paths = fetch_realm_paths(client, 123)
+
+        self.assertEqual(
+            client.calls,
+            [("vm/qpaths?limit=10000", "gno.land/", 123)],
+        )
+        self.assertEqual(
+            paths,
+            (
+                ("gno.land/p/demo/pkg", "package"),
+                ("gno.land/r/demo/realm", "realm"),
+            ),
+        )
+
+    def test_stdlib_response_is_rejected(self):
+        client = self.Client("bufio")
+
+        with self.assertRaisesRegex(ValueError, "qpaths_invalid_path"):
+            fetch_realm_paths(client, 123)
+
+        self.assertEqual(
+            client.calls,
+            [("vm/qpaths?limit=10000", "gno.land/", 123)],
+        )
+
 
 class RefreshPersistenceTests(unittest.TestCase):
     def test_invalid_set_is_rejected_before_visibility_update(self):
