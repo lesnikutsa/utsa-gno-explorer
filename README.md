@@ -79,6 +79,7 @@ separated from current operating instructions.
 Install Python development dependencies in a virtual environment, then run:
 
 ```bash
+python -m pip install -r requirements-dev.txt
 python -m unittest discover -s tests -v
 ```
 
