@@ -1,0 +1,103 @@
+import { DataTable } from '../components/DataTable'
+import { StatusBadge } from '../components/StatusBadge'
+import { relativeTime } from '../utils/time'
+
+export function formatSuccessRate(value) {
+  if (value === null || value === undefined || typeof value !== 'number' || !Number.isFinite(value)) return '—'
+  const percentage = Math.round(value * 1000) / 10
+  return `${Number.isInteger(percentage) ? percentage.toFixed(0) : percentage.toFixed(1)}%`
+}
+
+const formatCount = (value) => typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString() : '—'
+
+const columns = [
+  {
+    key: 'path',
+    label: 'Path',
+    render: (item) => <span className="realms-table__path mono" title={item.path}>{item.path}</span>,
+  },
+  {
+    key: 'kind',
+    label: 'Type',
+    render: (item) => <StatusBadge tone="neutral">{item.kind === 'realm' ? 'Realm' : item.kind === 'package' ? 'Package' : 'Unknown'}</StatusBadge>,
+  },
+  { key: 'call_count', label: 'Calls', render: (item) => formatCount(item.call_count) },
+  { key: 'success_rate', label: 'Success Rate', render: (item) => formatSuccessRate(item.success_rate) },
+  {
+    key: 'last_activity_at',
+    label: 'Last Activity',
+    render: (item) => item.last_activity_at
+      ? <time dateTime={item.last_activity_at} title={item.last_activity_at}>{relativeTime(item.last_activity_at)}</time>
+      : 'Never',
+  },
+  {
+    key: 'rpc_visible',
+    label: 'Visibility',
+    render: (item) => item.rpc_visible
+      ? <span title="Present in the latest Realm catalog RPC snapshot"><StatusBadge tone="success">Visible</StatusBadge></span>
+      : <span title="Observed in indexed transactions but absent from the latest Realm catalog RPC snapshot"><StatusBadge tone="neutral">Historical</StatusBadge></span>,
+  },
+]
+
+function emptyMessage({ error, snapshotMissing, appliedSearch, kind }) {
+  if (error) return 'Realms and packages are currently unavailable.'
+  if (snapshotMissing) return 'The Realm catalog is not available yet.'
+  if (appliedSearch) return <>No realms or packages match “{appliedSearch}”.</>
+  if (kind === 'realm') return 'No realms match the current filters.'
+  if (kind === 'package') return 'No packages match the current filters.'
+  return 'No realms or packages have been indexed yet.'
+}
+
+export function Realms({ realmsPage }) {
+  const { items, summary, loading, error, snapshotMissing, kind, searchInput, appliedSearch, pageIndex, canLoadOlder, setSearchInput, selectKind, submitSearch, clearSearch, retry, loadOlder, loadNewer } = realmsPage
+  const metrics = [
+    ['Realms', summary?.total_realms],
+    ['Packages', summary?.total_packages],
+    ['Active 24h', summary?.active_24h],
+    ['RPC Visible', summary?.rpc_visible_items],
+  ]
+  const filters = [
+    ['all', 'All', summary?.total_items],
+    ['realm', 'Realms', summary?.total_realms],
+    ['package', 'Packages', summary?.total_packages],
+  ]
+
+  return (
+    <section className="blocks-page realms-page" aria-labelledby="realms-page-title">
+      <header className="blocks-page__header realms-page__header">
+        <h1 id="realms-page-title">Realms &amp; Packages</h1>
+        {error && <button className="blocks-page__button blocks-page__button--accent" type="button" onClick={retry} disabled={loading}>Retry</button>}
+      </header>
+
+      <div className="status-grid realms-page__summary">
+        {metrics.map(([label, value]) => <div className="panel realms-page__metric" key={label}><span>{label}</span><strong>{formatCount(value)}</strong></div>)}
+      </div>
+      {summary && <p className="realms-page__metadata">Catalog snapshot #{formatCount(summary.catalog_observed_height)} · Indexed #{formatCount(summary.indexed_height)}</p>}
+
+      <div className="realms-page__toolbar">
+        <div className="realms-page__filters" aria-label="Realm kind filters">
+          {filters.map(([value, label, count]) => (
+            <button className={`realms-page__filter ${kind === value ? 'is-active' : ''}`} type="button" key={value} aria-pressed={kind === value} onClick={() => selectKind(value)}>
+              <span>{label}</span> <small>{formatCount(count)}</small>
+            </button>
+          ))}
+        </div>
+        <form className="realms-page__search" onSubmit={submitSearch}>
+          <label className="sr-only" htmlFor="realm-path-search">Search realm or package path</label>
+          <input id="realm-path-search" type="search" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search realm or package path" />
+          <button className="blocks-page__button blocks-page__button--accent" type="submit" disabled={loading}>Search</button>
+          {appliedSearch && <button className="blocks-page__button" type="button" onClick={clearSearch} disabled={loading}>Clear</button>}
+        </form>
+      </div>
+
+      <div className="panel blocks-page__table realms-page__table">
+        <DataTable columns={columns} rows={items} rowKey={(item) => item.path} loading={loading} emptyMessage={emptyMessage({ error, snapshotMissing, appliedSearch, kind })} />
+      </div>
+      <nav className="blocks-pagination" aria-label="Realms pagination">
+        <button className="blocks-page__button" type="button" onClick={loadNewer} disabled={loading || pageIndex === 0}>Newer entries</button>
+        <span>{pageIndex === 0 ? 'Latest' : `Page ${pageIndex + 1}`}</span>
+        <button className="blocks-page__button" type="button" onClick={loadOlder} disabled={loading || !canLoadOlder}>Older entries</button>
+      </nav>
+    </section>
+  )
+}
