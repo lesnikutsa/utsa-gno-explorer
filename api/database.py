@@ -197,9 +197,9 @@ SELECT path,path_kind,rpc_visible,deployer_address,deploy_height,deploy_tx_index
  last_activity_height,last_activity_tx_index,last_activity_at,call_count,successful_call_count,
  failed_call_count,unknown_result_call_count
 FROM realm_catalog WHERE chain_id=%s AND (%s='all' OR path_kind=%s)
- AND (%s IS NULL OR strpos(lower(path), lower(%s)) > 0)
- AND (%s IS NULL OR COALESCE(last_activity_height,-1) < %s OR
-      (COALESCE(last_activity_height,-1) = %s AND path > %s))
+ AND (%s::text IS NULL OR strpos(lower(path), lower(%s::text)) > 0)
+ AND (%s::bigint IS NULL OR COALESCE(last_activity_height,-1) < %s::bigint OR
+      (COALESCE(last_activity_height,-1) = %s::bigint AND path > %s::text))
 ORDER BY COALESCE(last_activity_height,-1) DESC,path ASC LIMIT %s
 """
 
