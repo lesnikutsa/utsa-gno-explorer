@@ -92,7 +92,7 @@ class RealmCatalogTests(unittest.TestCase):
    'foreign_keys':expectations['foreign_keys'],'check_constraints':expectations['check_constraints'],
    'indexes':expectations['indexes'],
   })
-  canonical=("CHECK (((char_length(path) >= 1) AND (char_length(path) <= 256) "
+  canonical=("CHECK ((((char_length(path) >= 1) AND (char_length(path) <= 256)) "
    "AND (path ~ '^gno\\.land/[rp]/[!-\\.0-~]+(/[!-\\.0-~]+)*$'::text) "
    "AND (path !~ '[?#]'::text) AND (((path_kind = 'realm'::text) "
    "AND (path ~~ 'gno.land/r/%'::text)) OR ((path_kind = 'package'::text) "
