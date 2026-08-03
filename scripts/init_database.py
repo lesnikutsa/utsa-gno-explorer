@@ -14,6 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = REPO_ROOT / "database" / "schema.sql"
 PARTICIPANT_MIGRATION = REPO_ROOT / "database" / "migrations" / "0006_add_transaction_participants.sql"
 EXECUTION_RESULT_MIGRATION = REPO_ROOT / "database" / "migrations" / "0007_add_transaction_execution_results.sql"
+REALM_CATALOG_MIGRATION = REPO_ROOT / "database" / "migrations" / "0008_add_realm_catalog.sql"
 EXPECTED_TABLES = {
     "blocks", "transactions", "validators", "validator_set_members", "validator_signatures", "rpc_endpoints", "rpc_endpoint_checks", "indexer_state", "valoper_profiles", "valopers_snapshot_state",
 }
@@ -290,6 +291,37 @@ EXPECTED_TABLE_PRIVILEGES = {
         TRANSACTION_EXECUTION_RESULT_TABLE: {"SELECT", "INSERT", "UPDATE"},
     },
 }
+PRE_REALM_CATALOG_EXPECTATIONS = schema_expectations()
+EXPECTED_TABLES.update({"realm_catalog", "realm_catalog_state"})
+EXPECTED_COLUMNS["realm_catalog"] = {
+ "chain_id":("text","NO","",None),"path":("text","NO","",None),"path_kind":("text","NO","",None),
+ "seen_via_rpc":("boolean","NO","","false"),"seen_via_transactions":("boolean","NO","","false"),"rpc_visible":("boolean","NO","","false"),
+ "deployer_address":("text","YES","",None),"deploy_height":("bigint","YES","",None),"deploy_tx_index":("integer","YES","",None),
+ "first_seen_height":("bigint","YES","",None),"last_activity_height":("bigint","YES","",None),"last_activity_tx_index":("integer","YES","",None),
+ "last_activity_at":("timestamp with time zone","YES","",None),"call_count":("bigint","NO","","0"),
+ "successful_call_count":("bigint","NO","","0"),"failed_call_count":("bigint","NO","","0"),"unknown_result_call_count":("bigint","NO","","0"),
+ "last_counted_height":("bigint","YES","",None),"first_discovered_at":("timestamp with time zone","NO","","now()"),
+ "last_rpc_seen_at":("timestamp with time zone","YES","",None),"inserted_at":("timestamp with time zone","NO","","now()"),"updated_at":("timestamp with time zone","NO","","now()")}
+EXPECTED_COLUMNS["realm_catalog_state"]={"chain_id":("text","NO","",None),"observed_height":("bigint","NO","",None),"rpc_path_count":("integer","NO","",None),"activity_from_height":("bigint","YES","",None),"activity_through_height":("bigint","YES","",None),"source_rpc_endpoint_id":("bigint","YES","",None),"refreshed_at":("timestamp with time zone","NO","",None),"updated_at":("timestamp with time zone","NO","","now()")}
+EXPECTED_PRIMARY_KEYS.update({"realm_catalog":("chain_id","path"),"realm_catalog_state":("chain_id",)})
+EXPECTED_FOREIGN_KEYS.add(("realm_catalog_state",("source_rpc_endpoint_id",),"rpc_endpoints",("id",),"n"))
+EXPECTED_CHECKS.update({
+ "realm_catalog_path_kind_check":"CHECK (path_kind IN ('realm', 'package'))",
+ "realm_catalog_path_check":"CHECK ((char_length(path) >= 1 AND char_length(path) <= 256) AND path ~ '^gno\\.land/[rp]/[!-\\.0-~]+(/[!-\\.0-~]+)*$' AND path !~ '[?#]' AND ((path_kind = 'realm' AND path ~~ 'gno.land/r/%') OR (path_kind = 'package' AND path ~~ 'gno.land/p/%')))",
+ "realm_catalog_deployer_check":"CHECK (deployer_address IS NULL OR deployer_address ~ '^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$')",
+ "realm_catalog_deploy_position_check":"CHECK ((deploy_height IS NULL) = (deploy_tx_index IS NULL) AND (deploy_height IS NULL OR (deploy_height > 0 AND deploy_tx_index >= 0)))",
+ "realm_catalog_activity_position_check":"CHECK ((last_activity_height IS NULL) = (last_activity_tx_index IS NULL) AND (last_activity_height IS NULL) = (last_activity_at IS NULL) AND (last_activity_height IS NULL OR (last_activity_height > 0 AND last_activity_tx_index >= 0)))",
+ "realm_catalog_counters_check":"CHECK (call_count >= 0 AND successful_call_count >= 0 AND failed_call_count >= 0 AND unknown_result_call_count >= 0 AND successful_call_count + failed_call_count + unknown_result_call_count = call_count)",
+ "realm_catalog_counted_height_check":"CHECK ((call_count = 0 AND last_counted_height IS NULL) OR (call_count > 0 AND last_counted_height IS NOT NULL AND last_counted_height > 0))",
+ "realm_catalog_first_seen_check":"CHECK (first_seen_height IS NULL OR first_seen_height > 0)",
+ "realm_catalog_rpc_visibility_check":"CHECK (NOT rpc_visible OR seen_via_rpc)",
+ "realm_catalog_rpc_seen_at_check":"CHECK ((NOT seen_via_rpc AND last_rpc_seen_at IS NULL) OR (seen_via_rpc AND last_rpc_seen_at IS NOT NULL))",
+ "realm_catalog_transaction_metadata_check":"CHECK (seen_via_transactions OR (deployer_address IS NULL AND deploy_height IS NULL AND first_seen_height IS NULL AND last_activity_height IS NULL AND call_count = 0))",
+ "realm_catalog_state_observed_height_check":"CHECK (observed_height > 0)","realm_catalog_state_path_count_check":"CHECK (rpc_path_count BETWEEN 0 AND 10000)",
+ "realm_catalog_state_activity_range_check":"CHECK ((activity_from_height IS NULL AND activity_through_height IS NULL) OR (activity_from_height > 0 AND activity_through_height >= activity_from_height))"})
+EXPECTED_INDEXES.update({"realm_catalog_kind_path_idx":("realm_catalog",False,(("chain_id","ASC"),("path_kind","ASC"),("path","ASC")),None),"realm_catalog_visibility_idx":("realm_catalog",False,(("chain_id","ASC"),("rpc_visible","ASC"),("path_kind","ASC")),None),"realm_catalog_activity_idx":("realm_catalog",False,(("chain_id","ASC"),("last_activity_height","DESC"),("path","ASC")),None),"realm_catalog_calls_idx":("realm_catalog",False,(("chain_id","ASC"),("call_count","DESC"),("path","ASC")),None)})
+EXPECTED_TABLE_PRIVILEGES["utsa_gno_api"].update({"realm_catalog":{"SELECT"},"realm_catalog_state":{"SELECT"}})
+EXPECTED_TABLE_PRIVILEGES["utsa_gno_indexer"].update({"realm_catalog":{"SELECT","INSERT","UPDATE"},"realm_catalog_state":{"SELECT","INSERT","UPDATE"}})
 FINAL_SCHEMA_EXPECTATIONS = schema_expectations()
 
 NETWORK_DISTRIBUTION_TABLES = {
@@ -304,7 +336,8 @@ TRANSACTION_HASH_INDEXES = {"transactions_tx_hash_hex_idx"}
 
 
 
-LATE_TRANSACTION_TABLES = {TRANSACTION_PARTICIPANT_TABLE, TRANSACTION_EXECUTION_RESULT_TABLE}
+LATE_TRANSACTION_TABLES = {TRANSACTION_PARTICIPANT_TABLE, TRANSACTION_EXECUTION_RESULT_TABLE,
+                           "realm_catalog", "realm_catalog_state"}
 PRE_NETWORK_DISTRIBUTION_EXPECTATIONS = schema_expectations(excluded_tables=NETWORK_DISTRIBUTION_TABLES | GOVERNANCE_TABLES | LATE_TRANSACTION_TABLES)
 VALOPERS_ONLY_EXPECTATIONS = schema_expectations(
     excluded_tables=NETWORK_DISTRIBUTION_TABLES | GOVERNANCE_TABLES | LATE_TRANSACTION_TABLES, include_transaction_hash=False)
@@ -739,6 +772,11 @@ def initialize_or_validate(database_url: str, schema_path: Path = SCHEMA, connec
                 if existing == PRE_TRANSACTION_EXECUTION_RESULT_EXPECTATIONS["tables"]:
                     validate_schema_snapshot(snapshot, PRE_TRANSACTION_EXECUTION_RESULT_EXPECTATIONS)
                     cursor.execute(migration_body_for_outer_transaction(EXECUTION_RESULT_MIGRATION.read_text()))
+                    snapshot = fetch_schema_snapshot(cursor)
+                    existing = snapshot["tables"]
+                if existing == PRE_REALM_CATALOG_EXPECTATIONS["tables"]:
+                    validate_schema_snapshot(snapshot, PRE_REALM_CATALOG_EXPECTATIONS)
+                    cursor.execute(migration_body_for_outer_transaction(REALM_CATALOG_MIGRATION.read_text()))
                     snapshot = fetch_schema_snapshot(cursor)
                     existing = snapshot["tables"]
                 if existing == PRE_GOVERNANCE_SCHEMA_EXPECTATIONS["tables"]:

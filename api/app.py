@@ -16,6 +16,7 @@ from api.config import ConfigError, load_config
 from api.account_service import AccountUnavailableError, fetch_live_account, public_rpc_url
 from api.network_profile import topaz_profile, validate_account_address
 from api.transaction_argument_decoder import decode_transaction_arguments
+from indexer.realm_catalog import path_kind as realm_path_kind
 from api.database import (
     MissingIndexedBlockError,
     MissingIndexerStateError,
@@ -51,6 +52,10 @@ from api.schemas import (
     NetworkDistributionResponse,
     NetworkDistributionRpcSources,
     NetworkValidators,
+    RealmCatalogItem,
+    RealmCatalogPagination,
+    RealmCatalogResponse,
+    RealmCatalogSummary,
     SelectedRpc,
     TransactionDetailResponse,
     TransactionHashLookupResponse,
@@ -1024,6 +1029,64 @@ def get_network_distribution() -> NetworkDistributionResponse:
         raise
     except Exception:
         LOGGER.error("Explorer database network distribution query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+
+
+@app.get("/api/realms", response_model=RealmCatalogResponse)
+def get_realms(
+    limit: int = Query(default=25, ge=1, le=100),
+    kind: str = Query(default="all", pattern=r"^(all|realm|package)$"),
+    q: str | None = Query(default=None),
+    before_activity_height: int | None = Query(default=None, ge=-1),
+    before_path: str | None = Query(default=None),
+) -> RealmCatalogResponse:
+    if (before_activity_height is None) != (before_path is None):
+        raise HTTPException(status_code=422, detail="Realm cursor fields must be supplied together")
+    if q is not None:
+        q = q.strip()
+        if not 1 <= len(q) <= 128 or any(not (' ' <= char <= '~') for char in q):
+            raise HTTPException(status_code=422, detail="q must be 1 through 128 printable characters")
+    if before_path is not None:
+        if realm_path_kind(before_path) is None:
+            raise HTTPException(status_code=422, detail="before_path is invalid")
+    try:
+        result = database.fetch_realm_catalog(chain_id=app.state.api_config.chain_id,
+            limit=limit, kind=kind, q=q,
+            before_activity_height=before_activity_height, before_path=before_path)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Realm catalog not found")
+        rows, older = result["items"], len(result["items"]) > limit
+        rows = rows[:limit]
+        items = []
+        for row in rows:
+            if (realm_path_kind(row["path"]) != row["path_kind"]
+                    or int(row["successful_call_count"]) + int(row["failed_call_count"])
+                    + int(row["unknown_result_call_count"]) != int(row["call_count"])):
+                raise ValueError("malformed stored Realm catalog row")
+            decided = int(row["successful_call_count"]) + int(row["failed_call_count"])
+            items.append(RealmCatalogItem(path=row["path"], name=row["path"].rsplit("/", 1)[-1],
+                kind=row["path_kind"], rpc_visible=row["rpc_visible"], deployer_address=row["deployer_address"],
+                deploy_height=row["deploy_height"], deploy_tx_index=row["deploy_tx_index"],
+                first_seen_height=row["first_seen_height"], last_activity_height=row["last_activity_height"],
+                last_activity_tx_index=row["last_activity_tx_index"],
+                last_activity_at=isoformat_utc_z(row["last_activity_at"]) if row["last_activity_at"] else None,
+                call_count=row["call_count"], successful_call_count=row["successful_call_count"],
+                failed_call_count=row["failed_call_count"], unknown_result_call_count=row["unknown_result_call_count"],
+                success_rate=None if decided == 0 else int(row["successful_call_count"]) / decided))
+        source = result["summary"]
+        summary = RealmCatalogSummary(total_items=source["total_items"], total_realms=source["total_realms"],
+            total_packages=source["total_packages"], rpc_visible_items=source["rpc_visible_items"],
+            active_24h=source["active_24h"], indexed_height=source["indexed_height"],
+            catalog_observed_height=source["observed_height"], catalog_refreshed_at=isoformat_utc_z(source["refreshed_at"]),
+            activity_from_height=source["activity_from_height"], activity_through_height=source["activity_through_height"])
+        tail = rows[-1] if older else None
+        return RealmCatalogResponse(summary=summary, items=items, pagination=RealmCatalogPagination(
+            next_before_activity_height=tail["last_activity_height"] if tail and tail["last_activity_height"] is not None else (-1 if tail else None),
+            next_before_path=tail["path"] if tail else None))
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.error("Explorer database Realm catalog query failed")
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
 
 

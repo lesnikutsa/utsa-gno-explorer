@@ -18,19 +18,20 @@ import (
 )
 
 const (
-	protocolVersion   = 1
-	maxLineBytes      = 8 << 20
-	maxTxBytes        = 4 << 20
-	maxIDRunes        = 128
-	maxMessages       = 20
-	maxSummaryBytes   = 16_384
-	maxDetailsBytes   = 48 << 10
-	maxArgumentValues = 16
-	maxArgumentRunes  = 256
-	maxLabelRunes     = 80
-	maxTypeRunes      = 160
-	maxTokenRunes     = 64
-	maxScalarRunes    = 160
+	protocolVersion     = 1
+	maxLineBytes        = 8 << 20
+	maxTxBytes          = 4 << 20
+	maxIDRunes          = 128
+	maxMessages         = 20
+	maxSummaryBytes     = 16_384
+	maxDetailsBytes     = 48 << 10
+	maxArgumentValues   = 16
+	maxArgumentRunes    = 256
+	maxLabelRunes       = 80
+	maxTypeRunes        = 160
+	maxTokenRunes       = 64
+	maxScalarRunes      = 160
+	maxPackagePathRunes = 256
 )
 
 type request struct {
@@ -70,23 +71,24 @@ type core struct {
 	Label    string `json:"label"`
 }
 type message struct {
-	Type            string `json:"type"`
-	Category        string `json:"category"`
-	Action          string `json:"action"`
-	Label           string `json:"label"`
-	Sender          string `json:"sender,omitempty"`
-	Recipient       string `json:"recipient,omitempty"`
-	PackagePath     string `json:"package_path,omitempty"`
-	PackageName     string `json:"package_name,omitempty"`
-	Function        string `json:"function,omitempty"`
-	ArgsCount       *int   `json:"args_count,omitempty"`
-	FileCount       *int   `json:"file_count,omitempty"`
-	Send            string `json:"send,omitempty"`
-	Amount          string `json:"amount,omitempty"`
-	ExpiresAt       *int64 `json:"expires_at,omitempty"`
-	AllowPathsCount *int   `json:"allow_paths_count,omitempty"`
-	SpendLimit      string `json:"spend_limit,omitempty"`
-	SpendPeriod     *int64 `json:"spend_period,omitempty"`
+	Type                string `json:"type"`
+	Category            string `json:"category"`
+	Action              string `json:"action"`
+	Label               string `json:"label"`
+	Sender              string `json:"sender,omitempty"`
+	Recipient           string `json:"recipient,omitempty"`
+	PackagePath         string `json:"package_path,omitempty"`
+	PackagePathComplete *bool  `json:"package_path_complete,omitempty"`
+	PackageName         string `json:"package_name,omitempty"`
+	Function            string `json:"function,omitempty"`
+	ArgsCount           *int   `json:"args_count,omitempty"`
+	FileCount           *int   `json:"file_count,omitempty"`
+	Send                string `json:"send,omitempty"`
+	Amount              string `json:"amount,omitempty"`
+	ExpiresAt           *int64 `json:"expires_at,omitempty"`
+	AllowPathsCount     *int   `json:"allow_paths_count,omitempty"`
+	SpendLimit          string `json:"spend_limit,omitempty"`
+	SpendPeriod         *int64 `json:"spend_period,omitempty"`
 }
 type decoderFunc func([]byte) (*summary, error)
 
@@ -437,7 +439,12 @@ func cleanMessage(m message) message {
 	m.Label = printable(m.Label, maxLabelRunes)
 	m.Sender = printable(m.Sender, maxScalarRunes)
 	m.Recipient = printable(m.Recipient, maxScalarRunes)
-	m.PackagePath = printable(m.PackagePath, maxScalarRunes)
+	if m.PackagePath != "" {
+		originalPackagePath := m.PackagePath
+		m.PackagePath = printable(originalPackagePath, maxPackagePathRunes)
+		complete := m.PackagePath == originalPackagePath
+		m.PackagePathComplete = &complete
+	}
 	m.PackageName = printable(m.PackageName, maxScalarRunes)
 	m.Function = printable(m.Function, maxScalarRunes)
 	m.Send = printable(m.Send, maxScalarRunes)

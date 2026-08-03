@@ -11,6 +11,7 @@ from typing import Any
 from .rpc import RpcProbeResult
 from .transaction_summary import normalize_summary
 from .transaction_participants import extract_transaction_participants
+from .realm_catalog import aggregate_block
 from .valopers_persistence import ValopersPersistenceResult, replace_valopers_snapshot_cursor
 from .valopers_snapshot import ValopersSnapshot
 from .governance_persistence import (GovernancePersistenceResult,
@@ -294,6 +295,7 @@ def write_height_cursor(cursor, parsed, chain_id: str, finalized_tip: int, selec
     _verify_finalized_conflicts(cursor, parsed)
     _upsert_block(cursor, parsed)
     _upsert_transactions(cursor, parsed, selected_rpc_endpoint_id)
+    _upsert_realm_catalog(cursor, parsed, chain_id)
     _upsert_validators_and_members(cursor, parsed)
     _upsert_signatures(cursor, parsed)
     _advance_checkpoint(cursor, parsed.height, checkpoint, chain_id, finalized_tip, selected_rpc_endpoint_id)
@@ -492,6 +494,69 @@ def _upsert_transactions(cursor, parsed, selected_rpc_endpoint_id: int | None = 
              _json(result["events"]), _json(result["raw_result"]),
              selected_rpc_endpoint_id),
         )
+
+
+def _upsert_realm_catalog(cursor, parsed, chain_id: str) -> None:
+    """Write at most one derived catalog row per touched path and height."""
+    statuses = {result["tx_index"]: result["execution_status"]
+                for result in getattr(parsed, "execution_results", [])}
+    summaries = []
+    for transaction in parsed.transactions:
+        fallback = "invalid" if transaction["decode_status"] == "invalid_base64" else "unparsed"
+        summaries.append((transaction["index"], normalize_summary(transaction.get("payload_summary"), fallback),
+                          statuses.get(transaction["index"])))
+    upsert_transaction_catalog_aggregates(
+        cursor, chain_id, parsed.height, parsed.block["time"], aggregate_block(summaries)
+    )
+
+
+def upsert_transaction_catalog_aggregates(
+    cursor, chain_id: str, height: int, block_time: Any, aggregates
+) -> None:
+    """Upsert bounded transaction-derived aggregates for exactly one block height."""
+    if not isinstance(height, int) or isinstance(height, bool) or height < 1:
+        raise ValueError("height must be positive")
+    for aggregate in aggregates:
+        cursor.execute("""
+            INSERT INTO realm_catalog(
+                chain_id,path,path_kind,seen_via_transactions,deployer_address,deploy_height,
+                deploy_tx_index,first_seen_height,last_activity_height,last_activity_tx_index,
+                last_activity_at,call_count,successful_call_count,failed_call_count,
+                unknown_result_call_count,last_counted_height)
+            VALUES (%s,%s,%s,true,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (chain_id,path) DO UPDATE SET
+                path_kind=EXCLUDED.path_kind, seen_via_transactions=true,
+                first_seen_height=LEAST(realm_catalog.first_seen_height,EXCLUDED.first_seen_height),
+                deployer_address=CASE WHEN realm_catalog.deploy_height IS NULL OR
+                    (EXCLUDED.deploy_height,EXCLUDED.deploy_tx_index) < (realm_catalog.deploy_height,realm_catalog.deploy_tx_index)
+                    THEN EXCLUDED.deployer_address ELSE realm_catalog.deployer_address END,
+                deploy_height=CASE WHEN realm_catalog.deploy_height IS NULL OR
+                    (EXCLUDED.deploy_height,EXCLUDED.deploy_tx_index) < (realm_catalog.deploy_height,realm_catalog.deploy_tx_index)
+                    THEN EXCLUDED.deploy_height ELSE realm_catalog.deploy_height END,
+                deploy_tx_index=CASE WHEN realm_catalog.deploy_height IS NULL OR
+                    (EXCLUDED.deploy_height,EXCLUDED.deploy_tx_index) < (realm_catalog.deploy_height,realm_catalog.deploy_tx_index)
+                    THEN EXCLUDED.deploy_tx_index ELSE realm_catalog.deploy_tx_index END,
+                last_activity_height=CASE WHEN EXCLUDED.last_activity_height IS NOT NULL AND
+                    (realm_catalog.last_activity_height IS NULL OR (EXCLUDED.last_activity_height,EXCLUDED.last_activity_tx_index) >
+                    (realm_catalog.last_activity_height,realm_catalog.last_activity_tx_index)) THEN EXCLUDED.last_activity_height ELSE realm_catalog.last_activity_height END,
+                last_activity_tx_index=CASE WHEN EXCLUDED.last_activity_height IS NOT NULL AND
+                    (realm_catalog.last_activity_height IS NULL OR (EXCLUDED.last_activity_height,EXCLUDED.last_activity_tx_index) >
+                    (realm_catalog.last_activity_height,realm_catalog.last_activity_tx_index)) THEN EXCLUDED.last_activity_tx_index ELSE realm_catalog.last_activity_tx_index END,
+                last_activity_at=CASE WHEN EXCLUDED.last_activity_height IS NOT NULL AND
+                    (realm_catalog.last_activity_height IS NULL OR EXCLUDED.last_activity_height >= realm_catalog.last_activity_height)
+                    THEN EXCLUDED.last_activity_at ELSE realm_catalog.last_activity_at END,
+                call_count=realm_catalog.call_count + CASE WHEN EXCLUDED.last_counted_height > COALESCE(realm_catalog.last_counted_height,0) THEN EXCLUDED.call_count ELSE 0 END,
+                successful_call_count=realm_catalog.successful_call_count + CASE WHEN EXCLUDED.last_counted_height > COALESCE(realm_catalog.last_counted_height,0) THEN EXCLUDED.successful_call_count ELSE 0 END,
+                failed_call_count=realm_catalog.failed_call_count + CASE WHEN EXCLUDED.last_counted_height > COALESCE(realm_catalog.last_counted_height,0) THEN EXCLUDED.failed_call_count ELSE 0 END,
+                unknown_result_call_count=realm_catalog.unknown_result_call_count + CASE WHEN EXCLUDED.last_counted_height > COALESCE(realm_catalog.last_counted_height,0) THEN EXCLUDED.unknown_result_call_count ELSE 0 END,
+                last_counted_height=CASE WHEN EXCLUDED.last_counted_height > COALESCE(realm_catalog.last_counted_height,0) THEN EXCLUDED.last_counted_height ELSE realm_catalog.last_counted_height END,
+                updated_at=now()
+        """, (chain_id, aggregate.path, aggregate.kind, aggregate.deployer_address,
+              height if aggregate.deploy_tx_index is not None else None, aggregate.deploy_tx_index,
+              height, height if aggregate.call_count else None, aggregate.last_activity_tx_index,
+              block_time if aggregate.call_count else None, aggregate.call_count,
+              aggregate.successful_call_count, aggregate.failed_call_count, aggregate.unknown_result_call_count,
+              height if aggregate.call_count else None))
 
 
 def _upsert_validators_and_members(cursor, parsed) -> None:

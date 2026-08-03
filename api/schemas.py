@@ -520,3 +520,42 @@ class GovernanceProposalDetail(GovernanceProposalListItem):
 class GovernanceProposalDetailResponse(BaseModel):
     source: GovernanceSourceResponse
     proposal: GovernanceProposalDetail
+
+class RealmCatalogItem(BaseModel):
+    path: str = Field(min_length=1, max_length=256)
+    name: str = Field(min_length=1, max_length=256)
+    kind: Literal["realm", "package"]
+    rpc_visible: bool
+    deployer_address: str | None
+    deploy_height: int | None
+    deploy_tx_index: int | None
+    first_seen_height: int | None
+    last_activity_height: int | None
+    last_activity_tx_index: int | None
+    last_activity_at: str | None
+    call_count: int = Field(ge=0)
+    successful_call_count: int = Field(ge=0)
+    failed_call_count: int = Field(ge=0)
+    unknown_result_call_count: int = Field(ge=0)
+    success_rate: float | None = Field(default=None, ge=0, le=1)
+
+class RealmCatalogSummary(BaseModel):
+    total_items: int = Field(ge=0)
+    total_realms: int = Field(ge=0)
+    total_packages: int = Field(ge=0)
+    rpc_visible_items: int = Field(ge=0)
+    active_24h: int = Field(ge=0)
+    indexed_height: int = Field(ge=0)
+    catalog_observed_height: int = Field(gt=0)
+    catalog_refreshed_at: str
+    activity_from_height: int | None
+    activity_through_height: int | None
+
+class RealmCatalogPagination(BaseModel):
+    next_before_activity_height: int | None
+    next_before_path: str | None
+
+class RealmCatalogResponse(BaseModel):
+    summary: RealmCatalogSummary
+    items: list[RealmCatalogItem]
+    pagination: RealmCatalogPagination

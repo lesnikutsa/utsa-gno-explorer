@@ -10,8 +10,9 @@ MAX_MESSAGES = 20
 MAX_LABEL_LENGTH = 80
 MAX_TYPE_LENGTH = 160
 MAX_TOKEN_LENGTH = 64
-MAX_MESSAGE_FIELDS = 16
+MAX_MESSAGE_FIELDS = 17
 MAX_VALUE_LENGTH = 160
+MAX_PACKAGE_PATH_LENGTH = 256
 MAX_SUMMARY_BYTES = 16_384
 MAX_INTEGER_BITS = 256
 MAX_MESSAGE_COUNT = 100_000
@@ -125,8 +126,16 @@ def _normalize_message(message: Any) -> dict[str, str | int | float | bool | Non
         if safe_key in result:
             raise ValueError("message keys collide after normalization")
         if isinstance(value, str):
-            limit = MAX_TYPE_LENGTH if safe_key == "type" else MAX_LABEL_LENGTH if safe_key == "label" else MAX_VALUE_LENGTH
-            result[safe_key] = _text(value, limit)
+            limit = (MAX_TYPE_LENGTH if safe_key == "type" else
+                     MAX_LABEL_LENGTH if safe_key == "label" else
+                     MAX_PACKAGE_PATH_LENGTH if safe_key == "package_path" else
+                     MAX_VALUE_LENGTH)
+            normalized_value = _text(value, limit)
+            if (safe_key == "package_path"
+                    and message.get("package_path_complete") is True
+                    and normalized_value != value):
+                raise ValueError("complete package path must not be altered")
+            result[safe_key] = normalized_value
         elif value is None or isinstance(value, bool):
             result[safe_key] = value
         elif isinstance(value, int):
@@ -137,6 +146,10 @@ def _normalize_message(message: Any) -> dict[str, str | int | float | bool | Non
             result[safe_key] = value
         else:
             raise ValueError("message values must be JSON-safe scalars")
+    if "package_path_complete" in message:
+        marker = message["package_path_complete"]
+        if not isinstance(marker, bool) or "package_path" not in result:
+            raise ValueError("invalid package path completeness marker")
     return result
 
 
