@@ -15,6 +15,16 @@ from indexer.rpc import probe_rpc_endpoints, suitable_rpc_probes
 LOCK_ID = 0x5245414C4D515054
 LOGGER = logging.getLogger("realm_catalog_refresh")
 
+QPATHS_QUERY_PATH = "vm/qpaths?limit=10000"
+QPATHS_QUERY_DATA = "gno.land/"
+
+
+def fetch_realm_paths(client, height: int):
+    """Fetch only canonical on-chain realm and package paths."""
+    return parse_qpaths(
+        client.abci_query(QPATHS_QUERY_PATH, QPATHS_QUERY_DATA, height)
+    )
+
 def persist_refresh(cursor, chain_id: str, height: int, endpoint_id: int | None, paths):
     paths = tuple(paths)
     if not paths or len(paths) > 10_000 or len({path for path, _ in paths}) != len(paths):
@@ -43,7 +53,7 @@ def main() -> int:
         urls=([preferred] if preferred else [])+[u for u in config.rpc_urls if u != preferred]
         probes=probe_rpc_endpoints(urls,config.chain_id,config.max_height_lag)
         candidate=suitable_rpc_probes(probes)[0]; height=int(candidate.latest_height)-1
-        paths=parse_qpaths(candidate.client.abci_query("vm/qpaths?limit=0", "", height))
+        paths=fetch_realm_paths(candidate.client, height)
         with db.connect() as connection:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT id FROM rpc_endpoints WHERE chain_id=%s AND url=%s",(config.chain_id,candidate.url)); row=cursor.fetchone()
