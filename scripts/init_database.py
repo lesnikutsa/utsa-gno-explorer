@@ -307,7 +307,7 @@ EXPECTED_PRIMARY_KEYS.update({"realm_catalog":("chain_id","path"),"realm_catalog
 EXPECTED_FOREIGN_KEYS.add(("realm_catalog_state",("source_rpc_endpoint_id",),"rpc_endpoints",("id",),"n"))
 EXPECTED_CHECKS.update({
  "realm_catalog_path_kind_check":"CHECK (path_kind IN ('realm', 'package'))",
- "realm_catalog_path_check":"CHECK (char_length(path) BETWEEN 1 AND 256 AND path ~ '^gno\\.land/[rp]/[!-\\.0-~]+(/[!-\\.0-~]+)*$' AND path !~ '[?#]' AND ((path_kind='realm' AND path LIKE 'gno.land/r/%') OR (path_kind='package' AND path LIKE 'gno.land/p/%')))",
+ "realm_catalog_path_check":"CHECK (char_length(path) >= 1 AND char_length(path) <= 256 AND path ~ '^gno\\.land/[rp]/[!-\\.0-~]+(/[!-\\.0-~]+)*$' AND path !~ '[?#]' AND ((path_kind = 'realm' AND path ~~ 'gno.land/r/%') OR (path_kind = 'package' AND path ~~ 'gno.land/p/%')))",
  "realm_catalog_deployer_check":"CHECK (deployer_address IS NULL OR deployer_address ~ '^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$')",
  "realm_catalog_deploy_position_check":"CHECK ((deploy_height IS NULL) = (deploy_tx_index IS NULL) AND (deploy_height IS NULL OR (deploy_height > 0 AND deploy_tx_index >= 0)))",
  "realm_catalog_activity_position_check":"CHECK ((last_activity_height IS NULL) = (last_activity_tx_index IS NULL) AND (last_activity_height IS NULL) = (last_activity_at IS NULL) AND (last_activity_height IS NULL OR (last_activity_height > 0 AND last_activity_tx_index >= 0)))",

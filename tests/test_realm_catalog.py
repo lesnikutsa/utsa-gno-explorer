@@ -84,4 +84,32 @@ class RealmCatalogTests(unittest.TestCase):
   snapshot['check_constraints'].pop('realm_catalog_path_kind_check')
   with self.assertRaises(init_database.SchemaCompatibilityError):
    init_database.validate_schema_snapshot(snapshot)
+ def test_postgres_path_canonical_form_remains_exact(self):
+  expectations=init_database.FINAL_SCHEMA_EXPECTATIONS
+  snapshot=copy.deepcopy({
+   'tables':expectations['tables'],'columns':expectations['columns'],
+   'primary_keys':expectations['primary_keys'],'unique_constraints':expectations['unique_constraints'],
+   'foreign_keys':expectations['foreign_keys'],'check_constraints':expectations['check_constraints'],
+   'indexes':expectations['indexes'],
+  })
+  canonical=("CHECK (((char_length(path) >= 1) AND (char_length(path) <= 256) "
+   "AND (path ~ '^gno\\.land/[rp]/[!-\\.0-~]+(/[!-\\.0-~]+)*$'::text) "
+   "AND (path !~ '[?#]'::text) AND (((path_kind = 'realm'::text) "
+   "AND (path ~~ 'gno.land/r/%'::text)) OR ((path_kind = 'package'::text) "
+   "AND (path ~~ 'gno.land/p/%'::text)))))")
+  snapshot['check_constraints']['realm_catalog_path_check']=canonical
+  init_database.validate_schema_snapshot(snapshot)
+  incompatible=(
+   canonical.replace("+(/[!-\\.0-~]+)*$", "+(/[!-\\.0-~]+)*/?$") ,
+   canonical.replace("(/[!-\\.0-~]+)*$", "(/[!-\\.0-~]*)*$"),
+   canonical.replace("[rp]/", "[rpe]/"),
+  )
+  for changed in incompatible:
+   snapshot['check_constraints']['realm_catalog_path_check']=changed
+   with self.assertRaises(init_database.SchemaCompatibilityError):
+    init_database.validate_schema_snapshot(snapshot)
+  snapshot['check_constraints']['realm_catalog_path_check']=canonical
+  snapshot['check_constraints'].pop('realm_catalog_path_check')
+  with self.assertRaises(init_database.SchemaCompatibilityError):
+   init_database.validate_schema_snapshot(snapshot)
 if __name__=='__main__': unittest.main()
