@@ -1,6 +1,8 @@
+import copy
 import unittest
 from indexer.realm_catalog import aggregate_block, extract_observations, parse_qpaths, path_kind
 from indexer.transaction_summary import MAX_SUMMARY_BYTES, normalize_summary, summary_size_bytes
+from scripts import init_database
 
 def summary(messages,status='parsed'):
  return {'parse_status':status,'messages':messages}
@@ -66,4 +68,20 @@ class RealmCatalogTests(unittest.TestCase):
  def test_qpaths_retains_256_character_path(self):
   path='gno.land/r/'+('q'*(256-len('gno.land/r/')))
   self.assertEqual(parse_qpaths(path),((path,'realm'),))
+ def test_postgres_path_kind_canonical_form_remains_exact(self):
+  expectations=init_database.FINAL_SCHEMA_EXPECTATIONS
+  snapshot=copy.deepcopy({
+   'tables':expectations['tables'],'columns':expectations['columns'],
+   'primary_keys':expectations['primary_keys'],'unique_constraints':expectations['unique_constraints'],
+   'foreign_keys':expectations['foreign_keys'],'check_constraints':expectations['check_constraints'],
+   'indexes':expectations['indexes'],
+  })
+  snapshot['check_constraints']['realm_catalog_path_kind_check']="CHECK (path_kind IN ('realm', 'package'))"
+  init_database.validate_schema_snapshot(snapshot)
+  snapshot['check_constraints']['realm_catalog_path_kind_check']="CHECK (path_kind IN ('realm', 'package', 'ephemeral'))"
+  with self.assertRaises(init_database.SchemaCompatibilityError):
+   init_database.validate_schema_snapshot(snapshot)
+  snapshot['check_constraints'].pop('realm_catalog_path_kind_check')
+  with self.assertRaises(init_database.SchemaCompatibilityError):
+   init_database.validate_schema_snapshot(snapshot)
 if __name__=='__main__': unittest.main()
