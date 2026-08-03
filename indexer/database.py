@@ -460,23 +460,40 @@ def _upsert_transactions(cursor, parsed, selected_rpc_endpoint_id: int | None = 
             """,
             (parsed.height, transaction["index"], transaction["raw_base64"], transaction["raw_base64_length"], transaction["decoded_bytes"], transaction["decoded_byte_length"], transaction["decode_status"], transaction["tx_hash_hex"], _json(payload_summary)),
         )
-        cursor.execute("DELETE FROM transaction_participants WHERE block_height = %s AND tx_index = %s",
-                       (parsed.height, transaction["index"]))
+        cursor.execute(
+            "DELETE FROM transaction_participants WHERE block_height = %s AND tx_index = %s",
+            (parsed.height, transaction["index"]),
+        )
         participants = extract_transaction_participants(payload_summary)
         if participants:
-            cursor.executemany("""INSERT INTO transaction_participants(block_height,tx_index,message_index,role,address)
-                VALUES (%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
-                [(parsed.height, transaction["index"], item.message_index, item.role, item.address)
-                 for item in participants])
+            cursor.executemany(
+                """
+                INSERT INTO transaction_participants(block_height, tx_index, message_index, role, address)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT DO NOTHING
+                """,
+                [
+                    (parsed.height, transaction["index"], participant.message_index,
+                     participant.role, participant.address)
+                    for participant in participants
+                ],
+            )
     for result in getattr(parsed, "execution_results", []):
-        cursor.execute("""INSERT INTO transaction_execution_results(
-            block_height,tx_index,execution_status,gas_wanted,gas_used,error_text,log_text,info_text,
-            data_base64,events,raw_result,source_rpc_endpoint_id)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s)
-            ON CONFLICT (block_height,tx_index) DO UPDATE SET updated_at=now()""",
-            (parsed.height,result["tx_index"],result["execution_status"],result["gas_wanted"],result["gas_used"],
-             result["error_text"],result["log_text"],result["info_text"],result["data_base64"],
-             _json(result["events"]),_json(result["raw_result"]),selected_rpc_endpoint_id))
+        cursor.execute(
+            """
+            INSERT INTO transaction_execution_results(
+                block_height, tx_index, execution_status, gas_wanted, gas_used,
+                error_text, log_text, info_text, data_base64, events, raw_result,
+                source_rpc_endpoint_id
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s)
+            ON CONFLICT (block_height, tx_index) DO UPDATE SET updated_at = now()
+            """,
+            (parsed.height, result["tx_index"], result["execution_status"],
+             result["gas_wanted"], result["gas_used"], result["error_text"],
+             result["log_text"], result["info_text"], result["data_base64"],
+             _json(result["events"]), _json(result["raw_result"]),
+             selected_rpc_endpoint_id),
+        )
 
 
 def _upsert_realm_catalog(cursor, parsed, chain_id: str) -> None:
@@ -488,8 +505,18 @@ def _upsert_realm_catalog(cursor, parsed, chain_id: str) -> None:
         fallback = "invalid" if transaction["decode_status"] == "invalid_base64" else "unparsed"
         summaries.append((transaction["index"], normalize_summary(transaction.get("payload_summary"), fallback),
                           statuses.get(transaction["index"])))
-    block_time = parsed.block["time"]
-    for aggregate in aggregate_block(summaries):
+    upsert_transaction_catalog_aggregates(
+        cursor, chain_id, parsed.height, parsed.block["time"], aggregate_block(summaries)
+    )
+
+
+def upsert_transaction_catalog_aggregates(
+    cursor, chain_id: str, height: int, block_time: Any, aggregates
+) -> None:
+    """Upsert bounded transaction-derived aggregates for exactly one block height."""
+    if not isinstance(height, int) or isinstance(height, bool) or height < 1:
+        raise ValueError("height must be positive")
+    for aggregate in aggregates:
         cursor.execute("""
             INSERT INTO realm_catalog(
                 chain_id,path,path_kind,seen_via_transactions,deployer_address,deploy_height,
@@ -525,11 +552,11 @@ def _upsert_realm_catalog(cursor, parsed, chain_id: str) -> None:
                 last_counted_height=CASE WHEN EXCLUDED.last_counted_height > COALESCE(realm_catalog.last_counted_height,0) THEN EXCLUDED.last_counted_height ELSE realm_catalog.last_counted_height END,
                 updated_at=now()
         """, (chain_id, aggregate.path, aggregate.kind, aggregate.deployer_address,
-              parsed.height if aggregate.deploy_tx_index is not None else None, aggregate.deploy_tx_index,
-              parsed.height, parsed.height if aggregate.call_count else None, aggregate.last_activity_tx_index,
+              height if aggregate.deploy_tx_index is not None else None, aggregate.deploy_tx_index,
+              height, height if aggregate.call_count else None, aggregate.last_activity_tx_index,
               block_time if aggregate.call_count else None, aggregate.call_count,
               aggregate.successful_call_count, aggregate.failed_call_count, aggregate.unknown_result_call_count,
-              parsed.height if aggregate.call_count else None))
+              height if aggregate.call_count else None))
 
 
 def _upsert_validators_and_members(cursor, parsed) -> None:

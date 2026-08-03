@@ -22,6 +22,7 @@ from api.database import (
     ACTIVE_VALIDATORS_SQL,
     NETWORK_DISTRIBUTION_SQL,
     NETWORK_SQL,
+    REALM_CATALOG_SUMMARY_SQL,
     VALIDATOR_IDENTITY_SQL,
     ApiDatabase,
     MissingIndexerStateError,
@@ -171,6 +172,7 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             ("transaction_participants", "CREATE TABLE transaction_participants", "-- Block detail pages"),
             ("network_distribution_geo_cache", "CREATE TABLE network_distribution_geo_cache", "CREATE TABLE governance_proposals"),
             ("governance_proposals", "CREATE TABLE governance_proposals", "CREATE TABLE valoper_profiles"),
+            ("realm_catalog", "BEGIN;\n\nCREATE TABLE realm_catalog", None),
             ("transaction_execution_results", "BEGIN;\n\nCREATE TABLE transaction_execution_results", None),
         )
         for table, start_marker, end_marker in sections:
@@ -1750,6 +1752,65 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         stale = GovernanceListDiscovery(GovernanceSource("topaz-1", "redacted", 99, realm), True, 1, summaries)
         with self.assertRaises(StaleGovernanceSnapshot):
             database.persist_governance_incremental(stale, [], "topaz-1")
+
+
+    def test_realm_catalog_0008_upgrade_and_exact_grants(self):
+        name = f"utsa_realm_upgrade_{os.getpid()}"
+        database_url = self.create_exact_stage_database(
+            name, init_database.PRE_REALM_CATALOG_EXPECTATIONS,
+        )
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            cursor.execute("CREATE ROLE utsa_gno_api")
+            cursor.execute("CREATE ROLE utsa_gno_indexer")
+            cursor.execute("INSERT INTO blocks(height,block_hash_base64,block_hash_hex,time_utc,tx_count) VALUES (1,'a',repeat('A',64),now(),0)")
+        init_database.initialize_or_validate(database_url)
+        init_database.initialize_or_validate(database_url)
+        with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+            init_database.validate_schema_snapshot(init_database.fetch_schema_snapshot(cursor))
+            cursor.execute("SELECT count(*) FROM blocks WHERE height=1")
+            self.assertEqual(cursor.fetchone()[0], 1)
+            cursor.execute("SELECT to_regclass('public.realm_calls'),to_regclass('public.realm_activity')")
+            self.assertEqual(cursor.fetchone(), (None, None))
+            cursor.execute("""SELECT grantee,table_name,privilege_type FROM information_schema.role_table_grants
+              WHERE grantee IN ('utsa_gno_api','utsa_gno_indexer') AND table_name IN ('realm_catalog','realm_catalog_state')
+              ORDER BY grantee,table_name,privilege_type""")
+            self.assertEqual(cursor.fetchall(), [
+              ('utsa_gno_api','realm_catalog','SELECT'),('utsa_gno_api','realm_catalog_state','SELECT'),
+              ('utsa_gno_indexer','realm_catalog','INSERT'),('utsa_gno_indexer','realm_catalog','SELECT'),('utsa_gno_indexer','realm_catalog','UPDATE'),
+              ('utsa_gno_indexer','realm_catalog_state','INSERT'),('utsa_gno_indexer','realm_catalog_state','SELECT'),('utsa_gno_indexer','realm_catalog_state','UPDATE')])
+
+    def test_realm_api_summary_is_scoped_to_requested_chain(self):
+        name = f"utsa_realm_chains_{os.getpid()}"
+        self.create_database(name)
+        url = self.database_url_for(name)
+        init_database.initialize_or_validate(url)
+        with psycopg.connect(url) as connection, connection.cursor() as cursor:
+            cursor.execute("INSERT INTO indexer_state(state_key,chain_id,last_finalized_height) VALUES ('default','topaz-1',0)")
+            cursor.execute("""INSERT INTO realm_catalog_state(chain_id,observed_height,rpc_path_count,refreshed_at)
+              VALUES ('topaz-1',10,1,now()),('other-1',20,1,now())""")
+            cursor.execute("INSERT INTO realm_catalog(chain_id,path,path_kind,seen_via_rpc,rpc_visible,last_rpc_seen_at) VALUES ('topaz-1','gno.land/r/topaz','realm',true,true,now()),('other-1','gno.land/r/other','realm',true,true,now())")
+            cursor.execute(REALM_CATALOG_SUMMARY_SQL, ('topaz-1',))
+            rows = cursor.fetchall()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual((rows[0][0], rows[0][6]), ('topaz-1', 1))
+
+    def test_partial_realm_catalogs_are_rejected_and_rolled_back(self):
+        for suffix, ddl in (
+            ('catalog', 'CREATE TABLE realm_catalog(chain_id text)'),
+            ('state', 'CREATE TABLE realm_catalog_state(chain_id text)'),
+        ):
+            url = self.create_exact_stage_database(
+                f"utsa_realm_partial_{suffix}_{os.getpid()}",
+                init_database.PRE_REALM_CATALOG_EXPECTATIONS,
+            )
+            with psycopg.connect(url) as connection, connection.cursor() as cursor:
+                cursor.execute(ddl)
+            with self.assertRaises(init_database.SchemaCompatibilityError):
+                init_database.initialize_or_validate(url)
+            with psycopg.connect(url) as connection, connection.cursor() as cursor:
+                cursor.execute("SELECT to_regclass('public.realm_catalog'),to_regclass('public.realm_catalog_state')")
+                observed = cursor.fetchone()
+                self.assertEqual(observed, ('realm_catalog', None) if suffix == 'catalog' else (None, 'realm_catalog_state'))
 
 
 if __name__ == "__main__":

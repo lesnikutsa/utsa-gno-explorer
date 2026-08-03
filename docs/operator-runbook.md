@@ -93,11 +93,11 @@ Production rollout order is:
 2. Stop the indexer.
 3. Update the repository.
 4. Apply and verify migration `0008`.
-5. Optionally run `python scripts/rebuild_realm_activity.py --from-height HEIGHT` with an explicit local range.
-6. Run `python scripts/refresh_realm_catalog.py`.
+5. Run `python scripts/refresh_realm_catalog.py` to create the fixed-height catalog state.
+6. Optionally run `python scripts/rebuild_realm_activity.py --from-height HEIGHT` with an explicit verified local range.
 7. Restart the indexer.
 8. Restart the API.
 9. Smoke-test `GET /api/realms`.
 10. Leave the frontend unchanged in this release.
 
-The commands are foreground, one-shot operations with dedicated transaction advisory locks; there is no automatic schedule. Decoded-history statistics are limited to available blocks and valid bounded summaries. The qpaths command changes visibility atomically and never deletes historical rows.
+The commands are foreground, one-shot operations with dedicated transaction advisory locks; there is no automatic schedule. The refresh must run before the first rebuild because the rebuild requires an existing catalog state. Decoded-history statistics are limited to a verified complete local block range and valid bounded summaries. The qpaths command changes visibility atomically and never deletes historical rows.

@@ -7,7 +7,7 @@ from typing import Any, Iterable
 
 from .transaction_summary import MAX_MESSAGES
 
-_PATH_RE = re.compile(r"^gno\.land/(?P<kind>[rp])/[!-~]+$")
+_PATH_RE = re.compile(r"^gno\.land/(?P<kind>[rp])/[!-\.0-~]+(?:/[!-\.0-~]+)*$")
 _ADDRESS_RE = re.compile(r"^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$")
 
 

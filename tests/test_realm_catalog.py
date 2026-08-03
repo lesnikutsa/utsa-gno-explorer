@@ -6,8 +6,12 @@ def summary(messages,status='parsed'):
 class RealmCatalogTests(unittest.TestCase):
  def test_paths(self):
   self.assertEqual(path_kind('gno.land/r/demo'),'realm'); self.assertEqual(path_kind('gno.land/p/demo'),'package')
-  for value in ('gno.land/e/x','std/foo','gno.land/r/a b','gno.land/r/a?x','gno.land/r/a#x','gno.land/r/'):
+  for value in ('gno.land/e/x','std/foo','gno.land/r/a b','gno.land/r/a?x','gno.land/r/a#x',
+                'gno.land/r/','gno.land/r/x/','gno.land/r/x//y'):
    self.assertIsNone(path_kind(value))
+  maximum='gno.land/r/'+('x'*(256-len('gno.land/r/')))
+  self.assertEqual(len(maximum),256); self.assertEqual(path_kind(maximum),'realm')
+  self.assertIsNone(path_kind(maximum+'x'))
  def test_extraction_is_bounded(self):
   messages=[{'type':'gno.vm.MsgCall','package_path':'gno.land/r/x'}]*21
   self.assertEqual(len(extract_observations(summary(messages))),20)
@@ -22,4 +26,7 @@ class RealmCatalogTests(unittest.TestCase):
   self.assertEqual(parse_qpaths('gno.land/r/x\ngno.land/p/y\ngno.land/r/x\n'),(('gno.land/p/y','package'),('gno.land/r/x','realm')))
   for value in ('','gno.land/e/x','gno.land/r/x\nbad'):
    with self.assertRaises(ValueError): parse_qpaths(value)
+ def test_qpaths_unique_limit(self):
+  payload='\n'.join(f'gno.land/r/x{i}' for i in range(10001))
+  with self.assertRaisesRegex(ValueError,'too_many'): parse_qpaths(payload)
 if __name__=='__main__': unittest.main()

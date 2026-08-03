@@ -9,13 +9,18 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 from indexer.config import load_config
 from indexer.database import PostgresDatabase
-from indexer.realm_catalog import parse_qpaths
+from indexer.realm_catalog import parse_qpaths, path_kind
 from indexer.rpc import probe_rpc_endpoints, suitable_rpc_probes
 
 LOCK_ID = 0x5245414C4D515054
 LOGGER = logging.getLogger("realm_catalog_refresh")
 
 def persist_refresh(cursor, chain_id: str, height: int, endpoint_id: int | None, paths):
+    paths = tuple(paths)
+    if not paths or len(paths) > 10_000 or len({path for path, _ in paths}) != len(paths):
+        raise ValueError("invalid_qpaths_set")
+    if any(path_kind(path) != kind for path, kind in paths):
+        raise ValueError("invalid_qpaths_set")
     cursor.execute("SELECT pg_advisory_xact_lock(%s)", (LOCK_ID,))
     cursor.execute("UPDATE realm_catalog SET rpc_visible=false,updated_at=now() WHERE chain_id=%s AND rpc_visible", (chain_id,))
     for path, kind in paths:
@@ -31,8 +36,9 @@ def persist_refresh(cursor, chain_id: str, height: int, endpoint_id: int | None,
       refreshed_at=EXCLUDED.refreshed_at,updated_at=now()""", (chain_id,height,len(paths),endpoint_id))
 
 def main() -> int:
-    started=time.monotonic(); config=load_config(); db=PostgresDatabase(config.database_url)
+    started=time.monotonic(); probes = []
     try:
+        config=load_config(); db=PostgresDatabase(config.database_url)
         preferred=db.get_selected_rpc_url(config.chain_id)
         urls=([preferred] if preferred else [])+[u for u in config.rpc_urls if u != preferred]
         probes=probe_rpc_endpoints(urls,config.chain_id,config.max_height_lag)
@@ -50,4 +56,11 @@ def main() -> int:
     except Exception as exc:
         LOGGER.error("chain=%s elapsed=%.3f status=%s",getattr(locals().get('config'), 'chain_id','unknown'),time.monotonic()-started,type(exc).__name__[:40])
         return 1
+    finally:
+        closed = set()
+        for probe in probes:
+            client = probe.client
+            if client is not None and id(client) not in closed:
+                closed.add(id(client))
+                client.close()
 if __name__ == '__main__': logging.basicConfig(level=logging.INFO,format='%(message)s'); sys.exit(main())

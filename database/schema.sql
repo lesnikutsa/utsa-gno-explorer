@@ -517,19 +517,21 @@ CREATE TABLE realm_catalog (
  inserted_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
  PRIMARY KEY (chain_id, path),
  CONSTRAINT realm_catalog_path_kind_check CHECK (path_kind IN ('realm','package')),
- CONSTRAINT realm_catalog_path_check CHECK (char_length(path) BETWEEN 1 AND 256 AND path ~ '^[!-~]+$' AND path !~ '[?#]' AND ((path_kind='realm' AND path LIKE 'gno.land/r/%') OR (path_kind='package' AND path LIKE 'gno.land/p/%'))),
+ CONSTRAINT realm_catalog_path_check CHECK (char_length(path) BETWEEN 1 AND 256 AND path ~ '^gno\.land/[rp]/[!-\.0-~]+(/[!-\.0-~]+)*$' AND path !~ '[?#]' AND ((path_kind='realm' AND path LIKE 'gno.land/r/%') OR (path_kind='package' AND path LIKE 'gno.land/p/%'))),
  CONSTRAINT realm_catalog_deployer_check CHECK (deployer_address IS NULL OR deployer_address ~ '^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$'),
  CONSTRAINT realm_catalog_deploy_position_check CHECK ((deploy_height IS NULL) = (deploy_tx_index IS NULL) AND (deploy_height IS NULL OR (deploy_height > 0 AND deploy_tx_index >= 0))),
- CONSTRAINT realm_catalog_activity_position_check CHECK ((last_activity_height IS NULL) = (last_activity_tx_index IS NULL) AND (last_activity_height IS NULL OR (last_activity_height > 0 AND last_activity_tx_index >= 0))),
+ CONSTRAINT realm_catalog_activity_position_check CHECK ((last_activity_height IS NULL) = (last_activity_tx_index IS NULL) AND (last_activity_height IS NULL) = (last_activity_at IS NULL) AND (last_activity_height IS NULL OR (last_activity_height > 0 AND last_activity_tx_index >= 0))),
  CONSTRAINT realm_catalog_counters_check CHECK (call_count >= 0 AND successful_call_count >= 0 AND failed_call_count >= 0 AND unknown_result_call_count >= 0 AND successful_call_count + failed_call_count + unknown_result_call_count = call_count),
  CONSTRAINT realm_catalog_counted_height_check CHECK ((call_count = 0 AND last_counted_height IS NULL) OR (call_count > 0 AND last_counted_height IS NOT NULL AND last_counted_height > 0)),
- CONSTRAINT realm_catalog_first_seen_check CHECK (first_seen_height IS NULL OR first_seen_height > 0)
+ CONSTRAINT realm_catalog_first_seen_check CHECK (first_seen_height IS NULL OR first_seen_height > 0),
+ CONSTRAINT realm_catalog_rpc_visibility_check CHECK (NOT rpc_visible OR seen_via_rpc),
+ CONSTRAINT realm_catalog_rpc_seen_at_check CHECK ((NOT seen_via_rpc AND last_rpc_seen_at IS NULL) OR (seen_via_rpc AND last_rpc_seen_at IS NOT NULL)),
+ CONSTRAINT realm_catalog_transaction_metadata_check CHECK (seen_via_transactions OR (deployer_address IS NULL AND deploy_height IS NULL AND first_seen_height IS NULL AND last_activity_height IS NULL AND call_count = 0))
 );
 CREATE INDEX realm_catalog_kind_path_idx ON realm_catalog(chain_id,path_kind,path);
 CREATE INDEX realm_catalog_visibility_idx ON realm_catalog(chain_id,rpc_visible,path_kind);
 CREATE INDEX realm_catalog_activity_idx ON realm_catalog(chain_id,last_activity_height DESC,path);
 CREATE INDEX realm_catalog_calls_idx ON realm_catalog(chain_id,call_count DESC,path);
-CREATE INDEX realm_catalog_lower_path_idx ON realm_catalog(chain_id,lower(path) text_pattern_ops);
 
 CREATE TABLE realm_catalog_state (
  chain_id TEXT PRIMARY KEY, observed_height BIGINT NOT NULL, rpc_path_count INTEGER NOT NULL,

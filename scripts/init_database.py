@@ -307,16 +307,19 @@ EXPECTED_PRIMARY_KEYS.update({"realm_catalog":("chain_id","path"),"realm_catalog
 EXPECTED_FOREIGN_KEYS.add(("realm_catalog_state",("source_rpc_endpoint_id",),"rpc_endpoints",("id",),"n"))
 EXPECTED_CHECKS.update({
  "realm_catalog_path_kind_check":"CHECK (path_kind IN ('realm','package'))",
- "realm_catalog_path_check":"CHECK (char_length(path) BETWEEN 1 AND 256 AND path ~ '^[!-~]+$' AND path !~ '[?#]' AND ((path_kind='realm' AND path LIKE 'gno.land/r/%') OR (path_kind='package' AND path LIKE 'gno.land/p/%')))",
+ "realm_catalog_path_check":"CHECK (char_length(path) BETWEEN 1 AND 256 AND path ~ '^gno\\.land/[rp]/[!-\\.0-~]+(/[!-\\.0-~]+)*$' AND path !~ '[?#]' AND ((path_kind='realm' AND path LIKE 'gno.land/r/%') OR (path_kind='package' AND path LIKE 'gno.land/p/%')))",
  "realm_catalog_deployer_check":"CHECK (deployer_address IS NULL OR deployer_address ~ '^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$')",
  "realm_catalog_deploy_position_check":"CHECK ((deploy_height IS NULL) = (deploy_tx_index IS NULL) AND (deploy_height IS NULL OR (deploy_height > 0 AND deploy_tx_index >= 0)))",
- "realm_catalog_activity_position_check":"CHECK ((last_activity_height IS NULL) = (last_activity_tx_index IS NULL) AND (last_activity_height IS NULL OR (last_activity_height > 0 AND last_activity_tx_index >= 0)))",
+ "realm_catalog_activity_position_check":"CHECK ((last_activity_height IS NULL) = (last_activity_tx_index IS NULL) AND (last_activity_height IS NULL) = (last_activity_at IS NULL) AND (last_activity_height IS NULL OR (last_activity_height > 0 AND last_activity_tx_index >= 0)))",
  "realm_catalog_counters_check":"CHECK (call_count >= 0 AND successful_call_count >= 0 AND failed_call_count >= 0 AND unknown_result_call_count >= 0 AND successful_call_count + failed_call_count + unknown_result_call_count = call_count)",
  "realm_catalog_counted_height_check":"CHECK ((call_count = 0 AND last_counted_height IS NULL) OR (call_count > 0 AND last_counted_height IS NOT NULL AND last_counted_height > 0))",
  "realm_catalog_first_seen_check":"CHECK (first_seen_height IS NULL OR first_seen_height > 0)",
+ "realm_catalog_rpc_visibility_check":"CHECK (NOT rpc_visible OR seen_via_rpc)",
+ "realm_catalog_rpc_seen_at_check":"CHECK ((NOT seen_via_rpc AND last_rpc_seen_at IS NULL) OR (seen_via_rpc AND last_rpc_seen_at IS NOT NULL))",
+ "realm_catalog_transaction_metadata_check":"CHECK (seen_via_transactions OR (deployer_address IS NULL AND deploy_height IS NULL AND first_seen_height IS NULL AND last_activity_height IS NULL AND call_count = 0))",
  "realm_catalog_state_observed_height_check":"CHECK (observed_height > 0)","realm_catalog_state_path_count_check":"CHECK (rpc_path_count BETWEEN 0 AND 10000)",
  "realm_catalog_state_activity_range_check":"CHECK ((activity_from_height IS NULL AND activity_through_height IS NULL) OR (activity_from_height > 0 AND activity_through_height >= activity_from_height))"})
-EXPECTED_INDEXES.update({"realm_catalog_kind_path_idx":("realm_catalog",False,(("chain_id","ASC"),("path_kind","ASC"),("path","ASC")),None),"realm_catalog_visibility_idx":("realm_catalog",False,(("chain_id","ASC"),("rpc_visible","ASC"),("path_kind","ASC")),None),"realm_catalog_activity_idx":("realm_catalog",False,(("chain_id","ASC"),("last_activity_height","DESC"),("path","ASC")),None),"realm_catalog_calls_idx":("realm_catalog",False,(("chain_id","ASC"),("call_count","DESC"),("path","ASC")),None),"realm_catalog_lower_path_idx":("realm_catalog",False,(("chain_id","ASC"),("lower(path)","ASC")),None)})
+EXPECTED_INDEXES.update({"realm_catalog_kind_path_idx":("realm_catalog",False,(("chain_id","ASC"),("path_kind","ASC"),("path","ASC")),None),"realm_catalog_visibility_idx":("realm_catalog",False,(("chain_id","ASC"),("rpc_visible","ASC"),("path_kind","ASC")),None),"realm_catalog_activity_idx":("realm_catalog",False,(("chain_id","ASC"),("last_activity_height","DESC"),("path","ASC")),None),"realm_catalog_calls_idx":("realm_catalog",False,(("chain_id","ASC"),("call_count","DESC"),("path","ASC")),None)})
 EXPECTED_TABLE_PRIVILEGES["utsa_gno_api"].update({"realm_catalog":{"SELECT"},"realm_catalog_state":{"SELECT"}})
 EXPECTED_TABLE_PRIVILEGES["utsa_gno_indexer"].update({"realm_catalog":{"SELECT","INSERT","UPDATE"},"realm_catalog_state":{"SELECT","INSERT","UPDATE"}})
 FINAL_SCHEMA_EXPECTATIONS = schema_expectations()

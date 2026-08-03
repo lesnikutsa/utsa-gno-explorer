@@ -16,6 +16,7 @@ from api.config import ConfigError, load_config
 from api.account_service import AccountUnavailableError, fetch_live_account, public_rpc_url
 from api.network_profile import topaz_profile, validate_account_address
 from api.transaction_argument_decoder import decode_transaction_arguments
+from indexer.realm_catalog import path_kind as realm_path_kind
 from api.database import (
     MissingIndexedBlockError,
     MissingIndexerStateError,
@@ -1046,11 +1047,11 @@ def get_realms(
         if not 1 <= len(q) <= 128 or any(not (' ' <= char <= '~') for char in q):
             raise HTTPException(status_code=422, detail="q must be 1 through 128 printable characters")
     if before_path is not None:
-        from indexer.realm_catalog import path_kind
-        if path_kind(before_path) is None:
+        if realm_path_kind(before_path) is None:
             raise HTTPException(status_code=422, detail="before_path is invalid")
     try:
-        result = database.fetch_realm_catalog(limit=limit, kind=kind, q=q,
+        result = database.fetch_realm_catalog(chain_id=app.state.api_config.chain_id,
+            limit=limit, kind=kind, q=q,
             before_activity_height=before_activity_height, before_path=before_path)
         if result is None:
             raise HTTPException(status_code=404, detail="Realm catalog not found")
@@ -1058,6 +1059,10 @@ def get_realms(
         rows = rows[:limit]
         items = []
         for row in rows:
+            if (realm_path_kind(row["path"]) != row["path_kind"]
+                    or int(row["successful_call_count"]) + int(row["failed_call_count"])
+                    + int(row["unknown_result_call_count"]) != int(row["call_count"])):
+                raise ValueError("malformed stored Realm catalog row")
             decided = int(row["successful_call_count"]) + int(row["failed_call_count"])
             items.append(RealmCatalogItem(path=row["path"], name=row["path"].rsplit("/", 1)[-1],
                 kind=row["path_kind"], rpc_visible=row["rpc_visible"], deployer_address=row["deployer_address"],
