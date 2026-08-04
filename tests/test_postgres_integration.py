@@ -1944,7 +1944,11 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         members = [row for row in result['members'] if row['namespace_key']=='gnoswap']
         self.assertEqual([row['path'] for row in members], ['gno.land/r/gnoswap/a','gno.land/r/gnoswap/b','gno.land/r/gnoswap/c'])
         self.assertFalse(members[1]['rpc_visible'])
-        self.assertEqual(len([row for row in result['members'] if row['namespace_key']=='big']), 100)
+        big_members = [row for row in result['members'] if row['namespace_key']=='big']
+        self.assertEqual([row['path'] for row in big_members],
+                         [f'gno.land/r/big/{index:03}' for index in range(100)])
+        self.assertNotIn('gno.land/r/big/100', [row['path'] for row in big_members])
+        self.assertEqual((big_members[0]['member_number'], big_members[-1]['member_number']), (1, 100))
         curated = database.fetch_top_realm_namespaces(chain_id='topaz-1', limit=10, curated_only=True,
                                                        curated_namespace_keys=('gnoswap',))
         self.assertEqual([row['namespace_key'] for row in curated['items']], ['gnoswap'])

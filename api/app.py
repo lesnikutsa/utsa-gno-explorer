@@ -1220,6 +1220,12 @@ def get_top_realm_namespaces(
                 if (newest["path"], newest["last_activity_height"], newest["last_activity_tx_index"], newest["last_activity_at"]) != (
                         latest_path, activity[0], activity[1], activity[2]):
                     raise ValueError("aggregate latest activity mismatch")
+                if row["latest_activity_call_count"] != newest["call_count"]:
+                    raise ValueError("aggregate latest activity call count mismatch")
+            else:
+                returned_latest = next((member for member in members if member["path"] == latest_path), None)
+                if returned_latest is not None and row["latest_activity_call_count"] != returned_latest["call_count"]:
+                    raise ValueError("truncated latest activity call count mismatch")
             application = REALM_APPLICATION_REGISTRY.get(key)
             if scope == "curated" and application is None:
                 raise ValueError("uncurated result")
