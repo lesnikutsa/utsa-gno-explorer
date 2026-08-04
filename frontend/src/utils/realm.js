@@ -14,7 +14,9 @@ export function decodeRealmDetailPath(search = window.location.search) {
   const params = new URLSearchParams(search)
   const path = params.get('path')
   if (typeof path !== 'string') return null
-  const trimmed = path.trim()
-  if (!/^gno\.land\/(r|p)\/[A-Za-z0-9._~/-]+$/.test(trimmed)) return null
-  return trimmed
+  if (path.length < 1 || path.length > 256) return null
+  if (path !== path.trim()) return null
+  if (/\s/.test(path) || path.includes('?') || path.includes('#')) return null
+  if (!/^gno\.land\/[rp]\/[!-.0-~]+(?:\/[!-.0-~]+)*$/.test(path)) return null
+  return path
 }
