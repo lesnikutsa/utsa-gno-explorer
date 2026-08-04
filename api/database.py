@@ -217,6 +217,37 @@ ORDER BY
     path COLLATE "C" ASC
 LIMIT %s
 """
+REALM_NAMESPACE_TOP_SQL = """
+WITH realm_rows AS MATERIALIZED (
+ SELECT split_part(path, '/', 3) AS namespace_key, path, rpc_visible, first_seen_height,
+  last_activity_height,last_activity_tx_index,last_activity_at,call_count,successful_call_count,
+  failed_call_count,unknown_result_call_count
+ FROM realm_catalog WHERE chain_id=%s AND path_kind='realm'
+), namespace_aggregates AS (
+ SELECT namespace_key,count(*)::bigint realm_count,count(*) FILTER (WHERE call_count>0)::bigint called_realm_count,
+  count(*) FILTER (WHERE rpc_visible)::bigint rpc_visible_realm_count,sum(call_count)::bigint direct_call_count,
+  sum(successful_call_count)::bigint successful_call_count,sum(failed_call_count)::bigint failed_call_count,
+  sum(unknown_result_call_count)::bigint unknown_result_call_count,min(first_seen_height) first_seen_height
+ FROM realm_rows WHERE (NOT %s OR namespace_key=ANY(%s::text[])) GROUP BY namespace_key
+), latest_activity AS (
+ SELECT DISTINCT ON (namespace_key) namespace_key,last_activity_height,last_activity_tx_index,last_activity_at
+ FROM realm_rows WHERE call_count>0 ORDER BY namespace_key COLLATE "C",last_activity_height DESC,
+  last_activity_tx_index DESC,path COLLATE "C" ASC
+)
+SELECT a.*,l.last_activity_height,l.last_activity_tx_index,l.last_activity_at
+FROM namespace_aggregates a JOIN latest_activity l USING(namespace_key)
+WHERE rpc_visible_realm_count>0 AND direct_call_count>0
+ORDER BY direct_call_count DESC,COALESCE(last_activity_height,-1) DESC,namespace_key COLLATE "C" ASC LIMIT %s
+"""
+REALM_NAMESPACE_MEMBERS_SQL = """
+WITH ranked AS (
+ SELECT split_part(path,'/',3) namespace_key,path,path_kind,rpc_visible,first_seen_height,last_activity_height,
+  last_activity_tx_index,last_activity_at,call_count,successful_call_count,failed_call_count,unknown_result_call_count,
+  row_number() OVER (PARTITION BY split_part(path,'/',3) ORDER BY path COLLATE "C") member_number
+ FROM realm_catalog WHERE chain_id=%s AND path_kind='realm' AND split_part(path,'/',3)=ANY(%s::text[])
+)
+SELECT * FROM ranked WHERE member_number<=100 ORDER BY namespace_key COLLATE "C",path COLLATE "C"
+"""
 
 BLOCK_COLUMNS = """
     block.height,
@@ -828,6 +859,26 @@ class ApiDatabase:
             cursor.execute(REALM_TOP_ITEMS_SQL, (chain_id, limit))
             rows = cursor.fetchall()
         return {"source": dict(source), "items": [dict(row) for row in rows]}
+
+    def fetch_top_realm_namespaces(self, *, chain_id: str, limit: int, curated_only: bool,
+                                   curated_namespace_keys: tuple[str, ...]) -> dict[str, Any] | None:
+        """Read namespace aggregates, members, and source from one stable snapshot."""
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection, connection.transaction(), connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            cursor.execute(REALM_CATALOG_SUMMARY_SQL, (chain_id,))
+            source = cursor.fetchone()
+            if source is None:
+                return None
+            cursor.execute(REALM_NAMESPACE_TOP_SQL, (chain_id, curated_only, list(curated_namespace_keys), limit))
+            rows = [dict(row) for row in cursor.fetchall()]
+            keys = tuple(row["namespace_key"] for row in rows)
+            members = []
+            if keys:
+                cursor.execute(REALM_NAMESPACE_MEMBERS_SQL, (chain_id, list(keys)))
+                members = [dict(row) for row in cursor.fetchall()]
+        return {"source": dict(source), "items": rows, "members": members}
 
     def _default_indexer_state_exists(self) -> bool:
         if self.pool is None:

@@ -21,6 +21,13 @@ def path_kind(path: Any) -> str | None:
     return {"r": "realm", "p": "package"}.get(match.group("kind")) if match else None
 
 
+def namespace_key(path: Any) -> str | None:
+    """Return the exact first segment of a canonical Realm path."""
+    if path_kind(path) != "realm":
+        return None
+    return path.split("/", 3)[2]
+
+
 @dataclass(frozen=True, slots=True)
 class RealmObservation:
     path: str
