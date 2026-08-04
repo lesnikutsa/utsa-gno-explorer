@@ -11,6 +11,16 @@ _PATH_RE = re.compile(r"^gno\.land/(?P<kind>[rp])/[!-\.0-~]+(?:/[!-\.0-~]+)*$")
 _ADDRESS_RE = re.compile(r"^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$")
 
 
+def is_complete_package_path(message: Any, path: Any) -> bool:
+    """Accept current completeness markers and the bounded legacy convention."""
+    if not isinstance(message, dict):
+        return False
+    completeness = message.get("package_path_complete")
+    return completeness is True or (
+        completeness is None and isinstance(path, str) and len(path) < 160
+    )
+
+
 def path_kind(path: Any) -> str | None:
     """Return the catalog kind for a bounded canonical path, otherwise ``None``."""
     if not isinstance(path, str) or not 1 <= len(path) <= 256:
@@ -50,10 +60,7 @@ def extract_observations(payload_summary: Any) -> tuple[RealmObservation, ...]:
             continue
         message_type = message.get("type")
         path = message.get("package_path")
-        completeness = message.get("package_path_complete")
-        if completeness is not True and not (
-            completeness is None and isinstance(path, str) and len(path) < 160
-        ):
+        if not is_complete_package_path(message, path):
             continue
         kind = path_kind(path)
         sender = message.get("sender")
@@ -145,7 +152,7 @@ def extract_realm_calls(payload_summary: Any) -> tuple[RealmCallRecord, ...]:
         if not isinstance(message, dict) or message.get("type") != "gno.vm.MsgCall":
             continue
         path = message.get("package_path")
-        if message.get("package_path_complete") is not True or path_kind(path) != "realm":
+        if not is_complete_package_path(message, path) or path_kind(path) != "realm":
             continue
         caller = message.get("sender")
         function = message.get("function")

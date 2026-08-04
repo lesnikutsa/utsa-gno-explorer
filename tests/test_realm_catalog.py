@@ -144,3 +144,23 @@ class RealmCallExtractionTests(unittest.TestCase):
   from indexer.realm_catalog import extract_realm_calls
   messages=[{'type':'gno.vm.MsgCall','package_path':f'gno.land/r/r{i}','package_path_complete':True} for i in range(21)]
   self.assertEqual(len(extract_realm_calls(self.summary(messages))),20)
+
+class RealmCallLegacyPathTests(unittest.TestCase):
+ def extract(self,path,marker='missing'):
+  from indexer.realm_catalog import extract_realm_calls
+  message={'type':'gno.vm.MsgCall','package_path':path}
+  if marker != 'missing': message['package_path_complete']=marker
+  return extract_realm_calls({'parse_status':'parsed','messages':[message]})
+ def test_current_and_legacy_complete_paths(self):
+  self.assertEqual(len(self.extract('gno.land/r/current',True)),1)
+  self.assertEqual(len(self.extract('gno.land/r/legacy')),1)
+ def test_legacy_boundary_and_false_marker(self):
+  prefix='gno.land/r/'
+  exactly=prefix+'x'*(160-len(prefix))
+  longer=prefix+'x'*(161-len(prefix))
+  self.assertEqual(self.extract(exactly),())
+  self.assertEqual(self.extract(longer),())
+  self.assertEqual(self.extract('gno.land/r/short',False),())
+ def test_package_and_malformed_paths_remain_rejected(self):
+  self.assertEqual(self.extract('gno.land/p/package'),())
+  self.assertEqual(self.extract('gno.land/r/bad path'),())

@@ -1968,6 +1968,64 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             first.close()
             second.close()
 
+    def test_realm_call_index_0009_upgrade_constraints_grants_and_rerun(self):
+        name = f"utsa_realm_call_upgrade_{os.getpid()}"
+        url = self.create_exact_stage_database(
+            name, init_database.PRE_REALM_CALL_INDEX_EXPECTATIONS,
+            create_roles_before_schema=True,
+        )
+        init_database.initialize_or_validate(url)
+        init_database.initialize_or_validate(url)
+        with psycopg.connect(url) as connection, connection.cursor() as cursor:
+            init_database.validate_schema_snapshot(init_database.fetch_schema_snapshot(cursor))
+            cursor.execute(
+                "SELECT grantee, table_name, privilege_type FROM "
+                "information_schema.role_table_grants WHERE grantee IN "
+                "('utsa_gno_api','utsa_gno_indexer') AND table_name IN "
+                "('realm_call_index','realm_call_index_state') ORDER BY 1,2,3"
+            )
+            self.assertEqual(cursor.fetchall(), [
+                ('utsa_gno_api', 'realm_call_index', 'SELECT'),
+                ('utsa_gno_api', 'realm_call_index_state', 'SELECT'),
+                ('utsa_gno_indexer', 'realm_call_index', 'DELETE'),
+                ('utsa_gno_indexer', 'realm_call_index', 'INSERT'),
+                ('utsa_gno_indexer', 'realm_call_index', 'SELECT'),
+                ('utsa_gno_indexer', 'realm_call_index', 'UPDATE'),
+                ('utsa_gno_indexer', 'realm_call_index_state', 'DELETE'),
+                ('utsa_gno_indexer', 'realm_call_index_state', 'INSERT'),
+                ('utsa_gno_indexer', 'realm_call_index_state', 'SELECT'),
+                ('utsa_gno_indexer', 'realm_call_index_state', 'UPDATE'),
+            ])
+            cursor.execute(
+                "INSERT INTO blocks(height, block_hash_base64, block_hash_hex, "
+                "time_utc, tx_count) VALUES (1, 'realm-call-upgrade', repeat('A',64), now(), 1)"
+            )
+            cursor.execute(
+                "INSERT INTO transactions(block_height, tx_index, raw_base64, "
+                "raw_base64_length, decoded_bytes, decoded_byte_length, decode_status, "
+                "tx_hash_hex) VALUES (1,0,'eA==',4,decode('78','hex'),1,'decoded',repeat('B',64))"
+            )
+            cursor.execute(
+                "INSERT INTO realm_call_index(chain_id,block_height,tx_index,message_index,path) "
+                "VALUES ('topaz-1',1,0,0,'gno.land/r/valid')"
+            )
+            for column, value in (
+                ("path", "gno.land/p/package"),
+                ("path", "gno.land/r/bad path"),
+                ("caller_address", "g1bad"),
+                ("function_name", ""),
+                ("args_count", -1),
+                ("send_amount", ""),
+            ):
+                with self.assertRaises(psycopg.errors.CheckViolation):
+                    with connection.transaction():
+                        cursor.execute(
+                            f"UPDATE realm_call_index SET {column}=%s "
+                            "WHERE chain_id='topaz-1' AND block_height=1 "
+                            "AND tx_index=0 AND message_index=0",
+                            (value,),
+                        )
+
     def test_realm_activity_coverage_helper_and_zero_transaction_block(self):
         name = f"utsa_realm_coverage_{os.getpid()}"
         self.create_database(name)

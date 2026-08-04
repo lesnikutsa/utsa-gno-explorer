@@ -20,16 +20,18 @@ class RebuildError(RuntimeError):
     """A call-index rebuild safety invariant failed."""
 
 
-def rebuild_cursor(cursor, chain_id: str, start: int, through: int,
-                   dry_run: bool = False) -> int:
+def rebuild_cursor(cursor, chain_id: str, start: int, through: int | None,
+                   dry_run: bool = False) -> tuple[int, int]:
     """Replace one bounded range while holding the shared transaction lock.
 
     Summaries are currently materialized in memory. Operators should split very large
     historical ranges until representative production memory measurements exist.
     """
-    if (isinstance(start, bool) or not isinstance(start, int)
-            or isinstance(through, bool) or not isinstance(through, int)
-            or start < 1 or through < start):
+    if isinstance(start, bool) or not isinstance(start, int) or start < 1:
+        raise RebuildError("range must start at a positive height")
+    if through is not None and (
+        isinstance(through, bool) or not isinstance(through, int) or through < start
+    ):
         raise RebuildError("range must contain ordered positive heights")
 
     lock_realm_call_index(cursor)
@@ -39,16 +41,21 @@ def rebuild_cursor(cursor, chain_id: str, start: int, through: int,
         (chain_id,),
     )
     checkpoint = cursor.fetchone()
-    if checkpoint is None or through > int(checkpoint[0]):
+    if checkpoint is None:
+        raise RebuildError("indexed checkpoint is missing")
+    locked_checkpoint = int(checkpoint[0])
+    effective_through = locked_checkpoint if through is None else through
+    if effective_through > locked_checkpoint:
         raise RebuildError("range exceeds the indexed checkpoint")
 
     cursor.execute(
         "SELECT count(*), min(height), max(height) FROM blocks "
         "WHERE height BETWEEN %s AND %s",
-        (start, through),
+        (start, effective_through),
     )
     count, minimum, maximum = cursor.fetchone()
-    if int(count) != through - start + 1 or minimum != start or maximum != through:
+    if (int(count) != effective_through - start + 1 or minimum != start
+            or maximum != effective_through):
         raise RebuildError("range contains missing local blocks")
 
     cursor.execute(
@@ -57,13 +64,19 @@ def rebuild_cursor(cursor, chain_id: str, start: int, through: int,
         (chain_id,),
     )
     state = cursor.fetchone()
-    if state is not None and (through < int(state[0]) - 1 or start > int(state[1]) + 1):
+    if state is not None and (
+        effective_through < int(state[0]) - 1 or start > int(state[1]) + 1
+    ):
         raise RebuildError("range is separated from existing coverage by a gap")
+    union_start = min(start, int(state[0])) if state else start
+    union_through = max(effective_through, int(state[1])) if state else effective_through
+    if union_through != locked_checkpoint:
+        raise RebuildError("rebuild would leave Realm call coverage behind the checkpoint")
 
     cursor.execute(
         "SELECT block_height, tx_index, payload_summary FROM transactions "
         "WHERE block_height BETWEEN %s AND %s ORDER BY block_height, tx_index",
-        (start, through),
+        (start, effective_through),
     )
     rows = [
         (int(height), int(tx_index), extract_realm_calls(summary))
@@ -71,12 +84,12 @@ def rebuild_cursor(cursor, chain_id: str, start: int, through: int,
     ]
     expected = sum(len(calls) for _, _, calls in rows)
     if dry_run:
-        return expected
+        return expected, effective_through
 
     cursor.execute(
         "DELETE FROM realm_call_index WHERE chain_id = %s "
         "AND block_height BETWEEN %s AND %s",
-        (chain_id, start, through),
+        (chain_id, start, effective_through),
     )
     inserted = 0
     positions: set[tuple[int, int, int]] = set()
@@ -100,8 +113,6 @@ def rebuild_cursor(cursor, chain_id: str, start: int, through: int,
     if inserted != expected or inserted != len(positions):
         raise RebuildError("Realm call rebuild count mismatch")
 
-    union_start = min(start, int(state[0])) if state else start
-    union_through = max(through, int(state[1])) if state else through
     cursor.execute(
         "INSERT INTO realm_call_index_state(chain_id, from_height, through_height) "
         "VALUES (%s, %s, %s) ON CONFLICT(chain_id) DO UPDATE SET "
@@ -111,7 +122,7 @@ def rebuild_cursor(cursor, chain_id: str, start: int, through: int,
     )
     if cursor.rowcount != 1:
         raise RebuildError("Realm call state write did not affect exactly one row")
-    return inserted
+    return inserted, effective_through
 
 
 def _safe_error(exc: Exception, database_url: str) -> str:
@@ -130,16 +141,12 @@ def main() -> int:
     config = load_config()
     database_url = args.database_url or config.database_url
     database = PostgresDatabase(database_url)
-    through = args.through_height
-    if through is None:
-        through = database.get_checkpoint(config.chain_id)
-    if through is None:
-        parser.error("no indexed checkpoint")
     try:
         with database.connect() as connection:
             with connection.cursor() as cursor:
-                count = rebuild_cursor(
-                    cursor, config.chain_id, args.from_height, through, args.dry_run
+                count, effective_through = rebuild_cursor(
+                    cursor, config.chain_id, args.from_height,
+                    args.through_height, args.dry_run
                 )
             if args.dry_run:
                 connection.rollback()
@@ -149,7 +156,7 @@ def main() -> int:
         print(f"Realm call index rebuild failed: {_safe_error(exc, database_url)}", file=sys.stderr)
         return 1
     print(
-        f"calls={count} from_height={args.from_height} through_height={through} "
+        f"calls={count} from_height={args.from_height} through_height={effective_through} "
         f"dry_run={str(args.dry_run).lower()}"
     )
     return 0
