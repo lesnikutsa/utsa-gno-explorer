@@ -202,6 +202,65 @@ FROM realm_catalog WHERE chain_id=%s AND (%s='all' OR path_kind=%s)
       (COALESCE(last_activity_height,-1) = %s::bigint AND path > %s::text))
 ORDER BY COALESCE(last_activity_height,-1) DESC,path ASC LIMIT %s
 """
+REALM_DETAIL_SOURCE_SQL = """
+SELECT s.chain_id, i.last_finalized_height AS indexed_height, s.observed_height, s.refreshed_at,
+ s.activity_from_height, s.activity_through_height, call_state.chain_id AS call_chain_id,
+ call_state.from_height AS call_index_from_height, call_state.through_height AS call_index_through_height
+FROM realm_catalog_state s
+JOIN indexer_state i ON i.state_key='default' AND i.chain_id=s.chain_id
+LEFT JOIN realm_call_index_state call_state ON call_state.chain_id=s.chain_id
+WHERE s.chain_id=%s
+"""
+REALM_DETAIL_ITEM_SQL = """
+SELECT chain_id,path,path_kind,rpc_visible,deployer_address,deploy_height,deploy_tx_index,first_seen_height,
+ last_activity_height,last_activity_tx_index,last_activity_at,call_count,successful_call_count,
+ failed_call_count,unknown_result_call_count
+FROM realm_catalog WHERE chain_id=%s AND path=%s
+"""
+REALM_CALLS_PAGE_SQL = """
+SELECT
+    call.block_height,
+    call.tx_index,
+    call.message_index,
+    call.caller_address,
+    call.function_name,
+    call.args_count,
+    call.send_amount,
+    tx.tx_hash_hex,
+    block.time_utc,
+    result.execution_status,
+    result.gas_wanted::text AS gas_wanted,
+    result.gas_used::text AS gas_used
+FROM realm_call_index call
+JOIN transactions tx
+  ON (tx.block_height, tx.tx_index)
+   = (call.block_height, call.tx_index)
+JOIN blocks block
+  ON block.height = call.block_height
+LEFT JOIN transaction_execution_results result
+  ON (result.block_height, result.tx_index)
+   = (call.block_height, call.tx_index)
+WHERE call.chain_id = %s
+  AND call.path = %s
+  AND (
+      %s::bigint IS NULL
+      OR (
+          call.block_height,
+          call.tx_index,
+          call.message_index
+      ) < (
+          %s::bigint,
+          %s::integer,
+          %s::integer
+      )
+  )
+ORDER BY
+    call.block_height DESC,
+    call.tx_index DESC,
+    call.message_index DESC
+LIMIT %s
+"""
+
 REALM_TOP_ITEMS_SQL = """
 SELECT path,path_kind,rpc_visible,deployer_address,deploy_height,deploy_tx_index,first_seen_height,
  last_activity_height,last_activity_tx_index,last_activity_at,call_count,successful_call_count,
@@ -855,6 +914,42 @@ class ApiDatabase:
                 before_activity_height, before_activity_height, before_activity_height, before_path, limit + 1))
             rows = cursor.fetchall()
         return {"summary": dict(summary), "items": [dict(row) for row in rows]}
+
+
+    def fetch_realm_detail(self, *, chain_id: str, path: str) -> dict[str, Any] | None:
+        """Read an exact Realm or Package catalog detail from one read-only snapshot."""
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection, connection.transaction(), connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            cursor.execute(REALM_DETAIL_ITEM_SQL, (chain_id, path))
+            item = cursor.fetchone()
+            if item is None:
+                return {"source": None, "item": None}
+            cursor.execute(REALM_DETAIL_SOURCE_SQL, (chain_id,))
+            source = cursor.fetchone()
+        return {"source": dict(source) if source is not None else None, "item": dict(item)}
+
+    def fetch_realm_calls(self, *, chain_id: str, path: str, limit: int,
+                          before_height: int | None, before_tx_index: int | None,
+                          before_message_index: int | None) -> dict[str, Any] | None:
+        """Read a Realm call page after coverage validation in one read-only snapshot."""
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection, connection.transaction(), connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            cursor.execute(REALM_DETAIL_ITEM_SQL, (chain_id, path))
+            item = cursor.fetchone()
+            if item is None:
+                return None
+            cursor.execute(REALM_DETAIL_SOURCE_SQL, (chain_id,))
+            source = cursor.fetchone()
+            if source is None:
+                return {"source": None, "item": dict(item), "items": []}
+            cursor.execute(REALM_CALLS_PAGE_SQL, (chain_id, path, before_height, before_height, before_tx_index,
+                before_message_index, limit + 1))
+            rows = cursor.fetchall()
+        return {"source": dict(source), "item": dict(item), "items": [dict(row) for row in rows]}
 
     def fetch_top_realms(self, *, chain_id: str, limit: int) -> dict[str, Any] | None:
         """Read ranking rows and their catalog source from one read-only snapshot."""

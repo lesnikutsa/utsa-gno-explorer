@@ -58,6 +58,12 @@ from api.schemas import (
     RealmCatalogPagination,
     RealmCatalogResponse,
     RealmCatalogSummary,
+    RealmCallListItem,
+    RealmCallSource,
+    RealmCallsPagination,
+    RealmCallsResponse,
+    RealmDetailResponse,
+    RealmDetailSource,
     RealmRankingSource,
     RealmNamespaceMember,
     RealmNamespaceTopItem,
@@ -86,6 +92,107 @@ from api.schemas import (
 
 LOGGER = logging.getLogger(__name__)
 UNAVAILABLE_DETAIL = "Explorer database is unavailable"
+
+_HASH_RE = re.compile(r"^[0-9A-Fa-f]{64}$")
+CALLS_UNAVAILABLE_DETAIL = "Realm call history is not available"
+
+
+def _validate_exact_catalog_path(path: str, *, expected_kind: str | None = None) -> str:
+    if path != path.strip() or not 1 <= len(path) <= 256:
+        raise HTTPException(status_code=422, detail="path is invalid")
+    kind = realm_path_kind(path)
+    if kind is None:
+        raise HTTPException(status_code=422, detail="path is invalid")
+    if expected_kind is not None and kind != expected_kind:
+        raise HTTPException(status_code=422, detail="Realm calls require a gno.land/r/... path")
+    return kind
+
+
+def _validate_realm_detail_source(source: dict) -> bool:
+    indexed = int(source["indexed_height"])
+    from_height = source.get("call_index_from_height")
+    through_height = source.get("call_index_through_height")
+    if from_height is None or through_height is None:
+        return False
+    if source.get("call_chain_id") is not None and source.get("call_chain_id") != source.get("chain_id"):
+        raise ValueError("malformed Realm call-index chain")
+    if int(from_height) <= 0 or int(through_height) < int(from_height):
+        raise ValueError("malformed Realm call-index coverage")
+    return int(through_height) == indexed
+
+
+def _realm_detail_from_rows(*, requested_chain_id: str, requested_path: str, result: dict) -> RealmDetailResponse:
+    source, row = result.get("source"), result.get("item")
+    if source is None or row is None:
+        raise ValueError("Realm catalog source is unavailable")
+    if source.get("chain_id") != requested_chain_id or row.get("chain_id") != requested_chain_id or row.get("path") != requested_path:
+        raise ValueError("malformed Realm catalog identity")
+    item = _realm_catalog_item_from_row(row)
+    deploy_tuple = (item.deploy_height, item.deploy_tx_index)
+    if (deploy_tuple[0] is None) != (deploy_tuple[1] is None):
+        raise ValueError("malformed Realm deploy tuple")
+    activity_tuple = (item.last_activity_height, item.last_activity_tx_index, item.last_activity_at)
+    if any(value is None for value in activity_tuple) and any(value is not None for value in activity_tuple):
+        raise ValueError("malformed Realm activity tuple")
+    if item.kind == "realm" and item.call_count > 0 and any(value is None for value in activity_tuple):
+        raise ValueError("missing Realm activity tuple")
+    key = namespace_key(item.path) if item.kind == "realm" else None
+    application = dict(REALM_APPLICATION_REGISTRY[key]) if key in REALM_APPLICATION_REGISTRY else None
+    return RealmDetailResponse(source=RealmDetailSource(
+        chain_id=source["chain_id"], indexed_height=source["indexed_height"],
+        catalog_observed_height=source["observed_height"], catalog_refreshed_at=isoformat_utc_z(source["refreshed_at"]),
+        activity_from_height=source["activity_from_height"], activity_through_height=source["activity_through_height"],
+        call_index_from_height=source.get("call_index_from_height"),
+        call_index_through_height=source.get("call_index_through_height"),
+        call_index_complete=_validate_realm_detail_source(source),
+    ), item=item, namespace_key=key, application=application)
+
+
+def _realm_call_item_from_row(row: dict) -> RealmCallListItem:
+    pos = (int(row["block_height"]), int(row["tx_index"]), int(row["message_index"]))
+    if pos[0] <= 0 or pos[1] < 0 or not 0 <= pos[2] <= 19:
+        raise ValueError("malformed Realm call position")
+    tx_hash = row.get("tx_hash_hex")
+    if tx_hash is not None:
+        if not isinstance(tx_hash, str) or not _HASH_RE.fullmatch(tx_hash):
+            raise ValueError("malformed transaction hash")
+        tx_hash = tx_hash.upper()
+    for field in ("gas_wanted", "gas_used"):
+        value = row.get(field)
+        if value is not None and not re.fullmatch(r"^(0|[1-9][0-9]*)$", str(value)):
+            raise ValueError("malformed gas value")
+    block_time = row["time_utc"]
+    if not isinstance(block_time, datetime) or block_time.tzinfo is None:
+        raise ValueError("malformed call timestamp")
+    return RealmCallListItem(block_height=pos[0], tx_index=pos[1], message_index=pos[2],
+        block_time=isoformat_utc_z(block_time), tx_hash=tx_hash, caller_address=row.get("caller_address"),
+        function_name=row.get("function_name"), args_count=row.get("args_count"), send_amount=row.get("send_amount"),
+        execution_status=row.get("execution_status"), gas_wanted=row.get("gas_wanted"), gas_used=row.get("gas_used"))
+
+
+def _realm_calls_from_rows(*, requested_chain_id: str, requested_path: str, limit: int, result: dict) -> RealmCallsResponse:
+    detail = _realm_detail_from_rows(requested_chain_id=requested_chain_id, requested_path=requested_path, result=result)
+    if detail.item.kind != "realm":
+        raise ValueError("Realm call path is not a Realm")
+    if not detail.source.call_index_complete or detail.source.call_index_from_height is None or detail.source.call_index_through_height is None:
+        raise HTTPException(status_code=409, detail=CALLS_UNAVAILABLE_DETAIL)
+    raw_rows = result.get("items", [])
+    visible_rows, older = raw_rows[:limit], len(raw_rows) > limit
+    items = [_realm_call_item_from_row(row) for row in visible_rows]
+    seen: set[tuple[int, int, int]] = set()
+    previous = None
+    for item in items:
+        position = (item.block_height, item.tx_index, item.message_index)
+        if position in seen or (previous is not None and position >= previous):
+            raise ValueError("malformed Realm call ordering")
+        seen.add(position); previous = position
+    tail = items[-1] if older and items else None
+    return RealmCallsResponse(source=RealmCallSource(chain_id=detail.source.chain_id, path=requested_path,
+        indexed_height=detail.source.indexed_height, from_height=detail.source.call_index_from_height,
+        through_height=detail.source.call_index_through_height), items=items,
+        pagination=RealmCallsPagination(limit=limit, next_before_height=tail.block_height if tail else None,
+            next_before_tx_index=tail.tx_index if tail else None,
+            next_before_message_index=tail.message_index if tail else None))
 HEX_HASH_RE = re.compile(r"^(?:0[xX])?([0-9a-fA-F]{64})$")
 SUMMARY_CORE_FIELDS = ("type", "category", "action", "label")
 SUMMARY_FIELD_LIMITS = {"type": 160, "category": 64, "action": 64, "label": 80}
@@ -1057,6 +1164,48 @@ def get_network_distribution() -> NetworkDistributionResponse:
         LOGGER.error("Explorer database network distribution query failed")
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
 
+
+
+@app.get("/api/realms/detail", response_model=RealmDetailResponse)
+def get_realm_detail(path: str = Query(..., min_length=1, max_length=256)) -> RealmDetailResponse:
+    _validate_exact_catalog_path(path)
+    try:
+        result = database.fetch_realm_detail(chain_id=app.state.api_config.chain_id, path=path)
+        if result is None or result.get("item") is None:
+            raise HTTPException(status_code=404, detail="Realm catalog path not found")
+        return _realm_detail_from_rows(requested_chain_id=app.state.api_config.chain_id, requested_path=path, result=result)
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.error("Explorer database Realm detail query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+
+
+@app.get("/api/realms/calls", response_model=RealmCallsResponse)
+def get_realm_calls(
+    path: str = Query(..., min_length=1, max_length=256),
+    limit: int = Query(default=25, ge=1, le=100),
+    before_height: int | None = Query(default=None, gt=0),
+    before_tx_index: int | None = Query(default=None, ge=0),
+    before_message_index: int | None = Query(default=None, ge=0, le=19),
+) -> RealmCallsResponse:
+    _validate_exact_catalog_path(path, expected_kind="realm")
+    if sum(value is None for value in (before_height, before_tx_index, before_message_index)) not in (0, 3):
+        raise HTTPException(status_code=422, detail="Realm call cursor fields must be supplied together")
+    try:
+        result = database.fetch_realm_calls(chain_id=app.state.api_config.chain_id, path=path, limit=limit,
+            before_height=before_height, before_tx_index=before_tx_index, before_message_index=before_message_index)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Realm catalog path not found")
+        if result.get("source") is None:
+            raise HTTPException(status_code=409, detail=CALLS_UNAVAILABLE_DETAIL)
+        return _realm_calls_from_rows(requested_chain_id=app.state.api_config.chain_id, requested_path=path,
+            limit=limit, result=result)
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.error("Explorer database Realm calls query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
 
 @app.get("/api/realms", response_model=RealmCatalogResponse)
 def get_realms(
