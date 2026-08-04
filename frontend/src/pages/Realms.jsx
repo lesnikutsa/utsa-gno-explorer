@@ -88,12 +88,17 @@ function RealmApplications({ applications }) {
               </header>
               <dl className="realms-application-card__primary">
                 <div><dt>Direct Calls</dt><dd>{formatCount(item.direct_call_count)}</dd></div>
-                <div><dt>Success Rate</dt><dd>{formatSuccessRate(item.success_rate)}</dd></div>
+                <div><dt>Success</dt><dd>{formatSuccessRate(item.success_rate)}</dd></div>
               </dl>
               <dl className="realms-application-card__metrics">
-                <div><dt>Realms</dt><dd>{formatCount(item.realm_count)}</dd></div>
-                <div><dt>Called Realms</dt><dd>{formatCount(item.called_realm_count)}</dd></div>
-                <div><dt>Last Activity</dt><dd>{item.last_activity_at ? <time dateTime={item.last_activity_at} title={item.last_activity_at}>{relativeTime(item.last_activity_at)}</time> : 'Never'}</dd></div>
+                <div>
+                  <dt className="sr-only">Realm coverage</dt>
+                  <dd>{formatCount(item.realm_count)} realms · {formatCount(item.called_realm_count)} called</dd>
+                </div>
+                <div>
+                  <dt className="sr-only">Last activity</dt>
+                  <dd>Last activity {item.last_activity_at ? <time dateTime={item.last_activity_at} title={item.last_activity_at}>{relativeTime(item.last_activity_at)}</time> : 'never'}</dd>
+                </div>
               </dl>
             </article>
           ))}

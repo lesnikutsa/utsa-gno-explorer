@@ -82,16 +82,18 @@ class RealmApplicationsFrontendContractTests(unittest.TestCase):
             "live activity continues.",
             "source?.activity_from_height",
             "Direct Calls",
-            "Called Realms",
-            "Success Rate",
-            "Last Activity",
+            "Success",
+            "Last activity",
             "Namespace:",
             "Loading applications…",
             "Applications are currently unavailable.",
             "Application ranking is not available yet.",
             "No curated applications are available yet.",
             "formatSuccessRate(item.success_rate)",
+            "formatCount(item.realm_count)",
+            "formatCount(item.called_realm_count)",
             "relativeTime(item.last_activity_at)",
+            ": 'never'",
             '<StatusBadge tone="neutral">',
             "<article",
             "<dl",
@@ -120,9 +122,9 @@ class RealmApplicationsFrontendContractTests(unittest.TestCase):
             ".realms-applications",
             ".realms-applications__grid",
             ".realms-application-card",
-            "repeat(auto-fill, minmax(300px, 340px))",
+            "repeat(auto-fill, minmax(290px, 325px))",
             "justify-content: start",
-            "padding: 11px 12px",
+            "padding: 10px 12px",
             "linear-gradient(135deg, var(--color-accent-soft), var(--color-card))",
             "color: var(--color-text-bright)",
             "overflow-wrap: anywhere",
@@ -137,13 +139,13 @@ class RealmApplicationsFrontendContractTests(unittest.TestCase):
         self.assertFalse(any("#" in line for line in application_lines))
         grid_width = re.search(r"repeat\(auto-fill, minmax\(\d+px, (\d+)px\)\)", section)
         self.assertIsNotNone(grid_width)
-        self.assertGreaterEqual(int(grid_width.group(1)), 330)
-        self.assertLessEqual(int(grid_width.group(1)), 340)
+        self.assertLessEqual(int(grid_width.group(1)), 330)
         mobile_760 = section[section.index("@media (max-width: 760px)"):section.index("@media (max-width: 480px)")]
         self.assertIn("grid-template-columns: minmax(0, 1fr)", mobile_760)
         self.assertIn(".realms-application-card__primary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; column-gap: 16px; margin: 9px 0; }", section)
         self.assertIn(".realms-application-card__primary > div:last-child { text-align: right; }", section)
-        self.assertIn(".realms-application-card__metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr))", section)
+        self.assertIn(".realms-application-card__metrics { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin: 0; }", section)
+        self.assertNotIn("repeat(3, minmax(0, 1fr))", section)
         mobile_480 = section[section.index("@media (max-width: 480px)"):]
         self.assertNotIn(".realms-application-card__metrics", mobile_480)
         self.assertNotIn("max-content max-content", section)
