@@ -56,6 +56,8 @@ from api.schemas import (
     RealmCatalogPagination,
     RealmCatalogResponse,
     RealmCatalogSummary,
+    RealmRankingSource,
+    RealmTopResponse,
     SelectedRpc,
     TransactionDetailResponse,
     TransactionHashLookupResponse,
@@ -88,6 +90,25 @@ SUMMARY_MESSAGE_FIELDS = SUMMARY_CORE_FIELDS + (
     "spend_limit", "spend_period",
 )
 SUMMARY_SCALAR_STRING_LIMIT = 160
+
+
+def _realm_catalog_item_from_row(row: dict) -> RealmCatalogItem:
+    if (realm_path_kind(row["path"]) != row["path_kind"]
+            or int(row["successful_call_count"]) + int(row["failed_call_count"])
+            + int(row["unknown_result_call_count"]) != int(row["call_count"])):
+        raise ValueError("malformed stored Realm catalog row")
+    decided = int(row["successful_call_count"]) + int(row["failed_call_count"])
+    return RealmCatalogItem(
+        path=row["path"], name=row["path"].rsplit("/", 1)[-1], kind=row["path_kind"],
+        rpc_visible=row["rpc_visible"], deployer_address=row["deployer_address"],
+        deploy_height=row["deploy_height"], deploy_tx_index=row["deploy_tx_index"],
+        first_seen_height=row["first_seen_height"], last_activity_height=row["last_activity_height"],
+        last_activity_tx_index=row["last_activity_tx_index"],
+        last_activity_at=isoformat_utc_z(row["last_activity_at"]) if row["last_activity_at"] else None,
+        call_count=row["call_count"], successful_call_count=row["successful_call_count"],
+        failed_call_count=row["failed_call_count"], unknown_result_call_count=row["unknown_result_call_count"],
+        success_rate=None if decided == 0 else int(row["successful_call_count"]) / decided,
+    )
 SUMMARY_INTEGER_LIMIT = (1 << 255) - 1
 SUMMARY_MAX_BYTES = 16384
 JSONB_TIMESTAMP_RE = re.compile(
@@ -1057,22 +1078,7 @@ def get_realms(
             raise HTTPException(status_code=404, detail="Realm catalog not found")
         rows, older = result["items"], len(result["items"]) > limit
         rows = rows[:limit]
-        items = []
-        for row in rows:
-            if (realm_path_kind(row["path"]) != row["path_kind"]
-                    or int(row["successful_call_count"]) + int(row["failed_call_count"])
-                    + int(row["unknown_result_call_count"]) != int(row["call_count"])):
-                raise ValueError("malformed stored Realm catalog row")
-            decided = int(row["successful_call_count"]) + int(row["failed_call_count"])
-            items.append(RealmCatalogItem(path=row["path"], name=row["path"].rsplit("/", 1)[-1],
-                kind=row["path_kind"], rpc_visible=row["rpc_visible"], deployer_address=row["deployer_address"],
-                deploy_height=row["deploy_height"], deploy_tx_index=row["deploy_tx_index"],
-                first_seen_height=row["first_seen_height"], last_activity_height=row["last_activity_height"],
-                last_activity_tx_index=row["last_activity_tx_index"],
-                last_activity_at=isoformat_utc_z(row["last_activity_at"]) if row["last_activity_at"] else None,
-                call_count=row["call_count"], successful_call_count=row["successful_call_count"],
-                failed_call_count=row["failed_call_count"], unknown_result_call_count=row["unknown_result_call_count"],
-                success_rate=None if decided == 0 else int(row["successful_call_count"]) / decided))
+        items = [_realm_catalog_item_from_row(row) for row in rows]
         source = result["summary"]
         summary = RealmCatalogSummary(total_items=source["total_items"], total_realms=source["total_realms"],
             total_packages=source["total_packages"], rpc_visible_items=source["rpc_visible_items"],
@@ -1087,6 +1093,34 @@ def get_realms(
         raise
     except Exception:
         LOGGER.error("Explorer database Realm catalog query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+
+
+@app.get("/api/realms/top", response_model=RealmTopResponse)
+def get_top_realms(limit: int = Query(default=5, ge=1, le=10)) -> RealmTopResponse:
+    try:
+        result = database.fetch_top_realms(chain_id=app.state.api_config.chain_id, limit=limit)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Realm catalog not found")
+        items = [_realm_catalog_item_from_row(row) for row in result["items"]]
+        if len(items) > limit or len({item.path for item in items}) != len(items):
+            raise ValueError("malformed Realm ranking")
+        previous = None
+        for item in items:
+            key = (-item.call_count, -(item.last_activity_height if item.last_activity_height is not None else -1), item.path)
+            if item.kind != "realm" or not item.rpc_visible or item.call_count <= 0 or (previous is not None and key < previous):
+                raise ValueError("malformed Realm ranking")
+            previous = key
+        source = result["source"]
+        return RealmTopResponse(source=RealmRankingSource(
+            chain_id=source["chain_id"], indexed_height=source["indexed_height"],
+            catalog_observed_height=source["observed_height"], activity_from_height=source["activity_from_height"],
+            activity_through_height=source["activity_through_height"],
+        ), items=items)
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.error("Explorer database Realm ranking query failed")
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
 
 
