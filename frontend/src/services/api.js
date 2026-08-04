@@ -112,3 +112,22 @@ export const getValidatorSigningHistory = ({ limit = 100 } = {}) => {
   query.set('limit', limit)
   return request(`/validators/signing-history?${query.toString()}`)
 }
+export const getRealmDetail = ({ path, signal } = {}) => {
+  const query = new URLSearchParams()
+  query.set('path', path)
+  return request(`/realms/detail?${query.toString()}`, { signal })
+}
+export const getRealmCalls = ({ path, limit = 25, beforeHeight, beforeTxIndex, beforeMessageIndex, signal } = {}) => {
+  const query = new URLSearchParams()
+  query.set('path', path)
+  query.set('limit', limit)
+  const hasCompleteCursor = beforeHeight !== undefined && beforeHeight !== null && beforeHeight !== ''
+    && beforeTxIndex !== undefined && beforeTxIndex !== null && beforeTxIndex !== ''
+    && beforeMessageIndex !== undefined && beforeMessageIndex !== null && beforeMessageIndex !== ''
+  if (hasCompleteCursor) {
+    query.set('before_height', beforeHeight)
+    query.set('before_tx_index', beforeTxIndex)
+    query.set('before_message_index', beforeMessageIndex)
+  }
+  return request(`/realms/calls?${query.toString()}`, { signal })
+}

@@ -1,7 +1,7 @@
 import { DataTable } from '../components/DataTable'
 import { ChangedValue } from '../components/ChangedValue'
 import { StatusBadge } from '../components/StatusBadge'
-import { formatSuccessRate } from '../utils/realm'
+import { formatSuccessRate, realmDetailHref } from '../utils/realm'
 import { relativeTime } from '../utils/time'
 
 const formatCount = (value) => typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString() : '—'
@@ -21,7 +21,7 @@ const columns = [
   {
     key: 'path',
     label: 'Path',
-    render: (item) => <span className="realms-table__path mono" title={item.path}>{item.path}</span>,
+    render: (item) => <a className="realms-table__path realms-table__path-link mono" href={realmDetailHref(item.path)} title={item.path} aria-label={`Open ${item.kind === 'package' ? 'Package' : 'Realm'} ${item.path}`}>{item.path}</a>,
   },
   {
     key: 'kind',

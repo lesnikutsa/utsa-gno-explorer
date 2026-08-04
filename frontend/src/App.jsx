@@ -6,6 +6,8 @@ import { BlockDetail } from './pages/BlockDetail'
 import { TransactionDetail } from './pages/TransactionDetail'
 import { Transactions } from './pages/Transactions'
 import { Realms } from './pages/Realms'
+import { RealmDetail } from './pages/RealmDetail'
+import { decodeRealmDetailPath } from './utils/realm'
 import { Overview } from './pages/Overview'
 import { ValidatorDetail } from './pages/ValidatorDetail'
 import { Validators } from './pages/Validators'
@@ -25,6 +27,7 @@ import { useValidatorsPage } from './hooks/useValidatorsPage'
 import { useGovernancePage } from './hooks/useGovernancePage'
 import { useGovernanceDetail } from './hooks/useGovernanceDetail'
 import { useAccountDetail } from './hooks/useAccountDetail'
+import { useRealmDetail } from './hooks/useRealmDetail'
 
 const NETWORK_MASCOT_SRC = '/assets/network-mascot.png?v=1'
 
@@ -107,6 +110,18 @@ function RealmsPage() {
   )
 }
 
+
+function RealmDetailPage() {
+  const realmPath = decodeRealmDetailPath()
+  const detailState = useRealmDetail(realmPath)
+
+  return (
+    <ExplorerLayout healthState={detailState.healthState} showRefreshCountdown={false}>
+      <RealmDetail path={realmPath} detailState={detailState} />
+    </ExplorerLayout>
+  )
+}
+
 function ValidatorsPage() {
   const validatorsPage = useValidatorsPage()
 
@@ -177,6 +192,9 @@ export default function App() {
   }
   if (path === '/realms' || path === '/realms/') {
     return <RealmsPage />
+  }
+  if (path === '/realm' || path === '/realm/') {
+    return <RealmDetailPage />
   }
   if (path === '/governance' || path === '/governance/') {
     return <GovernancePage />
