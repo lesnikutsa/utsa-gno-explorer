@@ -61,7 +61,7 @@ class RealmsFrontendContractTests(unittest.TestCase):
         labels = ["label: 'Path'", "label: 'Type'", "label: 'Direct Calls'", "label: 'Success Rate'", "label: 'Last Activity'", "label: 'Visibility'"]
         self.assertEqual(page.count("label: '"), 6)
         self.assertEqual([page.index(label) for label in labels], sorted(page.index(label) for label in labels))
-        for fragment in ("summary?.total_realms", "summary?.total_packages", "summary?.active_24h", "summary?.rpc_visible_items", "aria-pressed={kind === value}", "import { formatSuccessRate } from '../utils/realm'", ": 'Never'", "rowKey={(item) => item.path}"):
+        for fragment in ("summary?.total_realms", "summary?.total_packages", "summary?.active_24h", "summary?.rpc_visible_items", "aria-pressed={kind === value}", "import { formatSuccessRate } from '../utils/realm'", 'emptyLabel="Never"', "rowKey={(item) => item.path}"):
             self.assertIn(fragment, page)
         self.assertIn('type="search"', page)
         self.assertIn("maxLength={128}", page)
@@ -70,8 +70,8 @@ class RealmsFrontendContractTests(unittest.TestCase):
         self.assertNotIn("href=", page)
         self.assertNotIn("Verified", page)
         self.assertNotIn("Unverified", page)
-        self.assertIn("item.kind === 'package' ? packageMetricPlaceholder() : formatCount(item.call_count)", page)
-        self.assertIn("item.kind === 'package' ? packageMetricPlaceholder() : formatSuccessRate(item.success_rate)", page)
+        self.assertIn("item.kind === 'package' ? packageMetricPlaceholder() : <ChangedValue value={item.call_count}>{formatCount(item.call_count)}</ChangedValue>", page)
+        self.assertIn("item.kind === 'package' ? packageMetricPlaceholder() : <ChangedValue value={item.success_rate}>{formatSuccessRate(item.success_rate)}</ChangedValue>", page)
         self.assertIn("packageMetricPlaceholder('Not tracked')", page)
         self.assertIn("Package usage through imports is not indexed yet. Direct-call metrics apply to realms only.", page)
         self.assertIn('title="Package usage through imports is not indexed yet."', page)

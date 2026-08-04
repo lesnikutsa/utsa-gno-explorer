@@ -1,10 +1,21 @@
 import { DataTable } from '../components/DataTable'
+import { ChangedValue } from '../components/ChangedValue'
 import { StatusBadge } from '../components/StatusBadge'
 import { formatSuccessRate } from '../utils/realm'
 import { relativeTime } from '../utils/time'
 
 const formatCount = (value) => typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString() : '—'
 const packageMetricPlaceholder = (label = '—') => <span className="realms-table__package-placeholder" title="Package usage through imports is not indexed yet.">{label}</span>
+const lastActivityChangeValue = (timestamp, label) => `${timestamp ?? 'never'}|${label}`
+
+function LastActivityValue({ timestamp, emptyLabel }) {
+  const label = timestamp ? relativeTime(timestamp) : emptyLabel
+  return (
+    <ChangedValue value={lastActivityChangeValue(timestamp, label)}>
+      {timestamp ? <time dateTime={timestamp} title={timestamp}>{label}</time> : label}
+    </ChangedValue>
+  )
+}
 
 const columns = [
   {
@@ -21,16 +32,14 @@ const columns = [
         ? <span className="realms-table__type realms-table__type--package"><StatusBadge tone="neutral">Package</StatusBadge></span>
         : <StatusBadge tone="neutral">Unknown</StatusBadge>,
   },
-  { key: 'call_count', label: 'Direct Calls', render: (item) => item.kind === 'package' ? packageMetricPlaceholder() : formatCount(item.call_count) },
-  { key: 'success_rate', label: 'Success Rate', render: (item) => item.kind === 'package' ? packageMetricPlaceholder() : formatSuccessRate(item.success_rate) },
+  { key: 'call_count', label: 'Direct Calls', render: (item) => item.kind === 'package' ? packageMetricPlaceholder() : <ChangedValue value={item.call_count}>{formatCount(item.call_count)}</ChangedValue> },
+  { key: 'success_rate', label: 'Success Rate', render: (item) => item.kind === 'package' ? packageMetricPlaceholder() : <ChangedValue value={item.success_rate}>{formatSuccessRate(item.success_rate)}</ChangedValue> },
   {
     key: 'last_activity_at',
     label: 'Last Activity',
     render: (item) => item.kind === 'package'
       ? packageMetricPlaceholder('Not tracked')
-      : item.last_activity_at
-      ? <time dateTime={item.last_activity_at} title={item.last_activity_at}>{relativeTime(item.last_activity_at)}</time>
-      : 'Never',
+      : <LastActivityValue timestamp={item.last_activity_at} emptyLabel="Never" />,
   },
   {
     key: 'rpc_visible',
@@ -57,7 +66,7 @@ function RealmApplications({ applications }) {
   const hasActivityFromHeight = activityFromHeight !== null && activityFromHeight !== undefined
   const hasActivityThroughHeight = activityThroughHeight !== null && activityThroughHeight !== undefined
   const intro = hasActivityFromHeight && hasActivityThroughHeight
-    ? `Activity metrics cover blocks #${formatCount(activityFromHeight)}–#${formatCount(activityThroughHeight)}.`
+    ? <>Activity metrics cover blocks #{formatCount(activityFromHeight)}–#<ChangedValue value={activityThroughHeight}>{formatCount(activityThroughHeight)}</ChangedValue>.</>
     : hasActivityFromHeight
       ? `Activity metrics are indexed since block #${formatCount(activityFromHeight)}.`
       : 'Curated Realm namespaces ranked by indexed direct calls.'
@@ -91,17 +100,17 @@ function RealmApplications({ applications }) {
                 <StatusBadge tone="neutral">{item.application.category}</StatusBadge>
               </header>
               <dl className="realms-application-card__primary">
-                <div><dt>Direct Calls</dt><dd>{formatCount(item.direct_call_count)}</dd></div>
-                <div><dt>Success</dt><dd>{formatSuccessRate(item.success_rate)}</dd></div>
+                <div><dt>Direct Calls</dt><dd><ChangedValue value={item.direct_call_count}>{formatCount(item.direct_call_count)}</ChangedValue></dd></div>
+                <div><dt>Success</dt><dd><ChangedValue value={item.success_rate}>{formatSuccessRate(item.success_rate)}</ChangedValue></dd></div>
               </dl>
               <dl className="realms-application-card__metrics">
                 <div>
                   <dt className="sr-only">Realm coverage</dt>
-                  <dd>{formatCount(item.realm_count)} realms · {formatCount(item.called_realm_count)} called</dd>
+                  <dd><ChangedValue value={item.realm_count}>{formatCount(item.realm_count)}</ChangedValue> realms · <ChangedValue value={item.called_realm_count}>{formatCount(item.called_realm_count)}</ChangedValue> called</dd>
                 </div>
                 <div>
                   <dt className="sr-only">Last activity</dt>
-                  <dd>Last activity {item.last_activity_at ? <time dateTime={item.last_activity_at} title={item.last_activity_at}>{relativeTime(item.last_activity_at)}</time> : 'never'}</dd>
+                  <dd>Last activity <LastActivityValue timestamp={item.last_activity_at} emptyLabel="never" /></dd>
                 </div>
               </dl>
             </article>
@@ -134,9 +143,9 @@ export function Realms({ realmsPage, realmApplications }) {
       </header>
 
       <div className="status-grid realms-page__summary">
-        {metrics.map(([label, value]) => <div className="panel realms-page__metric" key={label}><span>{label}</span><strong>{formatCount(value)}</strong></div>)}
+        {metrics.map(([label, value]) => <div className="panel realms-page__metric" key={label}><span>{label}</span><strong><ChangedValue key={`${label}-${loading}`} value={value}>{formatCount(value)}</ChangedValue></strong></div>)}
       </div>
-      {summary && <p className="realms-page__metadata">Catalog snapshot #{formatCount(summary.catalog_observed_height)} · Indexed #{formatCount(summary.indexed_height)}</p>}
+      {summary && <p className="realms-page__metadata">Catalog snapshot #<ChangedValue key={`catalog-${loading}`} value={summary.catalog_observed_height}>{formatCount(summary.catalog_observed_height)}</ChangedValue> · Indexed #<ChangedValue key={`indexed-${loading}`} value={summary.indexed_height}>{formatCount(summary.indexed_height)}</ChangedValue></p>}
 
       <RealmApplications applications={realmApplications} />
 
