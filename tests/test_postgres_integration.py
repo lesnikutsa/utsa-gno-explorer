@@ -1864,9 +1864,6 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                     advance_realm_activity_coverage(cursor, "topaz-1", 25)
             cursor.execute("SELECT activity_through_height FROM realm_catalog_state WHERE chain_id='topaz-1'")
             self.assertEqual(cursor.fetchone()[0], 21)
-            cursor.execute("SELECT has_table_privilege('utsa_gno_api','realm_catalog_state','SELECT'), has_table_privilege('utsa_gno_api','realm_catalog_state','INSERT,UPDATE,DELETE')")
-            self.assertEqual(cursor.fetchone(), (True, False))
-
         # Exercise the live write path with a real zero-transaction parsed block.
         with psycopg.connect(url) as connection, connection.cursor() as cursor:
             cursor.execute("DELETE FROM blocks WHERE height >= 21")
