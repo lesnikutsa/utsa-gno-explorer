@@ -877,3 +877,28 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 @media (max-width: 520px) {
   .account-detail__transaction { grid-template-columns: minmax(0, 1fr); }
 }
+
+.realm-detail { min-width: 0; }
+.realm-detail__state { padding: 18px; }
+.realm-detail__state h1, .realm-detail__header h1 { margin: 0; color: var(--color-text-bright); font-size: 22px; overflow-wrap: anywhere; }
+.realm-detail__state p, .realm-detail__namespace, .realm-detail__source, .realm-detail__older-error, .realm-detail__note p { color: var(--color-text-secondary); font-size: 12px; }
+.realm-detail__actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.realm-detail__header { display: grid; gap: 8px; margin: 12px 0; }
+.realm-detail__badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.realm-detail__section { margin-top: 10px; }
+.realm-detail__overview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin: 0; }
+.realm-detail__field { min-width: 0; padding: 11px 13px; border-top: 1px solid var(--color-border-soft); }
+.realm-detail__field dt { margin-bottom: 5px; color: var(--color-text-secondary); font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.realm-detail__field dd { margin: 0; color: var(--color-text-bright); font: 600 13px var(--font-mono); overflow-wrap: anywhere; }
+.realm-detail__source { margin: 8px 2px 0; }
+.realm-detail__message-label { display: block; margin-top: 3px; color: var(--color-text-secondary); font-size: 9px; font-weight: 400; }
+.realm-detail__calls .data-table { min-width: 900px; }
+.realm-detail__note { padding: 14px; }
+.realm-detail__note h2 { margin-bottom: 6px; }
+.realm-detail__load-older { display: flex; justify-content: center; padding: 12px; border-top: 1px solid var(--color-border-soft); }
+.realm-detail__older-error { padding: 10px 13px 0; }
+.realms-table__path-link { max-width: 420px; color: var(--color-text-bright); text-decoration: none; overflow-wrap: anywhere; white-space: normal; }
+.realms-table__path-link:hover { color: var(--color-accent); }
+.realms-table__path-link:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
+@media (max-width: 900px) { .realm-detail__overview { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px) { .realm-detail__overview { grid-template-columns: 1fr; } .realm-detail__header h1 { font-size: 17px; } }

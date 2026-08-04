@@ -6,6 +6,7 @@ import { BlockDetail } from './pages/BlockDetail'
 import { TransactionDetail } from './pages/TransactionDetail'
 import { Transactions } from './pages/Transactions'
 import { Realms } from './pages/Realms'
+import { RealmDetail } from './pages/RealmDetail'
 import { Overview } from './pages/Overview'
 import { ValidatorDetail } from './pages/ValidatorDetail'
 import { Validators } from './pages/Validators'
@@ -177,6 +178,9 @@ export default function App() {
   }
   if (path === '/realms' || path === '/realms/') {
     return <RealmsPage />
+  }
+  if (path === '/realm' || path === '/realm/') {
+    return <ExplorerLayout healthState="loading" showRefreshCountdown={false}><RealmDetail /></ExplorerLayout>
   }
   if (path === '/governance' || path === '/governance/') {
     return <GovernancePage />
