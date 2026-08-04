@@ -641,6 +641,14 @@ class RealmCallSource(BaseModel):
     from_height: int = Field(gt=0)
     through_height: int = Field(gt=0)
 
+    @model_validator(mode="after")
+    def validate_complete_range(self) -> "RealmCallSource":
+        if self.through_height < self.from_height:
+            raise ValueError("Realm call source range is invalid")
+        if self.through_height != self.indexed_height:
+            raise ValueError("Realm call source must be complete at the indexed height")
+        return self
+
 
 class RealmCallListItem(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)

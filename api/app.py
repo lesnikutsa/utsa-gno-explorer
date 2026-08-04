@@ -22,6 +22,7 @@ from api.realm_application_registry import CURATED_NAMESPACE_KEYS, REALM_APPLICA
 from api.database import (
     MissingIndexedBlockError,
     MissingIndexerStateError,
+    complete_realm_call_coverage_bounds,
     database,
     isoformat_utc_z,
 )
@@ -108,19 +109,6 @@ def _validate_exact_catalog_path(path: str, *, expected_kind: str | None = None)
     return kind
 
 
-def _validate_realm_detail_source(source: dict) -> bool:
-    indexed = int(source["indexed_height"])
-    from_height = source.get("call_index_from_height")
-    through_height = source.get("call_index_through_height")
-    if from_height is None or through_height is None:
-        return False
-    if source.get("call_chain_id") is not None and source.get("call_chain_id") != source.get("chain_id"):
-        raise ValueError("malformed Realm call-index chain")
-    if int(from_height) <= 0 or int(through_height) < int(from_height):
-        raise ValueError("malformed Realm call-index coverage")
-    return int(through_height) == indexed
-
-
 def _realm_detail_from_rows(*, requested_chain_id: str, requested_path: str, result: dict) -> RealmDetailResponse:
     source, row = result.get("source"), result.get("item")
     if source is None or row is None:
@@ -160,14 +148,39 @@ def _realm_detail_from_rows(*, requested_chain_id: str, requested_path: str, res
         activity_from_height=source["activity_from_height"], activity_through_height=source["activity_through_height"],
         call_index_from_height=source.get("call_index_from_height"),
         call_index_through_height=source.get("call_index_through_height"),
-        call_index_complete=_validate_realm_detail_source(source),
+        call_index_complete=complete_realm_call_coverage_bounds(source, requested_chain_id) is not None,
     ), item=item, namespace_key=key, application=application)
 
 
+def _bounded_printable_scalar(value: object, *, max_length: int) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or value != value.strip() or not 1 <= len(value) <= max_length:
+        raise ValueError("malformed Realm call scalar")
+    if any(not (" " <= character <= "~") for character in value):
+        raise ValueError("malformed Realm call scalar")
+    return value
+
+
+def _exact_int(value: object, *, field: str) -> int:
+    if type(value) is not int:
+        raise ValueError(f"malformed Realm call {field}")
+    return value
+
+
 def _realm_call_item_from_row(row: dict) -> RealmCallListItem:
-    pos = (int(row["block_height"]), int(row["tx_index"]), int(row["message_index"]))
+    pos = (_exact_int(row["block_height"], field="block height"),
+           _exact_int(row["tx_index"], field="tx index"),
+           _exact_int(row["message_index"], field="message index"))
     if pos[0] <= 0 or pos[1] < 0 or not 0 <= pos[2] <= 19:
         raise ValueError("malformed Realm call position")
+    args_count = row.get("args_count")
+    if args_count is not None:
+        args_count = _exact_int(args_count, field="args count")
+        if not 0 <= args_count <= 100000:
+            raise ValueError("malformed Realm call args count")
+    function_name = _bounded_printable_scalar(row.get("function_name"), max_length=160)
+    send_amount = _bounded_printable_scalar(row.get("send_amount"), max_length=160)
     tx_hash = row.get("tx_hash_hex")
     if tx_hash is not None:
         if not isinstance(tx_hash, str) or not _HASH_RE.fullmatch(tx_hash):
@@ -182,7 +195,7 @@ def _realm_call_item_from_row(row: dict) -> RealmCallListItem:
         raise ValueError("malformed call timestamp")
     return RealmCallListItem(block_height=pos[0], tx_index=pos[1], message_index=pos[2],
         block_time=isoformat_utc_z(block_time), tx_hash=tx_hash, caller_address=row.get("caller_address"),
-        function_name=row.get("function_name"), args_count=row.get("args_count"), send_amount=row.get("send_amount"),
+        function_name=function_name, args_count=args_count, send_amount=send_amount,
         execution_status=row.get("execution_status"), gas_wanted=row.get("gas_wanted"), gas_used=row.get("gas_used"))
 
 
@@ -192,7 +205,10 @@ def _realm_calls_from_rows(*, requested_chain_id: str, requested_path: str, limi
         raise ValueError("Realm call path is not a Realm")
     if not detail.source.call_index_complete or detail.source.call_index_from_height is None or detail.source.call_index_through_height is None:
         raise HTTPException(status_code=409, detail=CALLS_UNAVAILABLE_DETAIL)
-    if result.get("coverage_available") is False:
+    coverage_available = result.get("coverage_available")
+    if type(coverage_available) is not bool:
+        raise ValueError("malformed Realm call coverage availability")
+    if coverage_available is False:
         raise HTTPException(status_code=409, detail=CALLS_UNAVAILABLE_DETAIL)
     raw_rows = result.get("items", [])
     if len(raw_rows) > limit + 1:
@@ -1219,7 +1235,11 @@ def get_realm_calls(
             before_height=before_height, before_tx_index=before_tx_index, before_message_index=before_message_index)
         if result is None:
             raise HTTPException(status_code=404, detail="Realm catalog path not found")
-        if result.get("source") is None or result.get("coverage_available") is False:
+        if result.get("source") is None:
+            raise HTTPException(status_code=409, detail=CALLS_UNAVAILABLE_DETAIL)
+        if type(result.get("coverage_available")) is not bool:
+            raise ValueError("malformed Realm call coverage availability")
+        if result["coverage_available"] is False:
             raise HTTPException(status_code=409, detail=CALLS_UNAVAILABLE_DETAIL)
         return _realm_calls_from_rows(requested_chain_id=app.state.api_config.chain_id, requested_path=path,
             limit=limit, result=result)

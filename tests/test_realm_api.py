@@ -4,11 +4,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 from fastapi import HTTPException
-try:
- from fastapi.testclient import TestClient
-except RuntimeError as exc:
- import pytest
- pytest.skip(f"FastAPI TestClient is unavailable: {exc}", allow_module_level=True)
+from fastapi.testclient import TestClient
 import api.app as module
 from api.config import ApiConfig
 from api.database import ApiDatabase, REALM_CATALOG_ITEMS_SQL, REALM_CATALOG_SUMMARY_SQL, REALM_TOP_ITEMS_SQL

@@ -787,8 +787,10 @@ class MissingIndexedBlockError(RuntimeError):
     """Raised when the completed checkpoint points to a missing block row."""
 
 
-def _complete_realm_call_coverage_bounds(source: dict[str, Any], expected_chain_id: str) -> tuple[int, int] | None:
+def complete_realm_call_coverage_bounds(source: dict[str, Any], expected_chain_id: str) -> tuple[int, int] | None:
     """Return complete call-index bounds or None for cleanly unavailable coverage."""
+    if source.get("chain_id") != expected_chain_id:
+        raise ValueError("Realm call-index source chain mismatch")
     state_values = (source.get("call_chain_id"), source.get("call_index_from_height"),
                     source.get("call_index_through_height"))
     present = tuple(value is not None for value in state_values)
@@ -970,7 +972,7 @@ class ApiDatabase:
             if source is None:
                 return {"source": None, "item": dict(item), "items": [], "coverage_available": False}
             source = dict(source)
-            bounds = _complete_realm_call_coverage_bounds(source, chain_id)
+            bounds = complete_realm_call_coverage_bounds(source, chain_id)
             if bounds is None:
                 return {"source": source, "item": dict(item), "items": [], "coverage_available": False}
             cursor.execute(REALM_CALLS_PAGE_SQL, (chain_id, path, bounds[0], bounds[1], before_height, before_height, before_tx_index,
