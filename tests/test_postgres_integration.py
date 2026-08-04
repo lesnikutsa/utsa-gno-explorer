@@ -1900,8 +1900,17 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
     def test_realm_detail_and_realm_calls_api_queries(self):
         name = f"utsa_realm_detail_calls_{os.getpid()}"
         self.create_database(name)
+        self.ensure_application_roles()
         url = self.database_url_for(name)
         init_database.initialize_or_validate(url)
+        with psycopg.connect(url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT rolname FROM pg_roles WHERE rolname IN ('utsa_gno_api','utsa_gno_indexer') ORDER BY rolname")
+            self.assertEqual(cursor.fetchall(), [('utsa_gno_api',), ('utsa_gno_indexer',)])
+            for table in ('realm_call_index', 'realm_call_index_state'):
+                cursor.execute("SELECT has_table_privilege('utsa_gno_api', %s, 'SELECT')", (table,))
+                self.assertTrue(cursor.fetchone()[0], table)
+                cursor.execute("SELECT has_table_privilege('utsa_gno_api', %s, 'INSERT,UPDATE,DELETE')", (table,))
+                self.assertFalse(cursor.fetchone()[0], table)
         api_db = ApiDatabase()
         api_db.open(ApiConfig(database_url=url, chain_id="topaz-1"))
         try:
