@@ -1949,11 +1949,11 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             with psycopg.connect(url) as connection, connection.cursor() as cursor:
                 cursor.execute("SET ROLE utsa_gno_api")
                 cursor.execute(REALM_DETAIL_ITEM_SQL, ("topaz-1", "gno.land/r/gnoswap/app"))
-                self.assertEqual(cursor.fetchone()["path"], "gno.land/r/gnoswap/app")
+                self.assertEqual(cursor.fetchone()[1], "gno.land/r/gnoswap/app")
                 cursor.execute(REALM_DETAIL_SOURCE_SQL, ("topaz-1",))
-                self.assertEqual(cursor.fetchone()["indexed_height"], 3)
+                self.assertEqual(cursor.fetchone()[1], 3)
                 cursor.execute(REALM_CALLS_PAGE_SQL, ("topaz-1", "gno.land/r/gnoswap/app", 2, 3, None, None, None, None, 3))
-                self.assertEqual([(row["block_height"], row["tx_index"], row["message_index"]) for row in cursor.fetchall()], [(3,0,1),(3,0,0),(2,0,0)])
+                self.assertEqual([(row[0], row[1], row[2]) for row in cursor.fetchall()], [(3,0,1),(3,0,0),(2,0,0)])
                 for table in ("blocks", "transactions", "indexer_state", "transaction_execution_results",
                               "realm_catalog", "realm_catalog_state", "realm_call_index", "realm_call_index_state"):
                     cursor.execute(f"SELECT count(*) FROM {table}")
