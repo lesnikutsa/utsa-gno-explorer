@@ -141,11 +141,13 @@ class RealmApplicationsFrontendContractTests(unittest.TestCase):
         self.assertLessEqual(int(grid_width.group(1)), 340)
         mobile_760 = section[section.index("@media (max-width: 760px)"):section.index("@media (max-width: 480px)")]
         self.assertIn("grid-template-columns: minmax(0, 1fr)", mobile_760)
-        self.assertIn(".realms-application-card__primary { display: grid; grid-template-columns: max-content max-content; justify-content: start; column-gap: 32px; margin: 9px 0; }", section)
+        self.assertIn(".realms-application-card__primary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; column-gap: 16px; margin: 9px 0; }", section)
+        self.assertIn(".realms-application-card__primary > div:last-child { text-align: right; }", section)
         self.assertIn(".realms-application-card__metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr))", section)
         mobile_480 = section[section.index("@media (max-width: 480px)"):]
         self.assertNotIn(".realms-application-card__metrics", mobile_480)
-        self.assertIn(".realms-application-card__primary { column-gap: 20px; }", mobile_480)
+        self.assertNotIn("max-content max-content", section)
+        self.assertNotIn(".realms-application-card__primary", mobile_480)
 
     def test_does_not_fill_missing_curated_results(self):
         hook = self.read("frontend/src/hooks/useRealmApplications.js")
