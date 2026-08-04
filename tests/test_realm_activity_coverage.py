@@ -41,7 +41,7 @@ def test_missing_and_uninitialized_state_are_noops():
     missing = advance_realm_activity_coverage(Cursor(None), "topaz-1", 11)
     empty = advance_realm_activity_coverage(Cursor((None, None)), "topaz-1", 11)
     assert (missing.previous_through_height, missing.new_through_height,
-            missing.advanced, missing.caught_up) == (None, None, False, False)
+            missing.advanced) == (None, None, False)
     assert empty == missing
 
 
@@ -54,7 +54,7 @@ def test_partial_range_fails_closed(state):
 def test_next_height_advances_without_range_query():
     cursor = Cursor()
     result = advance_realm_activity_coverage(cursor, "topaz-1", 11)
-    assert (result.previous_through_height, result.new_through_height, result.advanced, result.caught_up) == (10, 11, True, False)
+    assert (result.previous_through_height, result.new_through_height, result.advanced) == (10, 11, True)
     assert "FOR UPDATE" in cursor.queries[0][0]
     assert sum(sql.startswith("UPDATE realm_catalog_state") for sql, _ in cursor.queries) == 1
 
@@ -64,20 +64,20 @@ def test_replay_or_lower_height_is_an_idempotent_noop(height):
     cursor = Cursor()
     result = advance_realm_activity_coverage(cursor, "topaz-1", height)
     assert result.new_through_height == 10 and not result.advanced and not cursor.updated
-    assert (result.previous_through_height, result.caught_up) == (10, False)
+    assert result.previous_through_height == 10
 
 
-def test_contiguous_lag_catches_up():
+def test_contiguous_blocks_do_not_prove_coverage():
     cursor = Cursor(blocks=range(11, 15))
-    result = advance_realm_activity_coverage(cursor, "topaz-1", 14)
-    assert (result.new_through_height, result.caught_up) == (14, True)
-    assert cursor.queries[1][1] == (11, 14)
-    assert cursor.queries[2][0].startswith("UPDATE realm_catalog_state")
+    with pytest.raises(RealmActivityCoverageError, match="full Realm activity rebuild"):
+        advance_realm_activity_coverage(cursor, "topaz-1", 14)
+    assert len(cursor.queries) == 1
+    assert not cursor.updated
 
 
 def test_lag_gap_fails_without_update():
     cursor = Cursor(blocks=(11, 13, 14))
-    with pytest.raises(RealmActivityCoverageError, match="observed count 3"):
+    with pytest.raises(RealmActivityCoverageError, match="full Realm activity rebuild"):
         advance_realm_activity_coverage(cursor, "topaz-1", 14)
     assert cursor.state == (1, 10) and not cursor.updated
     assert not any(sql.startswith("UPDATE realm_catalog_state") for sql, _ in cursor.queries)

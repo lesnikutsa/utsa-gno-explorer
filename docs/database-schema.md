@@ -179,6 +179,7 @@ do not query these tables yet.
 `activity_from_height` is the first height of the continuous measured activity
 range. `activity_through_height` is the last height for which transaction-derived
 Realm aggregation and coverage advancement committed atomically with the block.
-Every live block advances the range, including blocks with no transactions or no
-Realm calls. A lag of more than one height is advanced only after a bounded
-`blocks.height` continuity check; a missing height fails closed.
+Every exact-next live block advances the range, including blocks with no
+transactions or no Realm calls. Any multi-height lag fails closed and requires a
+full activity rebuild. Contiguous block rows are necessary rebuild input, but do
+not prove that the corresponding counters were already calculated.

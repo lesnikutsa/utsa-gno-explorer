@@ -22,7 +22,7 @@ Each item includes aggregate Realm, called-Realm, RPC-visible-Realm, successful,
 
 Members are ordered by exact path in `C` order and include both current and Historical Realms. At most 100 members are returned per namespace; `realms_truncated` reports whether more exist.
 
-The source records `chain_id`, `indexed_height`, `catalog_observed_height`, `activity_from_height`, and `activity_through_height`. The former is the first height in the continuous Realm activity measurement range; the latter is the last height whose transaction-derived Realm activity was atomically processed and whose coverage was confirmed. These fields are distinct from the indexer checkpoint and catalog observation height, even though live indexing normally keeps `activity_through_height` equal to `indexed_height`. Source, aggregates, and members are read in one repeatable-read, read-only transaction.
+The source records `chain_id`, `indexed_height`, `catalog_observed_height`, `activity_from_height`, and `activity_through_height`. The former is the first height in the continuous Realm activity measurement range; the latter is the last height whose transaction-derived Realm activity was atomically processed and whose coverage was confirmed. Live indexing advances coverage only for the exact next height; a larger lag requires a full counter rebuild and cannot be repaired from block metadata alone. These fields are distinct from the indexer checkpoint and catalog observation height, even though aligned live indexing normally keeps `activity_through_height` equal to `indexed_height`. Source, aggregates, and members are read in one repeatable-read, read-only transaction.
 
 Compact response example (metrics are illustrative):
 

@@ -40,7 +40,6 @@ class RealmActivityCoverageResult:
     previous_through_height: int | None
     new_through_height: int | None
     advanced: bool
-    caught_up: bool
 
 
 @dataclass(frozen=True)
@@ -315,12 +314,7 @@ def write_height_cursor(cursor, parsed, chain_id: str, finalized_tip: int, selec
 
 
 def advance_realm_activity_coverage(cursor, chain_id: str, height: int) -> RealmActivityCoverageResult:
-    """Advance an initialized, continuous Realm activity range in this transaction.
-
-    A multi-block advance is metadata recovery: committed contiguous block rows are
-    used as evidence that the legacy indexer's same block transaction completed its
-    Realm aggregation. This does not rebuild or independently verify counters.
-    """
+    """Advance an initialized Realm activity range by exactly one block."""
     if not isinstance(chain_id, str) or not chain_id.strip():
         raise ValueError("chain_id must be a non-empty string")
     if isinstance(height, bool) or not isinstance(height, int) or height < 1:
@@ -332,35 +326,26 @@ def advance_realm_activity_coverage(cursor, chain_id: str, height: int) -> Realm
     )
     row = cursor.fetchone()
     if row is None:
-        return RealmActivityCoverageResult(None, None, False, False)
+        return RealmActivityCoverageResult(None, None, False)
     activity_from, previous = row
     if activity_from is None and previous is None:
-        return RealmActivityCoverageResult(None, None, False, False)
+        return RealmActivityCoverageResult(None, None, False)
     if activity_from is None or previous is None:
         raise RealmActivityCoverageError(f"Incompatible Realm activity coverage state for chain {chain_id}")
     previous = int(previous)
     if height <= previous:
-        return RealmActivityCoverageResult(previous, previous, False, False)
-    caught_up = height > previous + 1
-    if caught_up:
-        cursor.execute(
-            "SELECT count(*), min(height), max(height) FROM blocks "
-            "WHERE height >= %s AND height <= %s",
-            (previous + 1, height),
+        return RealmActivityCoverageResult(previous, previous, False)
+    if height != previous + 1:
+        raise RealmActivityCoverageError(
+            f"Realm activity coverage for chain {chain_id} cannot advance from "
+            f"{previous} through {height}; a full Realm activity rebuild is required"
         )
-        count, minimum, maximum = cursor.fetchone()
-        expected = height - previous
-        if int(count) != expected or minimum != previous + 1 or maximum != height:
-            raise RealmActivityCoverageError(
-                f"Realm activity coverage gap for chain {chain_id}: expected start "
-                f"{previous + 1}, requested through {height}, observed count {count}"
-            )
     cursor.execute(
         "UPDATE realm_catalog_state SET activity_through_height = %s, updated_at = now() "
         "WHERE chain_id = %s",
         (height, chain_id),
     )
-    return RealmActivityCoverageResult(previous, height, True, caught_up)
+    return RealmActivityCoverageResult(previous, height, True)
 
 
 def _verify_checkpoint_sequence(height: int, checkpoint: int | None) -> None:

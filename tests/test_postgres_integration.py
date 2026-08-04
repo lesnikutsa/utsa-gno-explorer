@@ -52,6 +52,7 @@ from network_distribution.persistence import (
 from scripts import init_database
 from scripts.migrate_network_distribution_schema import migrate as migrate_network_distribution_schema
 from scripts.migrate_governance_schema import migrate as migrate_governance_schema
+from scripts.rebuild_realm_activity import rebuild_cursor
 
 try:
     import psycopg
@@ -1849,7 +1850,7 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             initial_updated = cursor.fetchone()[0]
             result = advance_realm_activity_coverage(cursor, "topaz-1", 21)
             self.assertEqual((result.previous_through_height, result.new_through_height,
-                              result.advanced, result.caught_up), (20, 21, True, False))
+                              result.advanced), (20, 21, True))
             cursor.execute("SELECT activity_through_height,updated_at FROM realm_catalog_state WHERE chain_id='topaz-1'")
             through, advanced_updated = cursor.fetchone()
             self.assertEqual(through, 21)
@@ -1858,40 +1859,11 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             cursor.execute("SELECT updated_at FROM realm_catalog_state WHERE chain_id='topaz-1'")
             self.assertEqual(cursor.fetchone()[0], advanced_updated)
             self.assertFalse(replay.advanced)
-            caught_up = advance_realm_activity_coverage(cursor, "topaz-1", 25)
-            self.assertTrue(caught_up.caught_up)
-            self.assertEqual(caught_up.new_through_height, 25)
-
-            cursor.execute("UPDATE realm_catalog_state SET activity_through_height=20 WHERE chain_id='topaz-1'")
-            cursor.execute("DELETE FROM blocks WHERE height=23")
             with self.assertRaises(RealmActivityCoverageError):
                 with connection.transaction():
                     advance_realm_activity_coverage(cursor, "topaz-1", 25)
             cursor.execute("SELECT activity_through_height FROM realm_catalog_state WHERE chain_id='topaz-1'")
-            self.assertEqual(cursor.fetchone()[0], 20)
-
-            cursor.execute("SET LOCAL enable_seqscan=off")
-            cursor.execute("""EXPLAIN (FORMAT JSON)
-              SELECT count(*),min(height),max(height) FROM blocks
-              WHERE height >= 21 AND height <= 25""")
-            plan = cursor.fetchone()[0][0]["Plan"]
-            nodes = []
-            def collect(node):
-                nodes.append(node)
-                for child in node.get("Plans", []):
-                    collect(child)
-            collect(plan)
-            index_nodes = [
-                node for node in nodes
-                if node.get("Node Type") in (
-                    "Index Scan", "Index Only Scan", "Bitmap Index Scan",
-                )
-            ]
-            self.assertTrue(index_nodes, plan)
-            self.assertTrue(any(node.get("Index Name") == "blocks_pkey" for node in index_nodes))
-            condition = " ".join(str(node.get("Index Cond", "")) for node in index_nodes)
-            self.assertIn("height >= 21", condition)
-            self.assertIn("height <= 25", condition)
+            self.assertEqual(cursor.fetchone()[0], 21)
             cursor.execute("SELECT has_table_privilege('utsa_gno_api','realm_catalog_state','SELECT'), has_table_privilege('utsa_gno_api','realm_catalog_state','INSERT,UPDATE,DELETE')")
             self.assertEqual(cursor.fetchone(), (True, False))
 
@@ -1955,6 +1927,52 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             replay_updated_at = coverage_height[1]
             cursor.execute("SELECT last_finalized_height FROM indexer_state WHERE state_key='default'")
             self.assertEqual(cursor.fetchone()[0], 23)
+
+    def test_realm_activity_coverage_lag_requires_full_rebuild(self):
+        name = f"utsa_realm_coverage_rebuild_{os.getpid()}"
+        self.create_database(name)
+        url = self.database_url_for(name)
+        init_database.initialize_or_validate(url)
+        summary = json.dumps({"schema_version": 1, "parse_status": "parsed", "messages": [{
+            "type": "gno.vm.MsgCall", "package_path": "gno.land/r/coverage/rebuild",
+            "package_path_complete": True, "sender": "g1" + "q" * 38,
+        }]})
+        with psycopg.connect(url) as connection, connection.cursor() as cursor:
+            cursor.execute("INSERT INTO indexer_state(state_key,chain_id,last_finalized_height) VALUES ('default','topaz-1',25)")
+            cursor.execute("""INSERT INTO realm_catalog_state(
+              chain_id,observed_height,rpc_path_count,refreshed_at,
+              activity_from_height,activity_through_height)
+              VALUES ('topaz-1',25,1,now(),10,20)""")
+            cursor.executemany("""INSERT INTO blocks(
+              height,block_hash_base64,block_hash_hex,time_utc,tx_count)
+              VALUES (%s,%s,%s,now(),1)""", [
+                (height, base64.b64encode(f"rebuild-block-{height}".encode()).decode(),
+                 f"{height + 2000:064X}") for height in range(10, 26)
+            ])
+            cursor.executemany("""INSERT INTO transactions(
+              block_height,tx_index,raw_base64,raw_base64_length,decoded_bytes,
+              decoded_byte_length,decode_status,tx_hash_hex,payload_summary)
+              VALUES (%s,0,%s,%s,%s,%s,'decoded',%s,%s::jsonb)""", [
+                (height, raw := base64.b64encode(f"rebuild-tx-{height}".encode()).decode(),
+                 len(raw), base64.b64decode(raw), len(base64.b64decode(raw)),
+                 f"{height + 3000:064X}", summary) for height in range(10, 26)
+            ])
+            cursor.execute("""INSERT INTO realm_catalog(
+              chain_id,path,path_kind,seen_via_transactions,first_seen_height,
+              last_activity_height,last_activity_tx_index,last_activity_at,call_count,
+              successful_call_count,failed_call_count,unknown_result_call_count,last_counted_height)
+              VALUES ('topaz-1','gno.land/r/coverage/rebuild','realm',true,10,
+                      20,0,now(),11,0,0,11,20)""")
+            with self.assertRaises(RealmActivityCoverageError):
+                advance_realm_activity_coverage(cursor, "topaz-1", 25)
+            cursor.execute("SELECT activity_through_height,call_count FROM realm_catalog_state CROSS JOIN realm_catalog WHERE realm_catalog_state.chain_id='topaz-1' AND realm_catalog.path='gno.land/r/coverage/rebuild'")
+            self.assertEqual(cursor.fetchone(), (20, 11))
+            self.assertEqual(rebuild_cursor(cursor, "topaz-1", 10, 25), 1)
+            cursor.execute("""SELECT activity_from_height,activity_through_height,call_count,
+              unknown_result_call_count FROM realm_catalog_state CROSS JOIN realm_catalog
+              WHERE realm_catalog_state.chain_id='topaz-1'
+                AND realm_catalog.path='gno.land/r/coverage/rebuild'""")
+            self.assertEqual(cursor.fetchone(), (10, 25, 16, 16))
 
         PostgresDatabase(url).write_height(realm_call, "topaz-1", 23)
         with psycopg.connect(url) as connection, connection.cursor() as cursor:
