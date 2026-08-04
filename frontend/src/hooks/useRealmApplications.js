@@ -21,12 +21,15 @@ export function useRealmApplications() {
   const mounted = useRef(false)
   const requestId = useRef(0)
   const controller = useRef(null)
+  const foregroundActive = useRef(false)
+  const hasItems = useRef(false)
 
   const load = useCallback(async () => {
     controller.current?.abort()
     const activeController = new AbortController()
     controller.current = activeController
     const id = ++requestId.current
+    foregroundActive.current = true
     setLoading(true)
     setError(false)
     setSnapshotMissing(false)
@@ -42,7 +45,9 @@ export function useRealmApplications() {
         setError(true)
         return
       }
-      setItems(response.items.filter(isValidItem).slice(0, APPLICATIONS_LIMIT))
+      const nextItems = response.items.filter(isValidItem).slice(0, APPLICATIONS_LIMIT)
+      setItems(nextItems)
+      hasItems.current = nextItems.length > 0
       setSource(response.source !== null && typeof response.source === 'object' ? response.source : null)
     } catch (requestError) {
       if (!mounted.current || id !== requestId.current || requestError?.name === 'AbortError') return
@@ -54,7 +59,36 @@ export function useRealmApplications() {
         setError(true)
       }
     } finally {
+      if (id === requestId.current) foregroundActive.current = false
       if (mounted.current && id === requestId.current) setLoading(false)
+    }
+  }, [])
+
+  const refreshInBackground = useCallback(async () => {
+    if (foregroundActive.current || controller.current?.background) return
+    const activeController = new AbortController()
+    activeController.background = true
+    controller.current = activeController
+    const id = ++requestId.current
+    try {
+      const response = await getTopRealmNamespaces({
+        limit: APPLICATIONS_LIMIT,
+        scope: 'curated',
+        signal: activeController.signal,
+      })
+      if (!mounted.current || id !== requestId.current) return
+      if (response === null || typeof response !== 'object' || !Array.isArray(response.items)) return
+      const nextItems = response.items.filter(isValidItem).slice(0, APPLICATIONS_LIMIT)
+      setItems(nextItems)
+      hasItems.current = nextItems.length > 0
+      setSource(response.source !== null && typeof response.source === 'object' ? response.source : null)
+      setError(false)
+      setSnapshotMissing(false)
+    } catch (requestError) {
+      if (!mounted.current || id !== requestId.current || requestError?.name === 'AbortError') return
+      if (!hasItems.current) return
+    } finally {
+      if (id === requestId.current) controller.current = null
     }
   }, [])
 
@@ -68,5 +102,5 @@ export function useRealmApplications() {
     }
   }, [load])
 
-  return { items, source, loading, error, snapshotMissing, retry: load }
+  return { items, source, loading, error, snapshotMissing, retry: load, refreshInBackground }
 }

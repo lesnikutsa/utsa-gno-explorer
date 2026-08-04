@@ -18,6 +18,7 @@ import { useTransactionDetail } from './hooks/useTransactionDetail'
 import { useTransactionsPage } from './hooks/useTransactionsPage'
 import { useRealmsPage } from './hooks/useRealmsPage'
 import { useRealmApplications } from './hooks/useRealmApplications'
+import { useRealmsAutoRefresh } from './hooks/useRealmsAutoRefresh'
 import { useExplorerData } from './hooks/useExplorerData'
 import { useValidatorDetail } from './hooks/useValidatorDetail'
 import { useValidatorsPage } from './hooks/useValidatorsPage'
@@ -93,6 +94,11 @@ function TransactionsPage() {
 function RealmsPage() {
   const realmsPage = useRealmsPage()
   const realmApplications = useRealmApplications()
+  useRealmsAutoRefresh({
+    enabled: realmsPage.pageIndex === 0 && !realmsPage.loading && !realmApplications.loading,
+    refreshRealms: realmsPage.refreshInBackground,
+    refreshApplications: realmApplications.refreshInBackground,
+  })
 
   return (
     <ExplorerLayout healthState={realmsPage.healthState} showRefreshCountdown={false}>

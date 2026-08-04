@@ -56,7 +56,7 @@ class RealmApplicationsFrontendContractTests(unittest.TestCase):
             "setSnapshotMissing(true)",
             "setError(true)",
             "scope: 'curated'",
-            "retry: load",
+            "retry: load, refreshInBackground",
             "Array.isArray(response.items)",
             "response.items.filter(isValidItem)",
             ".slice(0, APPLICATIONS_LIMIT)",

@@ -19,6 +19,8 @@ export function useRealmsPage() {
   const mounted = useRef(false)
   const requestId = useRef(0)
   const controller = useRef(null)
+  const foregroundActive = useRef(false)
+  const hasData = useRef(false)
   const failedRequest = useRef(null)
 
   const loadPage = useCallback(async (request) => {
@@ -27,6 +29,7 @@ export function useRealmsPage() {
     const activeController = new AbortController()
     controller.current = activeController
     const id = ++requestId.current
+    foregroundActive.current = true
     setLoading(true)
     setItems([])
     setError(false)
@@ -53,6 +56,7 @@ export function useRealmsPage() {
       if (request.history) setCursorHistory(request.history)
       failedRequest.current = null
       setHealthState('healthy')
+      hasData.current = true
     } catch (requestError) {
       if (!mounted.current || id !== requestId.current || requestError?.name === 'AbortError') return
       failedRequest.current = attemptedRequest
@@ -64,9 +68,47 @@ export function useRealmsPage() {
         setHealthState('error')
       }
     } finally {
+      if (id === requestId.current) foregroundActive.current = false
       if (mounted.current && id === requestId.current) setLoading(false)
     }
   }, [])
+
+  const refreshInBackground = useCallback(async () => {
+    if (foregroundActive.current || controller.current?.background) return
+    const activeController = new AbortController()
+    activeController.background = true
+    controller.current = activeController
+    const id = ++requestId.current
+    try {
+      const response = await getRealms({
+        limit: PAGE_SIZE,
+        kind,
+        q: appliedSearch,
+        beforeActivityHeight: undefined,
+        beforePath: undefined,
+        signal: activeController.signal,
+      })
+      if (!mounted.current || id !== requestId.current) return
+      const pagination = response.pagination ?? {}
+      const hasNextCursor = pagination.next_before_activity_height !== null
+        && pagination.next_before_activity_height !== undefined
+        && pagination.next_before_path !== null
+        && pagination.next_before_path !== undefined
+      setItems((response.items ?? []).slice(0, PAGE_SIZE))
+      setSummary(response.summary ?? null)
+      setNextCursor(hasNextCursor ? { activityHeight: pagination.next_before_activity_height, path: pagination.next_before_path } : null)
+      failedRequest.current = null
+      hasData.current = true
+      setError(false)
+      setSnapshotMissing(false)
+      setHealthState('healthy')
+    } catch (requestError) {
+      if (!mounted.current || id !== requestId.current || requestError?.name === 'AbortError') return
+      if (hasData.current) setHealthState('degraded')
+    } finally {
+      if (id === requestId.current) controller.current = null
+    }
+  }, [appliedSearch, kind])
 
   const resetAndLoad = useCallback((nextKind, nextSearch) => {
     const history = [null]
@@ -116,5 +158,5 @@ export function useRealmsPage() {
     }
   }, [loadPage])
 
-  return { items, summary, loading, error, snapshotMissing, healthState, kind, searchInput, appliedSearch, pageIndex, nextCursor, cursorHistory, setSearchInput, selectKind, submitSearch, clearSearch, retry, loadOlder, loadNewer, canLoadOlder: nextCursor !== null }
+  return { items, summary, loading, error, snapshotMissing, healthState, kind, searchInput, appliedSearch, pageIndex, nextCursor, cursorHistory, setSearchInput, selectKind, submitSearch, clearSearch, retry, refreshInBackground, loadOlder, loadNewer, canLoadOlder: nextCursor !== null }
 }
