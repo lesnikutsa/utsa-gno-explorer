@@ -31,3 +31,33 @@ Compact response example (metrics are illustrative):
 ```
 
 The response's `source.activity_from_height` identifies the beginning of the indexed measurement range; the metric must not be interpreted as usage since genesis unless that range begins at genesis. Package imports are not measured, and no time-window ranking exists yet. The source also reports the chain, current indexed height, catalog observation height, and activity-through height used by the consistent read-only database snapshot.
+
+## Realm or Package detail
+
+`GET /api/realms/detail?path=gno.land/r/gnoswap/app` returns one exact catalog row for a canonical `gno.land/r/...` Realm or `gno.land/p/...` Package path. The path is a query parameter because canonical Gno paths contain `/`; the endpoint does not use a catch-all route. The API is PostgreSQL-only and does not call Gno RPC.
+
+Example response:
+
+```json
+{"source":{"chain_id":"topaz-1","indexed_height":50,"catalog_observed_height":49,"catalog_refreshed_at":"2026-08-04T00:00:00Z","activity_from_height":1,"activity_through_height":45,"call_index_from_height":1,"call_index_through_height":50,"call_index_complete":true},"item":{"path":"gno.land/r/gnoswap/app","name":"app","kind":"realm","rpc_visible":true,"deployer_address":null,"deploy_height":2,"deploy_tx_index":0,"first_seen_height":2,"last_activity_height":40,"last_activity_tx_index":1,"last_activity_at":"2026-08-04T00:00:00Z","call_count":2,"successful_call_count":1,"failed_call_count":0,"unknown_result_call_count":1,"success_rate":1.0},"namespace_key":"gnoswap","application":{"display_name":"GnoSwap","category":"DeFi","description":null,"website":null,"metadata_source":"curated_registry"}}
+```
+
+Detail responses preserve the `RealmCatalogItem` catalog semantics used by `GET /api/realms`. Realm responses include the exact namespace key and only curated application metadata from the registry. Package responses set `namespace_key` and `application` to `null`; the API does not infer applications or guessed categories.
+
+The detail source is read in one `REPEATABLE READ, READ ONLY` transaction with the exact catalog row, catalog state, call-index state, and default indexer checkpoint. `call_index_complete` is true only when `realm_call_index_state.through_height` equals `indexer_state.last_finalized_height`; missing, behind, ahead, or mismatched coverage is not reported as complete. Missing catalog rows return `404`; malformed paths return `422`; unavailable or inconsistent database state returns `503`.
+
+## Realm recent calls
+
+`GET /api/realms/calls?path=gno.land/r/gnoswap/app` returns a descending page of recent direct calls for one exact canonical Realm path. Package paths are rejected with `422`; malformed paths are rejected with `422`; unknown Realm catalog paths return `404`. The endpoint is PostgreSQL-only, uses `realm_call_index`, and does not inspect `transactions.payload_summary` or call Gno RPC.
+
+Calls are available only when call-index coverage is complete for the default checkpoint. Missing, behind, or ahead coverage returns `409` with a stable `Realm call history is not available` detail instead of returning an implicit partial history, and the page query is not executed while coverage is unavailable. `from_height` is the earliest block height for which the Realm call history is claimed complete; it is not necessarily genesis.
+
+Example response:
+
+```json
+{"source":{"chain_id":"topaz-1","path":"gno.land/r/gnoswap/app","indexed_height":50,"from_height":1,"through_height":50},"items":[{"block_height":40,"tx_index":1,"message_index":0,"block_time":"2026-08-04T00:00:00Z","tx_hash":"0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF","caller_address":"g1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq","function_name":"Render","args_count":0,"send_amount":"1ugnot","execution_status":"success","gas_wanted":"100000","gas_used":"50000"}],"pagination":{"limit":25,"next_before_height":null,"next_before_tx_index":null,"next_before_message_index":null}}
+```
+
+Returned call rows are restricted to the exact claimed coverage range `[from_height, through_height]`. Physical `realm_call_index` rows outside that range are never public, even if they exist in PostgreSQL. Pagination uses `limit` with a default of 25 and a maximum of 100. The cursor consists of all three fields: `before_height`, `before_tx_index`, and `before_message_index`; clients must send all three together or omit all three. The descending database query uses tuple `<` over `(block_height, tx_index, message_index)` and `limit + 1`, never `OFFSET`. When an older row exists, the next cursor is the last visible item returned to the client.
+
+Each `MsgCall` message is returned as its own row, including multiple calls in the same transaction and repeated calls to the same Realm. Rows are not deduplicated by transaction hash. `execution_status`, `gas_wanted`, and `gas_used` are transaction-level fields for the transaction containing the call; they are not message-level execution results. The list intentionally excludes raw transactions, payload summaries, arguments, events, error/log/info text, raw execution results, source, render output, storage, and balances.

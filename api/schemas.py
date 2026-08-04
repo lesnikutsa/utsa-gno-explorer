@@ -595,6 +595,98 @@ class RealmNamespaceMember(BaseModel):
     unknown_result_call_count: int = Field(ge=0)
     success_rate: float | None = Field(default=None, ge=0, le=1)
 
+
+class RealmDetailSource(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    chain_id: str = Field(min_length=1, max_length=128)
+    indexed_height: int = Field(ge=0)
+    catalog_observed_height: int = Field(gt=0)
+    catalog_refreshed_at: str
+    activity_from_height: int | None = Field(default=None, gt=0)
+    activity_through_height: int | None = Field(default=None, gt=0)
+    call_index_from_height: int | None = Field(default=None, gt=0)
+    call_index_through_height: int | None = Field(default=None, gt=0)
+    call_index_complete: bool
+
+    @model_validator(mode="after")
+    def validate_ranges(self) -> "RealmDetailSource":
+        if (self.activity_from_height is None) != (self.activity_through_height is None):
+            raise ValueError("activity range fields must be supplied together")
+        if (self.call_index_from_height is None) != (self.call_index_through_height is None):
+            raise ValueError("call-index range fields must be supplied together")
+        if (self.activity_from_height is not None
+                and self.activity_through_height < self.activity_from_height):
+            raise ValueError("activity range is invalid")
+        if (self.call_index_from_height is not None
+                and self.call_index_through_height < self.call_index_from_height):
+            raise ValueError("call-index range is invalid")
+        if self.call_index_complete and self.call_index_from_height is None:
+            raise ValueError("complete call-index coverage requires range fields")
+        return self
+
+
+class RealmDetailResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    source: RealmDetailSource
+    item: RealmCatalogItem
+    namespace_key: str | None = Field(default=None, min_length=1, max_length=256)
+    application: RealmApplicationMetadata | None
+
+
+class RealmCallSource(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    chain_id: str = Field(min_length=1, max_length=128)
+    path: str = Field(min_length=1, max_length=256)
+    indexed_height: int = Field(ge=0)
+    from_height: int = Field(gt=0)
+    through_height: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def validate_complete_range(self) -> "RealmCallSource":
+        if self.through_height < self.from_height:
+            raise ValueError("Realm call source range is invalid")
+        if self.through_height != self.indexed_height:
+            raise ValueError("Realm call source must be complete at the indexed height")
+        return self
+
+
+class RealmCallListItem(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    block_height: int = Field(gt=0)
+    tx_index: int = Field(ge=0)
+    message_index: int = Field(ge=0, le=19)
+    block_time: str
+    tx_hash: str | None = Field(default=None, pattern=r"^[0-9A-F]{64}$")
+    caller_address: str | None = Field(default=None, min_length=40, max_length=40, pattern=r"^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$")
+    function_name: str | None = Field(default=None, min_length=1, max_length=160)
+    args_count: int | None = Field(default=None, ge=0)
+    send_amount: str | None = Field(default=None, min_length=1, max_length=160)
+    execution_status: Literal["success", "failed"] | None
+    gas_wanted: str | None = Field(default=None, pattern=r"^(0|[1-9][0-9]*)$")
+    gas_used: str | None = Field(default=None, pattern=r"^(0|[1-9][0-9]*)$")
+
+
+class RealmCallsPagination(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    limit: int = Field(ge=1, le=100)
+    next_before_height: int | None = Field(default=None, gt=0)
+    next_before_tx_index: int | None = Field(default=None, ge=0)
+    next_before_message_index: int | None = Field(default=None, ge=0, le=19)
+
+    @model_validator(mode="after")
+    def validate_cursor_tuple(self) -> "RealmCallsPagination":
+        if sum(value is None for value in (self.next_before_height, self.next_before_tx_index,
+                                           self.next_before_message_index)) not in (0, 3):
+            raise ValueError("next cursor fields must be supplied together")
+        return self
+
+
+class RealmCallsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    source: RealmCallSource
+    items: list[RealmCallListItem] = Field(max_length=100)
+    pagination: RealmCallsPagination
+
 class RealmNamespaceTopItem(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     namespace_key: str = Field(min_length=1, max_length=256)

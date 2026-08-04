@@ -24,6 +24,9 @@ from api.database import (
     NETWORK_DISTRIBUTION_SQL,
     NETWORK_SQL,
     REALM_CATALOG_SUMMARY_SQL,
+    REALM_CALLS_PAGE_SQL,
+    REALM_DETAIL_ITEM_SQL,
+    REALM_DETAIL_SOURCE_SQL,
     REALM_NAMESPACE_TOP_SQL,
     VALIDATOR_IDENTITY_SQL,
     ApiDatabase,
@@ -1895,6 +1898,102 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             self.assertEqual(cursor.fetchall(), [
               ('utsa_gno_api',False,True,False,False,False,False),
               ('utsa_gno_indexer',False,True,False,False,False,False)])
+
+    def test_realm_detail_and_realm_calls_api_queries(self):
+        name = f"utsa_realm_detail_calls_{os.getpid()}"
+        self.create_database(name)
+        self.ensure_application_roles()
+        url = self.database_url_for(name)
+        init_database.initialize_or_validate(url)
+        with psycopg.connect(url) as connection, connection.cursor() as cursor:
+            cursor.execute("GRANT SELECT ON ALL TABLES IN SCHEMA public TO utsa_gno_api")
+            cursor.execute("SELECT rolname FROM pg_roles WHERE rolname IN ('utsa_gno_api','utsa_gno_indexer') ORDER BY rolname")
+            self.assertEqual(cursor.fetchall(), [('utsa_gno_api',), ('utsa_gno_indexer',)])
+            for table in ('realm_call_index', 'realm_call_index_state'):
+                cursor.execute("SELECT has_table_privilege('utsa_gno_api', %s, 'SELECT')", (table,))
+                self.assertTrue(cursor.fetchone()[0], table)
+                cursor.execute("SELECT has_table_privilege('utsa_gno_api', %s, 'INSERT,UPDATE,DELETE')", (table,))
+                self.assertFalse(cursor.fetchone()[0], table)
+        api_db = ApiDatabase()
+        api_db.open(ApiConfig(database_url=url, chain_id="topaz-1"))
+        try:
+            with psycopg.connect(url) as connection, connection.cursor() as cursor:
+                cursor.execute("INSERT INTO indexer_state(state_key, chain_id, last_finalized_height) VALUES ('default','topaz-1',3)")
+                cursor.execute("INSERT INTO realm_catalog_state(chain_id,observed_height,rpc_path_count,activity_from_height,activity_through_height,refreshed_at) VALUES ('topaz-1',3,2,1,3,now())")
+                cursor.execute("INSERT INTO realm_call_index_state(chain_id,from_height,through_height) VALUES ('topaz-1',2,3)")
+                cursor.execute("""INSERT INTO realm_catalog(chain_id,path,path_kind,seen_via_rpc,seen_via_transactions,rpc_visible,last_rpc_seen_at,
+                    deployer_address,deploy_height,deploy_tx_index,first_seen_height,last_activity_height,last_activity_tx_index,last_activity_at,
+                    call_count,successful_call_count,failed_call_count,unknown_result_call_count,last_counted_height)
+                    VALUES ('topaz-1','gno.land/r/gnoswap/app','realm',true,true,true,now(),NULL,1,0,1,3,1,now(),3,2,1,0,3),
+                           ('topaz-1','gno.land/p/demo/pkg','package',true,false,true,now(),NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,0,0,NULL),
+                           ('other-chain','gno.land/r/gnoswap/app','realm',true,true,true,now(),NULL,1,0,1,1,0,now(),1,1,0,0,1)""")
+                for height in range(1, 5):
+                    cursor.execute("INSERT INTO blocks(height,block_hash_base64,block_hash_hex,time_utc,tx_count) VALUES (%s,%s,%s,now(),1)", (height, f"h{height}", f"{height:064X}"))
+                    cursor.execute("""INSERT INTO transactions(block_height,tx_index,raw_base64,raw_base64_length,decoded_bytes,decoded_byte_length,decode_status,tx_hash_hex)
+                        VALUES (%s,0,'eA==',4,decode('78','hex'),1,'decoded',%s)""", (height, f"{height + 200:064X}"))
+                cursor.execute("INSERT INTO transaction_execution_results(block_height,tx_index,execution_status,gas_wanted,gas_used) VALUES (3,0,'success',100,50)")
+                cursor.executemany("""INSERT INTO realm_call_index(chain_id,block_height,tx_index,message_index,path,caller_address,function_name,args_count,send_amount)
+                    VALUES ('topaz-1',%s,0,%s,'gno.land/r/gnoswap/app',NULL,'Render',0,'1ugnot')""", [(4,0),(3,1),(3,0),(2,0),(1,0)])
+            detail = api_db.fetch_realm_detail(chain_id="topaz-1", path="gno.land/r/gnoswap/app")
+            self.assertEqual(detail["item"]["path"], "gno.land/r/gnoswap/app")
+            package = api_db.fetch_realm_detail(chain_id="topaz-1", path="gno.land/p/demo/pkg")
+            self.assertEqual(package["item"]["path_kind"], "package")
+            first = api_db.fetch_realm_calls(chain_id="topaz-1", path="gno.land/r/gnoswap/app", limit=2, before_height=None, before_tx_index=None, before_message_index=None)
+            self.assertEqual([(row["block_height"], row["tx_index"], row["message_index"]) for row in first["items"][:2]], [(3,0,1),(3,0,0)])
+            second = api_db.fetch_realm_calls(chain_id="topaz-1", path="gno.land/r/gnoswap/app", limit=2, before_height=3, before_tx_index=0, before_message_index=0)
+            self.assertEqual([(row["block_height"], row["tx_index"], row["message_index"]) for row in second["items"]], [(2,0,0)])
+            positions = [(row["block_height"], row["tx_index"], row["message_index"]) for row in first["items"] + second["items"]]
+            self.assertNotIn((1,0,0), positions)
+            self.assertNotIn((4,0,0), positions)
+            self.assertIsNone(api_db.fetch_realm_detail(chain_id="topaz-1", path="gno.land/r/isolated" )["item"])
+            with psycopg.connect(url) as connection, connection.cursor() as cursor:
+                cursor.execute("SET ROLE utsa_gno_api")
+                cursor.execute(REALM_DETAIL_ITEM_SQL, ("topaz-1", "gno.land/r/gnoswap/app"))
+                self.assertEqual(cursor.fetchone()[1], "gno.land/r/gnoswap/app")
+                cursor.execute(REALM_DETAIL_SOURCE_SQL, ("topaz-1",))
+                self.assertEqual(cursor.fetchone()[1], 3)
+                cursor.execute(REALM_CALLS_PAGE_SQL, ("topaz-1", "gno.land/r/gnoswap/app", 2, 3, None, None, None, None, 3))
+                self.assertEqual([(row[0], row[1], row[2]) for row in cursor.fetchall()], [(3,0,1),(3,0,0),(2,0,0)])
+                for table in ("blocks", "transactions", "indexer_state", "transaction_execution_results",
+                              "realm_catalog", "realm_catalog_state", "realm_call_index", "realm_call_index_state"):
+                    cursor.execute(f"SELECT count(*) FROM {table}")
+                    self.assertGreaterEqual(cursor.fetchone()[0], 0, table)
+                for sql in ("INSERT INTO realm_call_index_state(chain_id,from_height,through_height) VALUES ('x',1,1)",
+                            "UPDATE realm_call_index_state SET through_height=through_height",
+                            "DELETE FROM realm_call_index WHERE chain_id='topaz-1'",
+                            "TRUNCATE realm_call_index",
+                            "INSERT INTO blocks(height,block_hash_base64,block_hash_hex,time_utc,tx_count) VALUES (99,'x',repeat('F',64),now(),0)",
+                            "UPDATE transactions SET tx_index=tx_index WHERE block_height=1",
+                            "DELETE FROM indexer_state WHERE state_key='default'",
+                            "TRUNCATE transactions"):
+                    with self.subTest(sql=sql), self.assertRaises(psycopg.errors.InsufficientPrivilege):
+                        cursor.execute(sql)
+                    connection.rollback()
+                    cursor.execute("SET ROLE utsa_gno_api")
+            with psycopg.connect(url) as connection, connection.cursor() as cursor:
+                cursor.execute("DELETE FROM realm_call_index_state WHERE chain_id='topaz-1'")
+            missing = api_db.fetch_realm_calls(chain_id="topaz-1", path="gno.land/r/gnoswap/app", limit=2, before_height=None, before_tx_index=None, before_message_index=None)
+            self.assertIsNone(missing["source"].get("call_index_from_height"))
+            with psycopg.connect(url) as connection, connection.cursor() as cursor:
+                cursor.execute("SET ROLE utsa_gno_api")
+                cursor.execute("SELECT count(*) FROM realm_call_index")
+                self.assertEqual(cursor.fetchone()[0], 5)
+                with self.assertRaises(psycopg.errors.InsufficientPrivilege):
+                    cursor.execute("INSERT INTO realm_call_index_state(chain_id,from_height,through_height) VALUES ('x',1,1)")
+                connection.rollback()
+                cursor.execute("SET ROLE utsa_gno_api")
+                with self.assertRaises(psycopg.errors.InsufficientPrivilege):
+                    cursor.execute("DELETE FROM realm_call_index WHERE chain_id='topaz-1'")
+                connection.rollback()
+                cursor.execute("SET ROLE utsa_gno_api")
+                cursor.execute("SET LOCAL enable_seqscan = off")
+                cursor.execute("EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) " + REALM_CALLS_PAGE_SQL,
+                    ("topaz-1", "gno.land/r/gnoswap/app", 2, 3, None, None, None, None, 3))
+                plan = json.dumps(cursor.fetchone()[0])
+                self.assertIn("realm_call_index_path_position_idx", plan)
+                self.assertNotIn('"Relation Name": "realm_call_index", "Alias": "call", "Node Type": "Seq Scan"', plan)
+        finally:
+            api_db.close()
 
     def test_realm_call_index_migration_order_cursor_cascade_plan_and_lock(self):
         name = f"utsa_realm_call_{os.getpid()}"
