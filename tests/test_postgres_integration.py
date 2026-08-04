@@ -38,7 +38,9 @@ from indexer.governance_persistence import (
     GovernancePersistenceError, GovernanceSnapshotConflict, StaleGovernanceSnapshot,
 )
 from indexer.parsers import ParsedHeight, parse_execution_results, parse_tx
-from indexer.transaction_summary import MAX_SUMMARY_BYTES, summary_size_bytes
+from indexer.transaction_summary import (MAX_SUMMARY_BYTES, SCHEMA_VERSION,
+    normalize_summary, summary_size_bytes)
+from indexer.realm_catalog import extract_observations
 from indexer.rpc import RpcProbeResult
 from indexer.valopers_parser import ValoperProfile
 from indexer.valopers_persistence import (
@@ -1890,9 +1892,18 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                 "proposer_address": None, "tx_count": len(transactions),
             }, transactions, execution_results or [], [], [], {"result": {}})
 
-        ordinary = parsed_height(22, {"parse_status": "parsed", "messages": [{
-            "type": "bank.MsgSend", "sender": "g1" + "q" * 38,
-        }]})
+        def valid_summary(messages, *, primary_type, category, action, label):
+            return {"schema_version": SCHEMA_VERSION, "chain_family": "gno",
+                "parse_status": "parsed", "message_count": len(messages),
+                "messages_truncated": False,
+                "primary": {"type": primary_type, "category": category,
+                            "action": action, "label": label},
+                "messages": messages}
+
+        ordinary_message = {"type": "bank.MsgSend", "sender": "g1" + "q" * 38}
+        ordinary_summary = valid_summary([ordinary_message], primary_type="bank.MsgSend",
+            category="transfer", action="send", label="Send")
+        ordinary = parsed_height(22, ordinary_summary)
         PostgresDatabase(url).write_height(ordinary, "topaz-1", 22)
         with psycopg.connect(url) as connection, connection.cursor() as cursor:
             cursor.execute("SELECT count(*) FROM blocks WHERE height=22")
@@ -1906,10 +1917,18 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             cursor.execute("SELECT last_finalized_height FROM indexer_state WHERE state_key='default'")
             self.assertEqual(cursor.fetchone()[0], 22)
 
-        call_summary = {"parse_status": "parsed", "messages": [{
+        call_message = {
             "type": "gno.vm.MsgCall", "package_path": "gno.land/r/coverage/app",
             "package_path_complete": True, "sender": "g1" + "q" * 38,
-        }]}
+        }
+        call_summary = valid_summary([call_message], primary_type="gno.vm.MsgCall",
+            category="realm", action="call", label="Realm Call")
+        normalized_call = normalize_summary(call_summary)
+        self.assertEqual(normalized_call["parse_status"], "parsed")
+        observations = extract_observations(normalized_call)
+        self.assertEqual(len(observations), 1)
+        self.assertEqual((observations[0].path, observations[0].observation_type),
+                         ("gno.land/r/coverage/app", "call"))
         success_result = {"tx_index": 0, "execution_status": "success", "gas_wanted": 1,
             "gas_used": 1, "error_text": None, "log_text": None, "info_text": None,
             "data_base64": None, "events": [], "raw_result": {}}
