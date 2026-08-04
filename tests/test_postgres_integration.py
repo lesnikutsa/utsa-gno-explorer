@@ -55,6 +55,7 @@ from scripts import init_database
 from scripts.migrate_network_distribution_schema import migrate as migrate_network_distribution_schema
 from scripts.migrate_governance_schema import migrate as migrate_governance_schema
 from scripts.rebuild_realm_activity import rebuild_cursor
+from scripts.rebuild_realm_call_index import rebuild_cursor as rebuild_realm_call_index_cursor
 from scripts.refresh_realm_catalog import RefreshStatus, persist_refresh
 
 try:
@@ -177,6 +178,7 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         """Remove every canonical DDL section later than an exact known stage."""
         schema = (ROOT / "database/schema.sql").read_text()
         sections = (
+            ("realm_call_index", "BEGIN;\n\nCREATE TABLE realm_call_index", None),
             ("transaction_participants", "CREATE TABLE transaction_participants", "-- Block detail pages"),
             ("network_distribution_geo_cache", "CREATE TABLE network_distribution_geo_cache", "CREATE TABLE governance_proposals"),
             ("governance_proposals", "CREATE TABLE governance_proposals", "CREATE TABLE valoper_profiles"),
@@ -1893,6 +1895,136 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             self.assertEqual(cursor.fetchall(), [
               ('utsa_gno_api',False,True,False,False,False,False),
               ('utsa_gno_indexer',False,True,False,False,False,False)])
+
+    def test_realm_call_index_migration_order_cursor_cascade_plan_and_lock(self):
+        name = f"utsa_realm_call_{os.getpid()}"
+        self.create_database(name)
+        url = self.database_url_for(name)
+        init_database.initialize_or_validate(url)
+        summary = json.dumps({"parse_status": "parsed", "messages": []})
+        with psycopg.connect(url) as connection, connection.cursor() as cursor:
+            for height in range(1, 31):
+                cursor.execute(
+                    "INSERT INTO blocks(height, block_hash_base64, block_hash_hex, "
+                    "time_utc, tx_count) VALUES (%s, %s, %s, now(), 1)",
+                    (height, f"h{height}", f"{height:064X}")
+                )
+                cursor.execute(
+                    "INSERT INTO transactions(block_height, tx_index, raw_base64, "
+                    "raw_base64_length, decoded_bytes, decoded_byte_length, decode_status, "
+                    "tx_hash_hex, payload_summary) VALUES (%s, 0, 'eA==', 4, "
+                    "decode('78','hex'), 1, 'decoded', %s, %s::jsonb)",
+                    (height, f"{height + 100:064X}", summary),
+                )
+                for message_index in range(2):
+                    cursor.execute(
+                        "INSERT INTO realm_call_index(chain_id, block_height, tx_index, "
+                        "message_index, path, function_name) VALUES "
+                        "('topaz-1', %s, 0, %s, 'gno.land/r/demo', 'Render')",
+                        (height, message_index),
+                    )
+            cursor.execute(
+                "SELECT block_height, tx_index, message_index FROM realm_call_index "
+                "WHERE chain_id='topaz-1' AND path='gno.land/r/demo' AND "
+                "(block_height, tx_index, message_index) < (30, 0, 1) "
+                "ORDER BY block_height DESC, tx_index DESC, message_index DESC LIMIT 3"
+            )
+            self.assertEqual(cursor.fetchall(), [(30, 0, 0), (29, 0, 1), (29, 0, 0)])
+            cursor.execute("SET LOCAL enable_seqscan = off")
+            cursor.execute(
+                "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) SELECT block_height, tx_index, "
+                "message_index FROM realm_call_index WHERE chain_id='topaz-1' "
+                "AND path='gno.land/r/demo' AND (block_height, tx_index, message_index) "
+                "< (30, 0, 1) ORDER BY block_height DESC, tx_index DESC, "
+                "message_index DESC LIMIT 10"
+            )
+            plan = json.dumps(cursor.fetchone()[0])
+            self.assertIn("realm_call_index_path_position_idx", plan)
+            self.assertNotIn('"Node Type": "Seq Scan"', plan)
+            cursor.execute("DELETE FROM blocks WHERE height=1")
+            cursor.execute("SELECT count(*) FROM realm_call_index WHERE block_height=1")
+            self.assertEqual(cursor.fetchone()[0], 0)
+
+        first = psycopg.connect(url)
+        second = psycopg.connect(url)
+        try:
+            with first.cursor() as cursor:
+                indexer_database.lock_realm_call_index(cursor)
+            with second.cursor() as cursor:
+                cursor.execute(
+                    "SELECT pg_try_advisory_xact_lock(%s)",
+                    (indexer_database.REALM_CALL_INDEX_LOCK_ID,),
+                )
+                self.assertFalse(cursor.fetchone()[0])
+            first.rollback()
+            second.rollback()
+            with second.cursor() as cursor:
+                cursor.execute(
+                    "SELECT pg_try_advisory_xact_lock(%s)",
+                    (indexer_database.REALM_CALL_INDEX_LOCK_ID,),
+                )
+                self.assertTrue(cursor.fetchone()[0])
+        finally:
+            first.close()
+            second.close()
+
+    def test_realm_call_index_0009_upgrade_constraints_grants_and_rerun(self):
+        name = f"utsa_realm_call_upgrade_{os.getpid()}"
+        url = self.create_exact_stage_database(
+            name, init_database.PRE_REALM_CALL_INDEX_EXPECTATIONS,
+            create_roles_before_schema=True,
+        )
+        init_database.initialize_or_validate(url)
+        init_database.initialize_or_validate(url)
+        with psycopg.connect(url) as connection, connection.cursor() as cursor:
+            init_database.validate_schema_snapshot(init_database.fetch_schema_snapshot(cursor))
+            cursor.execute(
+                "SELECT grantee, table_name, privilege_type FROM "
+                "information_schema.role_table_grants WHERE grantee IN "
+                "('utsa_gno_api','utsa_gno_indexer') AND table_name IN "
+                "('realm_call_index','realm_call_index_state') ORDER BY 1,2,3"
+            )
+            self.assertEqual(cursor.fetchall(), [
+                ('utsa_gno_api', 'realm_call_index', 'SELECT'),
+                ('utsa_gno_api', 'realm_call_index_state', 'SELECT'),
+                ('utsa_gno_indexer', 'realm_call_index', 'DELETE'),
+                ('utsa_gno_indexer', 'realm_call_index', 'INSERT'),
+                ('utsa_gno_indexer', 'realm_call_index', 'SELECT'),
+                ('utsa_gno_indexer', 'realm_call_index', 'UPDATE'),
+                ('utsa_gno_indexer', 'realm_call_index_state', 'DELETE'),
+                ('utsa_gno_indexer', 'realm_call_index_state', 'INSERT'),
+                ('utsa_gno_indexer', 'realm_call_index_state', 'SELECT'),
+                ('utsa_gno_indexer', 'realm_call_index_state', 'UPDATE'),
+            ])
+            cursor.execute(
+                "INSERT INTO blocks(height, block_hash_base64, block_hash_hex, "
+                "time_utc, tx_count) VALUES (1, 'realm-call-upgrade', repeat('A',64), now(), 1)"
+            )
+            cursor.execute(
+                "INSERT INTO transactions(block_height, tx_index, raw_base64, "
+                "raw_base64_length, decoded_bytes, decoded_byte_length, decode_status, "
+                "tx_hash_hex) VALUES (1,0,'eA==',4,decode('78','hex'),1,'decoded',repeat('B',64))"
+            )
+            cursor.execute(
+                "INSERT INTO realm_call_index(chain_id,block_height,tx_index,message_index,path) "
+                "VALUES ('topaz-1',1,0,0,'gno.land/r/valid')"
+            )
+            for column, value in (
+                ("path", "gno.land/p/package"),
+                ("path", "gno.land/r/bad path"),
+                ("caller_address", "g1bad"),
+                ("function_name", ""),
+                ("args_count", -1),
+                ("send_amount", ""),
+            ):
+                with self.assertRaises(psycopg.errors.CheckViolation):
+                    with connection.transaction():
+                        cursor.execute(
+                            f"UPDATE realm_call_index SET {column}=%s "
+                            "WHERE chain_id='topaz-1' AND block_height=1 "
+                            "AND tx_index=0 AND message_index=0",
+                            (value,),
+                        )
 
     def test_realm_activity_coverage_helper_and_zero_transaction_block(self):
         name = f"utsa_realm_coverage_{os.getpid()}"

@@ -119,3 +119,48 @@ class RealmCatalogTests(unittest.TestCase):
   with self.assertRaises(init_database.SchemaCompatibilityError):
    init_database.validate_schema_snapshot(snapshot)
 if __name__=='__main__': unittest.main()
+
+class RealmCallExtractionTests(unittest.TestCase):
+ def summary(self, messages, status='parsed'):
+  return {'parse_status':status,'messages':messages}
+ def test_extracts_exact_bounded_calls(self):
+  from indexer.realm_catalog import extract_realm_calls
+  address='g1'+'q'*38
+  calls=extract_realm_calls(self.summary([
+   {'type':'gno.vm.MsgRun','package_path':'gno.land/r/no','package_path_complete':True},
+   {'type':'gno.vm.MsgCall','package_path':'gno.land/r/demo','package_path_complete':True,'sender':address,'function':'Render','args_count':2,'send':'1ugnot'},
+   {'type':'gno.vm.MsgCall','package_path':'gno.land/p/pkg','package_path_complete':True},
+  ]))
+  self.assertEqual(len(calls),1); self.assertEqual(calls[0].message_index,1)
+  self.assertEqual((calls[0].caller_address,calls[0].function_name,calls[0].args_count,calls[0].send_amount),(address,'Render',2,'1ugnot'))
+  self.assertFalse(hasattr(calls[0],'arguments')); self.assertFalse(hasattr(calls[0],'events'))
+ def test_requires_complete_valid_optional_fields_and_parsed_status(self):
+  from indexer.realm_catalog import extract_realm_calls
+  base={'type':'gno.vm.MsgCall','package_path':'gno.land/r/demo'}
+  self.assertEqual(extract_realm_calls(self.summary([{**base,'package_path_complete':False}])),())
+  self.assertEqual(extract_realm_calls(self.summary([{**base,'package_path_complete':True,'args_count':-1}])),())
+  self.assertEqual(extract_realm_calls(self.summary([{**base,'package_path_complete':True}],'unsupported')),())
+ def test_inspects_at_most_twenty_messages(self):
+  from indexer.realm_catalog import extract_realm_calls
+  messages=[{'type':'gno.vm.MsgCall','package_path':f'gno.land/r/r{i}','package_path_complete':True} for i in range(21)]
+  self.assertEqual(len(extract_realm_calls(self.summary(messages))),20)
+
+class RealmCallLegacyPathTests(unittest.TestCase):
+ def extract(self,path,marker='missing'):
+  from indexer.realm_catalog import extract_realm_calls
+  message={'type':'gno.vm.MsgCall','package_path':path}
+  if marker != 'missing': message['package_path_complete']=marker
+  return extract_realm_calls({'parse_status':'parsed','messages':[message]})
+ def test_current_and_legacy_complete_paths(self):
+  self.assertEqual(len(self.extract('gno.land/r/current',True)),1)
+  self.assertEqual(len(self.extract('gno.land/r/legacy')),1)
+ def test_legacy_boundary_and_false_marker(self):
+  prefix='gno.land/r/'
+  exactly=prefix+'x'*(160-len(prefix))
+  longer=prefix+'x'*(161-len(prefix))
+  self.assertEqual(self.extract(exactly),())
+  self.assertEqual(self.extract(longer),())
+  self.assertEqual(self.extract('gno.land/r/short',False),())
+ def test_package_and_malformed_paths_remain_rejected(self):
+  self.assertEqual(self.extract('gno.land/p/package'),())
+  self.assertEqual(self.extract('gno.land/r/bad path'),())

@@ -183,3 +183,11 @@ Every exact-next live block advances the range, including blocks with no
 transactions or no Realm calls. Any multi-height lag fails closed and requires a
 full activity rebuild. Contiguous block rows are necessary rebuild input, but do
 not prove that the corresponding counters were already calculated.
+
+## Realm call locator projection
+
+`realm_call_index` provides the message-level, path-ordered foundation for future Realm Detail, Recent Calls, function analytics, and caller analytics consumers. Its primary key is `(chain_id, block_height, tx_index, message_index)` and its pagination index is `(chain_id, path, block_height DESC, tx_index DESC, message_index DESC)`.
+
+The stored projection is deliberately compact: Realm path, original bounded message index, caller, function name, argument count, and send amount. It does not duplicate block time, transaction hash, execution status, gas, arguments, events, error/log/info text, raw results or transactions, source code, Render output, storage, or balances. Future internal queries must join the canonical existing tables for those values.
+
+`realm_call_index_state` is independent of Realm catalog activity state. Its inclusive `[from_height, through_height]` means every bounded `MsgCall` observation in that continuous local block range was processed. An absent row makes no historical claim. An existing row advances atomically only for the exact next finalized height, even when that block has no calls; gaps fail closed and require an operator rebuild.

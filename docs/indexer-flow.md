@@ -163,3 +163,11 @@ Existing local rows can be populated explicitly with
 run the backfill. Future transaction lookup will search PostgreSQL first and may
 query RPC by hash only outside a configurable retained range. RPC transaction
 indexes are not assumed, and no pruning depth has been selected.
+
+### Realm call locator indexing
+
+Within the same finalized-block database transaction, normalized summaries yield at most 20 exact `gno.vm.MsgCall` Realm locators. Rows are deterministically upserted before checkpoint advancement. Existing coverage advances only at the exact next height; missing state remains missing and a gap aborts the transaction. Operators can rebuild exclusively from local `transactions.payload_summary` with `scripts/rebuild_realm_call_index.py` (no RPC) and inspect state with `scripts/check_realm_call_index_coverage.py`.
+
+The Realm call rebuild and live finalized-height writer acquire the same transaction-level advisory lock. A rebuild therefore temporarily blocks live height persistence until commit or rollback; correctness does not depend solely on an operator stopping the service.
+
+A rebuild resolves its effective through-height from the checkpoint only after acquiring the shared lock. The resulting coverage union must end at that locked checkpoint, so a waiting live writer can safely continue with the exact next height.

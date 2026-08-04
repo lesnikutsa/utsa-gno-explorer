@@ -11,7 +11,7 @@ from typing import Any
 from .rpc import RpcProbeResult
 from .transaction_summary import normalize_summary
 from .transaction_participants import extract_transaction_participants
-from .realm_catalog import aggregate_block
+from .realm_catalog import aggregate_block, extract_realm_calls
 from .valopers_persistence import ValopersPersistenceResult, replace_valopers_snapshot_cursor
 from .valopers_snapshot import ValopersSnapshot
 from .governance_persistence import (GovernancePersistenceResult,
@@ -35,8 +35,22 @@ class RealmActivityCoverageError(DatabaseError):
     """Raised when Realm activity coverage cannot be advanced safely."""
 
 
+class RealmCallCoverageError(DatabaseError):
+    """Raised when Realm call index coverage cannot be advanced safely."""
+
+
+REALM_CALL_INDEX_LOCK_ID = 0x52434C4C494458
+
+
 @dataclass(frozen=True)
 class RealmActivityCoverageResult:
+    previous_through_height: int | None
+    new_through_height: int | None
+    advanced: bool
+
+
+@dataclass(frozen=True)
+class RealmCallCoverageResult:
     previous_through_height: int | None
     new_through_height: int | None
     advanced: bool
@@ -303,10 +317,13 @@ def _insert_rpc_endpoint_check(cursor, endpoint_id: int, chain_id: str, probe: R
 def write_height_cursor(cursor, parsed, chain_id: str, finalized_tip: int, selected_rpc_endpoint_id: int | None) -> None:
     checkpoint = get_checkpoint_cursor(cursor, chain_id)
     _verify_checkpoint_sequence(parsed.height, checkpoint)
+    lock_realm_call_index(cursor)
     _verify_finalized_conflicts(cursor, parsed)
     _upsert_block(cursor, parsed)
     _upsert_transactions(cursor, parsed, selected_rpc_endpoint_id)
+    _replace_realm_calls_for_height(cursor, parsed, chain_id)
     _upsert_realm_catalog(cursor, parsed, chain_id)
+    advance_realm_call_coverage(cursor, chain_id, parsed.height)
     advance_realm_activity_coverage(cursor, chain_id, parsed.height)
     _upsert_validators_and_members(cursor, parsed)
     _upsert_signatures(cursor, parsed)
@@ -346,6 +363,43 @@ def advance_realm_activity_coverage(cursor, chain_id: str, height: int) -> Realm
         (height, chain_id),
     )
     return RealmActivityCoverageResult(previous, height, True)
+
+
+def lock_realm_call_index(cursor) -> None:
+    """Serialize live writes and rebuilds for the transaction lifetime."""
+    cursor.execute("SELECT pg_advisory_xact_lock(%s)", (REALM_CALL_INDEX_LOCK_ID,))
+
+
+def advance_realm_call_coverage(cursor, chain_id: str, height: int) -> RealmCallCoverageResult:
+    """Advance existing call-index coverage exactly; never create a coverage claim."""
+    if not isinstance(chain_id, str) or not chain_id.strip():
+        raise ValueError("chain_id must be a non-empty string")
+    if isinstance(height, bool) or not isinstance(height, int) or height < 1:
+        raise ValueError("height must be a positive integer")
+    cursor.execute(
+        "SELECT from_height, through_height FROM realm_call_index_state "
+        "WHERE chain_id = %s FOR UPDATE", (chain_id,),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        return RealmCallCoverageResult(None, None, False)
+    if len(row) != 2 or row[0] is None or row[1] is None:
+        raise RealmCallCoverageError(f"Incompatible Realm call coverage state for chain {chain_id}")
+    previous = int(row[1])
+    if height <= previous:
+        return RealmCallCoverageResult(previous, previous, False)
+    if height != previous + 1:
+        raise RealmCallCoverageError(
+            f"Realm call coverage for chain {chain_id} cannot advance from "
+            f"{previous} through {height}; a rebuild is required"
+        )
+    cursor.execute(
+        "UPDATE realm_call_index_state SET through_height=%s, updated_at=now() "
+        "WHERE chain_id=%s", (height, chain_id),
+    )
+    if cursor.rowcount != 1:
+        raise RealmCallCoverageError("Realm call coverage update did not affect exactly one row")
+    return RealmCallCoverageResult(previous, height, True)
 
 
 def _verify_checkpoint_sequence(height: int, checkpoint: int | None) -> None:
@@ -555,6 +609,38 @@ def _upsert_realm_catalog(cursor, parsed, chain_id: str) -> None:
     upsert_transaction_catalog_aggregates(
         cursor, chain_id, parsed.height, parsed.block["time"], aggregate_block(summaries)
     )
+
+
+def _replace_realm_calls_for_height(cursor, parsed, chain_id: str) -> int:
+    """Exactly replace compact call locators for one finalized height."""
+    cursor.execute(
+        "DELETE FROM realm_call_index WHERE chain_id = %s AND block_height = %s",
+        (chain_id, parsed.height),
+    )
+    positions: set[tuple[int, int]] = set()
+    inserted = 0
+    for transaction in parsed.transactions:
+        fallback = "invalid" if transaction["decode_status"] == "invalid_base64" else "unparsed"
+        summary = normalize_summary(transaction.get("payload_summary"), fallback)
+        for call in extract_realm_calls(summary):
+            position = (transaction["index"], call.message_index)
+            if position in positions:
+                raise DatabaseError("Duplicate Realm call position in finalized height")
+            positions.add(position)
+            cursor.execute("""
+                INSERT INTO realm_call_index(
+                    chain_id,block_height,tx_index,message_index,path,caller_address,
+                    function_name,args_count,send_amount)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            """, (chain_id, parsed.height, transaction["index"], call.message_index,
+                  call.path, call.caller_address, call.function_name,
+                  call.args_count, call.send_amount))
+            if cursor.rowcount != 1:
+                raise DatabaseError("Realm call insert did not affect exactly one row")
+            inserted += 1
+    if inserted != len(positions):
+        raise DatabaseError("Realm call replacement count mismatch")
+    return inserted
 
 
 def upsert_transaction_catalog_aggregates(

@@ -180,3 +180,9 @@ legacy transaction that has not been backfilled; it is never stored as an
 ## Realm catalog (migration 0008)
 
 `realm_catalog` grows by at most one row per unique `(chain_id, path)` and stores aggregate deployment/call metadata only. `realm_catalog_state` grows by at most one row per chain. Migration `0008_add_realm_catalog.sql` is additive and transactional: it creates both empty tables, constraints, indexes, and least-privilege grants, without RPC, backfill, default state, deletion, or service startup. Apply and verify it before restarting updated indexer code.
+
+## Compact Realm call index
+
+`realm_call_index` is a compact locator projection over already stored bounded transaction summaries. It stores only chain and message positions, canonical Realm path, and bounded caller/function/argument-count/send metadata. Timestamp, transaction hash, execution status, gas, arguments, events, result/error text, raw transactions, source, render output, storage, and balances remain in their existing sources or are explicitly excluded.
+
+`realm_call_index_state` claims only that every bounded `MsgCall` observation in its inclusive continuous range was processed. Live indexing advances an existing state by exactly one height, including empty-call blocks; it never creates historical coverage. Use `python scripts/rebuild_realm_call_index.py --from-height HEIGHT [--through-height HEIGHT]` for a transactional local rebuild and `python scripts/check_realm_call_index_coverage.py` for read-only inspection. Rebuild extensions must touch or overlap existing coverage.

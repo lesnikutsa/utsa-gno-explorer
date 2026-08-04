@@ -11,6 +11,16 @@ _PATH_RE = re.compile(r"^gno\.land/(?P<kind>[rp])/[!-\.0-~]+(?:/[!-\.0-~]+)*$")
 _ADDRESS_RE = re.compile(r"^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$")
 
 
+def is_complete_package_path(message: Any, path: Any) -> bool:
+    """Accept current completeness markers and the bounded legacy convention."""
+    if not isinstance(message, dict):
+        return False
+    completeness = message.get("package_path_complete")
+    return completeness is True or (
+        completeness is None and isinstance(path, str) and len(path) < 160
+    )
+
+
 def path_kind(path: Any) -> str | None:
     """Return the catalog kind for a bounded canonical path, otherwise ``None``."""
     if not isinstance(path, str) or not 1 <= len(path) <= 256:
@@ -50,10 +60,7 @@ def extract_observations(payload_summary: Any) -> tuple[RealmObservation, ...]:
             continue
         message_type = message.get("type")
         path = message.get("package_path")
-        completeness = message.get("package_path_complete")
-        if completeness is not True and not (
-            completeness is None and isinstance(path, str) and len(path) < 160
-        ):
+        if not is_complete_package_path(message, path):
             continue
         kind = path_kind(path)
         sender = message.get("sender")
@@ -121,3 +128,44 @@ def parse_qpaths(payload: bytes | str) -> tuple[tuple[str, str], ...]:
     if not paths:
         raise ValueError("qpaths_empty")
     return tuple(sorted(paths.items()))
+
+@dataclass(frozen=True, slots=True)
+class RealmCallRecord:
+    """One compact locator extracted from a normalized MsgCall summary."""
+    path: str
+    message_index: int
+    caller_address: str | None
+    function_name: str | None
+    args_count: int | None
+    send_amount: str | None
+
+
+def extract_realm_calls(payload_summary: Any) -> tuple[RealmCallRecord, ...]:
+    """Fail closed while extracting bounded, complete Realm MsgCall locators."""
+    if not isinstance(payload_summary, dict) or payload_summary.get("parse_status") != "parsed":
+        return ()
+    messages = payload_summary.get("messages")
+    if not isinstance(messages, list):
+        return ()
+    calls: list[RealmCallRecord] = []
+    for index, message in enumerate(messages[:MAX_MESSAGES]):
+        if not isinstance(message, dict) or message.get("type") != "gno.vm.MsgCall":
+            continue
+        path = message.get("package_path")
+        if not is_complete_package_path(message, path) or path_kind(path) != "realm":
+            continue
+        caller = message.get("sender")
+        function = message.get("function")
+        args_count = message.get("args_count")
+        send = message.get("send")
+        if caller is not None and (not isinstance(caller, str) or _ADDRESS_RE.fullmatch(caller) is None):
+            continue
+        if function is not None and (not isinstance(function, str) or not function or len(function) > 160):
+            continue
+        if (args_count is not None and (isinstance(args_count, bool) or not isinstance(args_count, int)
+                                       or not 0 <= args_count <= 100_000)):
+            continue
+        if send is not None and (not isinstance(send, str) or not send or len(send) > 160):
+            continue
+        calls.append(RealmCallRecord(path, index, caller, function, args_count, send))
+    return tuple(calls)
