@@ -101,3 +101,23 @@ Production rollout order is:
 10. Leave the frontend unchanged in this release.
 
 The commands are foreground, one-shot operations with dedicated transaction advisory locks; there is no automatic schedule. The refresh must run before the first rebuild because the rebuild requires an existing catalog state. Decoded-history statistics are limited to a verified complete local block range and valid bounded summaries. The qpaths command changes visibility atomically and never deletes historical rows.
+
+### One-time Realm activity coverage repair
+
+An installation that indexed live blocks with the legacy indexer can have accurate
+counters but stale coverage metadata. Use this sequence for the initial repair:
+
+1. Stop `utsa-gno-indexer.service`; the old process does not maintain coverage.
+2. Run `python scripts/repair_realm_activity_coverage.py` without `--apply`.
+3. Require `status=ready` and `missing_block_count=0`.
+4. Run `python scripts/repair_realm_activity_coverage.py --apply`.
+5. Inspect `realm_catalog_state` and confirm the through height.
+6. Start `utsa-gno-indexer.service` with the updated code.
+7. Confirm subsequent blocks advance `activity_through_height` automatically.
+
+The default command rolls back after inspection. `--apply` locks the Realm and
+indexer state rows and commits only the shared coverage helper's update. It does
+not rebuild counters, change `activity_from_height`, refresh qpaths, modify Realm
+catalog rows, or move the indexer checkpoint. Continuity of committed block rows
+supports the legacy same-transaction aggregation invariant; it does not prove
+facts that are not represented in the schema. A gap aborts and rolls back.
