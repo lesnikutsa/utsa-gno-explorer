@@ -1928,6 +1928,35 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             cursor.execute("SELECT last_finalized_height FROM indexer_state WHERE state_key='default'")
             self.assertEqual(cursor.fetchone()[0], 23)
 
+        PostgresDatabase(url).write_height(realm_call, "topaz-1", 23)
+        with psycopg.connect(url) as connection, connection.cursor() as cursor:
+            cursor.execute("""SELECT call_count,successful_call_count FROM realm_catalog
+              WHERE chain_id='topaz-1' AND path='gno.land/r/coverage/app'""")
+            self.assertEqual(cursor.fetchone(), (1, 1))
+            cursor.execute("SELECT activity_through_height,updated_at FROM realm_catalog_state WHERE chain_id='topaz-1'")
+            self.assertEqual(cursor.fetchone(), (23, replay_updated_at))
+            cursor.execute("SELECT count(*) FROM blocks WHERE height=23")
+            self.assertEqual(cursor.fetchone()[0], 1)
+            cursor.execute("SELECT count(*) FROM transactions WHERE block_height=23")
+            self.assertEqual(cursor.fetchone()[0], 1)
+
+        rollback_block = parsed_height(24, call_summary, [success_result])
+        with patch.object(indexer_database, "_upsert_validators_and_members",
+                          side_effect=RuntimeError("forced post-coverage failure")):
+            with self.assertRaises(RuntimeError):
+                PostgresDatabase(url).write_height(rollback_block, "topaz-1", 24)
+        with psycopg.connect(url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT count(*) FROM blocks WHERE height=24")
+            self.assertEqual(cursor.fetchone()[0], 0)
+            cursor.execute("SELECT count(*) FROM transactions WHERE block_height=24")
+            self.assertEqual(cursor.fetchone()[0], 0)
+            cursor.execute("SELECT call_count FROM realm_catalog WHERE chain_id='topaz-1' AND path='gno.land/r/coverage/app'")
+            self.assertEqual(cursor.fetchone()[0], 1)
+            cursor.execute("SELECT activity_through_height FROM realm_catalog_state WHERE chain_id='topaz-1'")
+            self.assertEqual(cursor.fetchone()[0], 23)
+            cursor.execute("SELECT last_finalized_height FROM indexer_state WHERE state_key='default'")
+            self.assertEqual(cursor.fetchone()[0], 23)
+
     def test_realm_activity_coverage_lag_requires_full_rebuild(self):
         name = f"utsa_realm_coverage_rebuild_{os.getpid()}"
         self.create_database(name)
@@ -1973,35 +2002,6 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
               WHERE realm_catalog_state.chain_id='topaz-1'
                 AND realm_catalog.path='gno.land/r/coverage/rebuild'""")
             self.assertEqual(cursor.fetchone(), (10, 25, 16, 16))
-
-        PostgresDatabase(url).write_height(realm_call, "topaz-1", 23)
-        with psycopg.connect(url) as connection, connection.cursor() as cursor:
-            cursor.execute("""SELECT call_count,successful_call_count FROM realm_catalog
-              WHERE chain_id='topaz-1' AND path='gno.land/r/coverage/app'""")
-            self.assertEqual(cursor.fetchone(), (1, 1))
-            cursor.execute("SELECT activity_through_height,updated_at FROM realm_catalog_state WHERE chain_id='topaz-1'")
-            self.assertEqual(cursor.fetchone(), (23, replay_updated_at))
-            cursor.execute("SELECT count(*) FROM blocks WHERE height=23")
-            self.assertEqual(cursor.fetchone()[0], 1)
-            cursor.execute("SELECT count(*) FROM transactions WHERE block_height=23")
-            self.assertEqual(cursor.fetchone()[0], 1)
-
-        rollback_block = parsed_height(24, call_summary, [success_result])
-        with patch.object(indexer_database, "_upsert_validators_and_members",
-                          side_effect=RuntimeError("forced post-coverage failure")):
-            with self.assertRaises(RuntimeError):
-                PostgresDatabase(url).write_height(rollback_block, "topaz-1", 24)
-        with psycopg.connect(url) as connection, connection.cursor() as cursor:
-            cursor.execute("SELECT count(*) FROM blocks WHERE height=24")
-            self.assertEqual(cursor.fetchone()[0], 0)
-            cursor.execute("SELECT count(*) FROM transactions WHERE block_height=24")
-            self.assertEqual(cursor.fetchone()[0], 0)
-            cursor.execute("SELECT call_count FROM realm_catalog WHERE chain_id='topaz-1' AND path='gno.land/r/coverage/app'")
-            self.assertEqual(cursor.fetchone()[0], 1)
-            cursor.execute("SELECT activity_through_height FROM realm_catalog_state WHERE chain_id='topaz-1'")
-            self.assertEqual(cursor.fetchone()[0], 23)
-            cursor.execute("SELECT last_finalized_height FROM indexer_state WHERE state_key='default'")
-            self.assertEqual(cursor.fetchone()[0], 23)
 
     def test_realm_api_queries_are_scoped_searchable_and_cursor_ordered(self):
         name = f"utsa_realm_chains_{os.getpid()}"
