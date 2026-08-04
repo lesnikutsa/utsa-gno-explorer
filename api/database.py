@@ -242,6 +242,8 @@ LEFT JOIN transaction_execution_results result
    = (call.block_height, call.tx_index)
 WHERE call.chain_id = %s
   AND call.path = %s
+  AND call.block_height >= %s::bigint
+  AND call.block_height <= %s::bigint
   AND (
       %s::bigint IS NULL
       OR (
@@ -785,6 +787,27 @@ class MissingIndexedBlockError(RuntimeError):
     """Raised when the completed checkpoint points to a missing block row."""
 
 
+def _complete_realm_call_coverage_bounds(source: dict[str, Any], expected_chain_id: str) -> tuple[int, int] | None:
+    """Return complete call-index bounds or None for cleanly unavailable coverage."""
+    state_values = (source.get("call_chain_id"), source.get("call_index_from_height"),
+                    source.get("call_index_through_height"))
+    present = tuple(value is not None for value in state_values)
+    if not any(present):
+        return None
+    if not all(present):
+        raise ValueError("partial Realm call-index coverage state")
+    call_chain_id, from_height, through_height = state_values
+    if call_chain_id != source.get("chain_id") or call_chain_id != expected_chain_id:
+        raise ValueError("Realm call-index coverage chain mismatch")
+    from_height, through_height = int(from_height), int(through_height)
+    indexed_height = int(source["indexed_height"])
+    if from_height <= 0 or through_height < from_height:
+        raise ValueError("malformed Realm call-index coverage bounds")
+    if through_height != indexed_height:
+        return None
+    return from_height, through_height
+
+
 class ApiDatabase:
     def __init__(self) -> None:
         self.pool: ConnectionPool[Any] | None = None
@@ -945,11 +968,15 @@ class ApiDatabase:
             cursor.execute(REALM_DETAIL_SOURCE_SQL, (chain_id,))
             source = cursor.fetchone()
             if source is None:
-                return {"source": None, "item": dict(item), "items": []}
-            cursor.execute(REALM_CALLS_PAGE_SQL, (chain_id, path, before_height, before_height, before_tx_index,
+                return {"source": None, "item": dict(item), "items": [], "coverage_available": False}
+            source = dict(source)
+            bounds = _complete_realm_call_coverage_bounds(source, chain_id)
+            if bounds is None:
+                return {"source": source, "item": dict(item), "items": [], "coverage_available": False}
+            cursor.execute(REALM_CALLS_PAGE_SQL, (chain_id, path, bounds[0], bounds[1], before_height, before_height, before_tx_index,
                 before_message_index, limit + 1))
             rows = cursor.fetchall()
-        return {"source": dict(source), "item": dict(item), "items": [dict(row) for row in rows]}
+        return {"source": source, "item": dict(item), "items": [dict(row) for row in rows], "coverage_available": True}
 
     def fetch_top_realms(self, *, chain_id: str, limit: int) -> dict[str, Any] | None:
         """Read ranking rows and their catalog source from one read-only snapshot."""

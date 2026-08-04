@@ -602,11 +602,27 @@ class RealmDetailSource(BaseModel):
     indexed_height: int = Field(ge=0)
     catalog_observed_height: int = Field(gt=0)
     catalog_refreshed_at: str
-    activity_from_height: int | None
-    activity_through_height: int | None
-    call_index_from_height: int | None
-    call_index_through_height: int | None
+    activity_from_height: int | None = Field(default=None, gt=0)
+    activity_through_height: int | None = Field(default=None, gt=0)
+    call_index_from_height: int | None = Field(default=None, gt=0)
+    call_index_through_height: int | None = Field(default=None, gt=0)
     call_index_complete: bool
+
+    @model_validator(mode="after")
+    def validate_ranges(self) -> "RealmDetailSource":
+        if (self.activity_from_height is None) != (self.activity_through_height is None):
+            raise ValueError("activity range fields must be supplied together")
+        if (self.call_index_from_height is None) != (self.call_index_through_height is None):
+            raise ValueError("call-index range fields must be supplied together")
+        if (self.activity_from_height is not None
+                and self.activity_through_height < self.activity_from_height):
+            raise ValueError("activity range is invalid")
+        if (self.call_index_from_height is not None
+                and self.call_index_through_height < self.call_index_from_height):
+            raise ValueError("call-index range is invalid")
+        if self.call_index_complete and self.call_index_from_height is None:
+            raise ValueError("complete call-index coverage requires range fields")
+        return self
 
 
 class RealmDetailResponse(BaseModel):
@@ -648,6 +664,13 @@ class RealmCallsPagination(BaseModel):
     next_before_height: int | None = Field(default=None, gt=0)
     next_before_tx_index: int | None = Field(default=None, ge=0)
     next_before_message_index: int | None = Field(default=None, ge=0, le=19)
+
+    @model_validator(mode="after")
+    def validate_cursor_tuple(self) -> "RealmCallsPagination":
+        if sum(value is None for value in (self.next_before_height, self.next_before_tx_index,
+                                           self.next_before_message_index)) not in (0, 3):
+            raise ValueError("next cursor fields must be supplied together")
+        return self
 
 
 class RealmCallsResponse(BaseModel):

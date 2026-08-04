@@ -131,11 +131,27 @@ def _realm_detail_from_rows(*, requested_chain_id: str, requested_path: str, res
     deploy_tuple = (item.deploy_height, item.deploy_tx_index)
     if (deploy_tuple[0] is None) != (deploy_tuple[1] is None):
         raise ValueError("malformed Realm deploy tuple")
+    if item.deploy_height is not None and (item.deploy_height <= 0 or item.deploy_tx_index < 0):
+        raise ValueError("malformed Realm deploy position")
+    if item.first_seen_height is not None and item.first_seen_height <= 0:
+        raise ValueError("malformed Realm first-seen height")
+    raw_activity_at = row.get("last_activity_at")
     activity_tuple = (item.last_activity_height, item.last_activity_tx_index, item.last_activity_at)
-    if any(value is None for value in activity_tuple) and any(value is not None for value in activity_tuple):
-        raise ValueError("malformed Realm activity tuple")
-    if item.kind == "realm" and item.call_count > 0 and any(value is None for value in activity_tuple):
-        raise ValueError("missing Realm activity tuple")
+    if item.kind == "package":
+        if item.call_count != 0 or item.successful_call_count != 0 or item.failed_call_count != 0 or item.unknown_result_call_count != 0:
+            raise ValueError("malformed Package call counters")
+        if any(value is not None for value in activity_tuple):
+            raise ValueError("malformed Package activity tuple")
+    elif item.call_count == 0:
+        if any(value is not None for value in activity_tuple):
+            raise ValueError("malformed inactive Realm activity tuple")
+    else:
+        if any(value is None for value in activity_tuple):
+            raise ValueError("missing Realm activity tuple")
+        if item.last_activity_height <= 0 or item.last_activity_tx_index < 0:
+            raise ValueError("malformed Realm activity position")
+        if not isinstance(raw_activity_at, datetime) or raw_activity_at.tzinfo is None:
+            raise ValueError("malformed Realm activity timestamp")
     key = namespace_key(item.path) if item.kind == "realm" else None
     application = dict(REALM_APPLICATION_REGISTRY[key]) if key in REALM_APPLICATION_REGISTRY else None
     return RealmDetailResponse(source=RealmDetailSource(
@@ -176,16 +192,22 @@ def _realm_calls_from_rows(*, requested_chain_id: str, requested_path: str, limi
         raise ValueError("Realm call path is not a Realm")
     if not detail.source.call_index_complete or detail.source.call_index_from_height is None or detail.source.call_index_through_height is None:
         raise HTTPException(status_code=409, detail=CALLS_UNAVAILABLE_DETAIL)
+    if result.get("coverage_available") is False:
+        raise HTTPException(status_code=409, detail=CALLS_UNAVAILABLE_DETAIL)
     raw_rows = result.get("items", [])
-    visible_rows, older = raw_rows[:limit], len(raw_rows) > limit
-    items = [_realm_call_item_from_row(row) for row in visible_rows]
+    if len(raw_rows) > limit + 1:
+        raise ValueError("too many Realm call rows")
+    converted = [_realm_call_item_from_row(row) for row in raw_rows]
     seen: set[tuple[int, int, int]] = set()
     previous = None
-    for item in items:
+    for item in converted:
         position = (item.block_height, item.tx_index, item.message_index)
         if position in seen or (previous is not None and position >= previous):
             raise ValueError("malformed Realm call ordering")
+        if not detail.source.call_index_from_height <= item.block_height <= detail.source.call_index_through_height:
+            raise ValueError("Realm call row outside coverage")
         seen.add(position); previous = position
+    items, older = converted[:limit], len(converted) > limit
     tail = items[-1] if older and items else None
     return RealmCallsResponse(source=RealmCallSource(chain_id=detail.source.chain_id, path=requested_path,
         indexed_height=detail.source.indexed_height, from_height=detail.source.call_index_from_height,
@@ -1197,7 +1219,7 @@ def get_realm_calls(
             before_height=before_height, before_tx_index=before_tx_index, before_message_index=before_message_index)
         if result is None:
             raise HTTPException(status_code=404, detail="Realm catalog path not found")
-        if result.get("source") is None:
+        if result.get("source") is None or result.get("coverage_available") is False:
             raise HTTPException(status_code=409, detail=CALLS_UNAVAILABLE_DETAIL)
         return _realm_calls_from_rows(requested_chain_id=app.state.api_config.chain_id, requested_path=path,
             limit=limit, result=result)
