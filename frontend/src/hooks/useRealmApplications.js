@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getTopRealmNamespaces } from '../services/api'
 
-export const APPLICATIONS_LIMIT = 5
+export const APPLICATIONS_LIMIT = 3
 
 const isValidItem = (item) => item !== null
   && typeof item === 'object'

@@ -22,7 +22,7 @@ class RealmApplicationsFrontendContractTests(unittest.TestCase):
           const { getRealms, getTopRealmNamespaces } = await import('./frontend/src/services/api.js');
           const controller = new AbortController();
           const values = await Promise.all([
-            getTopRealmNamespaces({ limit: 5, scope: 'curated', signal: controller.signal }),
+            getTopRealmNamespaces({ limit: 3, scope: 'curated', signal: controller.signal }),
             getTopRealmNamespaces(),
             getTopRealmNamespaces({ limit: '5 & more', scope: 'curated apps' }),
             getRealms({ limit: 25, kind: 'all' }),
@@ -37,15 +37,15 @@ class RealmApplicationsFrontendContractTests(unittest.TestCase):
             text=True,
         )
         explicit, defaults, encoded, realms = json.loads(result.stdout)
-        self.assertEqual(explicit, {"url": "/api/realm-namespaces/top?limit=5&scope=curated", "hasSignal": True})
-        self.assertEqual(defaults["url"], "/api/realm-namespaces/top?limit=5&scope=curated")
+        self.assertEqual(explicit, {"url": "/api/realm-namespaces/top?limit=3&scope=curated", "hasSignal": True})
+        self.assertEqual(defaults["url"], "/api/realm-namespaces/top?limit=3&scope=curated")
         self.assertEqual(encoded["url"], "/api/realm-namespaces/top?limit=5+%26+more&scope=curated+apps")
         self.assertEqual(realms["url"], "/api/realms?limit=25&kind=all")
 
     def test_hook_concurrency_errors_retry_and_defensive_filtering(self):
         hook = self.read("frontend/src/hooks/useRealmApplications.js")
         for fragment in (
-            "export const APPLICATIONS_LIMIT = 5",
+            "export const APPLICATIONS_LIMIT = 3",
             "import { getTopRealmNamespaces }",
             "new AbortController()",
             "id !== requestId.current",
@@ -58,6 +58,7 @@ class RealmApplicationsFrontendContractTests(unittest.TestCase):
             "retry: load",
             "Array.isArray(response.items)",
             "response.items.filter(isValidItem)",
+            ".slice(0, APPLICATIONS_LIMIT)",
         ):
             self.assertIn(fragment, hook)
         self.assertNotIn("healthState", hook)
@@ -76,6 +77,10 @@ class RealmApplicationsFrontendContractTests(unittest.TestCase):
         for fragment in (
             "Applications",
             "Curated Realm namespaces ranked by indexed direct calls",
+            "Activity metrics cover blocks #",
+            "Activity metrics are indexed since block #",
+            "source?.activity_from_height",
+            "source?.activity_through_height",
             "Direct Calls",
             "Called Realms",
             "Success Rate",
@@ -114,7 +119,9 @@ class RealmApplicationsFrontendContractTests(unittest.TestCase):
             ".realms-applications",
             ".realms-applications__grid",
             ".realms-application-card",
-            "repeat(auto-fit, minmax(260px, 1fr))",
+            "repeat(3, minmax(0, 1fr))",
+            "linear-gradient(135deg, var(--color-accent-soft), var(--color-card))",
+            "color: var(--color-text-bright)",
             "overflow-wrap: anywhere",
             "@media (max-width: 760px)",
             ".realms-page__table td::before",
@@ -125,6 +132,15 @@ class RealmApplicationsFrontendContractTests(unittest.TestCase):
             self.assertTrue(all(line.startswith(".realms-") for line in lines))
         application_lines = [line for line in section.splitlines() if "realms-application" in line]
         self.assertFalse(any("#" in line for line in application_lines))
+
+    def test_does_not_fill_missing_curated_results(self):
+        hook = self.read("frontend/src/hooks/useRealmApplications.js")
+        page = self.read("frontend/src/pages/Realms.jsx")
+        combined = hook + page
+        self.assertNotIn("getRealms", combined)
+        self.assertNotIn("placeholder application", combined.lower())
+        self.assertNotIn("namespace_key.split", combined)
+        self.assertNotIn("Array(APPLICATIONS_LIMIT)", combined)
 
 
 if __name__ == "__main__":

@@ -53,9 +53,14 @@ function emptyMessage({ error, snapshotMissing, appliedSearch, kind }) {
 function RealmApplications({ applications }) {
   const { items, source, loading, error, snapshotMissing, retry } = applications
   const activityFromHeight = source?.activity_from_height
-  const intro = activityFromHeight !== null && activityFromHeight !== undefined
-    ? `Curated Realm namespaces ranked by indexed direct calls since #${formatCount(activityFromHeight)}.`
-    : 'Curated Realm namespaces ranked by indexed direct calls.'
+  const activityThroughHeight = source?.activity_through_height
+  const hasActivityFromHeight = activityFromHeight !== null && activityFromHeight !== undefined
+  const hasActivityThroughHeight = activityThroughHeight !== null && activityThroughHeight !== undefined
+  const intro = hasActivityFromHeight && hasActivityThroughHeight
+    ? `Activity metrics cover blocks #${formatCount(activityFromHeight)}–#${formatCount(activityThroughHeight)}.`
+    : hasActivityFromHeight
+      ? `Activity metrics are indexed since block #${formatCount(activityFromHeight)}.`
+      : 'Curated Realm namespaces ranked by indexed direct calls.'
 
   return (
     <section className="realms-applications" aria-labelledby="realms-applications-title">

@@ -70,7 +70,7 @@ export const getRealms = ({ limit, kind, q, beforeActivityHeight, beforePath, si
   const queryString = query.toString()
   return request(`/realms${queryString ? `?${queryString}` : ''}`, { signal })
 }
-export const getTopRealmNamespaces = ({ limit = 5, scope = 'curated', signal } = {}) => {
+export const getTopRealmNamespaces = ({ limit = 3, scope = 'curated', signal } = {}) => {
   const query = new URLSearchParams()
   query.set('limit', limit)
   query.set('scope', scope)
