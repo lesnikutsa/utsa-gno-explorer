@@ -243,7 +243,11 @@ SELECT a.*,l.latest_activity_path,l.latest_activity_path_kind,l.latest_activity_
  l.last_activity_height,l.last_activity_tx_index,l.last_activity_at
 FROM namespace_aggregates a JOIN latest_activity l ON a.namespace_key=l.namespace_key COLLATE "C"
 WHERE rpc_visible_realm_count>0 AND direct_call_count>0
-ORDER BY direct_call_count DESC,COALESCE(last_activity_height,-1) DESC,namespace_key COLLATE "C" ASC LIMIT %s
+ORDER BY
+ a.direct_call_count DESC,
+ COALESCE(l.last_activity_height,-1) DESC,
+ a.namespace_key COLLATE "C" ASC
+LIMIT %s
 """
 REALM_NAMESPACE_MEMBERS_SQL = """
 WITH ranked AS (
