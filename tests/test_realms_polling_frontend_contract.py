@@ -1,4 +1,5 @@
 import unittest
+import re
 from pathlib import Path
 
 
@@ -15,9 +16,21 @@ class RealmsPollingFrontendContractTests(unittest.TestCase):
     def test_coordinator_timeout_visibility_and_cycle_contract(self):
         hook = self.read("frontend/src/hooks/useRealmsAutoRefresh.js")
         self.assertIn("export const REALMS_POLL_MS = 30_000", hook)
+        timeout = re.search(r"REALMS_BACKGROUND_REQUEST_TIMEOUT_MS = ([\d_]+)", hook)
+        poll = re.search(r"REALMS_POLL_MS = ([\d_]+)", hook)
+        self.assertIsNotNone(timeout)
+        self.assertLess(int(timeout.group(1).replace("_", "")), int(poll.group(1).replace("_", "")))
         self.assertIn("setTimeout(runCycle, REALMS_POLL_MS)", hook)
         self.assertNotIn("setInterval", hook)
-        self.assertIn("Promise.allSettled([refreshRealms(), refreshApplications()])", hook)
+        self.assertIn("Promise.allSettled([", hook)
+        self.assertIn("Promise.resolve().then(() => refreshRealms())", hook)
+        self.assertIn("Promise.resolve().then(() => refreshApplications())", hook)
+        cycle = self.function_section(hook, "const runCycle", "const handleVisibilityChange")
+        self.assertIn("try {", cycle)
+        self.assertIn("} finally {", cycle)
+        finally_section = cycle[cycle.index("} finally {"):]
+        self.assertIn("cycleRunning.current = false", finally_section)
+        self.assertIn("schedule()", finally_section)
         self.assertIn("cycleRunning.current", hook)
         self.assertIn("document.visibilityState === 'hidden'", hook)
         self.assertIn("clearTimeout(timeout.current)", hook)
@@ -54,6 +67,14 @@ class RealmsPollingFrontendContractTests(unittest.TestCase):
         self.assertIn("id !== requestId.current", section)
         self.assertIn("controller.current?.abort()", hook[:hook.index("const refreshInBackground")])
         self.assertIn("refreshInBackground", hook[hook.index("return {"):])
+        self.assertIn("new AbortController()", section)
+        self.assertIn("window.setTimeout", section)
+        self.assertIn("timedOut = true", section)
+        self.assertIn("activeController.abort()", section)
+        self.assertIn("window.clearTimeout(requestTimeout)", section)
+        self.assertIn("requestError?.name === 'AbortError' && !timedOut", section)
+        self.assertIn("controller.current = null", section)
+        self.assertNotIn("setSummary(null)", section)
 
     def test_applications_background_refresh_preserves_cards(self):
         hook = self.read("frontend/src/hooks/useRealmApplications.js")
@@ -67,6 +88,13 @@ class RealmsPollingFrontendContractTests(unittest.TestCase):
         self.assertIn("setSnapshotMissing(false)", section)
         self.assertIn("id !== requestId.current", section)
         self.assertNotIn("healthState", hook)
+        self.assertIn("new AbortController()", section)
+        self.assertIn("window.setTimeout", section)
+        self.assertIn("timedOut = true", section)
+        self.assertIn("activeController.abort()", section)
+        self.assertIn("window.clearTimeout(requestTimeout)", section)
+        self.assertIn("requestError?.name === 'AbortError' && !timedOut", section)
+        self.assertIn("controller.current = null", section)
 
     def test_polling_has_no_ui_api_or_style_surface(self):
         page = self.read("frontend/src/pages/Realms.jsx")

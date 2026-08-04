@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getTopRealmNamespaces } from '../services/api'
+import { REALMS_BACKGROUND_REQUEST_TIMEOUT_MS } from './useRealmsAutoRefresh'
 
 export const APPLICATIONS_LIMIT = 3
 
@@ -70,6 +71,11 @@ export function useRealmApplications() {
     activeController.background = true
     controller.current = activeController
     const id = ++requestId.current
+    let timedOut = false
+    const requestTimeout = window.setTimeout(() => {
+      timedOut = true
+      activeController.abort()
+    }, REALMS_BACKGROUND_REQUEST_TIMEOUT_MS)
     try {
       const response = await getTopRealmNamespaces({
         limit: APPLICATIONS_LIMIT,
@@ -85,9 +91,11 @@ export function useRealmApplications() {
       setError(false)
       setSnapshotMissing(false)
     } catch (requestError) {
-      if (!mounted.current || id !== requestId.current || requestError?.name === 'AbortError') return
+      if (!mounted.current || id !== requestId.current) return
+      if (requestError?.name === 'AbortError' && !timedOut) return
       if (!hasItems.current) return
     } finally {
+      window.clearTimeout(requestTimeout)
       if (id === requestId.current) controller.current = null
     }
   }, [])

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 
 export const REALMS_POLL_MS = 30_000
+export const REALMS_BACKGROUND_REQUEST_TIMEOUT_MS = 15_000
 
 export function useRealmsAutoRefresh({ enabled, refreshRealms, refreshApplications }) {
   const timeout = useRef(null)
@@ -31,9 +32,15 @@ export function useRealmsAutoRefresh({ enabled, refreshRealms, refreshApplicatio
       clearScheduled()
       if (!enabledRef.current || document.visibilityState === 'hidden' || cycleRunning.current) return
       cycleRunning.current = true
-      await Promise.allSettled([refreshRealms(), refreshApplications()])
-      cycleRunning.current = false
-      schedule()
+      try {
+        await Promise.allSettled([
+          Promise.resolve().then(() => refreshRealms()),
+          Promise.resolve().then(() => refreshApplications()),
+        ])
+      } finally {
+        cycleRunning.current = false
+        schedule()
+      }
     }
 
     const handleVisibilityChange = () => {
