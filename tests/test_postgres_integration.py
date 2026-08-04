@@ -1881,7 +1881,12 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                 for child in node.get("Plans", []):
                     collect(child)
             collect(plan)
-            index_nodes = [node for node in nodes if node.get("Node Type") in ("Index Scan", "Index Only Scan")]
+            index_nodes = [
+                node for node in nodes
+                if node.get("Node Type") in (
+                    "Index Scan", "Index Only Scan", "Bitmap Index Scan",
+                )
+            ]
             self.assertTrue(index_nodes, plan)
             self.assertTrue(any(node.get("Index Name") == "blocks_pkey" for node in index_nodes))
             condition = " ".join(str(node.get("Index Cond", "")) for node in index_nodes)
