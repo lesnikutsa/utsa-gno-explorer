@@ -199,18 +199,46 @@ class RealmDetailFrontendContractTests(unittest.TestCase):
 
     def test_page_rendering_contract(self):
         page = self.read("frontend/src/pages/RealmDetail.jsx")
-        for text in ["Overview", "Recent Calls", "Packages do not have direct Realm call history.", "Realm call history is temporarily unavailable.", "Realm or Package not found", "Catalog observed at block", "History complete", "History unavailable", "Load older calls", "Message #"]:
+        source_helper = self.read("frontend/src/utils/realmDetail.js")
+        for text in ["Overview", "Recent Calls", "Packages do not have direct Realm call history.", "Realm call history is temporarily unavailable.", "Realm or Package not found", "Load older calls", "Message #"]:
             self.assertIn(text, page)
+        for text in ["Catalog observed at block", "History complete", "History unavailable"]:
+            self.assertIn(text, source_helper)
         for exact in ["const response = detailState.data", "const item = response.item", "const source = response.source", "const namespaceKey = response.namespace_key", "const application = response.application"]:
             self.assertIn(exact, page)
-        for field in ["item.call_count", "item.success_rate", "item.successful_call_count", "item.failed_call_count", "item.unknown_result_call_count", "item.first_seen_height", "item.last_activity_at", "item.last_activity_height", "item.deploy_height", "item.deploy_tx_index", "item.deployer_address", "source.indexed_height", "source.call_index_complete", "source.call_index_from_height", "source.call_index_through_height", "row.caller_address"]:
+        for field in ["item.call_count", "item.success_rate", "item.successful_call_count", "item.failed_call_count", "item.unknown_result_call_count", "item.first_seen_height", "item.last_activity_at", "item.last_activity_height", "item.deploy_height", "item.deploy_tx_index", "item.deployer_address", "source.indexed_height", "row.caller_address"]:
             self.assertIn(field, page)
+        for field in ["source.call_index_complete", "source.call_index_from_height", "source.call_index_through_height"]:
+            self.assertIn(field, source_helper)
         for column in ["Time", "Function", "Caller", "Block", "Status", "Gas Used", "Tx Hash"]:
             self.assertIn(f"label: '{column}'", page)
         self.assertIn("/blocks/${encodeURIComponent(value)}", page)
         self.assertIn("/accounts/${encodeURIComponent(value)}", page)
         self.assertIn("/blocks/${encodeURIComponent(row.block_height)}/transactions/${encodeURIComponent(row.tx_index)}", page)
         self.assertNotIn("CopyButton", page)
+
+
+    def test_source_status_hides_package_call_history_semantics(self):
+        values = run_node(
+            """
+            import { getRealmSourceStatusParts } from './frontend/src/utils/realmDetail.js';
+            const completeSource = { catalog_observed_height: 421900, indexed_height: 422000, call_index_from_height: 140000, call_index_through_height: 422000, call_index_complete: true };
+            const incompleteSource = { catalog_observed_height: 421900, indexed_height: 422000, call_index_from_height: 140000, call_index_through_height: null, call_index_complete: false };
+            const packageText = getRealmSourceStatusParts(completeSource, { kind: 'package' }).flat().join(' ');
+            const completeRealmText = getRealmSourceStatusParts(completeSource, { kind: 'realm' }).flat().join(' ');
+            const incompleteRealmText = getRealmSourceStatusParts(incompleteSource, { kind: 'realm' }).flat().join(' ');
+            console.log(JSON.stringify({ packageText, completeRealmText, incompleteRealmText }));
+            """
+        )
+        self.assertIn("Catalog observed at block", values["packageText"])
+        self.assertIn("Indexed at block", values["packageText"])
+        self.assertNotIn("Call history coverage", values["packageText"])
+        self.assertNotIn("History complete", values["packageText"])
+        self.assertNotIn("History unavailable", values["packageText"])
+        self.assertIn("Call history coverage from", values["completeRealmText"])
+        self.assertIn("History complete", values["completeRealmText"])
+        self.assertIn("Call history coverage from", values["incompleteRealmText"])
+        self.assertIn("History unavailable", values["incompleteRealmText"])
 
     def test_scoped_responsive_css(self):
         styles = self.read("frontend/src/styles/app.css")

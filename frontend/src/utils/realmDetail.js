@@ -73,3 +73,18 @@ export function selectRealmCallsStateForPath(state, path) {
   if (state?.path !== path) return loadingRealmCallsState(path)
   return state
 }
+
+
+export function getRealmSourceStatusParts(source, item) {
+  const base = [
+    ['Catalog observed at block', source.catalog_observed_height],
+    ['Indexed at block', source.indexed_height],
+  ]
+  if (item.kind === 'package') return base
+  const historyComplete = source.call_index_complete === true && source.call_index_from_height != null && source.call_index_through_height != null
+  return [
+    ...base,
+    ['Call history coverage from', source.call_index_from_height, 'through', source.call_index_through_height],
+    [historyComplete ? 'History complete' : 'History unavailable'],
+  ]
+}

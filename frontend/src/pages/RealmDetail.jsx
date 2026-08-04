@@ -4,7 +4,7 @@ import { formatGas } from '../utils/gas'
 import { shortAddress } from '../utils/address'
 import { relativeTime } from '../utils/time'
 import { formatSuccessRate } from '../utils/realm'
-import { getRealmDetailViewModel, realmCallsPathForDetail } from '../utils/realmDetail'
+import { getRealmDetailViewModel, getRealmSourceStatusParts, realmCallsPathForDetail } from '../utils/realmDetail'
 import { useRealmCalls } from '../hooks/useRealmCalls'
 
 const formatCount = (value) => typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString() : value == null ? '—' : String(value)
@@ -27,11 +27,13 @@ function StatePanel({ title, message, retry }) {
   )
 }
 
-function SourceStatus({ source }) {
-  const historyComplete = source.call_index_complete === true && source.call_index_from_height != null && source.call_index_through_height != null
+function SourceStatus({ source, item }) {
+  const parts = getRealmSourceStatusParts(source, item)
   return (
     <p className="realm-detail__source">
-      Catalog observed at block {formatCount(source.catalog_observed_height)} · Indexed at block {formatCount(source.indexed_height)} · Call history coverage from {formatCount(source.call_index_from_height)} through {formatCount(source.call_index_through_height)} · {historyComplete ? 'History complete' : 'History unavailable'}
+      {parts.map((part, index) => (
+        <span key={`${part[0]}-${index}`}>{index > 0 ? ' · ' : ''}{part[0]}{part.length > 1 ? <> {formatCount(part[1])}</> : null}{part.length > 3 ? <> {part[2]} {formatCount(part[3])}</> : null}</span>
+      ))}
     </p>
   )
 }
@@ -103,7 +105,7 @@ export function RealmDetail({ path, detailState }) {
         {item.kind === 'realm' && namespaceKey && <p className="realm-detail__namespace mono">Namespace: {namespaceKey}</p>}
       </header>
       <Overview item={item} source={source} />
-      <SourceStatus source={source} />
+      <SourceStatus source={source} item={item} />
       <RecentCalls response={response} />
     </article>
   )
