@@ -8,6 +8,7 @@ import json
 import math
 import time
 import traceback
+from typing import Literal
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import FastAPI, HTTPException, Path, Query
@@ -16,7 +17,8 @@ from api.config import ConfigError, load_config
 from api.account_service import AccountUnavailableError, fetch_live_account, public_rpc_url
 from api.network_profile import topaz_profile, validate_account_address
 from api.transaction_argument_decoder import decode_transaction_arguments
-from indexer.realm_catalog import path_kind as realm_path_kind
+from indexer.realm_catalog import namespace_key, path_kind as realm_path_kind
+from api.realm_application_registry import CURATED_NAMESPACE_KEYS, REALM_APPLICATION_REGISTRY
 from api.database import (
     MissingIndexedBlockError,
     MissingIndexerStateError,
@@ -57,6 +59,9 @@ from api.schemas import (
     RealmCatalogResponse,
     RealmCatalogSummary,
     RealmRankingSource,
+    RealmNamespaceMember,
+    RealmNamespaceTopItem,
+    RealmNamespaceTopResponse,
     RealmTopResponse,
     SelectedRpc,
     TransactionDetailResponse,
@@ -1121,6 +1126,125 @@ def get_top_realms(limit: int = Query(default=5, ge=1, le=10)) -> RealmTopRespon
         raise
     except Exception:
         LOGGER.error("Explorer database Realm ranking query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+
+
+def _namespace_rate(success: int, failed: int) -> float | None:
+    return success / (success + failed) if success + failed else None
+
+
+def _validate_activity_tuple(height, tx_index, timestamp, *, required: bool) -> None:
+    all_null = height is None and tx_index is None and timestamp is None
+    all_present = (type(height) is int and height > 0 and type(tx_index) is int and tx_index >= 0
+                   and isinstance(timestamp, datetime))
+    if not (all_present if required else all_null):
+        raise ValueError("inconsistent activity tuple")
+
+
+@app.get("/api/realm-namespaces/top", response_model=RealmNamespaceTopResponse)
+def get_top_realm_namespaces(
+    limit: int = Query(default=5, ge=1, le=10),
+    scope: Literal["all", "curated"] = Query(default="all"),
+) -> RealmNamespaceTopResponse:
+    try:
+        result = database.fetch_top_realm_namespaces(chain_id=app.state.api_config.chain_id, limit=limit,
+            curated_only=scope == "curated", curated_namespace_keys=CURATED_NAMESPACE_KEYS)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Realm catalog not found")
+        grouped = {key: [] for key in (row["namespace_key"] for row in result["items"])}
+        for row in result["members"]:
+            if row.get("namespace_key") not in grouped:
+                raise ValueError("unexpected namespace member")
+            grouped[row["namespace_key"]].append(row)
+        items, previous, seen = [], None, set()
+        for row in result["items"]:
+            key = row["namespace_key"]
+            if namespace_key(f"gno.land/r/{key}") != key or key in seen:
+                raise ValueError("invalid namespace")
+            seen.add(key)
+            counts = [row[name] for name in ("realm_count", "called_realm_count", "rpc_visible_realm_count",
+                "direct_call_count", "successful_call_count", "failed_call_count", "unknown_result_call_count")]
+            if any(type(value) is not int or value < 0 for value in counts):
+                raise ValueError("invalid counts")
+            realm_count, called, visible, direct, successful, failed, unknown = counts
+            if not (realm_count > 0 and 0 < called <= realm_count and 0 < visible <= realm_count and direct > 0
+                    and successful + failed + unknown == direct):
+                raise ValueError("inconsistent counts")
+            activity = (row["last_activity_height"], row["last_activity_tx_index"], row["last_activity_at"])
+            _validate_activity_tuple(*activity, required=True)
+            latest_path = row["latest_activity_path"]
+            if (row.get("latest_activity_path_kind") != "realm" or namespace_key(latest_path) != key or
+                    type(row.get("latest_activity_call_count")) is not int or row["latest_activity_call_count"] <= 0):
+                raise ValueError("invalid latest activity Realm")
+            first_seen = row["first_seen_height"]
+            if first_seen is not None and (type(first_seen) is not int or first_seen <= 0):
+                raise ValueError("invalid first seen height")
+            order = (-direct, -(activity[0] if activity[0] is not None else -1), key)
+            if previous is not None and order < previous:
+                raise ValueError("invalid ranking order")
+            previous = order
+            members = grouped[key]
+            paths, converted = [], []
+            for member in members:
+                path = member["path"]
+                if member.get("path_kind") != "realm" or namespace_key(path) != key or path in paths:
+                    raise ValueError("invalid member")
+                paths.append(path)
+                member_counts = [member[n] for n in ("call_count", "successful_call_count", "failed_call_count", "unknown_result_call_count")]
+                if any(type(v) is not int or v < 0 for v in member_counts) or sum(member_counts[1:]) != member_counts[0]:
+                    raise ValueError("invalid member counts")
+                member_activity = (member["last_activity_height"], member["last_activity_tx_index"], member["last_activity_at"])
+                _validate_activity_tuple(*member_activity, required=member_counts[0] > 0)
+                member_first_seen = member["first_seen_height"]
+                if member_first_seen is not None and (type(member_first_seen) is not int or member_first_seen <= 0):
+                    raise ValueError("invalid member first seen height")
+                converted.append(RealmNamespaceMember(path=path, rpc_visible=member["rpc_visible"],
+                    first_seen_height=member_first_seen, last_activity_height=member_activity[0],
+                    last_activity_tx_index=member_activity[1], last_activity_at=isoformat_utc_z(member_activity[2]) if member_activity[2] is not None else None,
+                    call_count=member_counts[0], successful_call_count=member_counts[1], failed_call_count=member_counts[2],
+                    unknown_result_call_count=member_counts[3], success_rate=_namespace_rate(member_counts[1], member_counts[2])))
+            if paths != sorted(paths) or len(members) != min(realm_count, 100):
+                raise ValueError("invalid member bounds")
+            truncated = realm_count > len(members)
+            if not truncated and (sum(m["call_count"] for m in members) != direct or
+                sum(m["successful_call_count"] for m in members) != successful or
+                sum(m["failed_call_count"] for m in members) != failed or sum(m["unknown_result_call_count"] for m in members) != unknown or
+                sum(bool(m["rpc_visible"]) for m in members) != visible or sum(m["call_count"] > 0 for m in members) != called):
+                raise ValueError("aggregate mismatch")
+            if not truncated:
+                member_first_seen = [m["first_seen_height"] for m in members if m["first_seen_height"] is not None]
+                if (min(member_first_seen) if member_first_seen else None) != first_seen:
+                    raise ValueError("aggregate first seen mismatch")
+                newest = min((m for m in members if m["call_count"] > 0),
+                    key=lambda m: (-m["last_activity_height"], -m["last_activity_tx_index"], m["path"]))
+                if (newest["path"], newest["last_activity_height"], newest["last_activity_tx_index"], newest["last_activity_at"]) != (
+                        latest_path, activity[0], activity[1], activity[2]):
+                    raise ValueError("aggregate latest activity mismatch")
+                if row["latest_activity_call_count"] != newest["call_count"]:
+                    raise ValueError("aggregate latest activity call count mismatch")
+            else:
+                returned_latest = next((member for member in members if member["path"] == latest_path), None)
+                if returned_latest is not None and row["latest_activity_call_count"] != returned_latest["call_count"]:
+                    raise ValueError("truncated latest activity call count mismatch")
+            application = REALM_APPLICATION_REGISTRY.get(key)
+            if scope == "curated" and application is None:
+                raise ValueError("uncurated result")
+            items.append(RealmNamespaceTopItem(namespace_key=key, application=dict(application) if application else None,
+                realm_count=realm_count, called_realm_count=called, rpc_visible_realm_count=visible,
+                direct_call_count=direct, successful_call_count=successful, failed_call_count=failed,
+                unknown_result_call_count=unknown, success_rate=_namespace_rate(successful, failed),
+                first_seen_height=first_seen, last_activity_height=activity[0], last_activity_tx_index=activity[1],
+                last_activity_at=isoformat_utc_z(activity[2]) if activity[2] is not None else None, realms=converted, realms_truncated=truncated))
+        if len(items) > limit:
+            raise ValueError("too many namespaces")
+        source = result["source"]
+        return RealmNamespaceTopResponse(source=RealmRankingSource(chain_id=source["chain_id"], indexed_height=source["indexed_height"],
+            catalog_observed_height=source["observed_height"], activity_from_height=source["activity_from_height"],
+            activity_through_height=source["activity_through_height"]), scope=scope, items=items)
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.error("Explorer database Realm namespace ranking query failed")
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
 
 

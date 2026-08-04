@@ -572,3 +572,50 @@ class RealmTopResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     source: RealmRankingSource
     items: list[RealmCatalogItem] = Field(max_length=10)
+
+class RealmApplicationMetadata(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    display_name: str = Field(min_length=1, max_length=256)
+    category: str = Field(min_length=1, max_length=256)
+    description: str | None = Field(default=None, max_length=256)
+    website: str | None = Field(default=None, max_length=256)
+    metadata_source: Literal["curated_registry"]
+
+class RealmNamespaceMember(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    path: str = Field(min_length=1, max_length=256)
+    rpc_visible: bool
+    first_seen_height: int | None = Field(default=None, gt=0)
+    last_activity_height: int | None = Field(default=None, gt=0)
+    last_activity_tx_index: int | None = Field(default=None, ge=0)
+    last_activity_at: str | None = None
+    call_count: int = Field(ge=0)
+    successful_call_count: int = Field(ge=0)
+    failed_call_count: int = Field(ge=0)
+    unknown_result_call_count: int = Field(ge=0)
+    success_rate: float | None = Field(default=None, ge=0, le=1)
+
+class RealmNamespaceTopItem(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    namespace_key: str = Field(min_length=1, max_length=256)
+    application: RealmApplicationMetadata | None
+    realm_count: int = Field(gt=0)
+    called_realm_count: int = Field(gt=0)
+    rpc_visible_realm_count: int = Field(gt=0)
+    direct_call_count: int = Field(gt=0)
+    successful_call_count: int = Field(ge=0)
+    failed_call_count: int = Field(ge=0)
+    unknown_result_call_count: int = Field(ge=0)
+    success_rate: float | None = Field(default=None, ge=0, le=1)
+    first_seen_height: int | None = Field(default=None, gt=0)
+    last_activity_height: int | None = Field(default=None, gt=0)
+    last_activity_tx_index: int | None = Field(default=None, ge=0)
+    last_activity_at: str | None = None
+    realms: list[RealmNamespaceMember] = Field(max_length=100)
+    realms_truncated: bool
+
+class RealmNamespaceTopResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    source: RealmRankingSource
+    scope: Literal["all", "curated"]
+    items: list[RealmNamespaceTopItem] = Field(max_length=10)

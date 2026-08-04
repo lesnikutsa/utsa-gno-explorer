@@ -1,6 +1,6 @@
 import copy
 import unittest
-from indexer.realm_catalog import aggregate_block, extract_observations, parse_qpaths, path_kind
+from indexer.realm_catalog import aggregate_block, extract_observations, namespace_key, parse_qpaths, path_kind
 from indexer.transaction_summary import MAX_SUMMARY_BYTES, normalize_summary, summary_size_bytes
 from scripts import init_database
 
@@ -15,6 +15,12 @@ class RealmCatalogTests(unittest.TestCase):
   maximum='gno.land/r/'+('x'*(256-len('gno.land/r/')))
   self.assertEqual(len(maximum),256); self.assertEqual(path_kind(maximum),'realm')
   self.assertIsNone(path_kind(maximum+'x'))
+ def test_namespace_key_preserves_canonical_segment(self):
+  self.assertEqual(namespace_key('gno.land/r/GnoSwap/common'),'GnoSwap')
+  self.assertEqual(namespace_key('gno.land/r/example'),'example')
+  for value in ('gno.land/p/example/lib','gno.land/r/',' gno.land/r/foo','gno.land/r/foo?bar',
+                'gno.land/r/foo#bar','gno.land/r/'+('x'*247)):
+   self.assertIsNone(namespace_key(value))
  def test_extraction_is_bounded(self):
   messages=[{'type':'gno.vm.MsgCall','package_path':'gno.land/r/x'}]*21
   self.assertEqual(len(extract_observations(summary(messages))),20)
