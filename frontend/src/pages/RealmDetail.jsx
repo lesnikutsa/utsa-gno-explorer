@@ -4,7 +4,7 @@ import { formatGas } from '../utils/gas'
 import { shortAddress } from '../utils/address'
 import { relativeTime } from '../utils/time'
 import { formatSuccessRate } from '../utils/realm'
-import { getRealmCallViewModel, getRealmDetailViewModel, realmCallsPathForDetail } from '../utils/realmDetail'
+import { getRealmDetailViewModel, realmCallsPathForDetail } from '../utils/realmDetail'
 import { useRealmCalls } from '../hooks/useRealmCalls'
 
 const formatCount = (value) => typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString() : value == null ? '—' : String(value)

@@ -55,3 +55,21 @@ export function getRealmCallViewModel(row) {
     gasUsed: row.gas_used,
   }
 }
+
+export const idleRealmDetailState = (path = null) => ({ path, data: null, loading: false, error: false, temporaryError: false, notFound: false, healthState: 'healthy' })
+export const loadingRealmDetailState = (path) => ({ path, data: null, loading: true, error: false, temporaryError: false, notFound: false, healthState: 'loading' })
+
+export function selectRealmDetailStateForPath(state, path) {
+  if (!path) return idleRealmDetailState(null)
+  if (state?.path !== path) return loadingRealmDetailState(path)
+  return state
+}
+
+export const idleRealmCallsState = (path = null) => ({ path, items: [], pagination: null, loading: false, loadingOlder: false, error: false, olderError: false, unavailable: false })
+export const loadingRealmCallsState = (path) => ({ path, items: [], pagination: null, loading: true, loadingOlder: false, error: false, olderError: false, unavailable: false })
+
+export function selectRealmCallsStateForPath(state, path) {
+  if (!path) return idleRealmCallsState(null)
+  if (state?.path !== path) return loadingRealmCallsState(path)
+  return state
+}

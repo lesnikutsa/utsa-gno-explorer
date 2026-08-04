@@ -1,32 +1,35 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getRealmDetail } from '../services/api'
-
-const idleState = { data: null, loading: false, error: false, temporaryError: false, notFound: false, healthState: 'healthy' }
-const loadingState = { data: null, loading: true, error: false, temporaryError: false, notFound: false, healthState: 'loading' }
+import { idleRealmDetailState, loadingRealmDetailState, selectRealmDetailStateForPath } from '../utils/realmDetail'
 
 export function useRealmDetail(path) {
   const requestId = useRef(0)
   const controller = useRef(null)
   const [retryCount, setRetryCount] = useState(0)
-  const [state, setState] = useState(() => path ? loadingState : idleState)
-  const retry = useCallback(() => setRetryCount((count) => count + 1), [])
+  const [state, setState] = useState(() => path ? loadingRealmDetailState(path) : idleRealmDetailState(null))
+  const retry = useCallback(() => {
+    if (path) setState(loadingRealmDetailState(path))
+    setRetryCount((count) => count + 1)
+  }, [path])
 
   useEffect(() => {
     controller.current?.abort()
     const id = ++requestId.current
     if (!path) {
-      setState(idleState)
+      setState(idleRealmDetailState(null))
       return undefined
     }
+    const requestedPath = path
     const activeController = new AbortController()
     controller.current = activeController
-    setState(loadingState)
-    getRealmDetail({ path, signal: activeController.signal }).then((data) => {
+    setState(loadingRealmDetailState(requestedPath))
+    getRealmDetail({ path: requestedPath, signal: activeController.signal }).then((data) => {
       if (id !== requestId.current || activeController.signal.aborted) return
-      setState({ data, loading: false, error: false, temporaryError: false, notFound: false, healthState: 'healthy' })
+      setState({ path: requestedPath, data, loading: false, error: false, temporaryError: false, notFound: false, healthState: 'healthy' })
     }).catch((requestError) => {
       if (id !== requestId.current || requestError?.name === 'AbortError') return
       setState({
+        path: requestedPath,
         data: null,
         loading: false,
         notFound: requestError?.status === 404,
@@ -41,5 +44,5 @@ export function useRealmDetail(path) {
     }
   }, [path, retryCount])
 
-  return { ...state, retry }
+  return { ...selectRealmDetailStateForPath(state, path), retry }
 }
