@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 import unittest
 from pathlib import Path
@@ -119,7 +120,9 @@ class RealmApplicationsFrontendContractTests(unittest.TestCase):
             ".realms-applications",
             ".realms-applications__grid",
             ".realms-application-card",
-            "repeat(3, minmax(0, 1fr))",
+            "repeat(auto-fill, minmax(300px, 390px))",
+            "justify-content: start",
+            "padding: 11px 12px",
             "linear-gradient(135deg, var(--color-accent-soft), var(--color-card))",
             "color: var(--color-text-bright)",
             "overflow-wrap: anywhere",
@@ -132,6 +135,14 @@ class RealmApplicationsFrontendContractTests(unittest.TestCase):
             self.assertTrue(all(line.startswith(".realms-") for line in lines))
         application_lines = [line for line in section.splitlines() if "realms-application" in line]
         self.assertFalse(any("#" in line for line in application_lines))
+        grid_width = re.search(r"repeat\(auto-fill, minmax\(\d+px, (\d+)px\)\)", section)
+        self.assertIsNotNone(grid_width)
+        self.assertLessEqual(int(grid_width.group(1)), 420)
+        mobile_760 = section[section.index("@media (max-width: 760px)"):section.index("@media (max-width: 480px)")]
+        self.assertIn("grid-template-columns: minmax(0, 1fr)", mobile_760)
+        mobile_480 = section[section.index("@media (max-width: 480px)"):]
+        self.assertIn(".realms-application-card__metrics { grid-template-columns: repeat(2, minmax(0, 1fr));", mobile_480)
+        self.assertNotIn(".realms-application-card__metrics { grid-template-columns: 1fr", mobile_480)
 
     def test_does_not_fill_missing_curated_results(self):
         hook = self.read("frontend/src/hooks/useRealmApplications.js")
