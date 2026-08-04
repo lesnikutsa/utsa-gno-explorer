@@ -56,7 +56,6 @@ COMMENT ON COLUMN transactions.raw_base64 IS 'Raw transaction string exactly as 
 COMMENT ON COLUMN transactions.decoded_bytes IS 'Decoded bytes when base64 decoding succeeds; full Gno transaction parsing is deferred.';
 COMMENT ON COLUMN transactions.tx_hash_hex IS 'SHA-256 of the exact decoded Tendermint2 transaction bytes, in the Explorer canonical uppercase hexadecimal display/search form.';
 COMMENT ON COLUMN transactions.payload_summary IS 'Limited JSONB for future decoded payload summaries, not raw unbounded application data.';
-
 CREATE INDEX transactions_tx_hash_hex_idx ON transactions(tx_hash_hex) WHERE tx_hash_hex IS NOT NULL;
 
 CREATE TABLE transaction_participants (
@@ -274,24 +273,6 @@ COMMENT ON COLUMN indexer_state.last_finalized_height IS 'Most recent fully proc
 COMMENT ON COLUMN indexer_state.finalized_tip_height IS 'Most recent finalized tip derived as latest RPC height H minus one; indexing still advances one target height S at a time.';
 
 -- The default row is expected to be created by deployment or migration tooling before indexing starts.
-
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'utsa_gno_api') THEN
-        GRANT SELECT (height, time_utc)
-        ON TABLE blocks
-        TO utsa_gno_api;
-
-        GRANT SELECT (block_height, tx_index, tx_hash_hex)
-        ON TABLE transactions
-        TO utsa_gno_api;
-
-        GRANT SELECT (state_key, chain_id, last_finalized_height)
-        ON TABLE indexer_state
-        TO utsa_gno_api;
-    END IF;
-END
-$$;
 
 -- Aggregated observed network-distribution samples. This schema stores no raw RPC or GeoIP payloads.
 CREATE TABLE network_distribution_geo_cache (

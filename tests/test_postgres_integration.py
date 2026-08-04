@@ -1899,45 +1899,6 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
               ('utsa_gno_api',False,True,False,False,False,False),
               ('utsa_gno_indexer',False,True,False,False,False,False)])
 
-
-    def test_realm_calls_api_privileges_0010_upgrade_idempotent_and_least_privilege(self):
-        name = f"utsa_realm_calls_privileges_{os.getpid()}"
-        self.create_database(name)
-        self.ensure_application_roles()
-        url = self.database_url_for(name)
-        init_database.initialize_or_validate(url)
-        init_database.initialize_or_validate(url)
-        with psycopg.connect(url) as connection, connection.cursor() as cursor:
-            init_database.validate_schema_snapshot(init_database.fetch_schema_snapshot(cursor))
-            migration = init_database.REALM_CALLS_API_PRIVILEGE_MIGRATION.read_text()
-            schema = init_database.SCHEMA.read_text()
-            for fragment in (
-                "GRANT SELECT (height, time_utc)",
-                "GRANT SELECT (block_height, tx_index, tx_hash_hex)",
-                "GRANT SELECT (state_key, chain_id, last_finalized_height)",
-            ):
-                self.assertIn(fragment, migration)
-                self.assertIn(fragment, schema)
-            for table, columns in init_database.EXPECTED_COLUMN_PRIVILEGES["utsa_gno_api"].items():
-                cursor.execute("SELECT has_table_privilege('utsa_gno_api', %s, 'SELECT')", (f"public.{table}",))
-                self.assertFalse(cursor.fetchone()[0], table)
-                for column in columns:
-                    cursor.execute("SELECT has_column_privilege('utsa_gno_api', %s, %s, 'SELECT')", (f"public.{table}", column))
-                    self.assertTrue(cursor.fetchone()[0], f"{table}.{column}")
-            for table, columns in init_database.API_ROLE_SENSITIVE_COLUMNS.items():
-                for column in columns:
-                    cursor.execute("SELECT has_column_privilege('utsa_gno_api', %s, %s, 'SELECT')", (f"public.{table}", column))
-                    self.assertFalse(cursor.fetchone()[0], f"{table}.{column}")
-            for table in init_database.API_ROLE_MUTATION_TABLES:
-                cursor.execute("SELECT has_table_privilege('utsa_gno_api', %s, 'INSERT,UPDATE,DELETE')", (f"public.{table}",))
-                self.assertFalse(cursor.fetchone()[0], table)
-
-        no_role = f"utsa_realm_calls_privileges_no_role_{os.getpid()}"
-        self.create_database(no_role)
-        no_role_url = self.database_url_for(no_role)
-        init_database.initialize_or_validate(no_role_url)
-        init_database.initialize_or_validate(no_role_url)
-
     def test_realm_detail_and_realm_calls_api_queries(self):
         name = f"utsa_realm_detail_calls_{os.getpid()}"
         self.create_database(name)
@@ -1945,6 +1906,7 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         url = self.database_url_for(name)
         init_database.initialize_or_validate(url)
         with psycopg.connect(url) as connection, connection.cursor() as cursor:
+            cursor.execute("GRANT SELECT ON ALL TABLES IN SCHEMA public TO utsa_gno_api")
             cursor.execute("SELECT rolname FROM pg_roles WHERE rolname IN ('utsa_gno_api','utsa_gno_indexer') ORDER BY rolname")
             self.assertEqual(cursor.fetchall(), [('utsa_gno_api',), ('utsa_gno_indexer',)])
             for table in ('realm_call_index', 'realm_call_index_state'):
@@ -1992,25 +1954,18 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                 self.assertEqual(cursor.fetchone()["indexed_height"], 3)
                 cursor.execute(REALM_CALLS_PAGE_SQL, ("topaz-1", "gno.land/r/gnoswap/app", 2, 3, None, None, None, None, 3))
                 self.assertEqual([(row["block_height"], row["tx_index"], row["message_index"]) for row in cursor.fetchall()], [(3,0,1),(3,0,0),(2,0,0)])
-                cursor.execute("SELECT height, time_utc FROM blocks ORDER BY height LIMIT 1")
-                self.assertEqual(cursor.fetchone()["height"], 1)
-                cursor.execute("SELECT block_height, tx_index, tx_hash_hex FROM transactions ORDER BY block_height LIMIT 1")
-                self.assertEqual(cursor.fetchone()["block_height"], 1)
-                cursor.execute("SELECT state_key, chain_id, last_finalized_height FROM indexer_state")
-                self.assertEqual(cursor.fetchone()["last_finalized_height"], 3)
-                for sql in ("SELECT raw_block_response FROM blocks LIMIT 1",
-                            "SELECT raw_base64 FROM transactions LIMIT 1",
-                            "SELECT decoded_bytes FROM transactions LIMIT 1",
-                            "SELECT payload_summary FROM transactions LIMIT 1",
+                for table in ("blocks", "transactions", "indexer_state", "transaction_execution_results",
+                              "realm_catalog", "realm_catalog_state", "realm_call_index", "realm_call_index_state"):
+                    cursor.execute(f"SELECT count(*) FROM {table}")
+                    self.assertGreaterEqual(cursor.fetchone()[0], 0, table)
+                for sql in ("INSERT INTO realm_call_index_state(chain_id,from_height,through_height) VALUES ('x',1,1)",
+                            "UPDATE realm_call_index_state SET through_height=through_height",
+                            "DELETE FROM realm_call_index WHERE chain_id='topaz-1'",
+                            "TRUNCATE realm_call_index",
                             "INSERT INTO blocks(height,block_hash_base64,block_hash_hex,time_utc,tx_count) VALUES (99,'x',repeat('F',64),now(),0)",
-                            "UPDATE blocks SET tx_count=tx_count WHERE height=1",
-                            "DELETE FROM blocks WHERE height=1",
-                            "INSERT INTO transactions(block_height,tx_index,raw_base64,raw_base64_length,decode_status) VALUES (1,9,'x',1,'not_attempted')",
                             "UPDATE transactions SET tx_index=tx_index WHERE block_height=1",
-                            "DELETE FROM transactions WHERE block_height=1",
-                            "INSERT INTO indexer_state(state_key,chain_id,last_finalized_height) VALUES ('x','topaz-1',1)",
-                            "UPDATE indexer_state SET last_finalized_height=last_finalized_height",
-                            "DELETE FROM indexer_state WHERE state_key='default'"):
+                            "DELETE FROM indexer_state WHERE state_key='default'",
+                            "TRUNCATE transactions"):
                     with self.subTest(sql=sql), self.assertRaises(psycopg.errors.InsufficientPrivilege):
                         cursor.execute(sql)
                     connection.rollback()

@@ -191,7 +191,3 @@ not prove that the corresponding counters were already calculated.
 The stored projection is deliberately compact: Realm path, original bounded message index, caller, function name, argument count, and send amount. It does not duplicate block time, transaction hash, execution status, gas, arguments, events, error/log/info text, raw results or transactions, source code, Render output, storage, or balances. Future internal queries must join the canonical existing tables for those values.
 
 `realm_call_index_state` is independent of Realm catalog activity state. Its inclusive `[from_height, through_height]` means every bounded `MsgCall` observation in that continuous local block range was processed. An absent row makes no historical claim. An existing row advances atomically only for the exact next finalized height, even when that block has no calls; gaps fail closed and require an operator rebuild.
-
-### Realm Calls API column privileges
-
-Migration `0010_grant_realm_calls_api_columns.sql` is privilege-only. It grants the API role only the column-level reads required by the Realm Detail and Realm Calls SQL: `blocks(height, time_utc)`, `transactions(block_height, tx_index, tx_hash_hex)`, and `indexer_state(state_key, chain_id, last_finalized_height)`. The migration does not rewrite data, add indexes, add tables, or grant write privileges. Raw block and transaction payload/audit columns such as `blocks.raw_block_response`, `transactions.raw_base64`, `transactions.decoded_bytes`, and `transactions.payload_summary` remain unavailable to `utsa_gno_api`.

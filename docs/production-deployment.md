@@ -1267,8 +1267,3 @@ Frontend background polling is deferred to a separate change.
 ### Realm call index migration
 
 Apply `database/migrations/0009_add_realm_call_index.sql`, then perform an explicit local rebuild before treating historical coverage as available. Inspect coverage with `python scripts/check_realm_call_index_coverage.py`. The live indexer does not infer coverage from catalog activity and does not initialize the new state from a single live block.
-
-
-### Realm Calls API privilege migration
-
-Before restarting an API build that serves `GET /api/realms/calls`, apply migration `0010_grant_realm_calls_api_columns.sql`. This is a privilege-only rollout step: it grants `utsa_gno_api` column-level reads on `blocks(height, time_utc)`, `transactions(block_height, tx_index, tx_hash_hex)`, and `indexer_state(state_key, chain_id, last_finalized_height)`. It does not require a data rebuild and does not grant access to raw block responses, raw transaction bytes, decoded bytes, payload summaries, or write privileges.
