@@ -108,6 +108,7 @@ class DeploymentAssetTests(unittest.TestCase):
             "utsa-gno-indexer.service": ["indexer.env", "rpc.env"],
             "utsa-gno-governance-updater.service": ["indexer.env", "rpc.env"],
             "utsa-gno-valopers-refresh.service": ["indexer.env", "rpc.env"],
+            "utsa-gno-realm-catalog-refresh.service": ["indexer.env", "rpc.env"],
             "utsa-gno-network-distribution.service": [
                 "indexer.env", "-network-distribution.env", "rpc.env",
             ],
@@ -338,6 +339,44 @@ class DeploymentAssetTests(unittest.TestCase):
             self.assertIn(value, timer)
         self.assertEqual(timer.count("OnCalendar="), 1)
         self.assertNotIn("OnBootSec", timer)
+
+    def test_realm_catalog_refresh_service_contract(self):
+        path = ROOT / "deploy/systemd/utsa-gno-realm-catalog-refresh.service"
+        self.assertTrue(path.is_file())
+        unit = path.read_text()
+        expected = [
+            "Description=Refresh UTSA Gno Explorer Realm catalog",
+            "Type=oneshot", "User=utsa-gno", "Group=utsa-gno",
+            "WorkingDirectory=/opt/utsa-gno-explorer",
+            "EnvironmentFile=/etc/utsa-gno-explorer/indexer.env",
+            "EnvironmentFile=/etc/utsa-gno-explorer/rpc.env",
+            "ExecStartPre=/opt/utsa-gno-explorer/.venv/bin/python /opt/utsa-gno-explorer/scripts/wait_for_postgres.py --timeout 120 --retry-interval 2",
+            "ExecStart=/opt/utsa-gno-explorer/.venv/bin/python /opt/utsa-gno-explorer/scripts/refresh_realm_catalog.py",
+            "TimeoutStartSec=20m", "StandardOutput=journal", "StandardError=journal",
+            "NoNewPrivileges=true", "PrivateTmp=true", "ProtectHome=true",
+            "ProtectSystem=strict", "PrivateDevices=true", "ProtectKernelTunables=true",
+            "ProtectKernelModules=true", "ProtectControlGroups=true", "RestrictSUIDSGID=true",
+            "LockPersonality=true", "UMask=0077", "CapabilityBoundingSet=",
+            "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
+        ]
+        for value in expected:
+            self.assertIn(value, unit)
+        self.assertLess(unit.index("indexer.env"), unit.index("rpc.env"))
+        for forbidden in ("Restart=", "git pull", "DATABASE_URL=", "GNO_RPC_URLS=", "http://", "https://"):
+            self.assertNotIn(forbidden, unit)
+
+    def test_realm_catalog_refresh_timer_contract(self):
+        path = ROOT / "deploy/systemd/utsa-gno-realm-catalog-refresh.timer"
+        self.assertTrue(path.is_file())
+        timer = path.read_text()
+        for value in (
+            "OnCalendar=*-*-* 00,03,06,09,12,15,18,21:00:00 UTC",
+            "Persistent=true", "RandomizedDelaySec=5m", "AccuracySec=1m",
+            "Unit=utsa-gno-realm-catalog-refresh.service", "WantedBy=timers.target",
+        ):
+            self.assertIn(value, timer)
+        self.assertEqual(timer.count("OnCalendar="), 1)
+        self.assertNotIn("OnUnitActiveSec", timer)
 
 
     def test_compose_has_stable_project_name_with_override(self):

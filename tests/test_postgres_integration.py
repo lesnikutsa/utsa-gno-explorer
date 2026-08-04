@@ -55,6 +55,7 @@ from scripts import init_database
 from scripts.migrate_network_distribution_schema import migrate as migrate_network_distribution_schema
 from scripts.migrate_governance_schema import migrate as migrate_governance_schema
 from scripts.rebuild_realm_activity import rebuild_cursor
+from scripts.refresh_realm_catalog import RefreshStatus, persist_refresh
 
 try:
     import psycopg
@@ -1788,6 +1789,70 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
             cursor.execute("SELECT to_regclass('public.realm_catalog'),to_regclass('public.realm_catalog_state')")
             self.assertEqual(cursor.fetchone(), (None, None))
+
+    def test_realm_catalog_refresh_ordering_and_atomic_rollback(self):
+        name = f"utsa_realm_catalog_refresh_{os.getpid()}"
+        self.create_database(name)
+        url = self.database_url_for(name)
+        init_database.initialize_or_validate(url)
+        old_path = "gno.land/r/catalog/old"
+        new_path = "gno.land/p/catalog/new"
+
+        with psycopg.connect(url) as connection, connection.cursor() as cursor:
+            initial = persist_refresh(cursor, "topaz-1", 100, None, [(old_path, "realm")])
+            self.assertEqual(initial.status, RefreshStatus.APPLIED)
+        with psycopg.connect(url) as connection, connection.cursor() as cursor:
+            cursor.execute("""UPDATE realm_catalog_state SET activity_from_height=10,
+              activity_through_height=90,refreshed_at=TIMESTAMPTZ '2000-01-01 00:00:00+00'
+              WHERE chain_id='topaz-1'""")
+            cursor.execute("""UPDATE realm_catalog SET seen_via_transactions=true,
+              call_count=3,successful_call_count=2,failed_call_count=1,
+              last_counted_height=90 WHERE chain_id='topaz-1' AND path=%s""", (old_path,))
+            newer = persist_refresh(cursor, "topaz-1", 101, None, [(new_path, "package")])
+            self.assertEqual(newer.status, RefreshStatus.APPLIED)
+        with psycopg.connect(url) as connection, connection.cursor() as cursor:
+            cursor.execute("""SELECT observed_height,rpc_path_count,activity_from_height,
+              activity_through_height FROM realm_catalog_state WHERE chain_id='topaz-1'""")
+            self.assertEqual(cursor.fetchone(), (101, 1, 10, 90))
+            cursor.execute("""SELECT path,rpc_visible,call_count,successful_call_count,
+              failed_call_count FROM realm_catalog WHERE chain_id='topaz-1' ORDER BY path""")
+            self.assertEqual(cursor.fetchall(), [
+                (new_path, True, 0, 0, 0),
+                (old_path, False, 3, 2, 1),
+            ])
+            cursor.execute("SELECT refreshed_at,updated_at FROM realm_catalog_state WHERE chain_id='topaz-1'")
+            state_timestamps = cursor.fetchone()
+
+        for height, expected in ((101, RefreshStatus.UNCHANGED), (100, RefreshStatus.STALE_IGNORED)):
+            with psycopg.connect(url) as connection, connection.cursor() as cursor:
+                result = persist_refresh(cursor, "topaz-1", height, None, [(old_path, "realm")])
+                self.assertEqual(result.status, expected)
+            with psycopg.connect(url) as connection, connection.cursor() as cursor:
+                cursor.execute("SELECT observed_height,refreshed_at,updated_at FROM realm_catalog_state WHERE chain_id='topaz-1'")
+                self.assertEqual(cursor.fetchone(), (101, *state_timestamps))
+                cursor.execute("SELECT path,rpc_visible FROM realm_catalog WHERE chain_id='topaz-1' ORDER BY path")
+                self.assertEqual(cursor.fetchall(), [(new_path, True), (old_path, False)])
+
+        class FailingCursor:
+            def __init__(self, wrapped):
+                self.wrapped = wrapped
+
+            def execute(self, sql, params=()):
+                if "INSERT INTO realm_catalog_state" in sql:
+                    raise RuntimeError("forced_state_failure")
+                return self.wrapped.execute(sql, params)
+
+            def fetchone(self):
+                return self.wrapped.fetchone()
+
+        with self.assertRaisesRegex(RuntimeError, "forced_state_failure"):
+            with psycopg.connect(url) as connection, connection.cursor() as cursor:
+                persist_refresh(FailingCursor(cursor), "topaz-1", 102, None, [(old_path, "realm")])
+        with psycopg.connect(url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT observed_height,activity_from_height,activity_through_height FROM realm_catalog_state WHERE chain_id='topaz-1'")
+            self.assertEqual(cursor.fetchone(), (101, 10, 90))
+            cursor.execute("SELECT path,rpc_visible,call_count FROM realm_catalog WHERE chain_id='topaz-1' ORDER BY path")
+            self.assertEqual(cursor.fetchall(), [(new_path, True, 0), (old_path, False, 3)])
 
     def test_realm_catalog_0008_upgrade_and_exact_grants(self):
         name = f"utsa_realm_upgrade_{os.getpid()}"
