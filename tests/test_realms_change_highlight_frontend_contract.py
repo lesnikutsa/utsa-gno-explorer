@@ -43,23 +43,26 @@ class RealmsChangeHighlightFrontendContractTests(unittest.TestCase):
         filters = page[page.index("const filters ="):page.index("return (", page.index("const filters ="))]
         self.assertNotIn("ChangedValue", filters)
 
-    def test_application_metrics_use_raw_values(self):
+    def test_application_metrics_and_coverage_use_change_values(self):
         page = self.read("frontend/src/pages/Realms.jsx")
         applications = page[page.index("function RealmApplications"):page.index("export function Realms")]
         for value in (
             "item.direct_call_count", "item.success_rate", "item.realm_count",
-            "item.called_realm_count", "item.last_activity_at",
+            "item.called_realm_count",
         ):
             self.assertIn(f"<ChangedValue value={{{value}}}", applications)
-        self.assertNotIn("value={relativeTime", applications)
+        self.assertIn("Activity metrics cover blocks #{formatCount(activityFromHeight)}–#", applications)
+        self.assertIn("<ChangedValue value={activityThroughHeight}>{formatCount(activityThroughHeight)}</ChangedValue>", applications)
+        self.assertIn('<LastActivityValue timestamp={item.last_activity_at} emptyLabel="never" />', applications)
         identity = applications[applications.index("realms-application-card__identity"):applications.index("</header>")]
         self.assertNotIn("ChangedValue", identity)
 
     def test_table_wraps_realm_metrics_but_not_non_metrics(self):
         page = self.read("frontend/src/pages/Realms.jsx")
         columns = page[page.index("const columns ="):page.index("function emptyMessage")]
-        for value in ("item.call_count", "item.success_rate", "item.last_activity_at"):
+        for value in ("item.call_count", "item.success_rate"):
             self.assertIn(f"<ChangedValue value={{{value}}}", columns)
+        self.assertIn('<LastActivityValue timestamp={item.last_activity_at} emptyLabel="Never" />', columns)
         path = columns[columns.index("key: 'path'"):columns.index("key: 'kind'")]
         kind = columns[columns.index("key: 'kind'"):columns.index("key: 'call_count'")]
         visibility = columns[columns.index("key: 'rpc_visible'"):]
@@ -68,6 +71,16 @@ class RealmsChangeHighlightFrontendContractTests(unittest.TestCase):
         self.assertNotIn("ChangedValue", visibility)
         self.assertIn("item.kind === 'package' ? packageMetricPlaceholder()", columns)
         self.assertIn("item.kind === 'package'\n      ? packageMetricPlaceholder('Not tracked')", columns)
+
+    def test_last_activity_compares_timestamp_and_displayed_label(self):
+        page = self.read("frontend/src/pages/Realms.jsx")
+        helper = page[page.index("const lastActivityChangeValue"):page.index("const columns =")]
+        self.assertIn("`${timestamp ?? 'never'}|${label}`", helper)
+        self.assertIn("const label = timestamp ? relativeTime(timestamp) : emptyLabel", helper)
+        self.assertIn("value={lastActivityChangeValue(timestamp, label)}", helper)
+        self.assertNotEqual("timestamp-a|just now", "timestamp-b|just now")
+        self.assertNotEqual("timestamp-a|4m ago", "timestamp-a|5m ago")
+        self.assertEqual("timestamp-a|4m ago", "timestamp-a|4m ago")
 
     def test_polling_coordinator_contract_remains_intact(self):
         polling = self.read("frontend/src/hooks/useRealmsAutoRefresh.js")

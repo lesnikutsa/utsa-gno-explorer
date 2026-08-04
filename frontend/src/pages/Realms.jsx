@@ -6,6 +6,16 @@ import { relativeTime } from '../utils/time'
 
 const formatCount = (value) => typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString() : '—'
 const packageMetricPlaceholder = (label = '—') => <span className="realms-table__package-placeholder" title="Package usage through imports is not indexed yet.">{label}</span>
+const lastActivityChangeValue = (timestamp, label) => `${timestamp ?? 'never'}|${label}`
+
+function LastActivityValue({ timestamp, emptyLabel }) {
+  const label = timestamp ? relativeTime(timestamp) : emptyLabel
+  return (
+    <ChangedValue value={lastActivityChangeValue(timestamp, label)}>
+      {timestamp ? <time dateTime={timestamp} title={timestamp}>{label}</time> : label}
+    </ChangedValue>
+  )
+}
 
 const columns = [
   {
@@ -29,11 +39,7 @@ const columns = [
     label: 'Last Activity',
     render: (item) => item.kind === 'package'
       ? packageMetricPlaceholder('Not tracked')
-      : <ChangedValue value={item.last_activity_at}>
-          {item.last_activity_at
-            ? <time dateTime={item.last_activity_at} title={item.last_activity_at}>{relativeTime(item.last_activity_at)}</time>
-            : 'Never'}
-        </ChangedValue>,
+      : <LastActivityValue timestamp={item.last_activity_at} emptyLabel="Never" />,
   },
   {
     key: 'rpc_visible',
@@ -60,7 +66,7 @@ function RealmApplications({ applications }) {
   const hasActivityFromHeight = activityFromHeight !== null && activityFromHeight !== undefined
   const hasActivityThroughHeight = activityThroughHeight !== null && activityThroughHeight !== undefined
   const intro = hasActivityFromHeight && hasActivityThroughHeight
-    ? `Activity metrics cover blocks #${formatCount(activityFromHeight)}–#${formatCount(activityThroughHeight)}.`
+    ? <>Activity metrics cover blocks #{formatCount(activityFromHeight)}–#<ChangedValue value={activityThroughHeight}>{formatCount(activityThroughHeight)}</ChangedValue>.</>
     : hasActivityFromHeight
       ? `Activity metrics are indexed since block #${formatCount(activityFromHeight)}.`
       : 'Curated Realm namespaces ranked by indexed direct calls.'
@@ -104,7 +110,7 @@ function RealmApplications({ applications }) {
                 </div>
                 <div>
                   <dt className="sr-only">Last activity</dt>
-                  <dd>Last activity <ChangedValue value={item.last_activity_at}>{item.last_activity_at ? <time dateTime={item.last_activity_at} title={item.last_activity_at}>{relativeTime(item.last_activity_at)}</time> : 'never'}</ChangedValue></dd>
+                  <dd>Last activity <LastActivityValue timestamp={item.last_activity_at} emptyLabel="never" /></dd>
                 </div>
               </dl>
             </article>

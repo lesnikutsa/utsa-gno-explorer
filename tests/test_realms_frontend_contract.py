@@ -61,7 +61,7 @@ class RealmsFrontendContractTests(unittest.TestCase):
         labels = ["label: 'Path'", "label: 'Type'", "label: 'Direct Calls'", "label: 'Success Rate'", "label: 'Last Activity'", "label: 'Visibility'"]
         self.assertEqual(page.count("label: '"), 6)
         self.assertEqual([page.index(label) for label in labels], sorted(page.index(label) for label in labels))
-        for fragment in ("summary?.total_realms", "summary?.total_packages", "summary?.active_24h", "summary?.rpc_visible_items", "aria-pressed={kind === value}", "import { formatSuccessRate } from '../utils/realm'", ": 'Never'", "rowKey={(item) => item.path}"):
+        for fragment in ("summary?.total_realms", "summary?.total_packages", "summary?.active_24h", "summary?.rpc_visible_items", "aria-pressed={kind === value}", "import { formatSuccessRate } from '../utils/realm'", 'emptyLabel="Never"', "rowKey={(item) => item.path}"):
             self.assertIn(fragment, page)
         self.assertIn('type="search"', page)
         self.assertIn("maxLength={128}", page)
