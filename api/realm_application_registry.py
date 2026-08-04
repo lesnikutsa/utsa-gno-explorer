@@ -5,19 +5,22 @@ from typing import Any, Mapping
 from indexer.realm_catalog import namespace_key
 
 _MAX_TEXT = 256
-_ENTRIES: dict[str, dict[str, Any]] = {
-    "gnoswap": {
+_RAW_ENTRIES: tuple[tuple[str, dict[str, Any]], ...] = (
+    ("gnoswap", {
         "display_name": "GnoSwap",
         "category": "DeFi",
         "description": None,
         "website": None,
         "metadata_source": "curated_registry",
-    },
-}
+    }),
+)
 
 
-def _validate() -> None:
-    for key, metadata in _ENTRIES.items():
+def _validated_registry(entries: tuple[tuple[str, dict[str, Any]], ...]) -> Mapping[str, Mapping[str, Any]]:
+    keys = [key for key, _ in entries]
+    if len(keys) != len(set(keys)):
+        raise ValueError("duplicate curated namespace")
+    for key, metadata in entries:
         if namespace_key(f"gno.land/r/{key}") != key:
             raise ValueError("invalid curated namespace")
         if set(metadata) != {"display_name", "category", "description", "website", "metadata_source"}:
@@ -34,10 +37,8 @@ def _validate() -> None:
             raise ValueError("curated website must use HTTPS")
         if metadata["metadata_source"] != "curated_registry":
             raise ValueError("invalid curated metadata source")
+    return MappingProxyType({key: MappingProxyType(dict(value)) for key, value in entries})
 
 
-_validate()
-REALM_APPLICATION_REGISTRY: Mapping[str, Mapping[str, Any]] = MappingProxyType({
-    key: MappingProxyType(dict(value)) for key, value in _ENTRIES.items()
-})
+REALM_APPLICATION_REGISTRY = _validated_registry(_RAW_ENTRIES)
 CURATED_NAMESPACE_KEYS = tuple(sorted(REALM_APPLICATION_REGISTRY))

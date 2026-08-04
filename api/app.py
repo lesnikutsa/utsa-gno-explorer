@@ -1133,6 +1133,14 @@ def _namespace_rate(success: int, failed: int) -> float | None:
     return success / (success + failed) if success + failed else None
 
 
+def _validate_activity_tuple(height, tx_index, timestamp, *, required: bool) -> None:
+    all_null = height is None and tx_index is None and timestamp is None
+    all_present = (type(height) is int and height > 0 and type(tx_index) is int and tx_index >= 0
+                   and isinstance(timestamp, datetime))
+    if not (all_present if required else all_null):
+        raise ValueError("inconsistent activity tuple")
+
+
 @app.get("/api/realm-namespaces/top", response_model=RealmNamespaceTopResponse)
 def get_top_realm_namespaces(
     limit: int = Query(default=5, ge=1, le=10),
@@ -1163,8 +1171,14 @@ def get_top_realm_namespaces(
                     and successful + failed + unknown == direct):
                 raise ValueError("inconsistent counts")
             activity = (row["last_activity_height"], row["last_activity_tx_index"], row["last_activity_at"])
-            if (activity[0] is None) != (activity[1] is None or activity[2] is None):
-                raise ValueError("inconsistent activity")
+            _validate_activity_tuple(*activity, required=True)
+            latest_path = row["latest_activity_path"]
+            if (row.get("latest_activity_path_kind") != "realm" or namespace_key(latest_path) != key or
+                    type(row.get("latest_activity_call_count")) is not int or row["latest_activity_call_count"] <= 0):
+                raise ValueError("invalid latest activity Realm")
+            first_seen = row["first_seen_height"]
+            if first_seen is not None and (type(first_seen) is not int or first_seen <= 0):
+                raise ValueError("invalid first seen height")
             order = (-direct, -(activity[0] if activity[0] is not None else -1), key)
             if previous is not None and order < previous:
                 raise ValueError("invalid ranking order")
@@ -1180,11 +1194,13 @@ def get_top_realm_namespaces(
                 if any(type(v) is not int or v < 0 for v in member_counts) or sum(member_counts[1:]) != member_counts[0]:
                     raise ValueError("invalid member counts")
                 member_activity = (member["last_activity_height"], member["last_activity_tx_index"], member["last_activity_at"])
-                if (member_activity[0] is None) != (member_activity[1] is None or member_activity[2] is None):
-                    raise ValueError("invalid member activity")
+                _validate_activity_tuple(*member_activity, required=member_counts[0] > 0)
+                member_first_seen = member["first_seen_height"]
+                if member_first_seen is not None and (type(member_first_seen) is not int or member_first_seen <= 0):
+                    raise ValueError("invalid member first seen height")
                 converted.append(RealmNamespaceMember(path=path, rpc_visible=member["rpc_visible"],
-                    first_seen_height=member["first_seen_height"], last_activity_height=member_activity[0],
-                    last_activity_tx_index=member_activity[1], last_activity_at=isoformat_utc_z(member_activity[2]) if member_activity[2] else None,
+                    first_seen_height=member_first_seen, last_activity_height=member_activity[0],
+                    last_activity_tx_index=member_activity[1], last_activity_at=isoformat_utc_z(member_activity[2]) if member_activity[2] is not None else None,
                     call_count=member_counts[0], successful_call_count=member_counts[1], failed_call_count=member_counts[2],
                     unknown_result_call_count=member_counts[3], success_rate=_namespace_rate(member_counts[1], member_counts[2])))
             if paths != sorted(paths) or len(members) != min(realm_count, 100):
@@ -1195,6 +1211,15 @@ def get_top_realm_namespaces(
                 sum(m["failed_call_count"] for m in members) != failed or sum(m["unknown_result_call_count"] for m in members) != unknown or
                 sum(bool(m["rpc_visible"]) for m in members) != visible or sum(m["call_count"] > 0 for m in members) != called):
                 raise ValueError("aggregate mismatch")
+            if not truncated:
+                member_first_seen = [m["first_seen_height"] for m in members if m["first_seen_height"] is not None]
+                if (min(member_first_seen) if member_first_seen else None) != first_seen:
+                    raise ValueError("aggregate first seen mismatch")
+                newest = min((m for m in members if m["call_count"] > 0),
+                    key=lambda m: (-m["last_activity_height"], -m["last_activity_tx_index"], m["path"]))
+                if (newest["path"], newest["last_activity_height"], newest["last_activity_tx_index"], newest["last_activity_at"]) != (
+                        latest_path, activity[0], activity[1], activity[2]):
+                    raise ValueError("aggregate latest activity mismatch")
             application = REALM_APPLICATION_REGISTRY.get(key)
             if scope == "curated" and application is None:
                 raise ValueError("uncurated result")
@@ -1202,8 +1227,8 @@ def get_top_realm_namespaces(
                 realm_count=realm_count, called_realm_count=called, rpc_visible_realm_count=visible,
                 direct_call_count=direct, successful_call_count=successful, failed_call_count=failed,
                 unknown_result_call_count=unknown, success_rate=_namespace_rate(successful, failed),
-                first_seen_height=row["first_seen_height"], last_activity_height=activity[0], last_activity_tx_index=activity[1],
-                last_activity_at=isoformat_utc_z(activity[2]) if activity[2] else None, realms=converted, realms_truncated=truncated))
+                first_seen_height=first_seen, last_activity_height=activity[0], last_activity_tx_index=activity[1],
+                last_activity_at=isoformat_utc_z(activity[2]) if activity[2] is not None else None, realms=converted, realms_truncated=truncated))
         if len(items) > limit:
             raise ValueError("too many namespaces")
         source = result["source"]

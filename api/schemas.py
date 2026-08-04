@@ -585,8 +585,8 @@ class RealmNamespaceMember(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     path: str = Field(min_length=1, max_length=256)
     rpc_visible: bool
-    first_seen_height: int | None = Field(default=None, ge=0)
-    last_activity_height: int | None = Field(default=None, ge=0)
+    first_seen_height: int | None = Field(default=None, gt=0)
+    last_activity_height: int | None = Field(default=None, gt=0)
     last_activity_tx_index: int | None = Field(default=None, ge=0)
     last_activity_at: str | None = None
     call_count: int = Field(ge=0)
@@ -607,8 +607,8 @@ class RealmNamespaceTopItem(BaseModel):
     failed_call_count: int = Field(ge=0)
     unknown_result_call_count: int = Field(ge=0)
     success_rate: float | None = Field(default=None, ge=0, le=1)
-    first_seen_height: int | None = Field(default=None, ge=0)
-    last_activity_height: int | None = Field(default=None, ge=0)
+    first_seen_height: int | None = Field(default=None, gt=0)
+    last_activity_height: int | None = Field(default=None, gt=0)
     last_activity_tx_index: int | None = Field(default=None, ge=0)
     last_activity_at: str | None = None
     realms: list[RealmNamespaceMember] = Field(max_length=100)

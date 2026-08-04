@@ -219,7 +219,7 @@ LIMIT %s
 """
 REALM_NAMESPACE_TOP_SQL = """
 WITH realm_rows AS MATERIALIZED (
- SELECT split_part(path, '/', 3) AS namespace_key, path, rpc_visible, first_seen_height,
+ SELECT split_part(path, '/', 3) COLLATE "C" AS namespace_key, path, path_kind, rpc_visible, first_seen_height,
   last_activity_height,last_activity_tx_index,last_activity_at,call_count,successful_call_count,
   failed_call_count,unknown_result_call_count
  FROM realm_catalog WHERE chain_id=%s AND path_kind='realm'
@@ -229,22 +229,28 @@ WITH realm_rows AS MATERIALIZED (
   sum(successful_call_count)::bigint successful_call_count,sum(failed_call_count)::bigint failed_call_count,
   sum(unknown_result_call_count)::bigint unknown_result_call_count,min(first_seen_height) first_seen_height
  FROM realm_rows WHERE (NOT %s OR namespace_key=ANY(%s::text[])) GROUP BY namespace_key
+), ranked_activity AS (
+ SELECT namespace_key,path AS latest_activity_path,path_kind,call_count,last_activity_height,last_activity_tx_index,last_activity_at,
+  row_number() OVER (PARTITION BY namespace_key ORDER BY last_activity_height DESC NULLS LAST,
+   last_activity_tx_index DESC NULLS LAST,path COLLATE "C" ASC) activity_number
+ FROM realm_rows WHERE call_count>0
 ), latest_activity AS (
- SELECT DISTINCT ON (namespace_key) namespace_key,last_activity_height,last_activity_tx_index,last_activity_at
- FROM realm_rows WHERE call_count>0 ORDER BY namespace_key COLLATE "C",last_activity_height DESC,
-  last_activity_tx_index DESC,path COLLATE "C" ASC
+ SELECT namespace_key,latest_activity_path,path_kind AS latest_activity_path_kind,
+  call_count AS latest_activity_call_count,last_activity_height,last_activity_tx_index,last_activity_at
+ FROM ranked_activity WHERE activity_number=1
 )
-SELECT a.*,l.last_activity_height,l.last_activity_tx_index,l.last_activity_at
-FROM namespace_aggregates a JOIN latest_activity l USING(namespace_key)
+SELECT a.*,l.latest_activity_path,l.latest_activity_path_kind,l.latest_activity_call_count,
+ l.last_activity_height,l.last_activity_tx_index,l.last_activity_at
+FROM namespace_aggregates a JOIN latest_activity l ON a.namespace_key=l.namespace_key COLLATE "C"
 WHERE rpc_visible_realm_count>0 AND direct_call_count>0
 ORDER BY direct_call_count DESC,COALESCE(last_activity_height,-1) DESC,namespace_key COLLATE "C" ASC LIMIT %s
 """
 REALM_NAMESPACE_MEMBERS_SQL = """
 WITH ranked AS (
- SELECT split_part(path,'/',3) namespace_key,path,path_kind,rpc_visible,first_seen_height,last_activity_height,
+ SELECT split_part(path,'/',3) COLLATE "C" namespace_key,path,path_kind,rpc_visible,first_seen_height,last_activity_height,
   last_activity_tx_index,last_activity_at,call_count,successful_call_count,failed_call_count,unknown_result_call_count,
-  row_number() OVER (PARTITION BY split_part(path,'/',3) ORDER BY path COLLATE "C") member_number
- FROM realm_catalog WHERE chain_id=%s AND path_kind='realm' AND split_part(path,'/',3)=ANY(%s::text[])
+  row_number() OVER (PARTITION BY split_part(path,'/',3) COLLATE "C" ORDER BY path COLLATE "C") member_number
+ FROM realm_catalog WHERE chain_id=%s AND path_kind='realm' AND split_part(path,'/',3) COLLATE "C"=ANY(%s::text[])
 )
 SELECT * FROM ranked WHERE member_number<=100 ORDER BY namespace_key COLLATE "C",path COLLATE "C"
 """

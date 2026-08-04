@@ -1,6 +1,6 @@
 import unittest
 
-from api.realm_application_registry import CURATED_NAMESPACE_KEYS, REALM_APPLICATION_REGISTRY
+from api.realm_application_registry import CURATED_NAMESPACE_KEYS, REALM_APPLICATION_REGISTRY, _validated_registry
 from indexer.realm_catalog import namespace_key
 
 
@@ -21,3 +21,8 @@ class RealmApplicationRegistryTests(unittest.TestCase):
             REALM_APPLICATION_REGISTRY["unknown"] = {}  # type: ignore[index]
         with self.assertRaises(TypeError):
             REALM_APPLICATION_REGISTRY["gnoswap"]["display_name"] = "Changed"  # type: ignore[index]
+
+    def test_raw_duplicate_keys_are_rejected(self):
+        metadata = dict(REALM_APPLICATION_REGISTRY["gnoswap"])
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            _validated_registry((("gnoswap", metadata), ("gnoswap", metadata)))

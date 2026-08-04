@@ -125,3 +125,97 @@ class RealmApiTests(unittest.TestCase):
   with patch.object(module.database,'fetch_top_realms',return_value=self.top_result(rows)):
    with self.assertRaises(HTTPException) as raised:module.get_top_realms(limit=5)
   self.assertEqual(raised.exception.status_code,503)
+
+
+class RealmNamespaceApiTests(unittest.TestCase):
+ def setUp(self): module.app.state.api_config=SimpleNamespace(chain_id='topaz-1')
+ def member(self,path='gno.land/r/gnoswap/a',calls=3,success=1,failed=1,unknown=1,
+            visible=True,height=8,tx_index=2,timestamp=NOW,first_seen=2,kind='realm'):
+  return {'namespace_key':path.split('/')[2] if path.startswith('gno.land/') else 'bad','path':path,
+   'path_kind':kind,'rpc_visible':visible,'first_seen_height':first_seen,'last_activity_height':height,
+   'last_activity_tx_index':tx_index,'last_activity_at':timestamp,'call_count':calls,
+   'successful_call_count':success,'failed_call_count':failed,'unknown_result_call_count':unknown,'member_number':1}
+ def item(self,key='gnoswap',members=None):
+  members=members or [self.member(path=f'gno.land/r/{key}/a')]
+  latest=min((m for m in members if m['call_count']>0),key=lambda m:(-m['last_activity_height'],-m['last_activity_tx_index'],m['path']))
+  return {'namespace_key':key,'realm_count':len(members),'called_realm_count':sum(m['call_count']>0 for m in members),
+   'rpc_visible_realm_count':sum(bool(m['rpc_visible']) for m in members),'direct_call_count':sum(m['call_count'] for m in members),
+   'successful_call_count':sum(m['successful_call_count'] for m in members),'failed_call_count':sum(m['failed_call_count'] for m in members),
+   'unknown_result_call_count':sum(m['unknown_result_call_count'] for m in members),
+   'first_seen_height':min(m['first_seen_height'] for m in members if m['first_seen_height'] is not None),
+   'latest_activity_path':latest['path'],'latest_activity_path_kind':'realm','latest_activity_call_count':latest['call_count'],
+   'last_activity_height':latest['last_activity_height'],'last_activity_tx_index':latest['last_activity_tx_index'],
+   'last_activity_at':latest['last_activity_at']}
+ def result(self,items=None,members=None):
+  return {'source':{'chain_id':'topaz-1','indexed_height':9,'observed_height':8,'activity_from_height':1,'activity_through_height':8},
+   'items':items or [],'members':members or []}
+ def call(self,result,limit=5,scope='all'):
+  with patch.object(module.database,'fetch_top_realm_namespaces',return_value=result):
+   return module.get_top_realm_namespaces(limit=limit,scope=scope)
+ def assert_unavailable(self,result,scope='all'):
+  with self.assertRaises(HTTPException) as raised:self.call(result,scope=scope)
+  self.assertEqual((raised.exception.status_code,raised.exception.detail),(503,module.UNAVAILABLE_DETAIL))
+ def test_defaults_bounds_scope_and_forwarding(self):
+  route=next(r for r in module.app.routes if getattr(r,'path',None)=='/api/realm-namespaces/top')
+  params={p.name:p for p in route.dependant.query_params}
+  self.assertEqual((params['limit'].default,params['scope'].default),(5,'all'))
+  self.assertEqual((params['limit'].field_info.metadata[0].ge,params['limit'].field_info.metadata[1].le),(1,10))
+  for limit in (1,10):
+   with patch.object(module.database,'fetch_top_realm_namespaces',return_value=self.result()) as fetch:
+    module.get_top_realm_namespaces(limit=limit,scope='curated')
+   self.assertEqual(fetch.call_args.kwargs,{'chain_id':'topaz-1','limit':limit,'curated_only':True,
+    'curated_namespace_keys':('gnoswap',)})
+  from pydantic import TypeAdapter, ValidationError
+  adapter=TypeAdapter(route.endpoint.__annotations__['scope'])
+  with self.assertRaises(ValidationError):adapter.validate_python('invalid')
+  for value in (0,11):
+   self.assertFalse(1<=value<=10)
+ def test_all_and_curated_metadata_and_rates(self):
+  gm=self.member(); gi=self.item(members=[gm]); um=self.member('gno.land/r/unknown/a',calls=2,success=0,failed=0,unknown=2)
+  ui=self.item('unknown',[um]); response=self.call(self.result([gi,ui],[gm,um]))
+  self.assertEqual(response.items[0].application.display_name,'GnoSwap'); self.assertIsNone(response.items[1].application)
+  self.assertEqual(response.items[0].success_rate,.5); self.assertIsNone(response.items[1].success_rate)
+  curated=self.call(self.result([gi],[gm]),scope='curated'); self.assertIsNotNone(curated.items[0].application)
+  self.assertEqual(self.call(self.result(),scope='curated').items,[])
+ def test_namespace_ranking_and_aggregate_fail_closed(self):
+  member=self.member(); base=self.item(members=[member])
+  cases=[]
+  for change in ({'namespace_key':'bad/path'},{'direct_call_count':0},{'rpc_visible_realm_count':0},
+                 {'realm_count':0},{'called_realm_count':2},{'rpc_visible_realm_count':2},
+                 {'successful_call_count':99},{'direct_call_count':True},{'direct_call_count':-1}):
+   cases.append([base|change])
+  cases.extend([[base,base],[self.item('z',[self.member('gno.land/r/z/a')]),base]])
+  for items in cases:
+   members=[member] if len(items)==1 and items[0].get('namespace_key')=='gnoswap' else []
+   with self.subTest(items=items):self.assert_unavailable(self.result(items,members))
+ def test_member_and_cross_checks_fail_closed(self):
+  good=self.member(); base=self.item(members=[good])
+  variants=[]
+  wrong=self.member('gno.land/r/other/a'); variants.append([wrong])
+  package=good|{'path_kind':'package'}; variants.append([package])
+  variants.append([good,good])
+  variants.append([self.member('gno.land/r/gnoswap/b'),good])
+  variants.append([good|{'last_activity_tx_index':None}])
+  variants.append([good|{'last_activity_height':0}])
+  variants.append([good|{'last_activity_at':'bad'}])
+  variants.append([good|{'last_activity_height':None,'last_activity_tx_index':None,'last_activity_at':None}])
+  variants.append([self.member(calls=0,success=0,failed=0,unknown=0)])
+  variants.append([good|{'successful_call_count':2}])
+  for members in variants:
+   with self.subTest(members=members):self.assert_unavailable(self.result([base],members))
+  mismatch=base|{'first_seen_height':3}; self.assert_unavailable(self.result([mismatch],[good]))
+  mismatch=base|{'latest_activity_path':'gno.land/r/gnoswap/other'}; self.assert_unavailable(self.result([mismatch],[good]))
+  many=[self.member(f'gno.land/r/gnoswap/{i:03}',calls=0,success=0,failed=0,unknown=0,
+        height=None,tx_index=None,timestamp=None) for i in range(101)]
+  self.assert_unavailable(self.result([base],many))
+ def test_activity_and_public_errors(self):
+  good=self.member(); base=self.item(members=[good])
+  for change in ({'last_activity_tx_index':None},{'last_activity_height':0},{'last_activity_at':'bad'},
+                 {'latest_activity_call_count':0},{'latest_activity_path_kind':'package'}):
+   self.assert_unavailable(self.result([base|change],[good]))
+  with patch.object(module.database,'fetch_top_realm_namespaces',return_value=None):
+   with self.assertRaises(HTTPException) as raised:module.get_top_realm_namespaces(limit=5,scope='all')
+  self.assertEqual((raised.exception.status_code,raised.exception.detail),(404,'Realm catalog not found'))
+  with patch.object(module.database,'fetch_top_realm_namespaces',side_effect=RuntimeError('secret')):
+   with self.assertRaises(HTTPException) as raised:module.get_top_realm_namespaces(limit=5,scope='all')
+  self.assertEqual(raised.exception.detail,module.UNAVAILABLE_DETAIL); self.assertNotIn('secret',raised.exception.detail)

@@ -23,6 +23,7 @@ from api.database import (
     NETWORK_DISTRIBUTION_SQL,
     NETWORK_SQL,
     REALM_CATALOG_SUMMARY_SQL,
+    REALM_NAMESPACE_TOP_SQL,
     VALIDATOR_IDENTITY_SQL,
     ApiDatabase,
     MissingIndexerStateError,
@@ -1888,6 +1889,71 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             [item['path'] for item in top['items']],
             ['gno.land/r/high', 'gno.land/r/alpha', 'gno.land/r/beta', 'gno.land/r/percent%marker'],
         )
+
+    def test_realm_namespace_aggregation_members_scopes_and_plan(self):
+        name = f"utsa_realm_namespace_{os.getpid()}"
+        self.create_database(name)
+        url = self.database_url_for(name)
+        init_database.initialize_or_validate(url)
+        observed = datetime(2026, 8, 4, tzinfo=timezone.utc)
+        rows = [
+            ('gno.land/r/gnoswap/a', 'realm', True, 2, 40, 1, observed, 4, 3, 0, 1),
+            ('gno.land/r/gnoswap/b', 'realm', False, 3, 40, 3, observed + timedelta(seconds=1), 4, 2, 1, 1),
+            ('gno.land/r/gnoswap/c', 'realm', True, 4, 40, 3, observed + timedelta(seconds=2), 2, 1, 1, 0),
+            ('gno.land/r/gnops/a', 'realm', True, 5, 30, 0, observed, 2, 1, 1, 0),
+            ('gno.land/r/historical_only/a', 'realm', False, 6, 45, 0, observed, 20, 20, 0, 0),
+            ('gno.land/r/zero_calls/a', 'realm', True, 7, None, None, None, 0, 0, 0, 0),
+            ('gno.land/p/gnoswap/package', 'package', True, 1, 50, 0, observed, 99, 99, 0, 0),
+            ('gno.land/r/Example/a', 'realm', True, 8, 20, 0, observed, 1, 1, 0, 0),
+            ('gno.land/r/example/a', 'realm', True, 9, 20, 0, observed, 1, 1, 0, 0),
+        ]
+        rows.extend((f'gno.land/r/big/{index:03}', 'realm', True, 10 + index, 10 if index == 0 else None,
+                     0 if index == 0 else None, observed if index == 0 else None,
+                     1 if index == 0 else 0, 1 if index == 0 else 0, 0, 0) for index in range(101))
+        with psycopg.connect(url) as connection, connection.cursor() as cursor:
+            cursor.execute("INSERT INTO indexer_state(state_key,chain_id,last_finalized_height) VALUES ('default','topaz-1',50)")
+            cursor.execute("""INSERT INTO realm_catalog_state(chain_id,observed_height,rpc_path_count,refreshed_at,
+              activity_from_height,activity_through_height) VALUES ('topaz-1',49,110,%s,1,45)""", (observed,))
+            cursor.executemany("""INSERT INTO realm_catalog(chain_id,path,path_kind,seen_via_rpc,seen_via_transactions,
+              rpc_visible,last_rpc_seen_at,first_seen_height,last_activity_height,last_activity_tx_index,last_activity_at,
+              call_count,successful_call_count,failed_call_count,unknown_result_call_count,last_counted_height)
+              VALUES ('topaz-1',%s,%s,true,true,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+              [(path, kind, visible, observed, first, height, tx, timestamp, calls, success, failed, unknown,
+                height) for path, kind, visible, first, height, tx, timestamp, calls, success, failed, unknown in rows])
+            cursor.execute("EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) " + REALM_NAMESPACE_TOP_SQL,
+                           ('topaz-1', False, ['gnoswap'], 10))
+            plan = cursor.fetchone()[0][0]
+            self.assertGreaterEqual(plan['Execution Time'], 0)
+            self.assertIn('Shared Hit Blocks', plan['Plan'])
+        database = ApiDatabase(); database.open(ApiConfig(database_url=url)); self.addCleanup(database.close)
+        result = database.fetch_top_realm_namespaces(chain_id='topaz-1', limit=10, curated_only=False,
+                                                     curated_namespace_keys=('gnoswap',))
+        self.assertEqual((result['source']['indexed_height'], result['source']['observed_height'],
+                          result['source']['activity_from_height'], result['source']['activity_through_height']), (50,49,1,45))
+        by_key = {item['namespace_key']: item for item in result['items']}
+        self.assertEqual(list(by_key)[:2], ['gnoswap','gnops'])
+        self.assertNotIn('historical_only', by_key); self.assertNotIn('zero_calls', by_key)
+        self.assertNotIn('package', by_key); self.assertIn('Example', by_key); self.assertIn('example', by_key)
+        gnoswap = by_key['gnoswap']
+        self.assertEqual((gnoswap['realm_count'],gnoswap['called_realm_count'],gnoswap['rpc_visible_realm_count']), (3,3,2))
+        self.assertEqual((gnoswap['direct_call_count'],gnoswap['successful_call_count'],gnoswap['failed_call_count'],
+                          gnoswap['unknown_result_call_count']), (10,6,2,2))
+        self.assertEqual((gnoswap['first_seen_height'],gnoswap['latest_activity_path'],gnoswap['last_activity_height'],
+                          gnoswap['last_activity_tx_index'],gnoswap['last_activity_at']),
+                         (2,'gno.land/r/gnoswap/b',40,3,observed + timedelta(seconds=1)))
+        members = [row for row in result['members'] if row['namespace_key']=='gnoswap']
+        self.assertEqual([row['path'] for row in members], ['gno.land/r/gnoswap/a','gno.land/r/gnoswap/b','gno.land/r/gnoswap/c'])
+        self.assertFalse(members[1]['rpc_visible'])
+        self.assertEqual(len([row for row in result['members'] if row['namespace_key']=='big']), 100)
+        curated = database.fetch_top_realm_namespaces(chain_id='topaz-1', limit=10, curated_only=True,
+                                                       curated_namespace_keys=('gnoswap',))
+        self.assertEqual([row['namespace_key'] for row in curated['items']], ['gnoswap'])
+        empty = database.fetch_top_realm_namespaces(chain_id='topaz-1', limit=10, curated_only=True,
+                                                     curated_namespace_keys=())
+        self.assertEqual((empty['items'],empty['members']), ([],[]))
+        limited = database.fetch_top_realm_namespaces(chain_id='topaz-1', limit=1, curated_only=False,
+                                                       curated_namespace_keys=())
+        self.assertEqual(len(limited['items']), 1)
 
     def test_partial_realm_catalogs_are_rejected_and_rolled_back(self):
         for suffix, ddl in (

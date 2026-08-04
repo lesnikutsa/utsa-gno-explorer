@@ -24,4 +24,10 @@ Members are ordered by exact path in `C` order and include both current and Hist
 
 The source records `chain_id`, `indexed_height`, `catalog_observed_height`, `activity_from_height`, and `activity_through_height`. Present activity should be described as **Indexed direct calls since #<activity_from_height>**. `indexed_height` can exceed `activity_through_height` while Realm activity backfill or catalog refresh has not reached the current indexer height. Source, aggregates, and members are read in one repeatable-read, read-only transaction.
 
+Compact response example (metrics are illustrative):
+
+```json
+{"source":{"chain_id":"topaz-1","indexed_height":50,"catalog_observed_height":49,"activity_from_height":1,"activity_through_height":45},"scope":"all","items":[{"namespace_key":"gnoswap","application":{"display_name":"GnoSwap","category":"DeFi","description":null,"website":null,"metadata_source":"curated_registry"},"realm_count":1,"called_realm_count":1,"rpc_visible_realm_count":1,"direct_call_count":2,"successful_call_count":1,"failed_call_count":0,"unknown_result_call_count":1,"success_rate":1.0,"first_seen_height":2,"last_activity_height":40,"last_activity_tx_index":1,"last_activity_at":"2026-08-04T00:00:00Z","realms":[],"realms_truncated":false}]}
+```
+
 The response's `source.activity_from_height` identifies the beginning of the indexed measurement range; the metric must not be interpreted as usage since genesis unless that range begins at genesis. Package imports are not measured, and no time-window ranking exists yet. The source also reports the chain, current indexed height, catalog observation height, and activity-through height used by the consistent read-only database snapshot.
