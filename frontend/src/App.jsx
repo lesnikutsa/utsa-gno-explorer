@@ -17,6 +17,7 @@ import { useBlockDetail } from './hooks/useBlockDetail'
 import { useTransactionDetail } from './hooks/useTransactionDetail'
 import { useTransactionsPage } from './hooks/useTransactionsPage'
 import { useRealmsPage } from './hooks/useRealmsPage'
+import { useRealmApplications } from './hooks/useRealmApplications'
 import { useExplorerData } from './hooks/useExplorerData'
 import { useValidatorDetail } from './hooks/useValidatorDetail'
 import { useValidatorsPage } from './hooks/useValidatorsPage'
@@ -91,10 +92,11 @@ function TransactionsPage() {
 
 function RealmsPage() {
   const realmsPage = useRealmsPage()
+  const realmApplications = useRealmApplications()
 
   return (
     <ExplorerLayout healthState={realmsPage.healthState} showRefreshCountdown={false}>
-      <Realms realmsPage={realmsPage} />
+      <Realms realmsPage={realmsPage} realmApplications={realmApplications} />
     </ExplorerLayout>
   )
 }

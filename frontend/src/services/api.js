@@ -70,6 +70,12 @@ export const getRealms = ({ limit, kind, q, beforeActivityHeight, beforePath, si
   const queryString = query.toString()
   return request(`/realms${queryString ? `?${queryString}` : ''}`, { signal })
 }
+export const getTopRealmNamespaces = ({ limit = 3, scope = 'curated', signal } = {}) => {
+  const query = new URLSearchParams()
+  query.set('limit', limit)
+  query.set('scope', scope)
+  return request(`/realm-namespaces/top?${query.toString()}`, { signal })
+}
 export const getBlock = (height) => request(`/blocks/${encodeURIComponent(height)}`)
 export const getTransaction = (blockHeight, index) => request(`/blocks/${encodeURIComponent(blockHeight)}/transactions/${encodeURIComponent(index)}`)
 export const getTransactionByHash = (txHash) => request(`/transactions/by-hash/${encodeURIComponent(txHash)}`)
