@@ -1263,3 +1263,7 @@ The updater loads `/etc/utsa-gno-explorer/indexer.env` first and the required sh
 `/etc/utsa-gno-explorer/rpc.env` last. It never runs a migration or pulls code
 automatically. Installation and activation remain explicit operator actions.
 Frontend background polling is deferred to a separate change.
+
+### Realm call index migration
+
+Apply `database/migrations/0009_add_realm_call_index.sql`, then perform an explicit local rebuild before treating historical coverage as available. Inspect coverage with `python scripts/check_realm_call_index_coverage.py`. The live indexer does not infer coverage from catalog activity and does not initialize the new state from a single live block.

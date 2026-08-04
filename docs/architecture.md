@@ -133,3 +133,7 @@ requests do not perform live RPC execution-result fallback.
 ## Compact Realm catalog
 
 The Gno-specific Realm catalog uses one aggregate row per chain and validated `/r/` or `/p/` path. The continuous indexer observes only the existing bounded `payload_summary`; it stores no per-call history. An operator first runs `scripts/refresh_realm_catalog.py` for one fixed-height `vm/qpaths?limit=0` snapshot and may then run `scripts/rebuild_realm_activity.py --from-height HEIGHT` to repair decoded-history aggregates after validating the complete local range. Neither command is scheduled, started by the API, nor run at startup. This minimizes database growth while preserving disappeared paths as historical metadata. Token classification is deferred, as are bounded on-demand source, documentation, function, Render, and storage details.
+
+### Compact Realm call locators
+
+The PostgreSQL `realm_call_index` is a derived, bounded locator projection rather than full per-call history. It enables future Realm Detail and Recent Calls pagination plus function/caller analytics without scanning JSON summaries. Heavy data is intentionally neither copied nor exposed by a new API in this foundation.

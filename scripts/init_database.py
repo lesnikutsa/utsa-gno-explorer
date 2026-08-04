@@ -15,6 +15,7 @@ SCHEMA = REPO_ROOT / "database" / "schema.sql"
 PARTICIPANT_MIGRATION = REPO_ROOT / "database" / "migrations" / "0006_add_transaction_participants.sql"
 EXECUTION_RESULT_MIGRATION = REPO_ROOT / "database" / "migrations" / "0007_add_transaction_execution_results.sql"
 REALM_CATALOG_MIGRATION = REPO_ROOT / "database" / "migrations" / "0008_add_realm_catalog.sql"
+REALM_CALL_INDEX_MIGRATION = REPO_ROOT / "database" / "migrations" / "0009_add_realm_call_index.sql"
 EXPECTED_TABLES = {
     "blocks", "transactions", "validators", "validator_set_members", "validator_signatures", "rpc_endpoints", "rpc_endpoint_checks", "indexer_state", "valoper_profiles", "valopers_snapshot_state",
 }
@@ -322,6 +323,18 @@ EXPECTED_CHECKS.update({
 EXPECTED_INDEXES.update({"realm_catalog_kind_path_idx":("realm_catalog",False,(("chain_id","ASC"),("path_kind","ASC"),("path","ASC")),None),"realm_catalog_visibility_idx":("realm_catalog",False,(("chain_id","ASC"),("rpc_visible","ASC"),("path_kind","ASC")),None),"realm_catalog_activity_idx":("realm_catalog",False,(("chain_id","ASC"),("last_activity_height","DESC"),("path","ASC")),None),"realm_catalog_calls_idx":("realm_catalog",False,(("chain_id","ASC"),("call_count","DESC"),("path","ASC")),None)})
 EXPECTED_TABLE_PRIVILEGES["utsa_gno_api"].update({"realm_catalog":{"SELECT"},"realm_catalog_state":{"SELECT"}})
 EXPECTED_TABLE_PRIVILEGES["utsa_gno_indexer"].update({"realm_catalog":{"SELECT","INSERT","UPDATE"},"realm_catalog_state":{"SELECT","INSERT","UPDATE"}})
+PRE_REALM_CALL_INDEX_EXPECTATIONS = schema_expectations()
+EXPECTED_TABLES.update({"realm_call_index", "realm_call_index_state"})
+EXPECTED_COLUMNS["realm_call_index"] = {
+ "chain_id":("text","NO","",None),"block_height":("bigint","NO","",None),"tx_index":("integer","NO","",None),"message_index":("integer","NO","",None),"path":("text","NO","",None),"caller_address":("text","YES","",None),"function_name":("text","YES","",None),"args_count":("integer","YES","",None),"send_amount":("text","YES","",None),"inserted_at":("timestamp with time zone","NO","","now()"),"updated_at":("timestamp with time zone","NO","","now()")}
+EXPECTED_COLUMNS["realm_call_index_state"] = {"chain_id":("text","NO","",None),"from_height":("bigint","NO","",None),"through_height":("bigint","NO","",None),"updated_at":("timestamp with time zone","NO","","now()")}
+EXPECTED_PRIMARY_KEYS.update({"realm_call_index":("chain_id","block_height","tx_index","message_index"),"realm_call_index_state":("chain_id",)})
+EXPECTED_FOREIGN_KEYS.add(("realm_call_index",("block_height","tx_index"),"transactions",("block_height","tx_index"),"c"))
+EXPECTED_CHECKS.update({
+ "realm_call_index_chain_id_check":"CHECK (char_length(chain_id) BETWEEN 1 AND 128)","realm_call_index_block_height_check":"CHECK (block_height > 0)","realm_call_index_tx_index_check":"CHECK (tx_index >= 0)","realm_call_index_message_index_check":"CHECK (message_index BETWEEN 0 AND 19)","realm_call_index_path_check":"CHECK ((char_length(path) >= 1 AND char_length(path) <= 256) AND path ~ '^gno\\.land/r/[!-\\.0-~]+(/[!-\\.0-~]+)*$' AND path !~ '[?#]')","realm_call_index_caller_check":"CHECK (caller_address IS NULL OR caller_address ~ '^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$')","realm_call_index_function_check":"CHECK (function_name IS NULL OR char_length(function_name) BETWEEN 1 AND 160)","realm_call_index_args_count_check":"CHECK (args_count IS NULL OR args_count BETWEEN 0 AND 100000)","realm_call_index_send_check":"CHECK (send_amount IS NULL OR char_length(send_amount) BETWEEN 1 AND 160)","realm_call_index_state_chain_id_check":"CHECK (char_length(chain_id) BETWEEN 1 AND 128)","realm_call_index_state_from_height_check":"CHECK (from_height > 0)","realm_call_index_state_range_check":"CHECK (through_height >= from_height)"})
+EXPECTED_INDEXES["realm_call_index_path_position_idx"]=("realm_call_index",False,(("chain_id","ASC"),("path","ASC"),("block_height","DESC"),("tx_index","DESC"),("message_index","DESC")),None)
+EXPECTED_TABLE_PRIVILEGES["utsa_gno_api"].update({"realm_call_index":{"SELECT"},"realm_call_index_state":{"SELECT"}})
+EXPECTED_TABLE_PRIVILEGES["utsa_gno_indexer"].update({"realm_call_index":{"SELECT","INSERT","UPDATE","DELETE"},"realm_call_index_state":{"SELECT","INSERT","UPDATE","DELETE"}})
 FINAL_SCHEMA_EXPECTATIONS = schema_expectations()
 
 NETWORK_DISTRIBUTION_TABLES = {
@@ -337,7 +350,7 @@ TRANSACTION_HASH_INDEXES = {"transactions_tx_hash_hex_idx"}
 
 
 LATE_TRANSACTION_TABLES = {TRANSACTION_PARTICIPANT_TABLE, TRANSACTION_EXECUTION_RESULT_TABLE,
-                           "realm_catalog", "realm_catalog_state"}
+                           "realm_catalog", "realm_catalog_state", "realm_call_index", "realm_call_index_state"}
 PRE_NETWORK_DISTRIBUTION_EXPECTATIONS = schema_expectations(excluded_tables=NETWORK_DISTRIBUTION_TABLES | GOVERNANCE_TABLES | LATE_TRANSACTION_TABLES)
 VALOPERS_ONLY_EXPECTATIONS = schema_expectations(
     excluded_tables=NETWORK_DISTRIBUTION_TABLES | GOVERNANCE_TABLES | LATE_TRANSACTION_TABLES, include_transaction_hash=False)
@@ -777,6 +790,11 @@ def initialize_or_validate(database_url: str, schema_path: Path = SCHEMA, connec
                 if existing == PRE_REALM_CATALOG_EXPECTATIONS["tables"]:
                     validate_schema_snapshot(snapshot, PRE_REALM_CATALOG_EXPECTATIONS)
                     cursor.execute(migration_body_for_outer_transaction(REALM_CATALOG_MIGRATION.read_text()))
+                    snapshot = fetch_schema_snapshot(cursor)
+                    existing = snapshot["tables"]
+                if existing == PRE_REALM_CALL_INDEX_EXPECTATIONS["tables"]:
+                    validate_schema_snapshot(snapshot, PRE_REALM_CALL_INDEX_EXPECTATIONS)
+                    cursor.execute(migration_body_for_outer_transaction(REALM_CALL_INDEX_MIGRATION.read_text()))
                     snapshot = fetch_schema_snapshot(cursor)
                     existing = snapshot["tables"]
                 if existing == PRE_GOVERNANCE_SCHEMA_EXPECTATIONS["tables"]:

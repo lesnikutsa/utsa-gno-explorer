@@ -11,7 +11,7 @@ from typing import Any
 from .rpc import RpcProbeResult
 from .transaction_summary import normalize_summary
 from .transaction_participants import extract_transaction_participants
-from .realm_catalog import aggregate_block
+from .realm_catalog import aggregate_block, extract_realm_calls
 from .valopers_persistence import ValopersPersistenceResult, replace_valopers_snapshot_cursor
 from .valopers_snapshot import ValopersSnapshot
 from .governance_persistence import (GovernancePersistenceResult,
@@ -33,6 +33,10 @@ class ChainIdentityError(DatabaseError):
 
 class RealmActivityCoverageError(DatabaseError):
     """Raised when Realm activity coverage cannot be advanced safely."""
+
+
+class RealmCallCoverageError(DatabaseError):
+    """Raised when Realm call index coverage cannot be advanced safely."""
 
 
 @dataclass(frozen=True)
@@ -306,7 +310,9 @@ def write_height_cursor(cursor, parsed, chain_id: str, finalized_tip: int, selec
     _verify_finalized_conflicts(cursor, parsed)
     _upsert_block(cursor, parsed)
     _upsert_transactions(cursor, parsed, selected_rpc_endpoint_id)
+    _upsert_realm_calls(cursor, parsed, chain_id)
     _upsert_realm_catalog(cursor, parsed, chain_id)
+    advance_realm_call_coverage(cursor, chain_id, parsed.height)
     advance_realm_activity_coverage(cursor, chain_id, parsed.height)
     _upsert_validators_and_members(cursor, parsed)
     _upsert_signatures(cursor, parsed)
@@ -344,6 +350,34 @@ def advance_realm_activity_coverage(cursor, chain_id: str, height: int) -> Realm
         "UPDATE realm_catalog_state SET activity_through_height = %s, updated_at = now() "
         "WHERE chain_id = %s",
         (height, chain_id),
+    )
+    return RealmActivityCoverageResult(previous, height, True)
+
+
+def advance_realm_call_coverage(cursor, chain_id: str, height: int) -> RealmActivityCoverageResult:
+    """Advance existing call-index coverage exactly; never create a coverage claim."""
+    if not isinstance(chain_id, str) or not chain_id.strip():
+        raise ValueError("chain_id must be a non-empty string")
+    if isinstance(height, bool) or not isinstance(height, int) or height < 1:
+        raise ValueError("height must be a positive integer")
+    cursor.execute(
+        "SELECT from_height, through_height FROM realm_call_index_state "
+        "WHERE chain_id = %s FOR UPDATE", (chain_id,),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        return RealmActivityCoverageResult(None, None, False)
+    previous = int(row[1])
+    if height <= previous:
+        return RealmActivityCoverageResult(previous, previous, False)
+    if height != previous + 1:
+        raise RealmCallCoverageError(
+            f"Realm call coverage for chain {chain_id} cannot advance from "
+            f"{previous} through {height}; a rebuild is required"
+        )
+    cursor.execute(
+        "UPDATE realm_call_index_state SET through_height=%s, updated_at=now() "
+        "WHERE chain_id=%s", (height, chain_id),
     )
     return RealmActivityCoverageResult(previous, height, True)
 
@@ -555,6 +589,26 @@ def _upsert_realm_catalog(cursor, parsed, chain_id: str) -> None:
     upsert_transaction_catalog_aggregates(
         cursor, chain_id, parsed.height, parsed.block["time"], aggregate_block(summaries)
     )
+
+
+def _upsert_realm_calls(cursor, parsed, chain_id: str) -> None:
+    """Persist compact call locators in the finalized block transaction."""
+    for transaction in parsed.transactions:
+        fallback = "invalid" if transaction["decode_status"] == "invalid_base64" else "unparsed"
+        summary = normalize_summary(transaction.get("payload_summary"), fallback)
+        for call in extract_realm_calls(summary):
+            cursor.execute("""
+                INSERT INTO realm_call_index(
+                    chain_id,block_height,tx_index,message_index,path,caller_address,
+                    function_name,args_count,send_amount)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (chain_id,block_height,tx_index,message_index) DO UPDATE SET
+                    path=EXCLUDED.path, caller_address=EXCLUDED.caller_address,
+                    function_name=EXCLUDED.function_name, args_count=EXCLUDED.args_count,
+                    send_amount=EXCLUDED.send_amount, updated_at=now()
+            """, (chain_id, parsed.height, transaction["index"], call.message_index,
+                  call.path, call.caller_address, call.function_name,
+                  call.args_count, call.send_amount))
 
 
 def upsert_transaction_catalog_aggregates(

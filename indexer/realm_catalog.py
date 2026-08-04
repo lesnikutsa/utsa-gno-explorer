@@ -121,3 +121,44 @@ def parse_qpaths(payload: bytes | str) -> tuple[tuple[str, str], ...]:
     if not paths:
         raise ValueError("qpaths_empty")
     return tuple(sorted(paths.items()))
+
+@dataclass(frozen=True, slots=True)
+class RealmCallRecord:
+    """One compact locator extracted from a normalized MsgCall summary."""
+    path: str
+    message_index: int
+    caller_address: str | None
+    function_name: str | None
+    args_count: int | None
+    send_amount: str | None
+
+
+def extract_realm_calls(payload_summary: Any) -> tuple[RealmCallRecord, ...]:
+    """Fail closed while extracting bounded, complete Realm MsgCall locators."""
+    if not isinstance(payload_summary, dict) or payload_summary.get("parse_status") != "parsed":
+        return ()
+    messages = payload_summary.get("messages")
+    if not isinstance(messages, list):
+        return ()
+    calls: list[RealmCallRecord] = []
+    for index, message in enumerate(messages[:MAX_MESSAGES]):
+        if not isinstance(message, dict) or message.get("type") != "gno.vm.MsgCall":
+            continue
+        path = message.get("package_path")
+        if message.get("package_path_complete") is not True or path_kind(path) != "realm":
+            continue
+        caller = message.get("sender")
+        function = message.get("function")
+        args_count = message.get("args_count")
+        send = message.get("send")
+        if caller is not None and (not isinstance(caller, str) or _ADDRESS_RE.fullmatch(caller) is None):
+            continue
+        if function is not None and (not isinstance(function, str) or not function or len(function) > 160):
+            continue
+        if (args_count is not None and (isinstance(args_count, bool) or not isinstance(args_count, int)
+                                       or not 0 <= args_count <= 100_000)):
+            continue
+        if send is not None and (not isinstance(send, str) or not send or len(send) > 160):
+            continue
+        calls.append(RealmCallRecord(path, index, caller, function, args_count, send))
+    return tuple(calls)

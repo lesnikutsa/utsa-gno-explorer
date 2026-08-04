@@ -119,3 +119,28 @@ class RealmCatalogTests(unittest.TestCase):
   with self.assertRaises(init_database.SchemaCompatibilityError):
    init_database.validate_schema_snapshot(snapshot)
 if __name__=='__main__': unittest.main()
+
+class RealmCallExtractionTests(unittest.TestCase):
+ def summary(self, messages, status='parsed'):
+  return {'parse_status':status,'messages':messages}
+ def test_extracts_exact_bounded_calls(self):
+  from indexer.realm_catalog import extract_realm_calls
+  address='g1'+'q'*38
+  calls=extract_realm_calls(self.summary([
+   {'type':'gno.vm.MsgRun','package_path':'gno.land/r/no','package_path_complete':True},
+   {'type':'gno.vm.MsgCall','package_path':'gno.land/r/demo','package_path_complete':True,'sender':address,'function':'Render','args_count':2,'send':'1ugnot'},
+   {'type':'gno.vm.MsgCall','package_path':'gno.land/p/pkg','package_path_complete':True},
+  ]))
+  self.assertEqual(len(calls),1); self.assertEqual(calls[0].message_index,1)
+  self.assertEqual((calls[0].caller_address,calls[0].function_name,calls[0].args_count,calls[0].send_amount),(address,'Render',2,'1ugnot'))
+  self.assertFalse(hasattr(calls[0],'arguments')); self.assertFalse(hasattr(calls[0],'events'))
+ def test_requires_complete_valid_optional_fields_and_parsed_status(self):
+  from indexer.realm_catalog import extract_realm_calls
+  base={'type':'gno.vm.MsgCall','package_path':'gno.land/r/demo'}
+  self.assertEqual(extract_realm_calls(self.summary([{**base,'package_path_complete':False}])),())
+  self.assertEqual(extract_realm_calls(self.summary([{**base,'package_path_complete':True,'args_count':-1}])),())
+  self.assertEqual(extract_realm_calls(self.summary([{**base,'package_path_complete':True}],'unsupported')),())
+ def test_inspects_at_most_twenty_messages(self):
+  from indexer.realm_catalog import extract_realm_calls
+  messages=[{'type':'gno.vm.MsgCall','package_path':f'gno.land/r/r{i}','package_path_complete':True} for i in range(21)]
+  self.assertEqual(len(extract_realm_calls(self.summary(messages))),20)
