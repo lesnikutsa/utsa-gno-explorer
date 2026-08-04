@@ -4,7 +4,7 @@ import { formatGas } from '../utils/gas'
 import { shortAddress } from '../utils/address'
 import { relativeTime } from '../utils/time'
 import { formatSuccessRate } from '../utils/realm'
-import { getRealmDetailViewModel, getRealmSourceStatusParts, realmCallsPathForDetail } from '../utils/realmDetail'
+import { getRealmDetailViewModel, getRealmSourceStatusParts, realmCallsPageLabel, realmCallsPathForDetail } from '../utils/realmDetail'
 import { useRealmCalls } from '../hooks/useRealmCalls'
 
 const formatCount = (value) => typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString() : value == null ? '—' : String(value)
@@ -75,10 +75,14 @@ export function RecentCalls({ response }) {
   if (viewModel.source.call_index_complete !== true || calls.unavailable) return <section className="panel realm-detail__section realm-detail__note"><h2>Recent Calls</h2><p>Realm call history is temporarily unavailable.</p></section>
   return (
     <section className="panel realm-detail__section realm-detail__calls" aria-labelledby="realm-calls-title">
-      <div className="panel__heading"><h2 id="realm-calls-title">Recent Calls</h2>{calls.error && <button className="blocks-page__button" type="button" onClick={calls.retry} disabled={calls.loading}>Retry</button>}</div>
-      <DataTable columns={callColumns} rows={calls.items} rowKey={(row) => `${row.block_height}-${row.tx_index}-${row.message_index}`} loading={calls.loading} emptyMessage={calls.error ? 'Realm calls are currently unavailable.' : 'No direct calls have been indexed for this Realm.'} />
-      {calls.olderError && <p className="realm-detail__older-error">Older calls could not be loaded. Already loaded calls were preserved.</p>}
-      {calls.canLoadOlder && <div className="realm-detail__load-older"><button className="blocks-page__button" type="button" onClick={calls.loadOlder} disabled={calls.loadingOlder}>{calls.loadingOlder ? 'Loading older calls…' : 'Load older calls'}</button></div>}
+      <div className="panel__heading"><h2 id="realm-calls-title">Recent Calls</h2>{calls.initialError && <button className="blocks-page__button" type="button" onClick={calls.retry} disabled={calls.loading}>Retry</button>}</div>
+      <DataTable columns={callColumns} rows={calls.items} rowKey={(row) => `${row.block_height}-${row.tx_index}-${row.message_index}`} loading={calls.loading || calls.pageLoading} emptyMessage={calls.initialError ? 'Realm calls are currently unavailable.' : 'No direct calls have been indexed for this Realm.'} />
+      {calls.pageError && <p className="realm-detail__older-error">Realm call page could not be loaded. <button className="blocks-page__button" type="button" onClick={calls.retry} disabled={calls.loading || calls.pageLoading}>Retry</button></p>}
+      <nav className="blocks-pagination realm-detail__calls-pagination" aria-label="Realm calls pagination">
+        <button className="blocks-page__button" type="button" onClick={calls.loadNewer} disabled={calls.loading || calls.pageLoading || !calls.canLoadNewer}>Newer calls</button>
+        <span>{realmCallsPageLabel(calls.pageIndex)}</span>
+        <button className="blocks-page__button" type="button" onClick={calls.loadOlder} disabled={calls.loading || calls.pageLoading || !calls.canLoadOlder}>Older calls</button>
+      </nav>
     </section>
   )
 }

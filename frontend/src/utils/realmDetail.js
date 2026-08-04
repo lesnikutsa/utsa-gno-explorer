@@ -65,13 +65,22 @@ export function selectRealmDetailStateForPath(state, path) {
   return state
 }
 
-export const idleRealmCallsState = (path = null) => ({ path, items: [], pagination: null, loading: false, loadingOlder: false, error: false, olderError: false, unavailable: false })
-export const loadingRealmCallsState = (path) => ({ path, items: [], pagination: null, loading: true, loadingOlder: false, error: false, olderError: false, unavailable: false })
+export const idleRealmCallsState = (path = null) => ({ path, items: [], pagination: null, loading: false, pageLoading: false, initialError: false, pageError: false, unavailable: false, pageIndex: 0, cursorHistory: [null] })
+export const loadingRealmCallsState = (path) => ({ path, items: [], pagination: null, loading: true, pageLoading: false, initialError: false, pageError: false, unavailable: false, pageIndex: 0, cursorHistory: [null] })
 
 export function selectRealmCallsStateForPath(state, path) {
   if (!path) return idleRealmCallsState(null)
   if (state?.path !== path) return loadingRealmCallsState(path)
   return state
+}
+
+export function getRealmCallsNextCursor(pagination) {
+  if (pagination?.next_before_height == null || pagination?.next_before_tx_index == null || pagination?.next_before_message_index == null) return null
+  return { height: pagination.next_before_height, txIndex: pagination.next_before_tx_index, messageIndex: pagination.next_before_message_index }
+}
+
+export function realmCallsPageLabel(pageIndex) {
+  return pageIndex === 0 ? 'Latest' : `Page ${pageIndex + 1}`
 }
 
 

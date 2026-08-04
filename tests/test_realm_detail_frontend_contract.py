@@ -163,44 +163,67 @@ class RealmDetailFrontendContractTests(unittest.TestCase):
         for fragment in ["path: requestedPath", "setState(loadingRealmDetailState(path))", "id !== requestId.current", "activeController.abort()"]:
             self.assertIn(fragment, hook)
 
-    def test_calls_state_selection_and_pagination_contract(self):
+    def test_calls_state_selection_and_page_navigation_contract(self):
         values = run_node(
             """
-            import { selectRealmCallsStateForPath } from './frontend/src/utils/realmDetail.js';
-            const loaded = {
-              path: 'gno.land/r/old',
-              items: [{ block_height: 3, tx_index: 0, message_index: 1 }],
-              pagination: { next_before_height: 2, next_before_tx_index: 0, next_before_message_index: 0 },
-              loading: false, loadingOlder: false, error: false, olderError: false, unavailable: false,
+            import { getRealmCallsNextCursor, realmCallsPageLabel, selectRealmCallsStateForPath } from './frontend/src/utils/realmDetail.js';
+            const latest = {
+              path: 'gno.land/r/demo',
+              items: Array.from({ length: 25 }, (_, index) => ({ id: `latest-${index}` })),
+              pagination: { next_before_height: 20, next_before_tx_index: 1, next_before_message_index: 2 },
+              loading: false, pageLoading: false, initialError: false, pageError: false, unavailable: false,
+              pageIndex: 0, cursorHistory: [null],
             };
-            const oldForNew = selectRealmCallsStateForPath(loaded, 'gno.land/r/new');
-            const initialValid = selectRealmCallsStateForPath(undefined, 'gno.land/r/new');
-            const nullPath = selectRealmCallsStateForPath(loaded, null);
-            const same = selectRealmCallsStateForPath(loaded, 'gno.land/r/old');
-            const olderLoading = { ...loaded, loadingOlder: true };
-            console.log(JSON.stringify({ oldForNew, initialValid, nullPath, same, olderLoading: selectRealmCallsStateForPath(olderLoading, 'gno.land/r/old') }));
+            const olderCursor = getRealmCallsNextCursor(latest.pagination);
+            const page2 = { ...latest, items: [{ id: 'page-2-only' }], pageIndex: 1, cursorHistory: [null, olderCursor] };
+            const page3Cursor = { height: 10, txIndex: 0, messageIndex: 1 };
+            const page3 = { ...page2, items: [{ id: 'page-3-only' }], pageIndex: 2, cursorHistory: [null, olderCursor, page3Cursor] };
+            const failed = { ...page2, pageLoading: false, pageError: true };
+            const oldForNew = selectRealmCallsStateForPath(page2, 'gno.land/r/other');
+            const nullPath = selectRealmCallsStateForPath(page2, null);
+            console.log(JSON.stringify({
+              latestCount: latest.items.length, latestLabel: realmCallsPageLabel(latest.pageIndex), olderCursor,
+              page2Label: realmCallsPageLabel(page2.pageIndex), page2Items: page2.items, page2History: page2.cursorHistory,
+              page3Label: realmCallsPageLabel(page3.pageIndex), page3HistoryLength: page3.cursorHistory.length,
+              newerToPage2Cursor: page3.cursorHistory[1], newerToLatestCursor: page2.cursorHistory[0],
+              failedPageIndex: failed.pageIndex, failedHistory: failed.cursorHistory, failedItems: failed.items,
+              oldForNew, nullPath,
+            }));
             """
         )
-        self.assertTrue(values["initialValid"]["loading"])
-        self.assertEqual(values["initialValid"]["items"], [])
+        self.assertEqual(values["latestCount"], 25)
+        self.assertEqual(values["latestLabel"], "Latest")
+        self.assertEqual(values["olderCursor"], {"height": 20, "txIndex": 1, "messageIndex": 2})
+        self.assertEqual(values["page2Label"], "Page 2")
+        self.assertEqual(values["page2Items"], [{"id": "page-2-only"}])
+        self.assertNotIn({"id": "latest-0"}, values["page2Items"])
+        self.assertEqual(values["page2History"], [None, {"height": 20, "txIndex": 1, "messageIndex": 2}])
+        self.assertEqual(values["page3Label"], "Page 3")
+        self.assertEqual(values["page3HistoryLength"], 3)
+        self.assertEqual(values["newerToPage2Cursor"], {"height": 20, "txIndex": 1, "messageIndex": 2})
+        self.assertIsNone(values["newerToLatestCursor"])
+        self.assertEqual(values["failedPageIndex"], 1)
+        self.assertEqual(values["failedHistory"], [None, {"height": 20, "txIndex": 1, "messageIndex": 2}])
+        self.assertEqual(values["failedItems"], [{"id": "page-2-only"}])
         self.assertTrue(values["oldForNew"]["loading"])
         self.assertEqual(values["oldForNew"]["items"], [])
-        self.assertIsNone(values["oldForNew"]["pagination"])
+        self.assertEqual(values["oldForNew"]["cursorHistory"], [None])
         self.assertFalse(values["nullPath"]["loading"])
-        self.assertEqual(values["nullPath"]["items"], [])
-        self.assertFalse(values["same"]["loading"])
-        self.assertEqual(len(values["same"]["items"]), 1)
-        self.assertTrue(values["olderLoading"]["loadingOlder"])
-        self.assertEqual(len(values["olderLoading"]["items"]), 1)
         hook = self.read("frontend/src/hooks/useRealmCalls.js")
-        for fragment in ["REALM_CALLS_PAGE_SIZE = 25", "beforeHeight: cursor?.height", "beforeTxIndex: cursor?.txIndex", "beforeMessageIndex: cursor?.messageIndex", "next_before_height", "next_before_tx_index", "next_before_message_index", "const seen = new Set(selected.items.map(callKey))", "return { ...selected, path: requestedPath, loadingOlder: false, olderError: true }", "requestError?.status === 409", "unavailable: true", "id !== requestId.current"]:
-            self.assertIn(fragment, hook)
+        helper = self.read("frontend/src/utils/realmDetail.js")
+        for fragment in ["cursorHistory", "pageIndex", "pageLoading", "pageError", "failedRequest.current", "loadNewer", "loadOlder", "getRealmCallsNextCursor", "next_before_height", "next_before_tx_index", "next_before_message_index"]:
+            self.assertIn(fragment, hook + helper)
+        self.assertNotIn("[...selected.items", hook)
+        self.assertNotIn("new Set(selected.items", hook)
+        self.assertNotIn("loadingOlder", hook + helper)
+        self.assertNotIn("olderError", hook + helper)
+        self.assertNotIn("infinite", hook.lower() + helper.lower())
         self.assertNotIn("offset", hook.lower())
 
     def test_page_rendering_contract(self):
         page = self.read("frontend/src/pages/RealmDetail.jsx")
         source_helper = self.read("frontend/src/utils/realmDetail.js")
-        for text in ["Overview", "Recent Calls", "Packages do not have direct Realm call history.", "Realm call history is temporarily unavailable.", "Realm or Package not found", "Load older calls", "Message #"]:
+        for text in ["Overview", "Recent Calls", "Packages do not have direct Realm call history.", "Realm call history is temporarily unavailable.", "Realm or Package not found", "Newer calls", "Older calls", "Message #"]:
             self.assertIn(text, page)
         for text in ["Catalog observed at block", "History complete", "History unavailable"]:
             self.assertIn(text, source_helper)
@@ -212,6 +235,11 @@ class RealmDetailFrontendContractTests(unittest.TestCase):
             self.assertIn(field, source_helper)
         for column in ["Time", "Function", "Caller", "Block", "Status", "Gas Used", "Tx Hash"]:
             self.assertIn(f"label: '{column}'", page)
+        for fragment in ["blocks-pagination", "Realm calls pagination", "realmCallsPageLabel(calls.pageIndex)"]:
+            self.assertIn(fragment, page)
+        self.assertIn("Latest", source_helper)
+        self.assertIn("Page ${pageIndex + 1}", source_helper)
+        self.assertNotIn("Load older calls", page)
         self.assertIn("/blocks/${encodeURIComponent(value)}", page)
         self.assertIn("/accounts/${encodeURIComponent(value)}", page)
         self.assertIn("/blocks/${encodeURIComponent(row.block_height)}/transactions/${encodeURIComponent(row.tx_index)}", page)
