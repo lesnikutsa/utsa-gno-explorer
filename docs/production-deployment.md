@@ -169,6 +169,44 @@ shutdown, and `TimeoutStopSec=180` allows the current atomic height transaction 
 finish. The existing PostgreSQL advisory lock remains the primary duplicate-indexer
 protection.
 
+### Automatic Realm catalog refresh
+
+The Realm catalog timer runs the existing `scripts/refresh_realm_catalog.py`
+application entry point at 00:00, 03:00, 06:00, 09:00, 12:00, 15:00, 18:00,
+and 21:00 UTC. `Persistent=true` catches up a missed occurrence after the timer
+becomes active, and the five-minute randomized delay avoids synchronized load.
+
+```bash
+sudo install -o root -g root -m 0644 \
+  deploy/systemd/utsa-gno-realm-catalog-refresh.service \
+  /etc/systemd/system/utsa-gno-realm-catalog-refresh.service
+sudo install -o root -g root -m 0644 \
+  deploy/systemd/utsa-gno-realm-catalog-refresh.timer \
+  /etc/systemd/system/utsa-gno-realm-catalog-refresh.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now utsa-gno-realm-catalog-refresh.timer
+```
+
+Verify the schedule and journal, or safely request a manual refresh:
+
+```bash
+systemctl status utsa-gno-realm-catalog-refresh.timer --no-pager
+systemctl list-timers utsa-gno-realm-catalog-refresh.timer --all
+journalctl -u utsa-gno-realm-catalog-refresh.service -n 50 --no-pager
+sudo systemctl start utsa-gno-realm-catalog-refresh.service
+```
+
+The service loads `indexer.env` first and `rpc.env` last, waits for PostgreSQL,
+and publishes only a fully fetched and validated fixed-height qpaths snapshot.
+Check `catalog_observed_height`, Realm and package counts, and the `rpc_visible`
+count through the API after a run. An invalid qpaths response leaves the previous
+snapshot active. Equal snapshots are no-ops, and stale snapshots are ignored after
+the database lock, so they cannot roll back visibility, source RPC, or timestamps.
+
+This timer does not recalculate Realm activity or change its coverage range, does
+not require stopping the indexer, does not restart the API, and does not modify the
+application registry. It only refreshes the RPC-derived catalog fields.
+
 ### Automatic Valopers profile refresh
 
 Consensus indexing supplies signing addresses, consensus public keys, voting power,

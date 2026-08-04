@@ -1,7 +1,7 @@
 """Focused non-PostgreSQL contracts for Realm operator commands."""
 import unittest
 from scripts.rebuild_realm_activity import RebuildError, rebuild_cursor
-from scripts.refresh_realm_catalog import fetch_realm_paths, persist_refresh
+from scripts.refresh_realm_catalog import RefreshStatus, fetch_realm_paths, persist_refresh
 
 class Cursor:
     def __init__(self, responses):
@@ -92,3 +92,33 @@ class RefreshPersistenceTests(unittest.TestCase):
         cursor=Cursor([]); paths=[('gno.land/r/x','realm')]*2
         with self.assertRaises(ValueError): persist_refresh(cursor,"topaz-1",5,None,paths)
         self.assertEqual(cursor.executed,[])
+
+    def test_initial_refresh_returns_counts(self):
+        cursor = Cursor([None, None, None, None, (2,)])
+        result = persist_refresh(cursor, "topaz-1", 5, 7, [
+            ("gno.land/r/demo", "realm"),
+            ("gno.land/p/demo", "package"),
+        ])
+        self.assertEqual(result.status, RefreshStatus.APPLIED)
+        self.assertEqual((result.realm_count, result.package_count, result.total_count), (1, 1, 2))
+
+    def test_equal_height_is_noop(self):
+        cursor = Cursor([(5,)])
+        result = persist_refresh(cursor, "topaz-1", 5, 9, [("gno.land/r/new", "realm")])
+        self.assertEqual(result.status, RefreshStatus.UNCHANGED)
+        self.assertEqual(result.current_height, 5)
+        self.assertFalse(any(sql.startswith("UPDATE") or sql.startswith("INSERT") for sql, _ in cursor.executed))
+
+    def test_stale_height_is_noop(self):
+        cursor = Cursor([(6,)])
+        result = persist_refresh(cursor, "topaz-1", 5, 9, [("gno.land/r/new", "realm")])
+        self.assertEqual(result.status, RefreshStatus.STALE_IGNORED)
+        self.assertEqual(result.current_height, 6)
+        self.assertFalse(any(sql.startswith("UPDATE") or sql.startswith("INSERT") for sql, _ in cursor.executed))
+
+    def test_state_upsert_does_not_write_activity_coverage(self):
+        cursor = Cursor([None, None, None, (1,)])
+        persist_refresh(cursor, "topaz-1", 5, None, [("gno.land/r/demo", "realm")])
+        state_sql = next(sql for sql, _ in cursor.executed if sql.startswith("INSERT INTO realm_catalog_state"))
+        self.assertNotIn("activity_from_height", state_sql)
+        self.assertNotIn("activity_through_height", state_sql)

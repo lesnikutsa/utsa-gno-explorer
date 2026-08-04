@@ -93,14 +93,29 @@ Production rollout order is:
 2. Stop the indexer.
 3. Update the repository.
 4. Apply and verify migration `0008`.
-5. Run `python scripts/refresh_realm_catalog.py` to create the fixed-height catalog state.
+5. Run `python scripts/refresh_realm_catalog.py` to create the initial fixed-height catalog state.
 6. Optionally run `python scripts/rebuild_realm_activity.py --from-height HEIGHT` with an explicit verified local range.
 7. Restart the indexer.
 8. Restart the API.
 9. Smoke-test `GET /api/realms`.
 10. Leave the frontend unchanged in this release.
 
-The commands are foreground, one-shot operations with dedicated transaction advisory locks; there is no automatic schedule. The refresh must run before the first rebuild because the rebuild requires an existing catalog state. Decoded-history statistics are limited to a verified complete local block range and valid bounded summaries. The qpaths command changes visibility atomically and never deletes historical rows.
+The initial commands are foreground, one-shot operations with dedicated transaction
+advisory locks. After rollout, `utsa-gno-realm-catalog-refresh.timer` invokes the same
+entry point every three hours at 00:00, 03:00, 06:00, 09:00, 12:00, 15:00, 18:00,
+and 21:00 UTC. The refresh must run before the first rebuild because the rebuild
+requires an existing catalog state. Decoded-history statistics are limited to a
+verified complete local block range and valid bounded summaries. The qpaths command
+changes visibility atomically and never deletes historical rows.
+
+Use `sudo systemctl start utsa-gno-realm-catalog-refresh.service` for an operator
+refresh. Inspect it with
+`journalctl -u utsa-gno-realm-catalog-refresh.service -n 50 --no-pager`, then verify
+the API's `catalog_observed_height`, Realm/package counts, and `rpc_visible` count.
+Equal-height runs report `status=unchanged`; older snapshots report
+`status=stale_ignored`. Invalid qpaths data rolls back without publishing a partial
+catalog. Catalog refreshes leave Realm activity counters and coverage unchanged,
+do not stop the indexer, restart the API, or modify the application registry.
 
 ### One-time Realm activity coverage alignment
 
