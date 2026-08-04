@@ -15,7 +15,7 @@ class RealmsFrontendContractTests(unittest.TestCase):
         app = self.read("frontend/src/App.jsx")
         sidebar = self.read("frontend/src/components/Sidebar.jsx")
         self.assertIn("path === '/realms' || path === '/realms/'", app)
-        self.assertIn("<Realms realmsPage={realmsPage} />", app)
+        self.assertIn("<Realms realmsPage={realmsPage} realmApplications={realmApplications} />", app)
         self.assertLess(sidebar.index("label: 'Transactions'"), sidebar.index("label: 'Realms'"))
         self.assertLess(sidebar.index("label: 'Realms'"), sidebar.index("label: 'Validators'"))
         self.assertIn("return pathname === href || pathname.startsWith(`${href}/`)", sidebar)

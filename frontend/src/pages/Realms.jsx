@@ -50,7 +50,60 @@ function emptyMessage({ error, snapshotMissing, appliedSearch, kind }) {
   return 'No realms or packages have been indexed yet.'
 }
 
-export function Realms({ realmsPage }) {
+function RealmApplications({ applications }) {
+  const { items, source, loading, error, snapshotMissing, retry } = applications
+  const activityFromHeight = source?.activity_from_height
+  const intro = activityFromHeight !== null && activityFromHeight !== undefined
+    ? `Curated Realm namespaces ranked by indexed direct calls since #${formatCount(activityFromHeight)}.`
+    : 'Curated Realm namespaces ranked by indexed direct calls.'
+
+  return (
+    <section className="realms-applications" aria-labelledby="realms-applications-title">
+      <div className="realms-applications__heading">
+        <div>
+          <h2 id="realms-applications-title">Applications</h2>
+          <p className="realms-applications__intro">{intro}</p>
+        </div>
+        {error && <button className="blocks-page__button" type="button" onClick={retry} disabled={loading}>Retry</button>}
+      </div>
+      {loading ? (
+        <div className="panel realms-applications__state">Loading applications…</div>
+      ) : error ? (
+        <div className="panel realms-applications__state">Applications are currently unavailable.</div>
+      ) : snapshotMissing ? (
+        <div className="panel realms-applications__state">Application ranking is not available yet.</div>
+      ) : items.length === 0 ? (
+        <div className="panel realms-applications__state">No curated applications are available yet.</div>
+      ) : (
+        <div className="realms-applications__grid">
+          {items.map((item) => (
+            <article className="panel realms-application-card" key={item.namespace_key}>
+              <header className="realms-application-card__header">
+                <div className="realms-application-card__identity">
+                  <h3>{item.application.display_name}</h3>
+                  <p className="realms-application-card__namespace mono">Namespace: {item.namespace_key}</p>
+                </div>
+                <StatusBadge tone="neutral">{item.application.category}</StatusBadge>
+              </header>
+              <dl className="realms-application-card__primary">
+                <dt>Direct Calls</dt>
+                <dd>{formatCount(item.direct_call_count)}</dd>
+              </dl>
+              <dl className="realms-application-card__metrics">
+                <div><dt>Realms</dt><dd>{formatCount(item.realm_count)}</dd></div>
+                <div><dt>Called Realms</dt><dd>{formatCount(item.called_realm_count)}</dd></div>
+                <div><dt>Success Rate</dt><dd>{formatSuccessRate(item.success_rate)}</dd></div>
+                <div><dt>Last Activity</dt><dd>{item.last_activity_at ? <time dateTime={item.last_activity_at} title={item.last_activity_at}>{relativeTime(item.last_activity_at)}</time> : 'Never'}</dd></div>
+              </dl>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+export function Realms({ realmsPage, realmApplications }) {
   const { items, summary, loading, error, snapshotMissing, kind, searchInput, appliedSearch, pageIndex, canLoadOlder, setSearchInput, selectKind, submitSearch, clearSearch, retry, loadOlder, loadNewer } = realmsPage
   const metrics = [
     ['Realms', summary?.total_realms],
@@ -75,6 +128,8 @@ export function Realms({ realmsPage }) {
         {metrics.map(([label, value]) => <div className="panel realms-page__metric" key={label}><span>{label}</span><strong>{formatCount(value)}</strong></div>)}
       </div>
       {summary && <p className="realms-page__metadata">Catalog snapshot #{formatCount(summary.catalog_observed_height)} · Indexed #{formatCount(summary.indexed_height)}</p>}
+
+      <RealmApplications applications={realmApplications} />
 
       <div className="realms-page__toolbar">
         <div className="realms-page__filters" aria-label="Realm kind filters">
