@@ -548,6 +548,8 @@ DO $$ BEGIN
 END $$;
 COMMIT;
 
+BEGIN;
+
 CREATE TABLE realm_call_index (
     chain_id TEXT NOT NULL,
     block_height BIGINT NOT NULL,
@@ -597,3 +599,5 @@ DO $$ BEGIN
   GRANT SELECT,INSERT,UPDATE,DELETE ON realm_call_index, realm_call_index_state TO utsa_gno_indexer;
  END IF;
 END $$;
+
+COMMIT;
