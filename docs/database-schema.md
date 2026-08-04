@@ -175,3 +175,11 @@ do not query these tables yet.
 ## Realm catalog
 
 `realm_catalog` has primary key `(chain_id, path)` and contains one compact aggregate row for each validated Gno Realm or Package path. It deliberately has no block/transaction foreign keys and no per-call table, so metadata survives pruning. `realm_catalog_state` records the fixed qpaths observation and optional explicit local activity range; the qpaths refresh must create this state before an activity rebuild. Migration 0008 is additive, transactional, and does not populate either table. The API role receives `SELECT`; the indexer role receives `SELECT`, `INSERT`, and `UPDATE` only. Literal substring search uses a bounded sequential scan; no B-tree index is claimed to accelerate leading-wildcard matching.
+
+`activity_from_height` is the first height of the continuous measured activity
+range. `activity_through_height` is the last height for which transaction-derived
+Realm aggregation and coverage advancement committed atomically with the block.
+Every exact-next live block advances the range, including blocks with no
+transactions or no Realm calls. Any multi-height lag fails closed and requires a
+full activity rebuild. Contiguous block rows are necessary rebuild input, but do
+not prove that the corresponding counters were already calculated.

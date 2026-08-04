@@ -101,3 +101,24 @@ Production rollout order is:
 10. Leave the frontend unchanged in this release.
 
 The commands are foreground, one-shot operations with dedicated transaction advisory locks; there is no automatic schedule. The refresh must run before the first rebuild because the rebuild requires an existing catalog state. Decoded-history statistics are limited to a verified complete local block range and valid bounded summaries. The qpaths command changes visibility atomically and never deletes historical rows.
+
+### One-time Realm activity coverage alignment
+
+An installation that indexed live blocks with the legacy indexer can have a
+multi-height lag. Metadata-only repair is unsafe because a previous bounded rebuild
+may have intentionally excluded otherwise present blocks. Use this sequence:
+
+1. Stop `utsa-gno-indexer.service` before deploying the new code.
+2. Deploy the new code and run `python scripts/check_realm_activity_coverage.py`.
+3. If it reports `status=rebuild_required`, record the checkpoint and run
+   `python scripts/rebuild_realm_activity.py --from-height <activity_from_height> --through-height <indexer_checkpoint>`.
+4. Repeat the check and require `status=aligned`.
+5. Start `utsa-gno-indexer.service`.
+6. Confirm each subsequent block advances `activity_through_height` by exactly one.
+
+The check command is read-only. Do not start the new indexer with a multi-height
+lag: exact-next advancement deliberately fails closed until the full rebuild has
+atomically recalculated counters and range metadata. The API may remain available
+during the rebuild because readers continue to see the previously committed state
+until the rebuild transaction commits. Block continuity is a rebuild precondition,
+not evidence that counters for those blocks already exist.

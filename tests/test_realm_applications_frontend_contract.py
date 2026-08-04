@@ -78,9 +78,10 @@ class RealmApplicationsFrontendContractTests(unittest.TestCase):
         for fragment in (
             "Applications",
             "Curated Realm namespaces ranked by indexed direct calls",
-            "Indexed direct-call metrics. Historical indexing starts at #",
-            "live activity continues.",
+            "Activity metrics cover blocks #",
+            "Activity metrics are indexed since block #",
             "source?.activity_from_height",
+            "source?.activity_through_height",
             "Direct Calls",
             "Success",
             "Last activity",
@@ -111,7 +112,7 @@ class RealmApplicationsFrontendContractTests(unittest.TestCase):
         for forbidden in (
             "Verified", "Unverified", "Trending", "Popular", "All time",
             "Lifetime", "Since genesis", "dangerouslySetInnerHTML", "titleCase", '"GnoSwap"',
-            "Activity metrics cover blocks", "source?.activity_through_height",
+            "live activity continues",
         ):
             self.assertNotIn(forbidden, page)
 
