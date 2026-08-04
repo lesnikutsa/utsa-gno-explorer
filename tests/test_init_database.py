@@ -77,10 +77,18 @@ def test_checks_and_privilege_contract_are_registered():
         "utsa_gno_api": {
             "transaction_participants": {"SELECT"},
             "transaction_execution_results": {"SELECT"},
+            "realm_catalog": {"SELECT"},
+            "realm_catalog_state": {"SELECT"},
+            "realm_call_index": {"SELECT"},
+            "realm_call_index_state": {"SELECT"},
         },
         "utsa_gno_indexer": {
             "transaction_participants": {"SELECT", "INSERT", "DELETE"},
             "transaction_execution_results": {"SELECT", "INSERT", "UPDATE"},
+            "realm_catalog": {"SELECT", "INSERT", "UPDATE"},
+            "realm_catalog_state": {"SELECT", "INSERT", "UPDATE"},
+            "realm_call_index": {"SELECT", "INSERT", "UPDATE", "DELETE"},
+            "realm_call_index_state": {"SELECT", "INSERT", "UPDATE", "DELETE"},
         },
     }
 
@@ -189,52 +197,104 @@ def test_migration_failure_does_not_commit_or_report_ready():
     assert connection.commits == 0
 
 class PrivilegeCursor:
-    def __init__(self, grants): self.grants, self.params = grants, None
-    def execute(self, sql, params=None): self.params = params
+    def __init__(self, grants, column_grants=None):
+        self.grants, self.column_grants, self.params, self.sql = grants, column_grants or {}, None, ""
+    def execute(self, sql, params=None): self.sql, self.params = str(sql), params
     def fetchone(self):
         if len(self.params) == 1: return (self.params[0] in self.grants,)
-        role, table, privilege = self.params
+        if "has_column_privilege" in self.sql:
+            if len(self.params) == 3:
+                role, table, column = self.params
+                privilege = "SELECT" if "'SELECT'" in self.sql else ""
+            else:
+                role, table, column, privilege = self.params
+            table = table.removeprefix("public.")
+            return (privilege in self.column_grants.get(role, {}).get(table, {}).get(column, set())
+                    or privilege in self.grants.get(role, {}).get(table, set()),)
+        if len(self.params) == 2:
+            role, table = self.params
+            privilege = "SELECT" if "'SELECT'" in self.sql else ""
+        else:
+            role, table, privilege = self.params
         table = table.removeprefix("public.")
         return (privilege in self.grants.get(role, {}).get(table, set()),)
 
 
+def expected_table_grants():
+    return copy.deepcopy(init_database.EXPECTED_TABLE_PRIVILEGES)
+
+
+def api_column_grants():
+    return {"utsa_gno_api": {table: {column: {"SELECT"} for column in columns}
+            for table, columns in init_database.EXPECTED_COLUMN_PRIVILEGES["utsa_gno_api"].items()}}
+
+
 def test_participant_privilege_validation_accepts_least_privilege():
-    init_database.validate_participant_privileges(PrivilegeCursor({
-        "utsa_gno_api": {
-            "transaction_participants": {"SELECT"},
-            "transaction_execution_results": {"SELECT"},
-        },
-        "utsa_gno_indexer": {
-            "transaction_participants": {"SELECT", "INSERT", "DELETE"},
-            "transaction_execution_results": {"SELECT", "INSERT", "UPDATE"},
-        },
-    }))
+    init_database.validate_participant_privileges(PrivilegeCursor(expected_table_grants(), api_column_grants()))
 
 
 def test_api_writes_and_missing_indexer_grants_fail_closed():
+    api_write = expected_table_grants()
+    api_write["utsa_gno_api"]["transaction_participants"].add("INSERT")
     with pytest.raises(init_database.SchemaCompatibilityError, match="API role"):
-        init_database.validate_participant_privileges(PrivilegeCursor({
-            "utsa_gno_api": {
-                "transaction_participants": {"SELECT", "INSERT"},
-                "transaction_execution_results": {"SELECT"},
-            },
-            "utsa_gno_indexer": {
-                "transaction_participants": {"SELECT", "INSERT", "DELETE"},
-                "transaction_execution_results": {"SELECT", "INSERT", "UPDATE"},
-            },
-        }))
+        init_database.validate_participant_privileges(PrivilegeCursor(api_write, api_column_grants()))
+    missing_indexer = expected_table_grants()
+    missing_indexer["utsa_gno_indexer"]["transaction_participants"].remove("DELETE")
     with pytest.raises(init_database.SchemaCompatibilityError, match="Indexer role"):
-        init_database.validate_participant_privileges(PrivilegeCursor({
-            "utsa_gno_api": {
-                "transaction_participants": {"SELECT"},
-                "transaction_execution_results": {"SELECT"},
-            },
-            "utsa_gno_indexer": {
-                "transaction_participants": {"SELECT", "INSERT"},
-                "transaction_execution_results": {"SELECT", "INSERT", "UPDATE"},
-            },
-        }))
+        init_database.validate_participant_privileges(PrivilegeCursor(missing_indexer, api_column_grants()))
 
+
+def test_realm_calls_api_column_privilege_validation():
+    base = {
+        "utsa_gno_api": {
+            "transaction_participants": {"SELECT"},
+            "transaction_execution_results": {"SELECT"},
+            "realm_catalog": {"SELECT"},
+            "realm_catalog_state": {"SELECT"},
+            "realm_call_index": {"SELECT"},
+            "realm_call_index_state": {"SELECT"},
+        },
+        "utsa_gno_indexer": {},
+    }
+    init_database.validate_realm_calls_api_column_privileges(PrivilegeCursor(base, api_column_grants()))
+    full_select = copy.deepcopy(base); full_select["utsa_gno_api"]["transactions"] = {"SELECT"}
+    with pytest.raises(init_database.SchemaCompatibilityError, match="full-table SELECT"):
+        init_database.validate_realm_calls_api_column_privileges(PrivilegeCursor(full_select, api_column_grants()))
+    missing = api_column_grants(); missing["utsa_gno_api"]["transactions"]["tx_hash_hex"] = set()
+    with pytest.raises(init_database.SchemaCompatibilityError, match="apply migration 0010"):
+        init_database.validate_realm_calls_api_column_privileges(PrivilegeCursor(base, missing))
+    sensitive = api_column_grants(); sensitive["utsa_gno_api"].setdefault("transactions", {})["payload_summary"] = {"SELECT"}
+    with pytest.raises(init_database.SchemaCompatibilityError, match="sensitive column"):
+        init_database.validate_realm_calls_api_column_privileges(PrivilegeCursor(base, sensitive))
+    writable = copy.deepcopy(base); writable["utsa_gno_api"]["indexer_state"] = {"UPDATE"}
+    with pytest.raises(init_database.SchemaCompatibilityError, match="UPDATE privilege"):
+        init_database.validate_realm_calls_api_column_privileges(PrivilegeCursor(writable, api_column_grants()))
+
+
+def test_0010_migration_envelope_and_schema_parity():
+    body = init_database.migration_body_for_outer_transaction(init_database.REALM_CALLS_API_PRIVILEGE_MIGRATION.read_text())
+    assert "GRANT SELECT (height, time_utc)" in body
+    assert "GRANT SELECT (block_height, tx_index, tx_hash_hex)" in body
+    assert "GRANT SELECT (state_key, chain_id, last_finalized_height)" in body
+    schema = init_database.SCHEMA.read_text()
+    for fragment in ("GRANT SELECT (height, time_utc)",
+                     "GRANT SELECT (block_height, tx_index, tx_hash_hex)",
+                     "GRANT SELECT (state_key, chain_id, last_finalized_height)"):
+        assert fragment in schema
+
+
+def test_0010_privilege_migration_failure_does_not_commit():
+    class FailingPrivilegeCursor(Cursor):
+        def execute(self, sql, params=None):
+            super().execute(sql, params)
+            if "GRANT SELECT (height, time_utc)" in str(sql):
+                raise RuntimeError("forced 0010 failure")
+    connection = Connection(init_database.FINAL_SCHEMA_EXPECTATIONS["tables"])
+    connection.cursor_value = FailingPrivilegeCursor(connection.cursor_value.existing)
+    with patch.object(init_database, "fetch_schema_snapshot", return_value=snapshot(init_database.FINAL_SCHEMA_EXPECTATIONS)):
+        with pytest.raises(RuntimeError, match="forced 0010"):
+            init_database.initialize_or_validate("postgresql://example.invalid/db", connect=lambda _: connection)
+    assert connection.commits == 0
 
 def test_final_schema_failure_occurs_after_body_and_before_commit():
     connection = Connection(init_database.PRE_TRANSACTION_PARTICIPANT_EXPECTATIONS["tables"])

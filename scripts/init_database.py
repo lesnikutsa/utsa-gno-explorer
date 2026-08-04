@@ -16,6 +16,7 @@ PARTICIPANT_MIGRATION = REPO_ROOT / "database" / "migrations" / "0006_add_transa
 EXECUTION_RESULT_MIGRATION = REPO_ROOT / "database" / "migrations" / "0007_add_transaction_execution_results.sql"
 REALM_CATALOG_MIGRATION = REPO_ROOT / "database" / "migrations" / "0008_add_realm_catalog.sql"
 REALM_CALL_INDEX_MIGRATION = REPO_ROOT / "database" / "migrations" / "0009_add_realm_call_index.sql"
+REALM_CALLS_API_PRIVILEGE_MIGRATION = REPO_ROOT / "database" / "migrations" / "0010_grant_realm_calls_api_columns.sql"
 EXPECTED_TABLES = {
     "blocks", "transactions", "validators", "validator_set_members", "validator_signatures", "rpc_endpoints", "rpc_endpoint_checks", "indexer_state", "valoper_profiles", "valopers_snapshot_state",
 }
@@ -335,6 +336,18 @@ EXPECTED_CHECKS.update({
 EXPECTED_INDEXES["realm_call_index_path_position_idx"]=("realm_call_index",False,(("chain_id","ASC"),("path","ASC"),("block_height","DESC"),("tx_index","DESC"),("message_index","DESC")),None)
 EXPECTED_TABLE_PRIVILEGES["utsa_gno_api"].update({"realm_call_index":{"SELECT"},"realm_call_index_state":{"SELECT"}})
 EXPECTED_TABLE_PRIVILEGES["utsa_gno_indexer"].update({"realm_call_index":{"SELECT","INSERT","UPDATE","DELETE"},"realm_call_index_state":{"SELECT","INSERT","UPDATE","DELETE"}})
+EXPECTED_COLUMN_PRIVILEGES = {
+    "utsa_gno_api": {
+        "blocks": {"height", "time_utc"},
+        "transactions": {"block_height", "tx_index", "tx_hash_hex"},
+        "indexer_state": {"state_key", "chain_id", "last_finalized_height"},
+    },
+}
+API_ROLE_SENSITIVE_COLUMNS = {
+    "blocks": {"raw_block_response"},
+    "transactions": {"raw_base64", "decoded_bytes", "payload_summary"},
+}
+API_ROLE_MUTATION_TABLES = {"blocks", "transactions", "indexer_state", "realm_call_index", "realm_call_index_state"}
 FINAL_SCHEMA_EXPECTATIONS = schema_expectations()
 
 NETWORK_DISTRIBUTION_TABLES = {
@@ -818,6 +831,7 @@ def initialize_or_validate(database_url: str, schema_path: Path = SCHEMA, connec
                             "python scripts/migrate_network_distribution_schema.py"
                         )
                 validate_schema_snapshot(snapshot)
+            cursor.execute(migration_body_for_outer_transaction(REALM_CALLS_API_PRIVILEGE_MIGRATION.read_text()))
             validate_participant_privileges(cursor)
         connection.commit()
 
@@ -844,9 +858,36 @@ def validate_table_privileges(cursor) -> None:
                 raise SchemaCompatibilityError(f"Indexer role lacks privileges for {table}")
 
 
+def validate_realm_calls_api_column_privileges(cursor) -> None:
+    """Require least-privilege column reads for Realm calls when the API role exists."""
+    role = "utsa_gno_api"
+    cursor.execute("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = %s)", (role,))
+    if not cursor.fetchone()[0]:
+        return
+    for table, columns in EXPECTED_COLUMN_PRIVILEGES[role].items():
+        cursor.execute("SELECT has_table_privilege(%s, %s, 'SELECT')", (role, f"public.{table}"))
+        if cursor.fetchone()[0]:
+            raise SchemaCompatibilityError(f"API role has full-table SELECT for {table}")
+        for column in columns:
+            cursor.execute("SELECT has_column_privilege(%s, %s, %s, 'SELECT')", (role, f"public.{table}", column))
+            if not cursor.fetchone()[0]:
+                raise SchemaCompatibilityError(f"API role lacks column SELECT for {table}.{column}; apply migration 0010")
+    for table, columns in API_ROLE_SENSITIVE_COLUMNS.items():
+        for column in columns:
+            cursor.execute("SELECT has_column_privilege(%s, %s, %s, 'SELECT')", (role, f"public.{table}", column))
+            if cursor.fetchone()[0]:
+                raise SchemaCompatibilityError(f"API role can read sensitive column {table}.{column}")
+    for table in API_ROLE_MUTATION_TABLES:
+        for privilege in ("INSERT", "UPDATE", "DELETE"):
+            cursor.execute("SELECT has_table_privilege(%s, %s, %s)", (role, f"public.{table}", privilege))
+            if cursor.fetchone()[0]:
+                raise SchemaCompatibilityError(f"API role has {privilege} privilege for {table}")
+
+
 def validate_participant_privileges(cursor) -> None:
     """Compatibility entry point for generalized late-table validation."""
     validate_table_privileges(cursor)
+    validate_realm_calls_api_column_privileges(cursor)
 
 
 def build_parser() -> argparse.ArgumentParser:
