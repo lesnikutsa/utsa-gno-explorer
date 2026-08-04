@@ -38,6 +38,10 @@ def run(apply: bool = False) -> int:
                     if start is None or through is None:
                         raise RealmActivityCoverageError("Realm activity coverage is not initialized")
                     candidate = int(indexed[1])
+                    if candidate < int(through):
+                        raise RealmActivityCoverageError(
+                            "Realm activity coverage is ahead of the indexer checkpoint"
+                        )
                     cursor.execute("SELECT count(*) FROM blocks WHERE height >= %s AND height <= %s", (int(through) + 1, candidate))
                     observed = int(cursor.fetchone()[0]) if candidate > int(through) else 0
                     missing = max(0, candidate - int(through) - observed)
