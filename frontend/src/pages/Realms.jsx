@@ -41,14 +41,6 @@ const columns = [
   },
 ]
 
-const topColumns = (items) => [
-  { key: 'rank', label: 'Rank', render: (item) => <span className="realms-page__top-rank">{items.indexOf(item) + 1}</span> },
-  { key: 'path', label: 'Realm', render: (item) => <span className="realms-table__path mono" title={item.path}>{item.path}</span> },
-  { key: 'call_count', label: 'Direct Calls', render: (item) => formatCount(item.call_count) },
-  { key: 'success_rate', label: 'Success Rate', render: (item) => formatSuccessRate(item.success_rate) },
-  { key: 'last_activity_at', label: 'Last Activity', render: (item) => item.last_activity_at ? <time dateTime={item.last_activity_at} title={item.last_activity_at}>{relativeTime(item.last_activity_at)}</time> : 'Never' },
-]
-
 function emptyMessage({ error, snapshotMissing, appliedSearch, kind }) {
   if (error) return 'Realms and packages are currently unavailable.'
   if (snapshotMissing) return 'The Realm catalog is not available yet.'
@@ -59,7 +51,7 @@ function emptyMessage({ error, snapshotMissing, appliedSearch, kind }) {
 }
 
 export function Realms({ realmsPage }) {
-  const { items, summary, loading, error, snapshotMissing, topItems, topSource, topLoading, topError, retryTop, kind, searchInput, appliedSearch, pageIndex, canLoadOlder, setSearchInput, selectKind, submitSearch, clearSearch, retry, loadOlder, loadNewer } = realmsPage
+  const { items, summary, loading, error, snapshotMissing, kind, searchInput, appliedSearch, pageIndex, canLoadOlder, setSearchInput, selectKind, submitSearch, clearSearch, retry, loadOlder, loadNewer } = realmsPage
   const metrics = [
     ['Realms', summary?.total_realms],
     ['Packages', summary?.total_packages],
@@ -83,16 +75,6 @@ export function Realms({ realmsPage }) {
         {metrics.map(([label, value]) => <div className="panel realms-page__metric" key={label}><span>{label}</span><strong>{formatCount(value)}</strong></div>)}
       </div>
       {summary && <p className="realms-page__metadata">Catalog snapshot #{formatCount(summary.catalog_observed_height)} · Indexed #{formatCount(summary.indexed_height)}</p>}
-
-      <section className="panel realms-page__top" aria-labelledby="top-realms-title">
-        <header className="realms-page__top-header">
-          <div><h2 id="top-realms-title">Most Called Realms</h2><p className="realms-page__top-note">Current RPC-visible realms · indexed direct calls{topSource?.activity_from_height != null ? ` since #${formatCount(topSource.activity_from_height)}` : ''}</p></div>
-          {topError && <button className="blocks-page__button" type="button" onClick={retryTop} disabled={topLoading}>Retry</button>}
-        </header>
-        <div className="realms-page__top-table">
-          <DataTable columns={topColumns(topItems)} rows={topItems} rowKey={(item) => item.path} loading={topLoading} emptyMessage={topError ? 'Most called realms are currently unavailable.' : 'No RPC-visible realms with indexed direct calls yet.'} />
-        </div>
-      </section>
 
       <div className="realms-page__toolbar">
         <div className="realms-page__filters" aria-label="Realm kind filters">

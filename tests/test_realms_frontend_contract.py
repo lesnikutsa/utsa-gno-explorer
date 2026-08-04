@@ -42,20 +42,11 @@ class RealmsFrontendContractTests(unittest.TestCase):
         self.assertIn("before_activity_height=9&before_path=gno.land%2Fr%2Fa", values[1]["url"])
         self.assertFalse(values[1]["aborted"])
 
-        top_script = """
-          globalThis.fetch = async (url, options) => ({ ok: true, json: async () => ({ url, forwarded: Boolean(options.signal) }) });
-          const { getTopRealms } = await import('./frontend/src/services/api.js');
-          console.log(JSON.stringify(await getTopRealms({ limit: 5, signal: new AbortController().signal })));
-        """
-        top = json.loads(subprocess.run(["node", "--input-type=module", "--eval", top_script], cwd=ROOT, check=True, capture_output=True, text=True).stdout)
-        self.assertEqual(top, {"url": "/api/realms/top?limit=5", "forwarded": True})
-
     def test_hook_state_pagination_concurrency_retry_and_errors(self):
         hook = self.read("frontend/src/hooks/useRealmsPage.js")
         for fragment in ("export const PAGE_SIZE = 25", "setCursorHistory(history)", "setPageIndex(0)", "setAppliedSearch(nextSearch)", "id !== requestId.current", "controller.current?.abort()", "failedRequest.current = attemptedRequest", "loadPage(failedRequest.current)"):
             self.assertIn(fragment, hook)
-        catalog_start = hook.index("const loadPage")
-        error_handling = hook[hook.index("if (requestError?.status === 404)", catalog_start):hook.index("} finally {", catalog_start)]
+        error_handling = hook[hook.index("if (requestError?.status === 404)"):hook.index("} finally {")]
         snapshot_branch, generic_branch = error_handling.split("} else {")
         self.assertIn("setSnapshotMissing(true)", snapshot_branch)
         self.assertIn("setHealthState('healthy')", snapshot_branch)
@@ -64,16 +55,11 @@ class RealmsFrontendContractTests(unittest.TestCase):
         self.assertIn("setHealthState('error')", generic_branch)
         self.assertNotIn("MAX_CURSOR_HISTORY", hook)
         self.assertIn("[...cursorHistory.slice(0, pageIndex + 1), nextCursor]", hook)
-        for fragment in ("topItems", "topSource", "topLoading", "topError", "topController", "topRequestId", "id !== topRequestId.current", "retryTop", "getTopRealms({ limit: 5", "requestError?.status !== 404"):
-            self.assertIn(fragment, hook)
-        self.assertEqual(hook.count("getTopRealms({ limit: 5"), 1)
-        top_error = hook[hook.index("const loadTop"):hook.index("const retryTop")]
-        self.assertNotIn("setHealthState('error')", top_error)
 
     def test_presentation_contract(self):
         page = self.read("frontend/src/pages/Realms.jsx")
         labels = ["label: 'Path'", "label: 'Type'", "label: 'Direct Calls'", "label: 'Success Rate'", "label: 'Last Activity'", "label: 'Visibility'"]
-        self.assertGreaterEqual(page.count("label: '"), 11)
+        self.assertEqual(page.count("label: '"), 6)
         self.assertEqual([page.index(label) for label in labels], sorted(page.index(label) for label in labels))
         for fragment in ("summary?.total_realms", "summary?.total_packages", "summary?.active_24h", "summary?.rpc_visible_items", "aria-pressed={kind === value}", "import { formatSuccessRate } from '../utils/realm'", ": 'Never'", "rowKey={(item) => item.path}"):
             self.assertIn(fragment, page)
@@ -89,14 +75,6 @@ class RealmsFrontendContractTests(unittest.TestCase):
         self.assertIn("packageMetricPlaceholder('Not tracked')", page)
         self.assertIn("Package usage through imports is not indexed yet. Direct-call metrics apply to realms only.", page)
         self.assertIn('title="Package usage through imports is not indexed yet."', page)
-        top_labels = ["label: 'Rank'", "label: 'Realm'", "label: 'Direct Calls'", "label: 'Success Rate'", "label: 'Last Activity'"]
-        top_section = page[page.index("const topColumns"):page.index("function emptyMessage")]
-        self.assertEqual([top_section.index(label) for label in top_labels], sorted(top_section.index(label) for label in top_labels))
-        for text in ("Most Called Realms", "Current RPC-visible realms · indexed direct calls", "Most called realms are currently unavailable.", "No RPC-visible realms with indexed direct calls yet."):
-            self.assertIn(text, page)
-        self.assertNotIn(".sort(", top_section)
-        for forbidden in ("Popular", "Trending", "Lifetime", "All time", "CopyButton", "href="):
-            self.assertNotIn(forbidden, top_section)
 
     def test_states_and_scoped_responsive_css(self):
         page = self.read("frontend/src/pages/Realms.jsx")
@@ -105,7 +83,6 @@ class RealmsFrontendContractTests(unittest.TestCase):
             self.assertIn(message, page)
         section = styles[styles.index("/* Realms catalog */"):styles.index("/* Account detail */")]
         self.assertIn("@media (max-width: 760px)", section)
-        self.assertIn(".realms-page__top-table", section)
         self.assertIn("content: attr(data-label)", section)
         self.assertIn(".realms-table__type--realm .status-badge", section)
         self.assertIn(".realms-table__type--package .status-badge", section)

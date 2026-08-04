@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getRealms, getTopRealms } from '../services/api'
+import { getRealms } from '../services/api'
 
 export const PAGE_SIZE = 25
 
@@ -10,10 +10,6 @@ export function useRealmsPage() {
   const [error, setError] = useState(false)
   const [snapshotMissing, setSnapshotMissing] = useState(false)
   const [healthState, setHealthState] = useState('loading')
-  const [topItems, setTopItems] = useState([])
-  const [topSource, setTopSource] = useState(null)
-  const [topLoading, setTopLoading] = useState(true)
-  const [topError, setTopError] = useState(false)
   const [kind, setKindState] = useState('all')
   const [searchInput, setSearchInput] = useState('')
   const [appliedSearch, setAppliedSearch] = useState('')
@@ -24,31 +20,6 @@ export function useRealmsPage() {
   const requestId = useRef(0)
   const controller = useRef(null)
   const failedRequest = useRef(null)
-  const topRequestId = useRef(0)
-  const topController = useRef(null)
-
-  const loadTop = useCallback(async () => {
-    topController.current?.abort()
-    const activeController = new AbortController()
-    topController.current = activeController
-    const id = ++topRequestId.current
-    setTopLoading(true)
-    setTopError(false)
-    try {
-      const response = await getTopRealms({ limit: 5, signal: activeController.signal })
-      if (!mounted.current || id !== topRequestId.current) return
-      setTopItems((response.items ?? []).slice(0, 5))
-      setTopSource(response.source ?? null)
-    } catch (requestError) {
-      if (!mounted.current || id !== topRequestId.current || requestError?.name === 'AbortError') return
-      setTopItems([])
-      setTopSource(null)
-      if (requestError?.status !== 404) setTopError(true)
-    } finally {
-      if (mounted.current && id === topRequestId.current) setTopLoading(false)
-    }
-  }, [])
-  const retryTop = useCallback(() => loadTop(), [loadTop])
 
   const loadPage = useCallback(async (request) => {
     const attemptedRequest = { ...request, history: request.history ? [...request.history] : undefined }
@@ -138,15 +109,12 @@ export function useRealmsPage() {
   useEffect(() => {
     mounted.current = true
     loadPage({ cursor: null, targetIndex: 0, history: [null], kind: 'all', search: '' })
-    loadTop()
     return () => {
       mounted.current = false
       requestId.current += 1
       controller.current?.abort()
-      topRequestId.current += 1
-      topController.current?.abort()
     }
-  }, [loadPage, loadTop])
+  }, [loadPage])
 
-  return { items, summary, loading, error, snapshotMissing, healthState, topItems, topSource, topLoading, topError, retryTop, kind, searchInput, appliedSearch, pageIndex, nextCursor, cursorHistory, setSearchInput, selectKind, submitSearch, clearSearch, retry, loadOlder, loadNewer, canLoadOlder: nextCursor !== null }
+  return { items, summary, loading, error, snapshotMissing, healthState, kind, searchInput, appliedSearch, pageIndex, nextCursor, cursorHistory, setSearchInput, selectKind, submitSearch, clearSearch, retry, loadOlder, loadNewer, canLoadOlder: nextCursor !== null }
 }
