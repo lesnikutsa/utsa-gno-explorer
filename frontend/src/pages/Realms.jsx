@@ -53,14 +53,10 @@ function emptyMessage({ error, snapshotMissing, appliedSearch, kind }) {
 function RealmApplications({ applications }) {
   const { items, source, loading, error, snapshotMissing, retry } = applications
   const activityFromHeight = source?.activity_from_height
-  const activityThroughHeight = source?.activity_through_height
   const hasActivityFromHeight = activityFromHeight !== null && activityFromHeight !== undefined
-  const hasActivityThroughHeight = activityThroughHeight !== null && activityThroughHeight !== undefined
-  const intro = hasActivityFromHeight && hasActivityThroughHeight
-    ? `Activity metrics cover blocks #${formatCount(activityFromHeight)}–#${formatCount(activityThroughHeight)}.`
-    : hasActivityFromHeight
-      ? `Activity metrics are indexed since block #${formatCount(activityFromHeight)}.`
-      : 'Curated Realm namespaces ranked by indexed direct calls.'
+  const intro = hasActivityFromHeight
+    ? `Indexed direct-call metrics. Historical indexing starts at #${formatCount(activityFromHeight)}; live activity continues.`
+    : 'Curated Realm namespaces ranked by indexed direct calls.'
 
   return (
     <section className="realms-applications" aria-labelledby="realms-applications-title">
@@ -91,13 +87,12 @@ function RealmApplications({ applications }) {
                 <StatusBadge tone="neutral">{item.application.category}</StatusBadge>
               </header>
               <dl className="realms-application-card__primary">
-                <dt>Direct Calls</dt>
-                <dd>{formatCount(item.direct_call_count)}</dd>
+                <div><dt>Direct Calls</dt><dd>{formatCount(item.direct_call_count)}</dd></div>
+                <div><dt>Success Rate</dt><dd>{formatSuccessRate(item.success_rate)}</dd></div>
               </dl>
               <dl className="realms-application-card__metrics">
                 <div><dt>Realms</dt><dd>{formatCount(item.realm_count)}</dd></div>
                 <div><dt>Called Realms</dt><dd>{formatCount(item.called_realm_count)}</dd></div>
-                <div><dt>Success Rate</dt><dd>{formatSuccessRate(item.success_rate)}</dd></div>
                 <div><dt>Last Activity</dt><dd>{item.last_activity_at ? <time dateTime={item.last_activity_at} title={item.last_activity_at}>{relativeTime(item.last_activity_at)}</time> : 'Never'}</dd></div>
               </dl>
             </article>

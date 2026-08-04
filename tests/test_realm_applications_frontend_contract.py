@@ -78,10 +78,9 @@ class RealmApplicationsFrontendContractTests(unittest.TestCase):
         for fragment in (
             "Applications",
             "Curated Realm namespaces ranked by indexed direct calls",
-            "Activity metrics cover blocks #",
-            "Activity metrics are indexed since block #",
+            "Indexed direct-call metrics. Historical indexing starts at #",
+            "live activity continues.",
             "source?.activity_from_height",
-            "source?.activity_through_height",
             "Direct Calls",
             "Called Realms",
             "Success Rate",
@@ -110,6 +109,7 @@ class RealmApplicationsFrontendContractTests(unittest.TestCase):
         for forbidden in (
             "Verified", "Unverified", "Trending", "Popular", "All time",
             "Lifetime", "Since genesis", "dangerouslySetInnerHTML", "titleCase", '"GnoSwap"',
+            "Activity metrics cover blocks", "source?.activity_through_height",
         ):
             self.assertNotIn(forbidden, page)
 
@@ -120,7 +120,7 @@ class RealmApplicationsFrontendContractTests(unittest.TestCase):
             ".realms-applications",
             ".realms-applications__grid",
             ".realms-application-card",
-            "repeat(auto-fill, minmax(300px, 390px))",
+            "repeat(auto-fill, minmax(300px, 340px))",
             "justify-content: start",
             "padding: 11px 12px",
             "linear-gradient(135deg, var(--color-accent-soft), var(--color-card))",
@@ -137,12 +137,14 @@ class RealmApplicationsFrontendContractTests(unittest.TestCase):
         self.assertFalse(any("#" in line for line in application_lines))
         grid_width = re.search(r"repeat\(auto-fill, minmax\(\d+px, (\d+)px\)\)", section)
         self.assertIsNotNone(grid_width)
-        self.assertLessEqual(int(grid_width.group(1)), 420)
+        self.assertGreaterEqual(int(grid_width.group(1)), 330)
+        self.assertLessEqual(int(grid_width.group(1)), 340)
         mobile_760 = section[section.index("@media (max-width: 760px)"):section.index("@media (max-width: 480px)")]
         self.assertIn("grid-template-columns: minmax(0, 1fr)", mobile_760)
+        self.assertIn(".realms-application-card__primary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr))", section)
+        self.assertIn(".realms-application-card__metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr))", section)
         mobile_480 = section[section.index("@media (max-width: 480px)"):]
-        self.assertIn(".realms-application-card__metrics { grid-template-columns: repeat(2, minmax(0, 1fr));", mobile_480)
-        self.assertNotIn(".realms-application-card__metrics { grid-template-columns: 1fr", mobile_480)
+        self.assertNotIn(".realms-application-card__metrics", mobile_480)
 
     def test_does_not_fill_missing_curated_results(self):
         hook = self.read("frontend/src/hooks/useRealmApplications.js")
