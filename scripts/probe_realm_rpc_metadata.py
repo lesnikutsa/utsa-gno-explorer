@@ -213,6 +213,17 @@ def compact_summary(summary: dict[str, Any]) -> str:
     return json.dumps(allowed, sort_keys=True, separators=(",", ":"))[:240]
 
 
+
+
+def close_rpc_probes(probes: list[Any]) -> None:
+    for probe in probes:
+        close = getattr(getattr(probe, "client", None), "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+
 def print_results(results: list[PathProbeResult]) -> None:
     for result in results:
         print(f"RPC host: {result.rpc_host}")
@@ -285,16 +296,17 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("at least one --realm-path or --package-path is required")
     if len(paths) > MAX_PROBE_PATHS:
         parser.error(f"at most {MAX_PROBE_PATHS} total Realm and Package paths are allowed")
+    probes = []
     try:
         config = load_config()
         probes = probe_rpc_endpoints(config.rpc_urls, config.chain_id, config.max_height_lag, timeout=args.timeout)
-        suitable = suitable_rpc_probes(probes)
-        if not suitable:
-            print("No suitable RPC endpoints available", file=sys.stderr)
-            return 1
-        selected = suitable if args.all_suitable_rpcs else suitable[:1]
-        results: list[PathProbeResult] = []
         try:
+            suitable = suitable_rpc_probes(probes)
+            if not suitable:
+                print("No suitable RPC endpoints available", file=sys.stderr)
+                return 1
+            selected = suitable if args.all_suitable_rpcs else suitable[:1]
+            results: list[PathProbeResult] = []
             for probe in selected:
                 assert probe.client is not None and probe.latest_height is not None
                 height = probe.latest_height - 1
@@ -302,27 +314,24 @@ def main(argv: list[str] | None = None) -> int:
                     continue
                 for probe_path_value, kind in paths:
                     results.append(probe_path(probe.client, safe_host(probe.url), height, probe_path_value, kind))
+            if not results:
+                return 1
+            print_results(results)
+            report = {"schema_version": 1, "generated_at": datetime.now(timezone.utc).isoformat(), "chain_id": config.chain_id, "endpoints": [asdict(result) for result in results]}
+            if args.json_output:
+                write_json_report(Path(args.json_output), report)
+            if any(q.status in {"malformed", "oversized"} for result in results for q in result.queries):
+                return 2
+            meaningful = any(
+                q.query_name in CORE_QUERY_NAMES and q.status == "ok"
+                for result in results
+                for q in result.queries
+            )
+            if not meaningful:
+                return 1
+            return 0
         finally:
-            for probe in probes:
-                close = getattr(probe.client, "close", None)
-                if callable(close):
-                    close()
-        if not results:
-            return 1
-        print_results(results)
-        report = {"schema_version": 1, "generated_at": datetime.now(timezone.utc).isoformat(), "chain_id": config.chain_id, "endpoints": [asdict(result) for result in results]}
-        if args.json_output:
-            write_json_report(Path(args.json_output), report)
-        if any(q.status in {"malformed", "oversized"} for result in results for q in result.queries):
-            return 2
-        meaningful = any(
-            q.query_name in CORE_QUERY_NAMES and q.status == "ok"
-            for result in results
-            for q in result.queries
-        )
-        if not meaningful:
-            return 1
-        return 0
+            close_rpc_probes(probes)
     except RpcError as exc:
         print(f"Probe failed: {rpc_error_code(exc)}", file=sys.stderr)
         return 1

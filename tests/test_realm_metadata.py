@@ -187,6 +187,31 @@ def test_qpkg_json_rejects_depth_and_nodes():
         parse_qpkg_json(json.dumps([0] * (MAX_JSON_NODES + 1)))
 
 
+def huge_json_integer_payload(wrapper):
+    digits = getattr(__import__("sys"), "get_int_max_str_digits", lambda: 4300)() + 1
+    return wrapper("1" * digits)
+
+
+@pytest.mark.parametrize(
+    "parser,payload",
+    [
+        (parse_qfuncs, huge_json_integer_payload(lambda value: f"[{{\"FuncName\":\"A\",\"n\":{value}}}]")),
+        (parse_qdoc, huge_json_integer_payload(lambda value: f"{{\"package_path\":\"gno.land/r/demo/users\",\"n\":{value}}}")),
+        (parse_qpkg_json, huge_json_integer_payload(lambda value: f"{{\"n\":{value}}}")),
+    ],
+)
+def test_json_value_errors_normalize_to_malformed_json(parser, payload):
+    with pytest.raises(MetadataParseError) as exc:
+        parser(payload)
+    assert exc.value.args == ("malformed_json",)
+
+
+def test_json_parse_constant_error_is_preserved():
+    with pytest.raises(MetadataParseError) as exc:
+        parse_qpkg_json("NaN")
+    assert exc.value.args == ("invalid_json_constant",)
+
+
 def test_qrender_summary_empty_non_empty_no_body():
     assert summarize_qrender("")["non_empty"] is False
     summary = summarize_qrender(f"hello\n{RAW_RENDER_SECRET}")

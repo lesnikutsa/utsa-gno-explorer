@@ -147,7 +147,9 @@ def _load_json(payload: bytes | str) -> tuple[Any, int]:
 
     try:
         return json.loads(text, parse_constant=reject_constant), len(text.encode("utf-8"))
-    except json.JSONDecodeError as exc:
+    except MetadataParseError:
+        raise
+    except ValueError as exc:
         raise MetadataParseError("malformed_json") from exc
 
 
@@ -181,6 +183,7 @@ def parse_qfuncs(payload: bytes | str) -> dict[str, Any]:
         raise MetadataParseError("wrong_top_level")
     if len(data) > MAX_FUNCS:
         raise MetadataParseError("too_many_functions")
+    _validate_json(data)
     names: list[str] = []
     with_params = with_results = 0
     seen: set[str] = set()
@@ -188,7 +191,6 @@ def parse_qfuncs(payload: bytes | str) -> dict[str, Any]:
     for func in data:
         if not isinstance(func, dict):
             raise MetadataParseError("invalid_function")
-        _validate_json(func)
         name = func.get("FuncName")
         if not isinstance(name, str) or not 1 <= len(name) <= MAX_FUNC_NAME_LENGTH or not name.isprintable():
             raise MetadataParseError("invalid_function_name")

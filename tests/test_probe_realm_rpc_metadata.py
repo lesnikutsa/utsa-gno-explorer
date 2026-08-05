@@ -183,6 +183,35 @@ def test_response_byte_count_preserved_on_parser_failure_and_json_report(tmp_pat
     assert malformed not in serialized
 
 
+def huge_json_integer_qfuncs_payload():
+    import sys
+    return "[{\"FuncName\":\"A\",\"n\":" + ("1" * (sys.get_int_max_str_digits() + 1)) + "}]"
+
+
+def test_query_json_value_error_preserves_bytes_continues_report_and_main_exit_2(tmp_path, monkeypatch):
+    malformed = huge_json_integer_qfuncs_payload()
+    data = responses()
+    data[("vm/qfuncs", "gno.land/r/demo/users")] = malformed
+    client = FakeClient(data)
+    result = probe.probe_path(client, "rpc.example", 10, "gno.land/r/demo/users", "realm")
+    qfuncs = next(query for query in result.queries if query.query_name == "qfuncs")
+    assert qfuncs.status == "malformed"
+    assert qfuncs.safe_error_code == "malformed_json"
+    assert qfuncs.response_bytes == len(malformed.encode())
+    assert any(query.query_name == "qdoc" and query.status == "ok" for query in result.queries)
+    out = tmp_path / "report.json"
+    probe.write_json_report(out, {"schema_version": 1, "generated_at": "now", "chain_id": "dev", "endpoints": [asdict(result)]})
+    assert str(len(malformed.encode())) in out.read_text()
+    assert malformed not in out.read_text()
+
+    client = FakeClient(data)
+    probes = [rpc_probe("https://a.example", client, 20)]
+    monkeypatch.setattr(probe, "load_config", lambda: type("C", (), {"rpc_urls": ["a"], "chain_id": "dev", "max_height_lag": 10})())
+    monkeypatch.setattr(probe, "probe_rpc_endpoints", lambda *args, **kwargs: probes)
+    assert probe.main(["--realm-path", "gno.land/r/demo/users", "--json-output", str(tmp_path / "main-report.json")]) == 2
+    assert client.closed
+
+
 def test_main_default_first_rpc_all_rpc_latest_minus_one_and_closes(monkeypatch, capsys):
     c1 = FakeClient(responses())
     c2 = FakeClient(responses())
@@ -238,6 +267,59 @@ def test_exit_code_1_when_no_core_ok(monkeypatch):
     assert probe.main(["--realm-path", "gno.land/r/demo/users"]) == 1
 
 
+def test_main_closes_clients_when_no_suitable(monkeypatch):
+    c1 = FakeClient(responses())
+    c2 = FakeClient(responses())
+    probes = [
+        RpcProbeResult(url="https://a.example", healthy=False, selected=False, client=c1),
+        RpcProbeResult(url="https://b.example", healthy=False, selected=False, client=c2),
+    ]
+    monkeypatch.setattr(probe, "load_config", lambda: type("C", (), {"rpc_urls": ["a"], "chain_id": "dev", "max_height_lag": 10})())
+    monkeypatch.setattr(probe, "probe_rpc_endpoints", lambda *args, **kwargs: probes)
+    assert probe.main(["--realm-path", "gno.land/r/demo/users"]) == 1
+    assert c1.closed and c2.closed
+
+
+def test_main_closes_clients_when_suitable_selection_raises(monkeypatch):
+    c1 = FakeClient(responses())
+    probes = [rpc_probe("https://a.example", c1, 20)]
+    monkeypatch.setattr(probe, "load_config", lambda: type("C", (), {"rpc_urls": ["a"], "chain_id": "dev", "max_height_lag": 10})())
+    monkeypatch.setattr(probe, "probe_rpc_endpoints", lambda *args, **kwargs: probes)
+    monkeypatch.setattr(probe, "suitable_rpc_probes", lambda probes: (_ for _ in ()).throw(ValueError("boom")))
+    assert probe.main(["--realm-path", "gno.land/r/demo/users"]) == 1
+    assert c1.closed
+
+
+def test_main_closes_clients_when_probe_path_raises(monkeypatch):
+    c1 = FakeClient(responses())
+    probes = [rpc_probe("https://a.example", c1, 20)]
+    monkeypatch.setattr(probe, "load_config", lambda: type("C", (), {"rpc_urls": ["a"], "chain_id": "dev", "max_height_lag": 10})())
+    monkeypatch.setattr(probe, "probe_rpc_endpoints", lambda *args, **kwargs: probes)
+    monkeypatch.setattr(probe, "probe_path", lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("boom")))
+    assert probe.main(["--realm-path", "gno.land/r/demo/users"]) == 1
+    assert c1.closed
+
+
+def test_main_closes_clients_when_report_write_fails(monkeypatch, tmp_path):
+    c1 = FakeClient(responses())
+    probes = [rpc_probe("https://a.example", c1, 20)]
+    monkeypatch.setattr(probe, "load_config", lambda: type("C", (), {"rpc_urls": ["a"], "chain_id": "dev", "max_height_lag": 10})())
+    monkeypatch.setattr(probe, "probe_rpc_endpoints", lambda *args, **kwargs: probes)
+    assert probe.main(["--realm-path", "gno.land/r/demo/users", "--json-output", str(tmp_path / "missing" / "report.json")]) == 1
+    assert c1.closed
+
+
+def test_close_rpc_probes_swallows_close_errors():
+    class BadClose(FakeClient):
+        def close(self):
+            self.closed = True
+            raise RuntimeError(SECRET_URL)
+
+    client = BadClose(responses())
+    probe.close_rpc_probes([rpc_probe("https://a.example", client, 20)])
+    assert client.closed
+
+
 @pytest.mark.parametrize(
     "args",
     [
@@ -280,6 +362,17 @@ def test_help_retains_zero_exit():
 def test_query_result_model_rejects_invalid(constructor, args):
     with pytest.raises(ValueError):
         constructor(*args)
+
+
+def test_qfuncs_total_json_node_bound_and_no_raw_signature_values():
+    funcs = [{"FuncName": f"F{i}", "Params": [{"name": "RAW_PARAM_SECRET"} for _ in range(10)], "Results": [{"type": "RAW_RESULT_SECRET"} for _ in range(10)]} for i in range(1000)]
+    with pytest.raises(probe.MetadataParseError) as exc:
+        probe.parse_qfuncs(json.dumps(funcs))
+    assert exc.value.args == ("excessive_nodes",)
+    summary = probe.parse_qfuncs(json.dumps([{"FuncName": "A", "Params": [{"name": "RAW_PARAM_SECRET"}], "Results": [{"type": "RAW_RESULT_SECRET"}]}]))
+    serialized = json.dumps(summary)
+    assert "RAW_PARAM_SECRET" not in serialized
+    assert "RAW_RESULT_SECRET" not in serialized
 
 
 def test_path_result_model_rejects_invalid():
