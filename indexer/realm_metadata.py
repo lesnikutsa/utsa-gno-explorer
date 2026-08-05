@@ -22,6 +22,7 @@ MAX_JSON_NODES = 20_000
 MAX_STRING_LENGTH = 16_384
 MAX_STORAGE_DIGITS = 40
 
+
 class MetadataParseError(ValueError):
     """Raised when an RPC metadata payload is malformed or unsafe."""
 
@@ -42,19 +43,22 @@ def _text(payload: bytes | str, *, max_bytes: int = MAX_ABCI_RESPONSE_BYTES) -> 
 
 
 def _safe_filename(name: str) -> bool:
-    return (
-        isinstance(name, str)
-        and 1 <= len(name) <= MAX_FILENAME_LENGTH
-        and not name.startswith("/")
-        and ".." not in name.split("/")
-        and "\\" not in name
-        and all(ord(ch) >= 32 and ord(ch) != 127 for ch in name)
-        and all(part for part in name.split("/"))
-    )
+    if not isinstance(name, str) or not 1 <= len(name) <= MAX_FILENAME_LENGTH:
+        return False
+    if name.startswith("/") or re.match(r"^[A-Za-z]:/", name):
+        return False
+    if "\\" in name or any(ord(ch) < 32 or ord(ch) == 127 for ch in name):
+        return False
+    parts = name.split("/")
+    return all(part and part not in {".", ".."} for part in parts)
 
 
 def parse_qfile_listing(payload: bytes | str) -> dict[str, Any]:
     text = _text(payload)
+    if text == "":
+        raise MetadataParseError("empty_listing")
+    if "\n\n" in text or "\r\n\r\n" in text:
+        raise MetadataParseError("invalid_filename")
     lines = text.splitlines()
     if len(lines) > MAX_FILES:
         raise MetadataParseError("too_many_files")
@@ -76,9 +80,40 @@ def parse_qfile_listing(payload: bytes | str) -> dict[str, Any]:
         "filenames": filenames,
     }
 
-_IMPORT_RE = re.compile(r'(?m)^\s*import\s+(?:\(.*?\)|(?P<one>"[^"]+"))', re.S)
-_QUOTED_RE = re.compile(r'"([^"]+)"')
-_PACKAGE_RE = re.compile(r'(?m)^\s*package\s+[A-Za-z_][A-Za-z0-9_]*\s*$')
+
+_QUOTED_RE = re.compile(r'"([^"\\]*(?:\\.[^"\\]*)*)"')
+_PACKAGE_RE = re.compile(r"(?m)^\s*package\s+[A-Za-z_][A-Za-z0-9_]*\s*(?://.*)?$")
+_IMPORT_LINE_RE = re.compile(r'^\s*import\s+(?:(?:[A-Za-z_][A-Za-z0-9_]*|[_.])\s+)?"([^"]+)"\s*(?://.*)?$')
+_IMPORT_GROUP_START_RE = re.compile(r"^\s*import\s*\(\s*(?://.*)?$")
+_IMPORT_GROUP_ITEM_RE = re.compile(r'^\s*(?:(?:[A-Za-z_][A-Za-z0-9_]*|[_.])\s+)?"([^"]+)"\s*(?://.*)?$')
+
+
+def _import_candidates(text: str) -> list[str]:
+    candidates: list[str] = []
+    in_group = False
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if in_group:
+            if line.startswith(")"):
+                in_group = False
+                continue
+            if not line or line.startswith("//"):
+                continue
+            match = _IMPORT_GROUP_ITEM_RE.match(raw_line)
+            if match:
+                candidates.append(match.group(1))
+        else:
+            if not line or line.startswith("//"):
+                continue
+            if _IMPORT_GROUP_START_RE.match(raw_line):
+                in_group = True
+                continue
+            match = _IMPORT_LINE_RE.match(raw_line)
+            if match:
+                candidates.append(match.group(1))
+        if len(candidates) > MAX_IMPORT_CANDIDATES:
+            raise MetadataParseError("too_many_imports")
+    return candidates
 
 
 def summarize_source_file(filename: str, payload: bytes | str) -> dict[str, Any]:
@@ -89,19 +124,14 @@ def summarize_source_file(filename: str, payload: bytes | str) -> dict[str, Any]
     line_count = len(text.splitlines())
     if line_count > MAX_SOURCE_LINES:
         raise MetadataParseError("too_many_lines")
-    candidates: list[str] = []
-    for match in _IMPORT_RE.finditer(text):
-        block = match.group(0)
-        for value in _QUOTED_RE.findall(block):
-            candidates.append(value)
-            if len(candidates) > MAX_IMPORT_CANDIDATES:
-                raise MetadataParseError("too_many_imports")
+    candidates = _import_candidates(text)
     gno_imports = sorted({value for value in candidates if value.startswith("gno.land/")})
+    raw = text.encode("utf-8")
     return {
         "filename": filename,
         "byte_count": byte_count,
         "line_count": line_count,
-        "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        "sha256": hashlib.sha256(raw).hexdigest(),
         "package_declared": bool(_PACKAGE_RE.search(text)),
         "import_candidate_count": len(candidates),
         "gno_land_import_count": len(gno_imports),
@@ -109,10 +139,12 @@ def summarize_source_file(filename: str, payload: bytes | str) -> dict[str, Any]
     }
 
 
-def _load_json(payload: bytes | str) -> Any:
+def _load_json(payload: bytes | str) -> tuple[Any, int]:
     text = _text(payload)
+
     def reject_constant(value: str) -> None:
         raise MetadataParseError("invalid_json_constant")
+
     try:
         return json.loads(text, parse_constant=reject_constant), len(text.encode("utf-8"))
     except json.JSONDecodeError as exc:
@@ -151,7 +183,8 @@ def parse_qfuncs(payload: bytes | str) -> dict[str, Any]:
         raise MetadataParseError("too_many_functions")
     names: list[str] = []
     with_params = with_results = 0
-    seen: set[str] = set(); duplicate = False
+    seen: set[str] = set()
+    duplicate = False
     for func in data:
         if not isinstance(func, dict):
             raise MetadataParseError("invalid_function")
@@ -165,9 +198,35 @@ def parse_qfuncs(payload: bytes | str) -> dict[str, Any]:
             for item in func.get(field) or []:
                 if not isinstance(item, dict):
                     raise MetadataParseError("invalid_signature_item")
-        duplicate = duplicate or name in seen; seen.add(name); names.append(name)
-        with_params += bool(func.get("Params")); with_results += bool(func.get("Results"))
-    return {"function_count": len(data), "function_names": names[:50], "functions_with_params": with_params, "functions_with_results": with_results, "duplicate_names": duplicate}
+        duplicate = duplicate or name in seen
+        seen.add(name)
+        names.append(name)
+        with_params += bool(func.get("Params"))
+        with_results += bool(func.get("Results"))
+    return {
+        "function_count": len(data),
+        "function_names": names[:50],
+        "functions_with_params": with_params,
+        "functions_with_results": with_results,
+        "duplicate_names": duplicate,
+    }
+
+
+def _first_present(data: dict[str, Any], keys: tuple[str, ...], default: Any = None) -> Any:
+    for key in keys:
+        if key in data:
+            return data[key]
+    return default
+
+
+def _doc_collection(data: dict[str, Any], keys: tuple[str, ...]) -> list[dict[str, Any]]:
+    value = _first_present(data, keys, [])
+    if not isinstance(value, list) or len(value) > MAX_QDOC_ITEMS:
+        raise MetadataParseError("invalid_doc_collection")
+    for item in value:
+        if not isinstance(item, dict):
+            raise MetadataParseError("invalid_doc_collection")
+    return value
 
 
 def parse_qdoc(payload: bytes | str, requested_path: str | None = None) -> dict[str, Any]:
@@ -175,16 +234,27 @@ def parse_qdoc(payload: bytes | str, requested_path: str | None = None) -> dict[
     if not isinstance(data, dict):
         raise MetadataParseError("wrong_top_level")
     _validate_json(data)
-    package_path = data.get("package_path") or data.get("PackagePath") or data.get("Path")
+    package_path = _first_present(data, ("package_path", "PackagePath", "Path"))
     if requested_path is not None and package_path is not None and package_path != requested_path:
         raise MetadataParseError("path_mismatch")
-    funcs = data.get("Funcs") or data.get("funcs") or []
-    values = data.get("Values") or data.get("values") or []
-    types = data.get("Types") or data.get("types") or []
-    for collection in (funcs, values, types):
-        if not isinstance(collection, list) or len(collection) > MAX_QDOC_ITEMS:
-            raise MetadataParseError("invalid_doc_collection")
-    return {"available": True, "package_doc_present": bool(data.get("Doc") or data.get("doc")), "documented_function_count": len(funcs), "value_count": len(values), "type_count": len(types), "byte_count": byte_count}
+    package_doc = _first_present(data, ("package_doc", "PackageDoc", "Doc", "doc"), "")
+    if package_doc is not None and not isinstance(package_doc, str):
+        raise MetadataParseError("invalid_package_doc")
+    funcs = _doc_collection(data, ("funcs", "Funcs"))
+    values = _doc_collection(data, ("values", "Values"))
+    types = _doc_collection(data, ("types", "Types"))
+    documented_funcs = [
+        item for item in funcs
+        if isinstance(item.get("doc"), str) and 0 < len(item["doc"]) <= MAX_STRING_LENGTH
+    ]
+    return {
+        "available": True,
+        "package_doc_present": isinstance(package_doc, str) and bool(package_doc),
+        "documented_function_count": len(documented_funcs),
+        "value_count": len(values),
+        "type_count": len(types),
+        "byte_count": byte_count,
+    }
 
 
 def parse_qpkg_json(payload: bytes | str) -> dict[str, Any]:
@@ -192,13 +262,26 @@ def parse_qpkg_json(payload: bytes | str) -> dict[str, Any]:
     if not isinstance(data, (dict, list)):
         raise MetadataParseError("wrong_top_level")
     max_depth, nodes = _validate_json(data)
-    return {"available": True, "top_level_type": type(data).__name__, "top_level_keys": sorted(data.keys())[:50] if isinstance(data, dict) else [], "byte_count": byte_count, "maximum_depth": max_depth, "node_count": nodes}
+    return {
+        "available": True,
+        "top_level_type": type(data).__name__,
+        "top_level_keys": sorted(data.keys())[:50] if isinstance(data, dict) else [],
+        "byte_count": byte_count,
+        "maximum_depth": max_depth,
+        "node_count": nodes,
+    }
 
 
 def summarize_qrender(payload: bytes | str) -> dict[str, Any]:
     text = _text(payload)
     raw = text.encode("utf-8")
-    return {"byte_count": len(raw), "line_count": len(text.splitlines()), "non_empty": bool(text.strip()), "sha256": hashlib.sha256(raw).hexdigest()}
+    return {
+        "byte_count": len(raw),
+        "line_count": len(text.splitlines()),
+        "non_empty": bool(text.strip()),
+        "sha256": hashlib.sha256(raw).hexdigest(),
+    }
+
 
 _STORAGE_RE = re.compile(r"\Astorage: ([0-9]+), deposit: ([0-9]+)\Z")
 

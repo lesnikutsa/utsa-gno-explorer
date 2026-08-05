@@ -27,7 +27,7 @@ queries.
 The probe reuses the existing configured RPC selection, health, chain-id, stale-endpoint,
 timeout, response-size, and UTF-8 validation paths. Output is bounded and sanitized: raw
 source, docs, qpkg JSON, Render body, RPC credentials, database URLs, and query payloads are
-not printed or written to JSON reports.
+not printed or written to JSON reports. Error codes are selected from static parser/RPC classifications and are never derived from raw exception text.
 
 This change is capability discovery only. It adds no database persistence, no migrations,
 no frontend, no API endpoint, no production service, and no scheduled collector. Import
@@ -63,7 +63,7 @@ PYTHONPATH=. python scripts/probe_realm_rpc_metadata.py \
 ```
 
 Each endpoint uses its own finalized height, `latest_height - 1`; height differences between
-healthy endpoints are reported, not treated as failures.
+healthy endpoints are reported, not treated as failures. The CLI accepts at most twenty total Realm and Package paths and rejects duplicate paths.
 
 ## JSON report
 
@@ -75,8 +75,7 @@ practical.
 
 ## Exit codes
 
-- `0`: probe completed and at least one core `qfile`, `qfuncs`, or `qdoc` result was
-  processed. Realm-only optional application errors can still be reported for a path.
+- `0`: probe completed and at least one core `qfile`, `qfuncs`, or `qdoc` result parsed with status `ok`. Realm-only optional application errors can still be reported for a path.
 - `1`: invalid CLI, configuration problem, no suitable RPC, or no path could be meaningfully
   probed.
 - `2`: report completed, but at least one response was malformed or oversized.
