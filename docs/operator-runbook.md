@@ -137,3 +137,17 @@ atomically recalculated counters and range metadata. The API may remain availabl
 during the rebuild because readers continue to see the previously committed state
 until the rebuild transaction commits. Block continuity is a rebuild precondition,
 not evidence that counters for those blocks already exist.
+
+## Realm and Package metadata capability probe
+
+Operators can run the one-shot, sanitized metadata capability probe documented in
+[Realm and Package RPC metadata probe](realm-rpc-metadata.md). For example:
+
+```bash
+PYTHONPATH=. python scripts/probe_realm_rpc_metadata.py \
+  --realm-path gno.land/r/demo/users \
+  --json-output /tmp/realm-metadata-probe.json
+```
+
+This is a manual capability check only; it does not persist metadata, call production APIs,
+or start a scheduled collector.
