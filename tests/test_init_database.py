@@ -6,6 +6,33 @@ import pytest
 
 from scripts import init_database
 
+EXPECTED_PRIVILEGES = {
+    "utsa_gno_api": {
+        "transaction_participants": {"SELECT"},
+        "transaction_execution_results": {"SELECT"},
+        "realm_catalog": {"SELECT"},
+        "realm_catalog_state": {"SELECT"},
+        "realm_call_index": {"SELECT"},
+        "realm_call_index_state": {"SELECT"},
+        "realm_metadata": set(),
+        "realm_metadata_files": set(),
+        "realm_metadata_imports": set(),
+        "realm_metadata_refresh_state": set(),
+    },
+    "utsa_gno_indexer": {
+        "transaction_participants": {"SELECT", "INSERT", "DELETE"},
+        "transaction_execution_results": {"SELECT", "INSERT", "UPDATE"},
+        "realm_catalog": {"SELECT", "INSERT", "UPDATE"},
+        "realm_catalog_state": {"SELECT", "INSERT", "UPDATE"},
+        "realm_call_index": {"SELECT", "INSERT", "UPDATE", "DELETE"},
+        "realm_call_index_state": {"SELECT", "INSERT", "UPDATE", "DELETE"},
+        "realm_metadata": {"SELECT", "INSERT", "UPDATE", "DELETE"},
+        "realm_metadata_files": {"SELECT", "INSERT", "UPDATE", "DELETE"},
+        "realm_metadata_imports": {"SELECT", "INSERT", "UPDATE", "DELETE"},
+        "realm_metadata_refresh_state": {"SELECT", "INSERT", "UPDATE", "DELETE"},
+    },
+}
+
 
 def snapshot(expectations):
     return copy.deepcopy({
@@ -53,6 +80,64 @@ def test_execution_result_migration_envelope_is_safe():
     assert not body.rstrip().upper().endswith("COMMIT;")
 
 
+def test_metadata_migration_contract_and_envelope_are_exact():
+    body = init_database.migration_body_for_outer_transaction(
+        init_database.REALM_METADATA_MIGRATION.read_text()
+    )
+    assert {
+        "realm_metadata", "realm_metadata_files", "realm_metadata_imports",
+        "realm_metadata_refresh_state",
+    } == init_database.METADATA_TABLES
+    assert body.count("CREATE TABLE realm_metadata") == 4
+    assert "realm_metadata_json_success_check" in body
+    assert "GRANT SELECT,INSERT,UPDATE,DELETE" in body
+    assert "utsa_gno_api" not in body
+
+
+def test_exact_pre_0010_stage_runs_only_metadata_migration():
+    connection = Connection(init_database.PRE_REALM_METADATA_EXPECTATIONS["tables"])
+    snapshots = [
+        snapshot(init_database.PRE_REALM_METADATA_EXPECTATIONS),
+        snapshot(init_database.FINAL_SCHEMA_EXPECTATIONS),
+    ]
+    with patch.object(init_database, "fetch_schema_snapshot", side_effect=snapshots):
+        init_database.initialize_or_validate(
+            "postgresql://example.invalid/db", connect=lambda _: connection
+        )
+    sql = "\n".join(statement for statement, _ in connection.cursor_value.executed)
+    assert "CREATE TABLE realm_metadata" in sql
+    assert connection.commits == 1
+
+
+def test_partial_metadata_schema_fails_closed():
+    partial = snapshot(init_database.FINAL_SCHEMA_EXPECTATIONS)
+    partial["tables"].remove("realm_metadata_imports")
+    partial["columns"].pop("realm_metadata_imports")
+    with pytest.raises(init_database.SchemaCompatibilityError):
+        init_database.validate_schema_snapshot(partial)
+
+
+def test_metadata_migration_failure_does_not_commit():
+    class FailingMetadataCursor(Cursor):
+        def execute(self, sql, params=None):
+            super().execute(sql, params)
+            if "CREATE TABLE realm_metadata" in str(sql):
+                raise RuntimeError("metadata migration failure")
+
+    connection = Connection(init_database.PRE_REALM_METADATA_EXPECTATIONS["tables"])
+    connection.cursor_value = FailingMetadataCursor(connection.cursor_value.existing)
+    with patch.object(
+        init_database,
+        "fetch_schema_snapshot",
+        return_value=snapshot(init_database.PRE_REALM_METADATA_EXPECTATIONS),
+    ):
+        with pytest.raises(RuntimeError, match="metadata migration failure"):
+            init_database.initialize_or_validate(
+                "postgresql://example.invalid/db", connect=lambda _: connection
+            )
+    assert connection.commits == 0
+
+
 def test_pre_0007_stage_runs_only_execution_result_migration():
     connection = Connection(init_database.PRE_TRANSACTION_EXECUTION_RESULT_EXPECTATIONS["tables"])
     snapshots = [
@@ -73,9 +158,7 @@ def test_checks_and_privilege_contract_are_registered():
     checks = init_database.EXPECTED_CHECKS
     for name in ("block_height", "tx_index", "message_index", "role", "address"):
         assert f"transaction_participants_{name}_check" in checks
-    for table in init_database.METADATA_TABLES:
-        assert init_database.EXPECTED_TABLE_PRIVILEGES["utsa_gno_api"][table] == set()
-        assert init_database.EXPECTED_TABLE_PRIVILEGES["utsa_gno_indexer"][table] == {"SELECT", "INSERT", "UPDATE", "DELETE"}
+    assert init_database.EXPECTED_TABLE_PRIVILEGES == EXPECTED_PRIVILEGES
 
 
 def test_final_snapshot_accepts_participants_and_rejects_schema_drift():
@@ -192,16 +275,20 @@ class PrivilegeCursor:
 
 
 def test_participant_privilege_validation_accepts_least_privilege():
-    init_database.validate_participant_privileges(PrivilegeCursor(copy.deepcopy(init_database.EXPECTED_TABLE_PRIVILEGES)))
+    init_database.validate_participant_privileges(PrivilegeCursor(copy.deepcopy(EXPECTED_PRIVILEGES)))
 
 
 def test_api_writes_and_missing_indexer_grants_fail_closed():
-    grants = copy.deepcopy(init_database.EXPECTED_TABLE_PRIVILEGES)
+    grants = copy.deepcopy(EXPECTED_PRIVILEGES)
     grants["utsa_gno_api"]["transaction_participants"].add("INSERT")
     with pytest.raises(init_database.SchemaCompatibilityError, match="API role"):
         init_database.validate_participant_privileges(PrivilegeCursor(grants))
-    grants = copy.deepcopy(init_database.EXPECTED_TABLE_PRIVILEGES)
-    grants["utsa_gno_indexer"]["transaction_participants"].remove("DELETE")
+    grants = copy.deepcopy(EXPECTED_PRIVILEGES)
+    grants["utsa_gno_api"]["realm_metadata"].add("SELECT")
+    with pytest.raises(init_database.SchemaCompatibilityError, match="API role"):
+        init_database.validate_participant_privileges(PrivilegeCursor(grants))
+    grants = copy.deepcopy(EXPECTED_PRIVILEGES)
+    grants["utsa_gno_indexer"]["realm_metadata"].remove("DELETE")
     with pytest.raises(init_database.SchemaCompatibilityError, match="Indexer role"):
         init_database.validate_participant_privileges(PrivilegeCursor(grants))
 

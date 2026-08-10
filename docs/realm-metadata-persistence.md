@@ -26,6 +26,10 @@ PostgreSQL transaction. The parent, exact files, derived imports, and aggregate
 counters therefore become visible together. A failure rolls the entire
 publication back. Identical file fingerprints update current metadata without
 churning file or import rows; changed fingerprints replace both child sets.
+The validated non-empty `qfile` listing is supplied separately from fetched
+content, and publication requires their filename sets to match exactly. A stale
+height, or an older collection at the same height, cannot replace the current
+canonical snapshot.
 
 The fingerprint is SHA-256 over files sorted by their UTF-8 filename. Each exact
 filename and exact UTF-8 content is encoded as an unsigned 8-byte big-endian
@@ -37,6 +41,8 @@ retained if a later attempt fails. The same preservation rule applies to the
 successful `qrender` hash/count summary and `qstorage` integer summary while the
 current status records the latest attempt. A Render body is never accepted or
 persisted.
+Successful JSON summaries are derived by rerunning the capability-specific
+bounded parser over the raw JSON payload; callers cannot supply summaries.
 
 ## Privileges and deferred work
 
