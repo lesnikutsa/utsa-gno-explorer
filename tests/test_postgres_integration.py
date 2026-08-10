@@ -2708,7 +2708,7 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         with psycopg.connect(url) as connection:
             first = self.metadata_snapshot()
             publish_metadata_snapshot(connection, first)
-            with self.assertRaises(psycopg.errors.CheckViolation):
+            with self.assertRaises(psycopg.errors.CheckViolation) as raised:
                 with connection.transaction():
                     with connection.cursor() as cursor:
                         replacement = self.metadata_snapshot(
@@ -2717,7 +2717,14 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                             content="package replacement\n",
                         )
                         publish_metadata_snapshot_cursor(cursor, replacement)
-                        cursor.execute("INSERT INTO realm_metadata_refresh_state(chain_id) VALUES ('invalid')")
+                        cursor.execute("""INSERT INTO realm_metadata_refresh_state(
+                          chain_id,observed_height,run_status,selected_path_count,
+                          published_path_count,failed_path_count,started_at
+                        ) VALUES ('invalid',0,'running',0,0,0,now())""")
+            self.assertEqual(
+                raised.exception.diag.constraint_name,
+                "realm_metadata_refresh_state_height_check",
+            )
             self.assertFalse(connection.closed)
             with connection.cursor() as cursor:
                 cursor.execute("SELECT observed_height FROM realm_metadata")
