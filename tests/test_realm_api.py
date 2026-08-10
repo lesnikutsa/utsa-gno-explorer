@@ -250,3 +250,57 @@ class RealmNamespaceApiTests(unittest.TestCase):
   with patch.object(module.database,'fetch_top_realm_namespaces',side_effect=RuntimeError('secret')):
    with self.assertRaises(HTTPException) as raised:module.get_top_realm_namespaces(limit=5,scope='all')
   self.assertEqual(raised.exception.detail,module.UNAVAILABLE_DETAIL); self.assertNotIn('secret',raised.exception.detail)
+
+class RealmApplicationApiTests(unittest.TestCase):
+ def setUp(self): module.app.state.api_config=SimpleNamespace(chain_id='topaz-1')
+ def source(self,available=(24,168,720)):
+  return {'chain_id':'topaz-1','indexed_height':100,'call_index_from_height':1,'call_index_through_height':100,
+   'coverage_start_at':datetime(2025,12,1,tzinfo=timezone.utc),'window_start_at':datetime(2025,12,31,tzinfo=timezone.utc),
+   'window_end_at':NOW,'available_hours':available}
+ def item(self,key='unknown',calls=3,success=1,failed=1,unknown=1,height=99,tx=2,message=1):
+  return {'namespace_key':key,'realm_count':2,'rpc_visible_realm_count':1,'called_realm_count':1,
+   'direct_call_count':calls,'successful_call_count':success,'failed_call_count':failed,
+   'unknown_result_call_count':unknown,'last_activity_height':height,'last_activity_tx_index':tx,
+   'last_activity_message_index':message,'last_activity_at':NOW}
+ def result(self,items=None,available=(24,168,720),coverage=True):
+  return {'source':self.source(available),'items':items or [],'coverage_available':coverage}
+ def call(self,result,limit=3,window='24h'):
+  with patch.object(module.database,'fetch_top_realm_applications',return_value=result) as fetch:
+   response=module.get_top_realm_applications(limit=limit,window=window)
+  return response,fetch
+ def test_defaults_accepted_windows_bounds_and_forwarding(self):
+  route=next(r for r in module.app.routes if getattr(r,'path',None)=='/api/realm-applications/top')
+  params={p.name:p for p in route.dependant.query_params}
+  self.assertEqual((params['limit'].default,params['window'].default),(3,'24h'))
+  self.assertEqual((params['limit'].field_info.metadata[0].ge,params['limit'].field_info.metadata[1].le),(1,10))
+  for window,hours in (('24h',24),('7d',168),('30d',720)):
+   response,fetch=self.call(self.result(),window=window)
+   self.assertEqual(response.source.window,window)
+   self.assertEqual(fetch.call_args.kwargs,{'chain_id':'topaz-1','limit':3,'window_hours':hours})
+ def test_unknown_address_like_and_curated_metadata(self):
+  rows=[self.item('gnoswap',calls=4,success=2,failed=1,unknown=1),self.item('g1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq',calls=3)]
+  response,_=self.call(self.result(rows))
+  self.assertEqual(response.items[0].application.display_name,'GnoSwap')
+  self.assertIsNone(response.items[1].application)
+  self.assertEqual(response.items[0].success_rate,2/3)
+  self.assertEqual(response.items[1].success_rate,.5)
+ def test_unknown_results_excluded_from_rate_denominator(self):
+  response,_=self.call(self.result([self.item(calls=2,success=0,failed=0,unknown=2)]))
+  self.assertIsNone(response.items[0].success_rate)
+ def test_unavailable_and_database_errors_are_static(self):
+  with patch.object(module.database,'fetch_top_realm_applications',return_value=self.result(coverage=False)):
+   with self.assertRaises(HTTPException) as raised:module.get_top_realm_applications(limit=3,window='24h')
+  self.assertEqual((raised.exception.status_code,raised.exception.detail),(409,module.APPLICATION_WINDOW_UNAVAILABLE_DETAIL))
+  with patch.object(module.database,'fetch_top_realm_applications',side_effect=RuntimeError('database secret')):
+   with self.assertRaises(HTTPException) as raised:module.get_top_realm_applications(limit=3,window='24h')
+  self.assertEqual(raised.exception.detail,module.UNAVAILABLE_DETAIL)
+  self.assertNotIn('secret',raised.exception.detail)
+ def test_chain_coverage_counts_and_ranking_fail_closed(self):
+  variants=[self.result([self.item()])]
+  variants[0]['source']['chain_id']='other'
+  variants += [self.result([self.item(calls=3,success=3,failed=1,unknown=0)]),
+               self.result([self.item('z'),self.item('a')])]
+  for result in variants:
+   with self.subTest(result=result),patch.object(module.database,'fetch_top_realm_applications',return_value=result):
+    with self.assertRaises(HTTPException) as raised:module.get_top_realm_applications(limit=3,window='24h')
+    self.assertEqual(raised.exception.status_code,503)

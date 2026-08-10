@@ -28,6 +28,8 @@ from api.database import (
     REALM_DETAIL_ITEM_SQL,
     REALM_DETAIL_SOURCE_SQL,
     REALM_NAMESPACE_TOP_SQL,
+    REALM_APPLICATION_SOURCE_SQL,
+    REALM_APPLICATION_TOP_SQL,
     VALIDATOR_IDENTITY_SQL,
     ApiDatabase,
     MissingIndexerStateError,
@@ -1945,6 +1947,17 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             positions = [(row["block_height"], row["tx_index"], row["message_index"]) for row in first["items"] + second["items"]]
             self.assertNotIn((1,0,0), positions)
             self.assertNotIn((4,0,0), positions)
+            checkpoint_time = datetime(2026, 1, 2, tzinfo=timezone.utc)
+            with psycopg.connect(url) as connection, connection.cursor() as cursor:
+                cursor.execute("UPDATE blocks SET time_utc=%s WHERE height=2", (checkpoint_time - timedelta(hours=25),))
+                cursor.execute("UPDATE blocks SET time_utc=%s WHERE height=3", (checkpoint_time,))
+            ranking = api_db.fetch_top_realm_applications(chain_id="topaz-1", limit=3, window_hours=24)
+            self.assertTrue(ranking["coverage_available"])
+            self.assertEqual(ranking["source"]["window_end_at"], checkpoint_time)
+            self.assertEqual(ranking["source"]["window_start_at"], checkpoint_time - timedelta(hours=24))
+            self.assertEqual(ranking["items"][0]["namespace_key"], "gnoswap")
+            self.assertEqual((ranking["items"][0]["direct_call_count"], ranking["items"][0]["called_realm_count"]), (2, 1))
+            self.assertEqual((ranking["items"][0]["successful_call_count"], ranking["items"][0]["unknown_result_call_count"]), (2, 0))
             self.assertIsNone(api_db.fetch_realm_detail(chain_id="topaz-1", path="gno.land/r/isolated" )["item"])
             with psycopg.connect(url) as connection, connection.cursor() as cursor:
                 cursor.execute("SET ROLE utsa_gno_api")

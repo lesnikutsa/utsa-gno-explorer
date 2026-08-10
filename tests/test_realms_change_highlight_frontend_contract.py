@@ -51,8 +51,8 @@ class RealmsChangeHighlightFrontendContractTests(unittest.TestCase):
             "item.called_realm_count",
         ):
             self.assertIn(f"<ChangedValue value={{{value}}}", applications)
-        self.assertIn("Activity metrics cover blocks #{formatCount(activityFromHeight)}–#", applications)
-        self.assertIn("<ChangedValue value={activityThroughHeight}>{formatCount(activityThroughHeight)}</ChangedValue>", applications)
+        self.assertIn("Realm applications ranked by direct calls in", page)
+        self.assertIn("source?.available_windows", applications)
         self.assertIn('<LastActivityValue timestamp={item.last_activity_at} emptyLabel="never" />', applications)
         identity = applications[applications.index("realms-application-card__identity"):applications.index("</header>")]
         self.assertNotIn("ChangedValue", identity)
