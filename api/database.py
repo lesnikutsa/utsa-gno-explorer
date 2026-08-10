@@ -328,6 +328,7 @@ SELECT state.chain_id, state.last_finalized_height AS indexed_height,
        checkpoint_block.time_utc AS window_end_at
 FROM indexer_state state
 JOIN blocks checkpoint_block ON checkpoint_block.height = state.last_finalized_height
+JOIN realm_catalog_state catalog_state ON catalog_state.chain_id = state.chain_id
 LEFT JOIN realm_call_index_state call_state ON call_state.chain_id = state.chain_id
 LEFT JOIN blocks coverage_block ON coverage_block.height = call_state.from_height
 WHERE state.state_key = 'default' AND state.chain_id = %s
@@ -357,21 +358,27 @@ WITH catalog_namespaces AS MATERIALIZED (
         count(DISTINCT path)::bigint AS called_realm_count,
         count(*) FILTER (WHERE execution_status = 'success')::bigint AS successful_call_count,
         count(*) FILTER (WHERE execution_status = 'failed')::bigint AS failed_call_count,
-        count(*) FILTER (WHERE execution_status IS NULL)::bigint AS unknown_result_call_count,
-        (array_agg(block_height ORDER BY block_height DESC, tx_index DESC, message_index DESC))[1] AS last_activity_height,
-        (array_agg(tx_index ORDER BY block_height DESC, tx_index DESC, message_index DESC))[1] AS last_activity_tx_index,
-        (array_agg(message_index ORDER BY block_height DESC, tx_index DESC, message_index DESC))[1] AS last_activity_message_index,
-        (array_agg(time_utc ORDER BY block_height DESC, tx_index DESC, message_index DESC))[1] AS last_activity_at
+        count(*) FILTER (WHERE execution_status IS NULL)::bigint AS unknown_result_call_count
  FROM window_calls GROUP BY namespace_key
+), latest_activity AS (
+ SELECT DISTINCT ON (namespace_key) namespace_key,
+        block_height AS last_activity_height,
+        tx_index AS last_activity_tx_index,
+        message_index AS last_activity_message_index,
+        time_utc AS last_activity_at
+ FROM window_calls
+ ORDER BY namespace_key, block_height DESC, tx_index DESC, message_index DESC
 )
-SELECT aggregate.*, catalog.realm_count, catalog.rpc_visible_realm_count
+SELECT aggregate.*, catalog.realm_count, catalog.rpc_visible_realm_count,
+       latest.last_activity_height, latest.last_activity_tx_index,
+       latest.last_activity_message_index, latest.last_activity_at
 FROM aggregates aggregate
 JOIN catalog_namespaces catalog ON catalog.namespace_key = aggregate.namespace_key COLLATE "C"
+JOIN latest_activity latest ON latest.namespace_key = aggregate.namespace_key COLLATE "C"
 ORDER BY aggregate.direct_call_count DESC,
-         aggregate.last_activity_height DESC,
-         aggregate.last_activity_tx_index DESC,
-         aggregate.last_activity_message_index DESC,
-         aggregate.last_activity_at DESC,
+         latest.last_activity_height DESC,
+         latest.last_activity_tx_index DESC,
+         latest.last_activity_message_index DESC,
          aggregate.namespace_key COLLATE "C" ASC
 LIMIT %s
 """

@@ -1,7 +1,7 @@
 """FastAPI application for the read-only explorer API."""
 
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import logging
 import re
 import json
@@ -1339,6 +1339,33 @@ def _validate_activity_tuple(height, tx_index, timestamp, *, required: bool) -> 
 _APPLICATION_WINDOW_HOURS = {"24h": 24, "7d": 24 * 7, "30d": 24 * 30}
 
 
+def _validate_realm_application_source(source: dict, *, chain_id: str, window: str) -> list[str]:
+    indexed = source["indexed_height"]
+    from_height = source["call_index_from_height"]
+    through_height = source["call_index_through_height"]
+    timestamps = tuple(source[name] for name in ("coverage_start_at", "window_start_at", "window_end_at"))
+    if (source["chain_id"] != chain_id
+            or any(type(value) is not int or value <= 0 for value in (indexed, from_height, through_height))
+            or from_height > through_height or through_height != indexed
+            or any(not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None
+                   for value in timestamps)):
+        raise ValueError("invalid application ranking source")
+    coverage_start, window_start, window_end = timestamps
+    expected_duration = timedelta(hours=_APPLICATION_WINDOW_HOURS[window])
+    if not coverage_start <= window_start <= window_end or window_end - window_start != expected_duration:
+        raise ValueError("invalid application ranking window")
+    available_hours = source["available_hours"]
+    if (not isinstance(available_hours, (tuple, list))
+            or any(type(value) is not int or value not in _APPLICATION_WINDOW_HOURS.values()
+                   for value in available_hours)
+            or len(set(available_hours)) != len(available_hours)):
+        raise ValueError("invalid available application windows")
+    available = [key for key, hours in _APPLICATION_WINDOW_HOURS.items() if hours in available_hours]
+    if window not in available:
+        raise ValueError("selected application window is unavailable")
+    return available
+
+
 @app.get("/api/realm-applications/top", response_model=RealmApplicationTopResponse)
 def get_top_realm_applications(
     limit: int = Query(default=3, ge=1, le=10),
@@ -1352,12 +1379,8 @@ def get_top_realm_applications(
         if result.get("coverage_available") is not True:
             raise HTTPException(status_code=409, detail=APPLICATION_WINDOW_UNAVAILABLE_DETAIL)
         source = result["source"]
-        available = [key for key, hours in _APPLICATION_WINDOW_HOURS.items() if hours in source["available_hours"]]
-        if (source["chain_id"] != app.state.api_config.chain_id
-                or source["call_index_through_height"] != source["indexed_height"]
-                or source["coverage_start_at"] > source["window_start_at"]
-                or window not in available):
-            raise ValueError("invalid application ranking coverage")
+        available = _validate_realm_application_source(
+            source, chain_id=app.state.api_config.chain_id, window=window)
         items, previous, seen = [], None, set()
         for row in result["items"]:
             key = row["namespace_key"]

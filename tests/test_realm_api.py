@@ -1,5 +1,5 @@
 """Direct endpoint tests using existing unittest conventions and no HTTP test dependency."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -7,7 +7,8 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 import api.app as module
 from api.config import ApiConfig
-from api.database import ApiDatabase, REALM_CATALOG_ITEMS_SQL, REALM_CATALOG_SUMMARY_SQL, REALM_TOP_ITEMS_SQL
+from api.database import (ApiDatabase, REALM_APPLICATION_SOURCE_SQL, REALM_APPLICATION_TOP_SQL,
+                          REALM_CATALOG_ITEMS_SQL, REALM_CATALOG_SUMMARY_SQL, REALM_TOP_ITEMS_SQL)
 
 NOW=datetime(2026,1,1,tzinfo=timezone.utc)
 def result(rows=None):
@@ -253,17 +254,17 @@ class RealmNamespaceApiTests(unittest.TestCase):
 
 class RealmApplicationApiTests(unittest.TestCase):
  def setUp(self): module.app.state.api_config=SimpleNamespace(chain_id='topaz-1')
- def source(self,available=(24,168,720)):
+ def source(self,available=(24,168,720),window_hours=24):
   return {'chain_id':'topaz-1','indexed_height':100,'call_index_from_height':1,'call_index_through_height':100,
-   'coverage_start_at':datetime(2025,12,1,tzinfo=timezone.utc),'window_start_at':datetime(2025,12,31,tzinfo=timezone.utc),
+   'coverage_start_at':datetime(2025,12,1,tzinfo=timezone.utc),'window_start_at':NOW-timedelta(hours=window_hours),
    'window_end_at':NOW,'available_hours':available}
  def item(self,key='unknown',calls=3,success=1,failed=1,unknown=1,height=99,tx=2,message=1):
   return {'namespace_key':key,'realm_count':2,'rpc_visible_realm_count':1,'called_realm_count':1,
    'direct_call_count':calls,'successful_call_count':success,'failed_call_count':failed,
    'unknown_result_call_count':unknown,'last_activity_height':height,'last_activity_tx_index':tx,
    'last_activity_message_index':message,'last_activity_at':NOW}
- def result(self,items=None,available=(24,168,720),coverage=True):
-  return {'source':self.source(available),'items':items or [],'coverage_available':coverage}
+ def result(self,items=None,available=(24,168,720),coverage=True,window_hours=24):
+  return {'source':self.source(available,window_hours),'items':items or [],'coverage_available':coverage}
  def call(self,result,limit=3,window='24h'):
   with patch.object(module.database,'fetch_top_realm_applications',return_value=result) as fetch:
    response=module.get_top_realm_applications(limit=limit,window=window)
@@ -274,7 +275,7 @@ class RealmApplicationApiTests(unittest.TestCase):
   self.assertEqual((params['limit'].default,params['window'].default),(3,'24h'))
   self.assertEqual((params['limit'].field_info.metadata[0].ge,params['limit'].field_info.metadata[1].le),(1,10))
   for window,hours in (('24h',24),('7d',168),('30d',720)):
-   response,fetch=self.call(self.result(),window=window)
+   response,fetch=self.call(self.result(window_hours=hours),window=window)
    self.assertEqual(response.source.window,window)
    self.assertEqual(fetch.call_args.kwargs,{'chain_id':'topaz-1','limit':3,'window_hours':hours})
  def test_unknown_address_like_and_curated_metadata(self):
@@ -287,6 +288,14 @@ class RealmApplicationApiTests(unittest.TestCase):
  def test_unknown_results_excluded_from_rate_denominator(self):
   response,_=self.call(self.result([self.item(calls=2,success=0,failed=0,unknown=2)]))
   self.assertIsNone(response.items[0].success_rate)
+ def test_latest_position_counts_and_deterministic_ties(self):
+  rows=[self.item('a',height=100,tx=4,message=3),self.item('z',height=100,tx=4,message=3)]
+  response,_=self.call(self.result(rows))
+  self.assertEqual([item.namespace_key for item in response.items],['a','z'])
+  self.assertEqual((response.items[0].last_activity_height,response.items[0].last_activity_tx_index,
+                    response.items[0].last_activity_message_index),(100,4,3))
+  self.assertEqual((response.items[0].direct_call_count,response.items[0].successful_call_count,
+                    response.items[0].failed_call_count,response.items[0].unknown_result_call_count),(3,1,1,1))
  def test_unavailable_and_database_errors_are_static(self):
   with patch.object(module.database,'fetch_top_realm_applications',return_value=self.result(coverage=False)):
    with self.assertRaises(HTTPException) as raised:module.get_top_realm_applications(limit=3,window='24h')
@@ -304,3 +313,41 @@ class RealmApplicationApiTests(unittest.TestCase):
    with self.subTest(result=result),patch.object(module.database,'fetch_top_realm_applications',return_value=result):
     with self.assertRaises(HTTPException) as raised:module.get_top_realm_applications(limit=3,window='24h')
     self.assertEqual(raised.exception.status_code,503)
+ def test_malformed_source_fails_with_static_public_error(self):
+  variants=[]
+  for changes in ({'call_index_from_height':0},{'call_index_from_height':101},
+                  {'call_index_through_height':99},{'window_start_at':NOW-timedelta(hours=23)},
+                  {'coverage_start_at':datetime(2025,12,1)}, {'window_start_at':datetime(2025,12,31)},
+                  {'window_end_at':datetime(2026,1,1)}, {'available_hours':(168,720)}):
+   malformed=self.result([self.item()]); malformed['source'].update(changes); variants.append(malformed)
+  for malformed in variants:
+   with self.subTest(source=malformed['source']),patch.object(module.database,'fetch_top_realm_applications',return_value=malformed):
+    with self.assertRaises(HTTPException) as raised:module.get_top_realm_applications(limit=3,window='24h')
+   self.assertEqual((raised.exception.status_code,raised.exception.detail),(503,module.UNAVAILABLE_DETAIL))
+ def test_missing_catalog_snapshot_is_not_an_empty_success(self):
+  with patch.object(module.database,'fetch_top_realm_applications',return_value=None):
+   with self.assertRaises(HTTPException) as raised:module.get_top_realm_applications(limit=3,window='24h')
+  self.assertEqual((raised.exception.status_code,raised.exception.detail),(404,'Realm catalog not found'))
+ def test_source_query_requires_catalog_state_and_avoids_array_aggregation(self):
+  normalized=' '.join(REALM_APPLICATION_SOURCE_SQL.split())
+  self.assertIn('JOIN realm_catalog_state catalog_state ON catalog_state.chain_id = state.chain_id',normalized)
+  self.assertIn('SELECT DISTINCT ON (namespace_key)', ' '.join(REALM_APPLICATION_TOP_SQL.split()))
+  self.assertNotIn('array_agg',REALM_APPLICATION_TOP_SQL)
+ def test_database_missing_catalog_source_stops_before_ranking_query(self):
+  statements=[]
+  class Cursor:
+   def __enter__(self):return self
+   def __exit__(self,*_args):return False
+   def execute(self,sql,params=None):statements.append((sql,params))
+   def fetchone(self):return None
+  class Context:
+   def __init__(self,value):self.value=value
+   def __enter__(self):return self.value
+   def __exit__(self,*_args):return False
+  class Connection:
+   def transaction(self):return Context(None)
+   def cursor(self):return Cursor()
+  database=ApiDatabase(); database.pool=SimpleNamespace(connection=lambda **_kwargs:Context(Connection()))
+  self.assertIsNone(database.fetch_top_realm_applications(chain_id='topaz-1',limit=3,window_hours=24))
+  self.assertEqual(statements,[('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY',None),
+                               (REALM_APPLICATION_SOURCE_SQL,('topaz-1',))])

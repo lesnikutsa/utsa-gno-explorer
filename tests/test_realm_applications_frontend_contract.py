@@ -69,6 +69,9 @@ class RealmApplicationsFrontendContractTests(unittest.TestCase):
         self.assertIn("grid-template-columns: repeat(3, minmax(0, 1fr))", styles)
         self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr))", styles)
         self.assertIn("grid-template-columns: minmax(0, 1fr)", styles)
+        self.assertIn(".realms-application-card__identity h3", styles)
+        title_rule = styles[styles.index(".realms-application-card__identity h3"):]
+        self.assertIn("overflow-wrap: anywhere", title_rule.split("}", 1)[0])
 
     def test_catalog_state_remains_independent(self):
         app = self.read("frontend/src/App.jsx")

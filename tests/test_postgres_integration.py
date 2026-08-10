@@ -1967,6 +1967,16 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                 self.assertEqual(cursor.fetchone()[1], 3)
                 cursor.execute(REALM_CALLS_PAGE_SQL, ("topaz-1", "gno.land/r/gnoswap/app", 2, 3, None, None, None, None, 3))
                 self.assertEqual([(row[0], row[1], row[2]) for row in cursor.fetchall()], [(3,0,1),(3,0,0),(2,0,0)])
+                cursor.execute(REALM_APPLICATION_SOURCE_SQL, ("topaz-1",))
+                application_source = cursor.fetchone()
+                self.assertEqual((application_source[0], application_source[1]), ("topaz-1", 3))
+                cursor.execute(REALM_APPLICATION_TOP_SQL, (
+                    "topaz-1", "topaz-1", 2, 3,
+                    checkpoint_time - timedelta(hours=24), checkpoint_time, 3))
+                application_rows = cursor.fetchall()
+                self.assertEqual((application_rows[0][0], application_rows[0][1]), ("gnoswap", 2))
+                self.assertEqual(tuple(application_rows[0][2:6]), (1, 2, 0, 0))
+                self.assertEqual(tuple(application_rows[0][8:11]), (3, 0, 1))
                 for table in ("blocks", "transactions", "indexer_state", "transaction_execution_results",
                               "realm_catalog", "realm_catalog_state", "realm_call_index", "realm_call_index_state"):
                     cursor.execute(f"SELECT count(*) FROM {table}")

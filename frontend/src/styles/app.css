@@ -696,7 +696,7 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .realms-application-card { min-width: 0; padding: 10px 12px; background: linear-gradient(135deg, var(--color-accent-soft), var(--color-card)); }
 .realms-application-card__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 7px; }
 .realms-application-card__identity { min-width: 0; }
-.realms-application-card__identity h3 { margin: 0 0 3px; color: var(--color-text-bright); font-size: 15px; }
+.realms-application-card__identity h3 { margin: 0 0 3px; color: var(--color-text-bright); font-size: 15px; overflow-wrap: anywhere; }
 .realms-application-card__namespace { margin: 0; color: var(--color-text-secondary); font-size: 10px; overflow-wrap: anywhere; }
 .realms-application-card__primary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; column-gap: 16px; margin: 9px 0; }
 .realms-application-card__primary div { min-width: 0; }
