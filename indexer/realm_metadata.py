@@ -162,8 +162,11 @@ def _validate_json(value: Any, depth: int = 0, state: dict[str, int] | None = No
     state["max_depth"] = max(state["max_depth"], depth)
     if state["nodes"] > MAX_JSON_NODES:
         raise MetadataParseError("excessive_nodes")
-    if isinstance(value, str) and len(value) > MAX_STRING_LENGTH:
-        raise MetadataParseError("string_too_long")
+    if isinstance(value, str):
+        if "\x00" in value:
+            raise MetadataParseError("nul_character")
+        if len(value) > MAX_STRING_LENGTH:
+            raise MetadataParseError("string_too_long")
     if isinstance(value, float) and not math.isfinite(value):
         raise MetadataParseError("non_finite_number")
     if isinstance(value, list):
@@ -171,7 +174,11 @@ def _validate_json(value: Any, depth: int = 0, state: dict[str, int] | None = No
             _validate_json(item, depth + 1, state)
     elif isinstance(value, dict):
         for key, item in value.items():
-            if not isinstance(key, str) or len(key) > MAX_STRING_LENGTH:
+            if (
+                not isinstance(key, str)
+                or "\x00" in key
+                or len(key) > MAX_STRING_LENGTH
+            ):
                 raise MetadataParseError("invalid_key")
             _validate_json(item, depth + 1, state)
     return state["max_depth"], state["nodes"]

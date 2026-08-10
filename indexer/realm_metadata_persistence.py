@@ -322,6 +322,8 @@ def prepare_metadata_snapshot(snapshot: MetadataSnapshot) -> PreparedSnapshot:
             raw = item.content.encode("utf-8", "strict")
         except UnicodeEncodeError as exc:
             raise MetadataPersistenceError("invalid_utf8") from exc
+        if "\x00" in item.content:
+            raise MetadataPersistenceError("nul_file_content")
         line_count = len(item.content.splitlines())
         if len(raw) > MAX_SOURCE_BYTES:
             raise MetadataPersistenceError("file_too_large")
@@ -450,6 +452,16 @@ def _json_parameter(value: Any) -> str | None:
 def publish_metadata_snapshot_cursor(cursor, snapshot: MetadataSnapshot) -> PreparedSnapshot:
     """Publish one validated snapshot using the caller's transaction."""
     prepared = prepare_metadata_snapshot(snapshot)
+    cursor.execute(
+        "SELECT path_kind FROM realm_catalog "
+        "WHERE chain_id = %s AND path = %s FOR UPDATE",
+        (snapshot.chain_id, snapshot.path),
+    )
+    parent = cursor.fetchone()
+    if parent is None:
+        raise MetadataPersistenceError("metadata_parent_not_found")
+    if parent[0] != snapshot.path_kind:
+        raise MetadataPersistenceError("metadata_parent_kind_mismatch")
     cursor.execute(
         f"SELECT {', '.join(_CURRENT_COLUMNS)} FROM realm_metadata "
         "WHERE chain_id = %s AND path = %s FOR UPDATE",
@@ -597,13 +609,37 @@ def persist_metadata_refresh_state_cursor(cursor, state: MetadataRefreshState) -
     ):
         raise MetadataPersistenceError("invalid_refresh_state")
     cursor.execute(
-        "SELECT observed_height FROM realm_metadata_refresh_state "
+        """SELECT observed_height, started_at, run_status,
+          last_successful_height, last_successful_at
+        FROM realm_metadata_refresh_state """
         "WHERE chain_id = %s FOR UPDATE",
         (state.chain_id,),
     )
     current = cursor.fetchone()
-    if current is not None and current[0] > state.observed_height:
-        raise StaleMetadataSnapshot("stale_metadata_refresh_state")
+    successful_height = state.last_successful_height
+    successful_at = state.last_successful_at
+    if current is not None:
+        current_height, current_started_at, current_status = current[:3]
+        previous_successful_height, previous_successful_at = current[3:]
+        if current_height > state.observed_height or (
+            current_height == state.observed_height
+            and current_started_at > state.started_at
+        ):
+            raise StaleMetadataSnapshot("stale_metadata_refresh_state")
+        same_run = (
+            current_height == state.observed_height
+            and current_started_at == state.started_at
+        )
+        if same_run and current_status != "running" and state.run_status == "running":
+            raise StaleMetadataSnapshot("stale_metadata_refresh_transition")
+        if successful_height is None:
+            successful_height = previous_successful_height
+            successful_at = previous_successful_at
+        elif (
+            previous_successful_height is not None
+            and successful_height < previous_successful_height
+        ):
+            raise StaleMetadataSnapshot("stale_metadata_refresh_success")
     cursor.execute(
         """INSERT INTO realm_metadata_refresh_state (
           chain_id,observed_height,run_status,selected_path_count,published_path_count,
@@ -620,6 +656,6 @@ def persist_metadata_refresh_state_cursor(cursor, state: MetadataRefreshState) -
         (
             state.chain_id, state.observed_height, state.run_status,
             *counts, state.started_at, state.completed_at,
-            state.last_successful_height, state.last_successful_at,
+            successful_height, successful_at,
         ),
     )

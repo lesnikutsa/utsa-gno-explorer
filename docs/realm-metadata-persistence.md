@@ -26,6 +26,8 @@ PostgreSQL transaction. The parent, exact files, derived imports, and aggregate
 counters therefore become visible together. A failure rolls the entire
 publication back. Identical file fingerprints update current metadata without
 churning file or import rows; changed fingerprints replace both child sets.
+Publication locks the exact `realm_catalog` parent row before reading current
+metadata, which serializes first publication for that path without a global lock.
 The validated non-empty `qfile` listing is supplied separately from fetched
 content, and publication requires their filename sets to match exactly. A stale
 height, or an older collection at the same height, cannot replace the current
@@ -43,6 +45,12 @@ current status records the latest attempt. A Render body is never accepted or
 persisted.
 Successful JSON summaries are derived by rerunning the capability-specific
 bounded parser over the raw JSON payload; callers cannot supply summaries.
+PostgreSQL-incompatible NUL characters are rejected in file content and in
+bounded JSON string values and keys before publication.
+
+Refresh-run updates are ordered by observed height and start time. Starting or
+failing a later run without a successful checkpoint preserves the most recent
+successful height and timestamp rather than erasing them.
 
 ## Privileges and deferred work
 

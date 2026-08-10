@@ -122,6 +122,26 @@ def test_real_parsers_derive_json_summaries_and_reject_generic_json():
         prepare_metadata_snapshot(realm(qfuncs=JsonCapability("ok", '[{"FuncName":"X","Params":{}}]')))
 
 
+def test_postgresql_nul_is_rejected_but_ordinary_utf8_is_accepted_before_sql():
+    utf8 = (MetadataFile("notes.txt", "Привет, 世界"),)
+    assert prepare_metadata_snapshot(
+        realm(expected_filenames=("notes.txt",), files=utf8)
+    ).files[0].content == "Привет, 世界"
+    nul_file = (MetadataFile("notes.txt", "before\x00after"),)
+    with pytest.raises(MetadataPersistenceError, match="nul_file_content"):
+        prepare_metadata_snapshot(
+            realm(expected_filenames=("notes.txt",), files=nul_file)
+        )
+    with pytest.raises(MetadataPersistenceError, match="invalid_qpkg_json"):
+        prepare_metadata_snapshot(
+            realm(qpkg_json=JsonCapability("ok", '{"nested":{"value":"\\u0000"}}'))
+        )
+    with pytest.raises(MetadataPersistenceError, match="invalid_qpkg_json"):
+        prepare_metadata_snapshot(
+            realm(qpkg_json=JsonCapability("ok", '{"bad\\u0000key":true}'))
+        )
+
+
 def test_render_storage_and_integer_bounds():
     render = RenderCapability("ok", "a" * 64, 12, 2, True)
     storage = StorageCapability("ok", 10**39, 2)
@@ -151,7 +171,10 @@ class MemoryCursor:
         self.calls.append((normalized, params))
         if self.fail_on and self.fail_on in normalized:
             raise RuntimeError("injected write failure")
-        if normalized.startswith("SELECT observed_height"):
+        if normalized.startswith("SELECT path_kind FROM realm_catalog"):
+            kind = self.state.get("parent_kind", "realm")
+            self._row = (kind,) if kind is not None else None
+        elif normalized.startswith("SELECT observed_height"):
             parent = self.state.get("parent")
             if parent is None:
                 self._row = None
@@ -298,10 +321,22 @@ def test_completeness_failure_occurs_before_sql():
     assert cursor.calls == []
 
 
+def test_parent_is_locked_and_must_exist_with_matching_kind():
+    state = {"parent_kind": None}
+    cursor = MemoryCursor(state)
+    with pytest.raises(MetadataPersistenceError, match="metadata_parent_not_found"):
+        publish_metadata_snapshot_cursor(cursor, realm())
+    assert cursor.calls[0][0].startswith("SELECT path_kind FROM realm_catalog")
+    assert not any(sql.startswith("INSERT") for sql, _ in cursor.calls)
+    cursor = MemoryCursor({"parent_kind": "package"})
+    with pytest.raises(MetadataPersistenceError, match="metadata_parent_kind_mismatch"):
+        publish_metadata_snapshot_cursor(cursor, realm())
+
+
 class RefreshCursor:
-    def __init__(self): self.calls = []
+    def __init__(self, current=None): self.calls = []; self.current = current
     def execute(self, sql, params): self.calls.append((sql, params))
-    def fetchone(self): return None
+    def fetchone(self): return self.current
 
 
 def test_refresh_state_validation_and_monotonic_upsert():
@@ -320,3 +355,33 @@ def test_refresh_state_validation_and_monotonic_upsert():
     for value in invalid:
         with pytest.raises(MetadataPersistenceError):
             persist_metadata_refresh_state_cursor(cursor, value)
+
+
+def test_refresh_state_preserves_success_and_enforces_run_ordering():
+    previous_success_at = NOW - timedelta(minutes=1)
+    current = (10, NOW, "complete", 10, previous_success_at)
+    retry_at = NOW + timedelta(minutes=1)
+    cursor = RefreshCursor(current)
+    running = MetadataRefreshState("dev", 11, "running", 2, 0, 0, retry_at)
+    persist_metadata_refresh_state_cursor(cursor, running)
+    assert cursor.calls[-1][1][-2:] == (10, previous_success_at)
+
+    terminal = RefreshCursor((11, retry_at, "running", 10, previous_success_at))
+    failed = replace(running, run_status="failed", completed_at=retry_at + timedelta(seconds=1))
+    persist_metadata_refresh_state_cursor(terminal, failed)
+    assert terminal.calls[-1][1][-2:] == (10, previous_success_at)
+
+    delayed = RefreshCursor((11, retry_at, "failed", 10, previous_success_at))
+    with pytest.raises(StaleMetadataSnapshot, match="stale_metadata_refresh_transition"):
+        persist_metadata_refresh_state_cursor(delayed, running)
+    older_retry = replace(running, started_at=NOW)
+    with pytest.raises(StaleMetadataSnapshot, match="stale_metadata_refresh_state"):
+        persist_metadata_refresh_state_cursor(delayed, older_retry)
+    regressed_success = replace(
+        running, last_successful_height=9, last_successful_at=previous_success_at
+    )
+    with pytest.raises(StaleMetadataSnapshot, match="stale_metadata_refresh_success"):
+        persist_metadata_refresh_state_cursor(
+            RefreshCursor((10, NOW, "complete", 10, previous_success_at)),
+            regressed_success,
+        )

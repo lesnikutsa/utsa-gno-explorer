@@ -47,8 +47,9 @@ from indexer.transaction_summary import (MAX_SUMMARY_BYTES, SCHEMA_VERSION,
     normalize_summary, summary_size_bytes)
 from indexer.realm_catalog import extract_observations
 from indexer.realm_metadata_persistence import (
-    JsonCapability, MetadataFile, MetadataSnapshot, RenderCapability,
-    StaleMetadataSnapshot, StorageCapability, publish_metadata_snapshot,
+    JsonCapability, MetadataFile, MetadataRefreshState, MetadataSnapshot,
+    RenderCapability, StaleMetadataSnapshot, StorageCapability,
+    persist_metadata_refresh_state_cursor, publish_metadata_snapshot,
     publish_metadata_snapshot_cursor,
 )
 from indexer.rpc import RpcProbeResult
@@ -2544,12 +2545,18 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                 {"realm_metadata_imports_source_idx", "realm_metadata_imports_reverse_idx"},
             )
             for table in init_database.METADATA_TABLES:
-                for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+                for privilege in (
+                    "SELECT", "INSERT", "UPDATE", "DELETE",
+                    "TRUNCATE", "REFERENCES", "TRIGGER",
+                ):
                     cursor.execute(
                         "SELECT has_table_privilege('utsa_gno_indexer', %s, %s)",
                         (f"public.{table}", privilege),
                     )
-                    self.assertTrue(cursor.fetchone()[0])
+                    self.assertEqual(
+                        cursor.fetchone()[0],
+                        privilege in {"SELECT", "INSERT", "UPDATE", "DELETE"},
+                    )
                     cursor.execute(
                         "SELECT has_table_privilege('utsa_gno_api', %s, %s)",
                         (f"public.{table}", privilege),
@@ -2640,6 +2647,61 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             with connection.cursor() as cursor:
                 cursor.execute("SELECT content FROM realm_metadata_files WHERE filename='main.gno'")
                 self.assertIn("package changed", cursor.fetchone()[0])
+
+    def test_metadata_parent_lock_serializes_first_publication_and_refresh_preserves_success(self):
+        url = self.prepare_metadata_database(f"utsa_metadata_lock_{os.getpid()}")
+        newer = self.metadata_snapshot(
+            height=11,
+            collected_at=datetime(2026, 1, 1, 0, 1, tzinfo=timezone.utc),
+        )
+        older = self.metadata_snapshot(
+            height=10,
+            collected_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        started = threading.Event()
+        result = []
+
+        def delayed_publisher():
+            with psycopg.connect(url) as connection:
+                started.set()
+                try:
+                    publish_metadata_snapshot(connection, older)
+                except Exception as exc:  # captured for assertion in the parent thread
+                    result.append(exc)
+
+        with psycopg.connect(url) as connection:
+            with connection.transaction():
+                with connection.cursor() as cursor:
+                    publish_metadata_snapshot_cursor(cursor, newer)
+                    thread = threading.Thread(target=delayed_publisher)
+                    thread.start()
+                    self.assertTrue(started.wait(2))
+                    time.sleep(0.2)
+                    self.assertTrue(thread.is_alive())
+            thread.join(5)
+            self.assertFalse(thread.is_alive())
+            self.assertEqual(len(result), 1)
+            self.assertIsInstance(result[0], StaleMetadataSnapshot)
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT observed_height FROM realm_metadata")
+                self.assertEqual(cursor.fetchone()[0], 11)
+
+                first_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+                persist_metadata_refresh_state_cursor(cursor, MetadataRefreshState(
+                    "topaz-1", 10, "complete", 1, 1, 0, first_at,
+                    first_at + timedelta(seconds=1), 10, first_at + timedelta(seconds=1),
+                ))
+                retry_at = first_at + timedelta(minutes=1)
+                persist_metadata_refresh_state_cursor(cursor, MetadataRefreshState(
+                    "topaz-1", 11, "running", 1, 0, 0, retry_at,
+                ))
+                persist_metadata_refresh_state_cursor(cursor, MetadataRefreshState(
+                    "topaz-1", 11, "failed", 1, 0, 1, retry_at,
+                    retry_at + timedelta(seconds=1),
+                ))
+                cursor.execute("""SELECT last_successful_height,last_successful_at
+                  FROM realm_metadata_refresh_state WHERE chain_id='topaz-1'""")
+                self.assertEqual(cursor.fetchone(), (10, first_at + timedelta(seconds=1)))
 
     def test_metadata_cursor_failure_rolls_back_and_connection_remains_usable(self):
         url = self.prepare_metadata_database(f"utsa_metadata_rollback_{os.getpid()}")

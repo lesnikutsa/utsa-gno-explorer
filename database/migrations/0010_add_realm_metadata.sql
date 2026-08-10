@@ -68,8 +68,8 @@ CREATE TABLE realm_metadata_refresh_state (
  CONSTRAINT realm_metadata_refresh_state_height_check CHECK (observed_height > 0),
  CONSTRAINT realm_metadata_refresh_state_status_check CHECK (run_status IN ('running','complete','partial','failed')),
  CONSTRAINT realm_metadata_refresh_state_counts_check CHECK (selected_path_count >= 0 AND published_path_count >= 0 AND failed_path_count >= 0 AND published_path_count + failed_path_count <= selected_path_count),
- CONSTRAINT realm_metadata_refresh_state_completion_check CHECK ((run_status='running' AND completed_at IS NULL) OR (run_status<>'running' AND completed_at IS NOT NULL)),
- CONSTRAINT realm_metadata_refresh_state_success_check CHECK ((last_successful_height IS NULL)=(last_successful_at IS NULL) AND (last_successful_height IS NULL OR last_successful_height > 0))
+ CONSTRAINT realm_metadata_refresh_state_completion_check CHECK (((run_status='running' AND completed_at IS NULL) OR (run_status<>'running' AND completed_at IS NOT NULL)) AND (completed_at IS NULL OR completed_at>=started_at)),
+ CONSTRAINT realm_metadata_refresh_state_success_check CHECK ((last_successful_height IS NULL)=(last_successful_at IS NULL) AND (last_successful_height IS NULL OR (last_successful_height>0 AND last_successful_height<=observed_height)))
 );
 
 DO $$ BEGIN

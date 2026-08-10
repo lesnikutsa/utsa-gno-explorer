@@ -362,7 +362,7 @@ EXPECTED_CHECKS.update({
  "realm_metadata_qstorage_check":"CHECK (((qstorage_bytes IS NULL AND qstorage_deposit_ugnot IS NULL AND qstorage_last_successful_height IS NULL) OR (qstorage_bytes BETWEEN 0 AND 9999999999999999999999999999999999999999 AND qstorage_deposit_ugnot BETWEEN 0 AND 9999999999999999999999999999999999999999 AND qstorage_last_successful_height IS NOT NULL)) AND ((qstorage_status = 'ok' AND qstorage_last_successful_height IS NOT NULL AND qstorage_last_successful_height = observed_height) OR (qstorage_status <> 'ok' AND (qstorage_last_successful_height IS NULL OR qstorage_last_successful_height <= observed_height))))",
  "realm_metadata_package_capabilities_check":"CHECK (path_kind <> 'package' OR qrender_status = 'not_applicable' AND qrender_last_successful_height IS NULL AND qstorage_status = 'not_applicable' AND qstorage_last_successful_height IS NULL)",
  "realm_metadata_files_filename_check":"CHECK (char_length(filename) BETWEEN 1 AND 160 AND filename !~ '^/' AND filename !~ '^[A-Za-z]:/' AND filename !~ '\\\\' AND filename !~ '[[:cntrl:]]' AND filename !~ '(^|/)(\\.|\\.\\.|)(/|$)')","realm_metadata_files_kind_check":"CHECK (file_kind IN ('gno_source', 'gno_test', 'gnomod', 'other'))","realm_metadata_files_size_check":"CHECK (byte_count BETWEEN 0 AND 1048576 AND octet_length(content) = byte_count AND line_count BETWEEN 0 AND 100000)","realm_metadata_files_sha256_check":"CHECK (sha256 ~ '^[0-9a-f]{64}$')","realm_metadata_files_import_count_check":"CHECK (import_candidate_count BETWEEN 0 AND 1000)","realm_metadata_imports_kind_check":"CHECK (imported_kind IN ('realm', 'package'))",
- "realm_metadata_imports_path_check":"CHECK ((char_length(imported_path) >= 1 AND char_length(imported_path) <= 256) AND imported_path ~ '^gno\\.land/[rp]/[!-\\.0-~]+(/[!-\\.0-~]+)*$' AND imported_path !~ '[?#]' AND ((imported_kind = 'realm' AND imported_path ~~ 'gno.land/r/%') OR (imported_kind = 'package' AND imported_path ~~ 'gno.land/p/%')))","realm_metadata_refresh_state_chain_id_check":"CHECK (char_length(chain_id) BETWEEN 1 AND 128)","realm_metadata_refresh_state_height_check":"CHECK (observed_height > 0)","realm_metadata_refresh_state_status_check":"CHECK (run_status IN ('running', 'complete', 'partial', 'failed'))","realm_metadata_refresh_state_counts_check":"CHECK (selected_path_count >= 0 AND published_path_count >= 0 AND failed_path_count >= 0 AND published_path_count + failed_path_count <= selected_path_count)","realm_metadata_refresh_state_completion_check":"CHECK ((run_status = 'running' AND completed_at IS NULL) OR (run_status <> 'running' AND completed_at IS NOT NULL))","realm_metadata_refresh_state_success_check":"CHECK ((last_successful_height IS NULL) = (last_successful_at IS NULL) AND (last_successful_height IS NULL OR last_successful_height > 0))"})
+ "realm_metadata_imports_path_check":"CHECK ((char_length(imported_path) >= 1 AND char_length(imported_path) <= 256) AND imported_path ~ '^gno\\.land/[rp]/[!-\\.0-~]+(/[!-\\.0-~]+)*$' AND imported_path !~ '[?#]' AND ((imported_kind = 'realm' AND imported_path ~~ 'gno.land/r/%') OR (imported_kind = 'package' AND imported_path ~~ 'gno.land/p/%')))","realm_metadata_refresh_state_chain_id_check":"CHECK (char_length(chain_id) BETWEEN 1 AND 128)","realm_metadata_refresh_state_height_check":"CHECK (observed_height > 0)","realm_metadata_refresh_state_status_check":"CHECK (run_status IN ('running', 'complete', 'partial', 'failed'))","realm_metadata_refresh_state_counts_check":"CHECK (selected_path_count >= 0 AND published_path_count >= 0 AND failed_path_count >= 0 AND published_path_count + failed_path_count <= selected_path_count)","realm_metadata_refresh_state_completion_check":"CHECK (((run_status = 'running' AND completed_at IS NULL) OR (run_status <> 'running' AND completed_at IS NOT NULL)) AND (completed_at IS NULL OR completed_at >= started_at))","realm_metadata_refresh_state_success_check":"CHECK ((last_successful_height IS NULL) = (last_successful_at IS NULL) AND (last_successful_height IS NULL OR (last_successful_height > 0 AND last_successful_height <= observed_height)))"})
 for metadata_table in METADATA_TABLES:
     EXPECTED_TABLE_PRIVILEGES["utsa_gno_api"][metadata_table] = set()
     EXPECTED_TABLE_PRIVILEGES["utsa_gno_indexer"][metadata_table] = {"SELECT","INSERT","UPDATE","DELETE"}
@@ -865,7 +865,10 @@ def validate_table_privileges(cursor) -> None:
         if not cursor.fetchone()[0]:
             continue
         for table, required in tables.items():
-            privileges = {"SELECT", "INSERT", "UPDATE", "DELETE"}
+            privileges = {
+                "SELECT", "INSERT", "UPDATE", "DELETE",
+                "TRUNCATE", "REFERENCES", "TRIGGER",
+            }
             actual = set()
             for privilege in privileges:
                 cursor.execute(
@@ -876,8 +879,8 @@ def validate_table_privileges(cursor) -> None:
                     actual.add(privilege)
             if role == "utsa_gno_api" and actual != required:
                 raise SchemaCompatibilityError(f"API role has incompatible privileges for {table}")
-            if role == "utsa_gno_indexer" and not required <= actual:
-                raise SchemaCompatibilityError(f"Indexer role lacks privileges for {table}")
+            if role == "utsa_gno_indexer" and actual != required:
+                raise SchemaCompatibilityError(f"Indexer role has incompatible privileges for {table}")
 
 
 def validate_participant_privileges(cursor) -> None:
