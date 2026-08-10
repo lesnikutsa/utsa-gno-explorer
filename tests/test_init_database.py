@@ -73,16 +73,9 @@ def test_checks_and_privilege_contract_are_registered():
     checks = init_database.EXPECTED_CHECKS
     for name in ("block_height", "tx_index", "message_index", "role", "address"):
         assert f"transaction_participants_{name}_check" in checks
-    assert init_database.EXPECTED_TABLE_PRIVILEGES == {
-        "utsa_gno_api": {
-            "transaction_participants": {"SELECT"},
-            "transaction_execution_results": {"SELECT"},
-        },
-        "utsa_gno_indexer": {
-            "transaction_participants": {"SELECT", "INSERT", "DELETE"},
-            "transaction_execution_results": {"SELECT", "INSERT", "UPDATE"},
-        },
-    }
+    for table in init_database.METADATA_TABLES:
+        assert init_database.EXPECTED_TABLE_PRIVILEGES["utsa_gno_api"][table] == set()
+        assert init_database.EXPECTED_TABLE_PRIVILEGES["utsa_gno_indexer"][table] == {"SELECT", "INSERT", "UPDATE", "DELETE"}
 
 
 def test_final_snapshot_accepts_participants_and_rejects_schema_drift():
@@ -199,41 +192,18 @@ class PrivilegeCursor:
 
 
 def test_participant_privilege_validation_accepts_least_privilege():
-    init_database.validate_participant_privileges(PrivilegeCursor({
-        "utsa_gno_api": {
-            "transaction_participants": {"SELECT"},
-            "transaction_execution_results": {"SELECT"},
-        },
-        "utsa_gno_indexer": {
-            "transaction_participants": {"SELECT", "INSERT", "DELETE"},
-            "transaction_execution_results": {"SELECT", "INSERT", "UPDATE"},
-        },
-    }))
+    init_database.validate_participant_privileges(PrivilegeCursor(copy.deepcopy(init_database.EXPECTED_TABLE_PRIVILEGES)))
 
 
 def test_api_writes_and_missing_indexer_grants_fail_closed():
+    grants = copy.deepcopy(init_database.EXPECTED_TABLE_PRIVILEGES)
+    grants["utsa_gno_api"]["transaction_participants"].add("INSERT")
     with pytest.raises(init_database.SchemaCompatibilityError, match="API role"):
-        init_database.validate_participant_privileges(PrivilegeCursor({
-            "utsa_gno_api": {
-                "transaction_participants": {"SELECT", "INSERT"},
-                "transaction_execution_results": {"SELECT"},
-            },
-            "utsa_gno_indexer": {
-                "transaction_participants": {"SELECT", "INSERT", "DELETE"},
-                "transaction_execution_results": {"SELECT", "INSERT", "UPDATE"},
-            },
-        }))
+        init_database.validate_participant_privileges(PrivilegeCursor(grants))
+    grants = copy.deepcopy(init_database.EXPECTED_TABLE_PRIVILEGES)
+    grants["utsa_gno_indexer"]["transaction_participants"].remove("DELETE")
     with pytest.raises(init_database.SchemaCompatibilityError, match="Indexer role"):
-        init_database.validate_participant_privileges(PrivilegeCursor({
-            "utsa_gno_api": {
-                "transaction_participants": {"SELECT"},
-                "transaction_execution_results": {"SELECT"},
-            },
-            "utsa_gno_indexer": {
-                "transaction_participants": {"SELECT", "INSERT"},
-                "transaction_execution_results": {"SELECT", "INSERT", "UPDATE"},
-            },
-        }))
+        init_database.validate_participant_privileges(PrivilegeCursor(grants))
 
 
 def test_final_schema_failure_occurs_after_body_and_before_commit():
