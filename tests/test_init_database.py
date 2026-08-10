@@ -6,6 +6,33 @@ import pytest
 
 from scripts import init_database
 
+EXPECTED_PRIVILEGES = {
+    "utsa_gno_api": {
+        "transaction_participants": {"SELECT"},
+        "transaction_execution_results": {"SELECT"},
+        "realm_catalog": {"SELECT"},
+        "realm_catalog_state": {"SELECT"},
+        "realm_call_index": {"SELECT"},
+        "realm_call_index_state": {"SELECT"},
+        "realm_metadata": set(),
+        "realm_metadata_files": set(),
+        "realm_metadata_imports": set(),
+        "realm_metadata_refresh_state": set(),
+    },
+    "utsa_gno_indexer": {
+        "transaction_participants": {"SELECT", "INSERT", "DELETE"},
+        "transaction_execution_results": {"SELECT", "INSERT", "UPDATE"},
+        "realm_catalog": {"SELECT", "INSERT", "UPDATE"},
+        "realm_catalog_state": {"SELECT", "INSERT", "UPDATE"},
+        "realm_call_index": {"SELECT", "INSERT", "UPDATE", "DELETE"},
+        "realm_call_index_state": {"SELECT", "INSERT", "UPDATE", "DELETE"},
+        "realm_metadata": {"SELECT", "INSERT", "UPDATE", "DELETE"},
+        "realm_metadata_files": {"SELECT", "INSERT", "UPDATE", "DELETE"},
+        "realm_metadata_imports": {"SELECT", "INSERT", "UPDATE", "DELETE"},
+        "realm_metadata_refresh_state": {"SELECT", "INSERT", "UPDATE", "DELETE"},
+    },
+}
+
 
 def snapshot(expectations):
     return copy.deepcopy({
@@ -16,6 +43,82 @@ def snapshot(expectations):
         "check_constraints": expectations["check_constraints"],
         "indexes": expectations["indexes"],
     })
+
+
+@pytest.mark.parametrize(("between", "canonical"), [
+    (
+        "gno_file_count BETWEEN 0 AND file_count",
+        "(gno_file_count >= 0 AND gno_file_count <= file_count)",
+    ),
+    (
+        "test_file_count BETWEEN 0 AND gno_file_count",
+        "(test_file_count >= 0 AND test_file_count <= gno_file_count)",
+    ),
+    (
+        "current_height BETWEEN lower_height AND upper_height",
+        "(current_height >= lower_height AND current_height <= upper_height)",
+    ),
+])
+def test_between_normalization_accepts_simple_identifier_bounds(between, canonical):
+    assert init_database._norm(between) == init_database._norm(canonical)
+
+
+@pytest.mark.parametrize("postgres_form", [
+    "jsonb_typeof(qpkg_json_payload) = ANY "
+    "(ARRAY['object'::text, 'array'::text])",
+    "jsonb_typeof(qpkg_json_payload)=ANY(ARRAY['object'::text,'array'::text])",
+])
+def test_any_array_normalization_accepts_bounded_function_expression(postgres_form):
+    expected = "jsonb_typeof(qpkg_json_payload) IN ('object', 'array')"
+    assert init_database._norm(postgres_form) == init_database._norm(expected)
+
+
+def test_any_array_normalization_preserves_simple_identifier_behavior():
+    actual = "path_kind = ANY (ARRAY['realm'::text, 'package'::text])"
+    expected = "path_kind IN ('realm', 'package')"
+    assert init_database._norm(actual) == init_database._norm(expected)
+
+
+def test_any_array_normalization_does_not_rewrite_arbitrary_expression():
+    unsupported = "left_value || right_value = ANY (ARRAY['combined'::text])"
+    assert "= any" in init_database._norm(unsupported)
+
+
+@pytest.mark.parametrize(("postgres_form", "plain_form"), [
+    (
+        "qstorage_bytes <= "
+        "'9999999999999999999999999999999999999999'::numeric",
+        "qstorage_bytes <= 9999999999999999999999999999999999999999",
+    ),
+    ("amount >= '-123'::numeric", "amount >= -123"),
+    ("ratio = '123.45'::numeric", "ratio = 123.45"),
+    ("ratio = ('123.45'::numeric)", "ratio = 123.45"),
+])
+def test_explicit_quoted_numeric_cast_normalizes_to_numeric_literal(
+    postgres_form, plain_form
+):
+    assert init_database._norm(postgres_form) == init_database._norm(plain_form)
+
+
+def test_uncast_quoted_digits_remain_a_string_literal():
+    assert init_database._norm("some_text = '123'") != init_database._norm(
+        "some_text = 123"
+    )
+
+
+def test_package_capabilities_expected_check_preserves_boolean_grouping():
+    expected = init_database.EXPECTED_CHECKS[
+        "realm_metadata_package_capabilities_check"
+    ]
+    postgres_canonical = (
+        "CHECK (path_kind <> 'package' OR ("
+        "qrender_status = 'not_applicable' "
+        "AND qrender_last_successful_height IS NULL "
+        "AND qstorage_status = 'not_applicable' "
+        "AND qstorage_last_successful_height IS NULL))"
+    )
+    assert "OR (qrender_status" in expected
+    assert init_database._norm(expected) == init_database._norm(postgres_canonical)
 
 
 def test_participant_authoritative_contract_is_exact():
@@ -53,6 +156,64 @@ def test_execution_result_migration_envelope_is_safe():
     assert not body.rstrip().upper().endswith("COMMIT;")
 
 
+def test_metadata_migration_contract_and_envelope_are_exact():
+    body = init_database.migration_body_for_outer_transaction(
+        init_database.REALM_METADATA_MIGRATION.read_text()
+    )
+    assert {
+        "realm_metadata", "realm_metadata_files", "realm_metadata_imports",
+        "realm_metadata_refresh_state",
+    } == init_database.METADATA_TABLES
+    assert body.count("CREATE TABLE realm_metadata") == 4
+    assert "realm_metadata_json_success_check" in body
+    assert "GRANT SELECT,INSERT,UPDATE,DELETE" in body
+    assert "utsa_gno_api" not in body
+
+
+def test_exact_pre_0010_stage_runs_only_metadata_migration():
+    connection = Connection(init_database.PRE_REALM_METADATA_EXPECTATIONS["tables"])
+    snapshots = [
+        snapshot(init_database.PRE_REALM_METADATA_EXPECTATIONS),
+        snapshot(init_database.FINAL_SCHEMA_EXPECTATIONS),
+    ]
+    with patch.object(init_database, "fetch_schema_snapshot", side_effect=snapshots):
+        init_database.initialize_or_validate(
+            "postgresql://example.invalid/db", connect=lambda _: connection
+        )
+    sql = "\n".join(statement for statement, _ in connection.cursor_value.executed)
+    assert "CREATE TABLE realm_metadata" in sql
+    assert connection.commits == 1
+
+
+def test_partial_metadata_schema_fails_closed():
+    partial = snapshot(init_database.FINAL_SCHEMA_EXPECTATIONS)
+    partial["tables"].remove("realm_metadata_imports")
+    partial["columns"].pop("realm_metadata_imports")
+    with pytest.raises(init_database.SchemaCompatibilityError):
+        init_database.validate_schema_snapshot(partial)
+
+
+def test_metadata_migration_failure_does_not_commit():
+    class FailingMetadataCursor(Cursor):
+        def execute(self, sql, params=None):
+            super().execute(sql, params)
+            if "CREATE TABLE realm_metadata" in str(sql):
+                raise RuntimeError("metadata migration failure")
+
+    connection = Connection(init_database.PRE_REALM_METADATA_EXPECTATIONS["tables"])
+    connection.cursor_value = FailingMetadataCursor(connection.cursor_value.existing)
+    with patch.object(
+        init_database,
+        "fetch_schema_snapshot",
+        return_value=snapshot(init_database.PRE_REALM_METADATA_EXPECTATIONS),
+    ):
+        with pytest.raises(RuntimeError, match="metadata migration failure"):
+            init_database.initialize_or_validate(
+                "postgresql://example.invalid/db", connect=lambda _: connection
+            )
+    assert connection.commits == 0
+
+
 def test_pre_0007_stage_runs_only_execution_result_migration():
     connection = Connection(init_database.PRE_TRANSACTION_EXECUTION_RESULT_EXPECTATIONS["tables"])
     snapshots = [
@@ -73,16 +234,7 @@ def test_checks_and_privilege_contract_are_registered():
     checks = init_database.EXPECTED_CHECKS
     for name in ("block_height", "tx_index", "message_index", "role", "address"):
         assert f"transaction_participants_{name}_check" in checks
-    assert init_database.EXPECTED_TABLE_PRIVILEGES == {
-        "utsa_gno_api": {
-            "transaction_participants": {"SELECT"},
-            "transaction_execution_results": {"SELECT"},
-        },
-        "utsa_gno_indexer": {
-            "transaction_participants": {"SELECT", "INSERT", "DELETE"},
-            "transaction_execution_results": {"SELECT", "INSERT", "UPDATE"},
-        },
-    }
+    assert init_database.EXPECTED_TABLE_PRIVILEGES == EXPECTED_PRIVILEGES
 
 
 def test_final_snapshot_accepts_participants_and_rejects_schema_drift():
@@ -199,41 +351,35 @@ class PrivilegeCursor:
 
 
 def test_participant_privilege_validation_accepts_least_privilege():
-    init_database.validate_participant_privileges(PrivilegeCursor({
-        "utsa_gno_api": {
-            "transaction_participants": {"SELECT"},
-            "transaction_execution_results": {"SELECT"},
-        },
-        "utsa_gno_indexer": {
-            "transaction_participants": {"SELECT", "INSERT", "DELETE"},
-            "transaction_execution_results": {"SELECT", "INSERT", "UPDATE"},
-        },
-    }))
+    init_database.validate_participant_privileges(PrivilegeCursor(copy.deepcopy(EXPECTED_PRIVILEGES)))
 
 
 def test_api_writes_and_missing_indexer_grants_fail_closed():
+    grants = copy.deepcopy(EXPECTED_PRIVILEGES)
+    grants["utsa_gno_api"]["transaction_participants"].add("INSERT")
     with pytest.raises(init_database.SchemaCompatibilityError, match="API role"):
-        init_database.validate_participant_privileges(PrivilegeCursor({
-            "utsa_gno_api": {
-                "transaction_participants": {"SELECT", "INSERT"},
-                "transaction_execution_results": {"SELECT"},
-            },
-            "utsa_gno_indexer": {
-                "transaction_participants": {"SELECT", "INSERT", "DELETE"},
-                "transaction_execution_results": {"SELECT", "INSERT", "UPDATE"},
-            },
-        }))
+        init_database.validate_participant_privileges(PrivilegeCursor(grants))
+    grants = copy.deepcopy(EXPECTED_PRIVILEGES)
+    grants["utsa_gno_api"]["realm_metadata"].add("SELECT")
+    with pytest.raises(init_database.SchemaCompatibilityError, match="API role"):
+        init_database.validate_participant_privileges(PrivilegeCursor(grants))
+    grants = copy.deepcopy(EXPECTED_PRIVILEGES)
+    grants["utsa_gno_indexer"]["realm_metadata"].remove("DELETE")
     with pytest.raises(init_database.SchemaCompatibilityError, match="Indexer role"):
-        init_database.validate_participant_privileges(PrivilegeCursor({
-            "utsa_gno_api": {
-                "transaction_participants": {"SELECT"},
-                "transaction_execution_results": {"SELECT"},
-            },
-            "utsa_gno_indexer": {
-                "transaction_participants": {"SELECT", "INSERT"},
-                "transaction_execution_results": {"SELECT", "INSERT", "UPDATE"},
-            },
-        }))
+        init_database.validate_participant_privileges(PrivilegeCursor(grants))
+
+
+@pytest.mark.parametrize(("role", "table", "privilege", "message"), [
+    ("utsa_gno_api", "realm_metadata", "TRUNCATE", "API role"),
+    ("utsa_gno_api", "realm_metadata_files", "REFERENCES", "API role"),
+    ("utsa_gno_api", "realm_metadata_imports", "TRIGGER", "API role"),
+    ("utsa_gno_indexer", "realm_metadata_refresh_state", "TRUNCATE", "Indexer role"),
+])
+def test_extended_metadata_privileges_fail_closed(role, table, privilege, message):
+    grants = copy.deepcopy(EXPECTED_PRIVILEGES)
+    grants[role][table].add(privilege)
+    with pytest.raises(init_database.SchemaCompatibilityError, match=message):
+        init_database.validate_participant_privileges(PrivilegeCursor(grants))
 
 
 def test_final_schema_failure_occurs_after_body_and_before_commit():

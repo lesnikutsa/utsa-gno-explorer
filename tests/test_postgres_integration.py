@@ -46,6 +46,12 @@ from indexer.parsers import ParsedHeight, parse_execution_results, parse_tx
 from indexer.transaction_summary import (MAX_SUMMARY_BYTES, SCHEMA_VERSION,
     normalize_summary, summary_size_bytes)
 from indexer.realm_catalog import extract_observations
+from indexer.realm_metadata_persistence import (
+    JsonCapability, MetadataFile, MetadataRefreshState, MetadataSnapshot,
+    RenderCapability, StaleMetadataSnapshot, StorageCapability,
+    persist_metadata_refresh_state_cursor, publish_metadata_snapshot,
+    publish_metadata_snapshot_cursor,
+)
 from indexer.rpc import RpcProbeResult
 from indexer.valopers_parser import ValoperProfile
 from indexer.valopers_persistence import (
@@ -183,6 +189,7 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         """Remove every canonical DDL section later than an exact known stage."""
         schema = (ROOT / "database/schema.sql").read_text()
         sections = (
+            ("realm_metadata", "BEGIN;\n\nCREATE TABLE realm_metadata", None),
             ("realm_call_index", "BEGIN;\n\nCREATE TABLE realm_call_index", None),
             ("transaction_participants", "CREATE TABLE transaction_participants", "-- Block detail pages"),
             ("network_distribution_geo_cache", "CREATE TABLE network_distribution_geo_cache", "CREATE TABLE governance_proposals"),
@@ -2491,6 +2498,241 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                 cursor.execute("SELECT to_regclass('public.realm_catalog'),to_regclass('public.realm_catalog_state')")
                 observed = cursor.fetchone()
                 self.assertEqual(observed, ('realm_catalog', None) if suffix == 'catalog' else (None, 'realm_catalog_state'))
+
+
+    def metadata_snapshot(self, *, height=10, collected_at=None, content="package demo\n"):
+        path = "gno.land/r/metadata_demo"
+        files = (
+            MetadataFile("main.gno", content + 'import "gno.land/p/missing/dependency"\n'),
+            MetadataFile("README.md", "bounded metadata\n"),
+        )
+        return MetadataSnapshot(
+            "topaz-1", path, "realm", height, "complete",
+            tuple(item.filename for item in files), files,
+            collected_at or datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+
+    def prepare_metadata_database(self, name):
+        self.ensure_application_roles()
+        self.create_database(name)
+        url = self.database_url_for(name)
+        initialized = self.run_init(url)
+        self.assertEqual(initialized.returncode, 0, initialized.stderr)
+        with psycopg.connect(url) as connection, connection.cursor() as cursor:
+            cursor.execute("""INSERT INTO realm_catalog(
+              chain_id,path,path_kind,seen_via_rpc,rpc_visible,last_rpc_seen_at
+            ) VALUES ('topaz-1','gno.land/r/metadata_demo','realm',true,true,now())""")
+        return url
+
+    def test_metadata_schema_upgrade_checks_indexes_and_privileges(self):
+        self.ensure_application_roles()
+        url = self.create_exact_stage_database(
+            f"utsa_metadata_upgrade_{os.getpid()}",
+            init_database.PRE_REALM_METADATA_EXPECTATIONS,
+            create_roles_before_schema=True,
+        )
+        upgraded = self.run_init(url)
+        self.assertEqual(upgraded.returncode, 0, upgraded.stderr)
+        repeated = self.run_init(url)
+        self.assertEqual(repeated.returncode, 0, repeated.stderr)
+        with psycopg.connect(url) as connection, connection.cursor() as cursor:
+            snapshot = init_database.fetch_schema_snapshot(cursor)
+            init_database.validate_schema_snapshot(snapshot)
+            metadata = {name for name in snapshot["tables"] if name.startswith("realm_metadata")}
+            self.assertEqual(metadata, init_database.METADATA_TABLES)
+            self.assertEqual(
+                {name for name in snapshot["indexes"] if name.startswith("realm_metadata_imports_")},
+                {"realm_metadata_imports_source_idx", "realm_metadata_imports_reverse_idx"},
+            )
+            for table in init_database.METADATA_TABLES:
+                for privilege in (
+                    "SELECT", "INSERT", "UPDATE", "DELETE",
+                    "TRUNCATE", "REFERENCES", "TRIGGER",
+                ):
+                    cursor.execute(
+                        "SELECT has_table_privilege('utsa_gno_indexer', %s, %s)",
+                        (f"public.{table}", privilege),
+                    )
+                    self.assertEqual(
+                        cursor.fetchone()[0],
+                        privilege in {"SELECT", "INSERT", "UPDATE", "DELETE"},
+                    )
+                    cursor.execute(
+                        "SELECT has_table_privilege('utsa_gno_api', %s, %s)",
+                        (f"public.{table}", privilege),
+                    )
+                    self.assertFalse(cursor.fetchone()[0])
+            cursor.execute("SET ROLE utsa_gno_api")
+            with self.assertRaises(psycopg.errors.InsufficientPrivilege):
+                cursor.execute("SELECT * FROM realm_metadata")
+            connection.rollback()
+
+        partial_url = self.create_exact_stage_database(
+            f"utsa_metadata_partial_{os.getpid()}",
+            init_database.PRE_REALM_METADATA_EXPECTATIONS,
+        )
+        with psycopg.connect(partial_url) as connection, connection.cursor() as cursor:
+            cursor.execute("CREATE TABLE realm_metadata(chain_id text)")
+        with self.assertRaises(init_database.SchemaCompatibilityError):
+            init_database.initialize_or_validate(partial_url)
+
+    def test_metadata_publication_replacement_preservation_and_stale_guard(self):
+        url = self.prepare_metadata_database(f"utsa_metadata_publish_{os.getpid()}")
+        with psycopg.connect(url) as connection:
+            first = self.metadata_snapshot()
+            publish_metadata_snapshot(connection, first)
+            self.assertFalse(connection.closed)
+            with connection.cursor() as cursor:
+                cursor.execute("""SELECT file_count,dependency_count,total_file_bytes
+                  FROM realm_metadata WHERE chain_id=%s AND path=%s""", (first.chain_id, first.path))
+                self.assertEqual(cursor.fetchone()[:2], (2, 1))
+                cursor.execute("SELECT count(*) FROM realm_metadata_files")
+                self.assertEqual(cursor.fetchone()[0], 2)
+                cursor.execute("""SELECT source_filename,imported_path,imported_kind
+                  FROM realm_metadata_imports WHERE imported_path=%s""",
+                  ("gno.land/p/missing/dependency",))
+                self.assertEqual(cursor.fetchone(), ("main.gno", "gno.land/p/missing/dependency", "package"))
+                cursor.execute("SELECT inserted_at FROM realm_metadata_files WHERE filename='main.gno'")
+                inserted_at = cursor.fetchone()[0]
+
+            unchanged = MetadataSnapshot(
+                first.chain_id, first.path, first.path_kind, 11, first.collection_status,
+                first.expected_filenames, first.files,
+                first.collected_at + timedelta(minutes=1),
+            )
+            publish_metadata_snapshot(connection, unchanged)
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT inserted_at FROM realm_metadata_files WHERE filename='main.gno'")
+                self.assertEqual(cursor.fetchone()[0], inserted_at)
+
+            successful = MetadataSnapshot(
+                first.chain_id, first.path, first.path_kind, 12, first.collection_status,
+                first.expected_filenames, first.files, first.collected_at + timedelta(minutes=2),
+                qdoc=JsonCapability("ok", json.dumps({"package_path": first.path, "funcs": [], "values": [], "types": []})),
+                qpkg_json=JsonCapability("ok", '{"name":"demo"}'),
+                qfuncs=JsonCapability("ok", '[{"FuncName":"Hello","Params":[],"Results":[]}]'),
+                qrender=RenderCapability("ok", "a" * 64, 5, 1, True),
+                qstorage=StorageCapability("ok", 7, 8),
+            )
+            publish_metadata_snapshot(connection, successful)
+            failed = MetadataSnapshot(
+                first.chain_id, first.path, first.path_kind, 13, first.collection_status,
+                first.expected_filenames, first.files, first.collected_at + timedelta(minutes=3),
+                qdoc=JsonCapability("rpc_error"), qpkg_json=JsonCapability("application_error"),
+                qfuncs=JsonCapability("invalid_response"), qrender=RenderCapability("rpc_error"),
+                qstorage=StorageCapability("application_error"),
+            )
+            publish_metadata_snapshot(connection, failed)
+            with connection.cursor() as cursor:
+                cursor.execute("""SELECT qdoc_status,qdoc_last_successful_height,qdoc_payload,
+                  qpkg_json_last_successful_height,qfuncs_last_successful_height,
+                  qrender_last_successful_height,qstorage_last_successful_height
+                  FROM realm_metadata WHERE chain_id=%s AND path=%s""", (first.chain_id, first.path))
+                row = cursor.fetchone()
+                self.assertEqual(row[0:2], ("rpc_error", 12))
+                self.assertEqual(row[2]["package_path"], first.path)
+                self.assertEqual(row[3:], (12, 12, 12, 12))
+            with self.assertRaises(StaleMetadataSnapshot):
+                publish_metadata_snapshot(connection, unchanged)
+            self.assertFalse(connection.closed)
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT observed_height FROM realm_metadata")
+                self.assertEqual(cursor.fetchone()[0], 13)
+
+            changed = self.metadata_snapshot(
+                height=14, collected_at=first.collected_at + timedelta(minutes=4),
+                content="package changed\n",
+            )
+            publish_metadata_snapshot(connection, changed)
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT content FROM realm_metadata_files WHERE filename='main.gno'")
+                self.assertIn("package changed", cursor.fetchone()[0])
+
+    def test_metadata_parent_lock_serializes_first_publication_and_refresh_preserves_success(self):
+        url = self.prepare_metadata_database(f"utsa_metadata_lock_{os.getpid()}")
+        newer = self.metadata_snapshot(
+            height=11,
+            collected_at=datetime(2026, 1, 1, 0, 1, tzinfo=timezone.utc),
+        )
+        older = self.metadata_snapshot(
+            height=10,
+            collected_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        started = threading.Event()
+        result = []
+
+        def delayed_publisher():
+            with psycopg.connect(url) as connection:
+                started.set()
+                try:
+                    publish_metadata_snapshot(connection, older)
+                except Exception as exc:  # captured for assertion in the parent thread
+                    result.append(exc)
+
+        with psycopg.connect(url) as connection:
+            with connection.transaction():
+                with connection.cursor() as cursor:
+                    publish_metadata_snapshot_cursor(cursor, newer)
+                    thread = threading.Thread(target=delayed_publisher)
+                    thread.start()
+                    self.assertTrue(started.wait(2))
+                    time.sleep(0.2)
+                    self.assertTrue(thread.is_alive())
+            thread.join(5)
+            self.assertFalse(thread.is_alive())
+            self.assertEqual(len(result), 1)
+            self.assertIsInstance(result[0], StaleMetadataSnapshot)
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT observed_height FROM realm_metadata")
+                self.assertEqual(cursor.fetchone()[0], 11)
+
+                first_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+                persist_metadata_refresh_state_cursor(cursor, MetadataRefreshState(
+                    "topaz-1", 10, "complete", 1, 1, 0, first_at,
+                    first_at + timedelta(seconds=1), 10, first_at + timedelta(seconds=1),
+                ))
+                retry_at = first_at + timedelta(minutes=1)
+                persist_metadata_refresh_state_cursor(cursor, MetadataRefreshState(
+                    "topaz-1", 11, "running", 1, 0, 0, retry_at,
+                ))
+                persist_metadata_refresh_state_cursor(cursor, MetadataRefreshState(
+                    "topaz-1", 11, "failed", 1, 0, 1, retry_at,
+                    retry_at + timedelta(seconds=1),
+                ))
+                cursor.execute("""SELECT last_successful_height,last_successful_at
+                  FROM realm_metadata_refresh_state WHERE chain_id='topaz-1'""")
+                self.assertEqual(cursor.fetchone(), (10, first_at + timedelta(seconds=1)))
+
+    def test_metadata_cursor_failure_rolls_back_and_connection_remains_usable(self):
+        url = self.prepare_metadata_database(f"utsa_metadata_rollback_{os.getpid()}")
+        with psycopg.connect(url) as connection:
+            first = self.metadata_snapshot()
+            publish_metadata_snapshot(connection, first)
+            with self.assertRaises(psycopg.errors.CheckViolation) as raised:
+                with connection.transaction():
+                    with connection.cursor() as cursor:
+                        replacement = self.metadata_snapshot(
+                            height=11,
+                            collected_at=first.collected_at + timedelta(minutes=1),
+                            content="package replacement\n",
+                        )
+                        publish_metadata_snapshot_cursor(cursor, replacement)
+                        cursor.execute("""INSERT INTO realm_metadata_refresh_state(
+                          chain_id,observed_height,run_status,selected_path_count,
+                          published_path_count,failed_path_count,started_at
+                        ) VALUES ('invalid',0,'running',0,0,0,now())""")
+            self.assertEqual(
+                raised.exception.diag.constraint_name,
+                "realm_metadata_refresh_state_height_check",
+            )
+            self.assertFalse(connection.closed)
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT observed_height FROM realm_metadata")
+                self.assertEqual(cursor.fetchone()[0], 10)
+                cursor.execute("SELECT content FROM realm_metadata_files WHERE filename='main.gno'")
+                self.assertIn("package demo", cursor.fetchone()[0])
+                cursor.execute("SELECT 1")
+                self.assertEqual(cursor.fetchone()[0], 1)
 
 
 if __name__ == "__main__":

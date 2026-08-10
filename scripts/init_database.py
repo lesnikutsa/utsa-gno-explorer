@@ -16,6 +16,7 @@ PARTICIPANT_MIGRATION = REPO_ROOT / "database" / "migrations" / "0006_add_transa
 EXECUTION_RESULT_MIGRATION = REPO_ROOT / "database" / "migrations" / "0007_add_transaction_execution_results.sql"
 REALM_CATALOG_MIGRATION = REPO_ROOT / "database" / "migrations" / "0008_add_realm_catalog.sql"
 REALM_CALL_INDEX_MIGRATION = REPO_ROOT / "database" / "migrations" / "0009_add_realm_call_index.sql"
+REALM_METADATA_MIGRATION = REPO_ROOT / "database" / "migrations" / "0010_add_realm_metadata.sql"
 EXPECTED_TABLES = {
     "blocks", "transactions", "validators", "validator_set_members", "validator_signatures", "rpc_endpoints", "rpc_endpoint_checks", "indexer_state", "valoper_profiles", "valopers_snapshot_state",
 }
@@ -335,6 +336,36 @@ EXPECTED_CHECKS.update({
 EXPECTED_INDEXES["realm_call_index_path_position_idx"]=("realm_call_index",False,(("chain_id","ASC"),("path","ASC"),("block_height","DESC"),("tx_index","DESC"),("message_index","DESC")),None)
 EXPECTED_TABLE_PRIVILEGES["utsa_gno_api"].update({"realm_call_index":{"SELECT"},"realm_call_index_state":{"SELECT"}})
 EXPECTED_TABLE_PRIVILEGES["utsa_gno_indexer"].update({"realm_call_index":{"SELECT","INSERT","UPDATE","DELETE"},"realm_call_index_state":{"SELECT","INSERT","UPDATE","DELETE"}})
+PRE_REALM_METADATA_EXPECTATIONS = schema_expectations()
+METADATA_TABLES = {"realm_metadata", "realm_metadata_files", "realm_metadata_imports", "realm_metadata_refresh_state"}
+EXPECTED_TABLES.update(METADATA_TABLES)
+EXPECTED_COLUMNS["realm_metadata"] = {
+ "chain_id":("text","NO","",None),"path":("text","NO","",None),"path_kind":("text","NO","",None),"observed_height":("bigint","NO","",None),"collection_status":("text","NO","",None),"content_sha256":("text","NO","",None),"file_count":("integer","NO","",None),"gno_file_count":("integer","NO","",None),"test_file_count":("integer","NO","",None),"has_gnomod":("boolean","NO","",None),"total_file_bytes":("bigint","NO","",None),"total_file_lines":("bigint","NO","",None),"dependency_count":("integer","NO","",None),"source_rpc_endpoint_id":("bigint","YES","",None),
+ "qdoc_status":("text","NO","",None),"qdoc_summary":("jsonb","YES","",None),"qdoc_last_successful_height":("bigint","YES","",None),"qdoc_payload":("jsonb","YES","",None),"qpkg_json_status":("text","NO","",None),"qpkg_json_summary":("jsonb","YES","",None),"qpkg_json_last_successful_height":("bigint","YES","",None),"qpkg_json_payload":("jsonb","YES","",None),"qfuncs_status":("text","NO","",None),"qfuncs_summary":("jsonb","YES","",None),"qfuncs_last_successful_height":("bigint","YES","",None),"qfuncs_payload":("jsonb","YES","",None),
+ "qrender_status":("text","NO","",None),"qrender_last_successful_height":("bigint","YES","",None),"qrender_sha256":("text","YES","",None),"qrender_byte_count":("bigint","YES","",None),"qrender_line_count":("bigint","YES","",None),"qrender_non_empty":("boolean","YES","",None),"qstorage_status":("text","NO","",None),"qstorage_last_successful_height":("bigint","YES","",None),"qstorage_bytes":("numeric(40,0)","YES","",None),"qstorage_deposit_ugnot":("numeric(40,0)","YES","",None),"collected_at":("timestamp with time zone","NO","",None),"inserted_at":("timestamp with time zone","NO","","now()"),"updated_at":("timestamp with time zone","NO","","now()")}
+EXPECTED_COLUMNS["realm_metadata_files"]={"chain_id":("text","NO","",None),"path":("text","NO","",None),"filename":("text","NO","",None),"file_kind":("text","NO","",None),"content":("text","NO","",None),"byte_count":("integer","NO","",None),"line_count":("integer","NO","",None),"sha256":("text","NO","",None),"package_declared":("boolean","NO","",None),"import_candidate_count":("integer","NO","",None),"inserted_at":("timestamp with time zone","NO","","now()"),"updated_at":("timestamp with time zone","NO","","now()")}
+EXPECTED_COLUMNS["realm_metadata_imports"]={"chain_id":("text","NO","",None),"path":("text","NO","",None),"source_filename":("text","NO","",None),"imported_path":("text","NO","",None),"imported_kind":("text","NO","",None)}
+EXPECTED_COLUMNS["realm_metadata_refresh_state"]={"chain_id":("text","NO","",None),"observed_height":("bigint","NO","",None),"run_status":("text","NO","",None),"selected_path_count":("integer","NO","",None),"published_path_count":("integer","NO","",None),"failed_path_count":("integer","NO","",None),"started_at":("timestamp with time zone","NO","",None),"completed_at":("timestamp with time zone","YES","",None),"last_successful_height":("bigint","YES","",None),"last_successful_at":("timestamp with time zone","YES","",None),"updated_at":("timestamp with time zone","NO","","now()")}
+EXPECTED_PRIMARY_KEYS.update({"realm_metadata":("chain_id","path"),"realm_metadata_files":("chain_id","path","filename"),"realm_metadata_imports":("chain_id","path","source_filename","imported_path"),"realm_metadata_refresh_state":("chain_id",)})
+EXPECTED_FOREIGN_KEYS.update({("realm_metadata",("chain_id","path"),"realm_catalog",("chain_id","path"),"c"),("realm_metadata",("source_rpc_endpoint_id",),"rpc_endpoints",("id",),"n"),("realm_metadata_files",("chain_id","path"),"realm_metadata",("chain_id","path"),"c"),("realm_metadata_imports",("chain_id","path","source_filename"),"realm_metadata_files",("chain_id","path","filename"),"c")})
+EXPECTED_INDEXES.update({"realm_metadata_imports_source_idx":("realm_metadata_imports",False,(("chain_id","ASC"),("path","ASC")),None),"realm_metadata_imports_reverse_idx":("realm_metadata_imports",False,(("chain_id","ASC"),("imported_path","ASC")),None)})
+# Every named metadata CHECK is part of the fail-closed contract. Expressions are
+# populated from the migration to keep this declaration adjacent to its table shape.
+EXPECTED_CHECKS.update({
+ "realm_metadata_chain_id_check":"CHECK (char_length(chain_id) BETWEEN 1 AND 128)","realm_metadata_path_kind_check":"CHECK (path_kind IN ('realm', 'package'))","realm_metadata_path_check":"CHECK ((char_length(path) >= 1 AND char_length(path) <= 256) AND path ~ '^gno\\.land/[rp]/[!-\\.0-~]+(/[!-\\.0-~]+)*$' AND path !~ '[?#]' AND ((path_kind = 'realm' AND path ~~ 'gno.land/r/%') OR (path_kind = 'package' AND path ~~ 'gno.land/p/%')))","realm_metadata_height_check":"CHECK (observed_height > 0)","realm_metadata_collection_status_check":"CHECK (collection_status IN ('complete', 'partial'))","realm_metadata_sha256_check":"CHECK (content_sha256 ~ '^[0-9a-f]{64}$')",
+ "realm_metadata_counts_check":"CHECK (file_count BETWEEN 1 AND 256 AND gno_file_count BETWEEN 0 AND file_count AND test_file_count BETWEEN 0 AND gno_file_count AND total_file_bytes BETWEEN 0 AND 8388608 AND total_file_lines BETWEEN 0 AND 25600000 AND dependency_count BETWEEN 0 AND 256000)",
+ "realm_metadata_capability_status_check":"CHECK (qdoc_status IN ('ok', 'not_applicable', 'application_error', 'rpc_error', 'invalid_response') AND qpkg_json_status IN ('ok', 'not_applicable', 'application_error', 'rpc_error', 'invalid_response') AND qfuncs_status IN ('ok', 'not_applicable', 'application_error', 'rpc_error', 'invalid_response') AND qrender_status IN ('ok', 'not_applicable', 'application_error', 'rpc_error', 'invalid_response') AND qstorage_status IN ('ok', 'not_applicable', 'application_error', 'rpc_error', 'invalid_response'))",
+ "realm_metadata_json_types_check":"CHECK ((qdoc_summary IS NULL OR jsonb_typeof(qdoc_summary) = 'object') AND (qpkg_json_summary IS NULL OR jsonb_typeof(qpkg_json_summary) = 'object') AND (qfuncs_summary IS NULL OR jsonb_typeof(qfuncs_summary) = 'object') AND (qdoc_payload IS NULL OR jsonb_typeof(qdoc_payload) = 'object') AND (qpkg_json_payload IS NULL OR jsonb_typeof(qpkg_json_payload) IN ('object', 'array')) AND (qfuncs_payload IS NULL OR jsonb_typeof(qfuncs_payload) = 'array'))",
+ "realm_metadata_success_heights_check":"CHECK ((qdoc_last_successful_height IS NULL OR qdoc_last_successful_height > 0) AND (qpkg_json_last_successful_height IS NULL OR qpkg_json_last_successful_height > 0) AND (qfuncs_last_successful_height IS NULL OR qfuncs_last_successful_height > 0) AND (qrender_last_successful_height IS NULL OR qrender_last_successful_height > 0) AND (qstorage_last_successful_height IS NULL OR qstorage_last_successful_height > 0))",
+ "realm_metadata_json_success_check":"CHECK (((qdoc_summary IS NULL AND qdoc_payload IS NULL AND qdoc_last_successful_height IS NULL) OR (qdoc_summary IS NOT NULL AND qdoc_payload IS NOT NULL AND qdoc_last_successful_height IS NOT NULL)) AND ((qdoc_status = 'ok' AND qdoc_last_successful_height IS NOT NULL AND qdoc_last_successful_height = observed_height) OR (qdoc_status <> 'ok' AND (qdoc_last_successful_height IS NULL OR qdoc_last_successful_height <= observed_height))) AND ((qpkg_json_summary IS NULL AND qpkg_json_payload IS NULL AND qpkg_json_last_successful_height IS NULL) OR (qpkg_json_summary IS NOT NULL AND qpkg_json_payload IS NOT NULL AND qpkg_json_last_successful_height IS NOT NULL)) AND ((qpkg_json_status = 'ok' AND qpkg_json_last_successful_height IS NOT NULL AND qpkg_json_last_successful_height = observed_height) OR (qpkg_json_status <> 'ok' AND (qpkg_json_last_successful_height IS NULL OR qpkg_json_last_successful_height <= observed_height))) AND ((qfuncs_summary IS NULL AND qfuncs_payload IS NULL AND qfuncs_last_successful_height IS NULL) OR (qfuncs_summary IS NOT NULL AND qfuncs_payload IS NOT NULL AND qfuncs_last_successful_height IS NOT NULL)) AND ((qfuncs_status = 'ok' AND qfuncs_last_successful_height IS NOT NULL AND qfuncs_last_successful_height = observed_height) OR (qfuncs_status <> 'ok' AND (qfuncs_last_successful_height IS NULL OR qfuncs_last_successful_height <= observed_height))))",
+ "realm_metadata_qrender_check":"CHECK (((qrender_sha256 IS NULL AND qrender_byte_count IS NULL AND qrender_line_count IS NULL AND qrender_non_empty IS NULL AND qrender_last_successful_height IS NULL) OR (qrender_sha256 ~ '^[0-9a-f]{64}$' AND qrender_byte_count BETWEEN 0 AND 1048576 AND qrender_line_count BETWEEN 0 AND 1048576 AND qrender_non_empty IS NOT NULL AND qrender_last_successful_height IS NOT NULL)) AND ((qrender_status = 'ok' AND qrender_last_successful_height IS NOT NULL AND qrender_last_successful_height = observed_height) OR (qrender_status <> 'ok' AND (qrender_last_successful_height IS NULL OR qrender_last_successful_height <= observed_height))))",
+ "realm_metadata_qstorage_check":"CHECK (((qstorage_bytes IS NULL AND qstorage_deposit_ugnot IS NULL AND qstorage_last_successful_height IS NULL) OR (qstorage_bytes BETWEEN 0 AND 9999999999999999999999999999999999999999 AND qstorage_deposit_ugnot BETWEEN 0 AND 9999999999999999999999999999999999999999 AND qstorage_last_successful_height IS NOT NULL)) AND ((qstorage_status = 'ok' AND qstorage_last_successful_height IS NOT NULL AND qstorage_last_successful_height = observed_height) OR (qstorage_status <> 'ok' AND (qstorage_last_successful_height IS NULL OR qstorage_last_successful_height <= observed_height))))",
+ "realm_metadata_package_capabilities_check":"CHECK (path_kind <> 'package' OR (qrender_status = 'not_applicable' AND qrender_last_successful_height IS NULL AND qstorage_status = 'not_applicable' AND qstorage_last_successful_height IS NULL))",
+ "realm_metadata_files_filename_check":"CHECK (char_length(filename) BETWEEN 1 AND 160 AND filename !~ '^/' AND filename !~ '^[A-Za-z]:/' AND filename !~ '\\\\' AND filename !~ '[[:cntrl:]]' AND filename !~ '(^|/)(\\.|\\.\\.|)(/|$)')","realm_metadata_files_kind_check":"CHECK (file_kind IN ('gno_source', 'gno_test', 'gnomod', 'other'))","realm_metadata_files_size_check":"CHECK (byte_count BETWEEN 0 AND 1048576 AND octet_length(content) = byte_count AND line_count BETWEEN 0 AND 100000)","realm_metadata_files_sha256_check":"CHECK (sha256 ~ '^[0-9a-f]{64}$')","realm_metadata_files_import_count_check":"CHECK (import_candidate_count BETWEEN 0 AND 1000)","realm_metadata_imports_kind_check":"CHECK (imported_kind IN ('realm', 'package'))",
+ "realm_metadata_imports_path_check":"CHECK ((char_length(imported_path) >= 1 AND char_length(imported_path) <= 256) AND imported_path ~ '^gno\\.land/[rp]/[!-\\.0-~]+(/[!-\\.0-~]+)*$' AND imported_path !~ '[?#]' AND ((imported_kind = 'realm' AND imported_path ~~ 'gno.land/r/%') OR (imported_kind = 'package' AND imported_path ~~ 'gno.land/p/%')))","realm_metadata_refresh_state_chain_id_check":"CHECK (char_length(chain_id) BETWEEN 1 AND 128)","realm_metadata_refresh_state_height_check":"CHECK (observed_height > 0)","realm_metadata_refresh_state_status_check":"CHECK (run_status IN ('running', 'complete', 'partial', 'failed'))","realm_metadata_refresh_state_counts_check":"CHECK (selected_path_count >= 0 AND published_path_count >= 0 AND failed_path_count >= 0 AND published_path_count + failed_path_count <= selected_path_count)","realm_metadata_refresh_state_completion_check":"CHECK (((run_status = 'running' AND completed_at IS NULL) OR (run_status <> 'running' AND completed_at IS NOT NULL)) AND (completed_at IS NULL OR completed_at >= started_at))","realm_metadata_refresh_state_success_check":"CHECK ((last_successful_height IS NULL) = (last_successful_at IS NULL) AND (last_successful_height IS NULL OR (last_successful_height > 0 AND last_successful_height <= observed_height)))"})
+for metadata_table in METADATA_TABLES:
+    EXPECTED_TABLE_PRIVILEGES["utsa_gno_api"][metadata_table] = set()
+    EXPECTED_TABLE_PRIVILEGES["utsa_gno_indexer"][metadata_table] = {"SELECT","INSERT","UPDATE","DELETE"}
 FINAL_SCHEMA_EXPECTATIONS = schema_expectations()
 
 NETWORK_DISTRIBUTION_TABLES = {
@@ -350,7 +381,7 @@ TRANSACTION_HASH_INDEXES = {"transactions_tx_hash_hex_idx"}
 
 
 LATE_TRANSACTION_TABLES = {TRANSACTION_PARTICIPANT_TABLE, TRANSACTION_EXECUTION_RESULT_TABLE,
-                           "realm_catalog", "realm_catalog_state", "realm_call_index", "realm_call_index_state"}
+                           "realm_catalog", "realm_catalog_state", "realm_call_index", "realm_call_index_state"} | METADATA_TABLES
 PRE_NETWORK_DISTRIBUTION_EXPECTATIONS = schema_expectations(excluded_tables=NETWORK_DISTRIBUTION_TABLES | GOVERNANCE_TABLES | LATE_TRANSACTION_TABLES)
 VALOPERS_ONLY_EXPECTATIONS = schema_expectations(
     excluded_tables=NETWORK_DISTRIBUTION_TABLES | GOVERNANCE_TABLES | LATE_TRANSACTION_TABLES, include_transaction_hash=False)
@@ -543,15 +574,29 @@ def _remove_atomic_parentheses(value: str) -> str:
 
 
 _NUMERIC_BOUND = r"-?\d+(?:\.\d+)?"
+_QUOTED_NUMERIC_CAST = re.compile(
+    rf"'(?P<number>{_NUMERIC_BOUND})'\s*::\s*numeric\b"
+)
+_IDENTIFIER_BOUND = r"[a-z_][a-z0-9_]*"
+_SIMPLE_BETWEEN_BOUND = rf"(?:{_NUMERIC_BOUND}|{_IDENTIFIER_BOUND})"
 _BOUNDED_EXPRESSION = r"[a-z_][a-z0-9_]*(?:\s*\(\s*[a-z_][a-z0-9_]*\s*\))?"
 _NUMERIC_BETWEEN = re.compile(
     rf"(?P<expression>\b{_BOUNDED_EXPRESSION})\s+between\s+"
-    rf"(?P<lower>{_NUMERIC_BOUND})\s+and\s+(?P<upper>{_NUMERIC_BOUND})\b"
+    rf"(?P<lower>{_SIMPLE_BETWEEN_BOUND})\s+and\s+"
+    rf"(?P<upper>{_SIMPLE_BETWEEN_BOUND})\b"
+)
+_BOUNDED_ANY_ARRAY = re.compile(
+    rf"(?P<expression>\b{_BOUNDED_EXPRESSION})\s*=\s*any\s*"
+    rf"\(\s*array\s*\[(?P<values>.*?)\]\s*\)"
+)
+_BOUNDED_IN_LIST = re.compile(
+    rf"(?P<expression>\b{_BOUNDED_EXPRESSION})\s+in\s*"
+    rf"\((?P<values>[^()]*)\)"
 )
 
 
 def _normalize_numeric_between(value: str) -> str:
-    """Expand bounded numeric BETWEEN expressions to PostgreSQL's canonical form."""
+    """Expand BETWEEN with simple numeric/identifier bounds to canonical form."""
     return _NUMERIC_BETWEEN.sub(
         lambda match: (
             f"({match.group('expression')} >= {match.group('lower')} and "
@@ -560,15 +605,33 @@ def _normalize_numeric_between(value: str) -> str:
         value,
     )
 
+
+def _normalize_bounded_membership(value: str) -> str:
+    """Normalize IN/ANY membership for the conservative expression grammar."""
+    def replace_any(match: re.Match[str]) -> str:
+        prefix = value[:match.start()].rstrip()
+        if prefix and prefix[-1] in "+-*/|,.)":
+            return match.group(0)
+        values = re.sub(r"\s*,\s*", ", ", match.group("values").strip())
+        return f"{match.group('expression')} in ({values})"
+
+    normalized = _BOUNDED_ANY_ARRAY.sub(replace_any, value)
+    def replace_in(match: re.Match[str]) -> str:
+        values = re.sub(r"\s*,\s*", ", ", match.group("values").strip())
+        return f"{match.group('expression')} in ({values})"
+
+    return _BOUNDED_IN_LIST.sub(replace_in, normalized)
+
 def _norm(value: str | None) -> str | None:
     if value is None:
         return None
     normalized = value.strip().lower()
     if normalized.startswith("check"):
         normalized = normalized[5:].strip()
+    normalized = _QUOTED_NUMERIC_CAST.sub(r"\g<number>", normalized)
     normalized = re.sub(r"\((\d+)\)::(?:text|numeric|bigint|integer|boolean)", r"\1", normalized)
     normalized = re.sub(r"::(?:text|numeric|bigint|integer|boolean)", "", normalized)
-    normalized = re.sub(r"([a-z_]+) = any \(array\[(.*?)\]\)", r"\1 in (\2)", normalized)
+    normalized = _normalize_bounded_membership(normalized)
     normalized = re.sub(r"\s+", " ", normalized).strip()
     normalized = _normalize_numeric_between(normalized)
     normalized = _strip_outer_parentheses(normalized)
@@ -797,6 +860,11 @@ def initialize_or_validate(database_url: str, schema_path: Path = SCHEMA, connec
                     cursor.execute(migration_body_for_outer_transaction(REALM_CALL_INDEX_MIGRATION.read_text()))
                     snapshot = fetch_schema_snapshot(cursor)
                     existing = snapshot["tables"]
+                if existing == PRE_REALM_METADATA_EXPECTATIONS["tables"]:
+                    validate_schema_snapshot(snapshot, PRE_REALM_METADATA_EXPECTATIONS)
+                    cursor.execute(migration_body_for_outer_transaction(REALM_METADATA_MIGRATION.read_text()))
+                    snapshot = fetch_schema_snapshot(cursor)
+                    existing = snapshot["tables"]
                 if existing == PRE_GOVERNANCE_SCHEMA_EXPECTATIONS["tables"]:
                     try:
                         validate_schema_snapshot(snapshot, PRE_GOVERNANCE_SCHEMA_EXPECTATIONS)
@@ -829,7 +897,10 @@ def validate_table_privileges(cursor) -> None:
         if not cursor.fetchone()[0]:
             continue
         for table, required in tables.items():
-            privileges = {"SELECT", "INSERT", "UPDATE", "DELETE"}
+            privileges = {
+                "SELECT", "INSERT", "UPDATE", "DELETE",
+                "TRUNCATE", "REFERENCES", "TRIGGER",
+            }
             actual = set()
             for privilege in privileges:
                 cursor.execute(
@@ -840,8 +911,8 @@ def validate_table_privileges(cursor) -> None:
                     actual.add(privilege)
             if role == "utsa_gno_api" and actual != required:
                 raise SchemaCompatibilityError(f"API role has incompatible privileges for {table}")
-            if role == "utsa_gno_indexer" and not required <= actual:
-                raise SchemaCompatibilityError(f"Indexer role lacks privileges for {table}")
+            if role == "utsa_gno_indexer" and actual != required:
+                raise SchemaCompatibilityError(f"Indexer role has incompatible privileges for {table}")
 
 
 def validate_participant_privileges(cursor) -> None:
