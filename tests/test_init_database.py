@@ -106,6 +106,21 @@ def test_uncast_quoted_digits_remain_a_string_literal():
     )
 
 
+def test_package_capabilities_expected_check_preserves_boolean_grouping():
+    expected = init_database.EXPECTED_CHECKS[
+        "realm_metadata_package_capabilities_check"
+    ]
+    postgres_canonical = (
+        "CHECK (path_kind <> 'package' OR ("
+        "qrender_status = 'not_applicable' "
+        "AND qrender_last_successful_height IS NULL "
+        "AND qstorage_status = 'not_applicable' "
+        "AND qstorage_last_successful_height IS NULL))"
+    )
+    assert "OR (qrender_status" in expected
+    assert init_database._norm(expected) == init_database._norm(postgres_canonical)
+
+
 def test_participant_authoritative_contract_is_exact():
     table = "transaction_participants"
     assert table in init_database.EXPECTED_TABLES
