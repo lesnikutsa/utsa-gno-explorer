@@ -63,6 +63,27 @@ def test_between_normalization_accepts_simple_identifier_bounds(between, canonic
     assert init_database._norm(between) == init_database._norm(canonical)
 
 
+@pytest.mark.parametrize("postgres_form", [
+    "jsonb_typeof(qpkg_json_payload) = ANY "
+    "(ARRAY['object'::text, 'array'::text])",
+    "jsonb_typeof(qpkg_json_payload)=ANY(ARRAY['object'::text,'array'::text])",
+])
+def test_any_array_normalization_accepts_bounded_function_expression(postgres_form):
+    expected = "jsonb_typeof(qpkg_json_payload) IN ('object', 'array')"
+    assert init_database._norm(postgres_form) == init_database._norm(expected)
+
+
+def test_any_array_normalization_preserves_simple_identifier_behavior():
+    actual = "path_kind = ANY (ARRAY['realm'::text, 'package'::text])"
+    expected = "path_kind IN ('realm', 'package')"
+    assert init_database._norm(actual) == init_database._norm(expected)
+
+
+def test_any_array_normalization_does_not_rewrite_arbitrary_expression():
+    unsupported = "left_value || right_value = ANY (ARRAY['combined'::text])"
+    assert "= any" in init_database._norm(unsupported)
+
+
 def test_participant_authoritative_contract_is_exact():
     table = "transaction_participants"
     assert table in init_database.EXPECTED_TABLES

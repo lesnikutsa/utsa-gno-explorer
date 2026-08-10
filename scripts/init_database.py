@@ -582,6 +582,14 @@ _NUMERIC_BETWEEN = re.compile(
     rf"(?P<lower>{_SIMPLE_BETWEEN_BOUND})\s+and\s+"
     rf"(?P<upper>{_SIMPLE_BETWEEN_BOUND})\b"
 )
+_BOUNDED_ANY_ARRAY = re.compile(
+    rf"(?P<expression>\b{_BOUNDED_EXPRESSION})\s*=\s*any\s*"
+    rf"\(\s*array\s*\[(?P<values>.*?)\]\s*\)"
+)
+_BOUNDED_IN_LIST = re.compile(
+    rf"(?P<expression>\b{_BOUNDED_EXPRESSION})\s+in\s*"
+    rf"\((?P<values>[^()]*)\)"
+)
 
 
 def _normalize_numeric_between(value: str) -> str:
@@ -594,6 +602,23 @@ def _normalize_numeric_between(value: str) -> str:
         value,
     )
 
+
+def _normalize_bounded_membership(value: str) -> str:
+    """Normalize IN/ANY membership for the conservative expression grammar."""
+    def replace_any(match: re.Match[str]) -> str:
+        prefix = value[:match.start()].rstrip()
+        if prefix and prefix[-1] in "+-*/|,.)":
+            return match.group(0)
+        values = re.sub(r"\s*,\s*", ", ", match.group("values").strip())
+        return f"{match.group('expression')} in ({values})"
+
+    normalized = _BOUNDED_ANY_ARRAY.sub(replace_any, value)
+    def replace_in(match: re.Match[str]) -> str:
+        values = re.sub(r"\s*,\s*", ", ", match.group("values").strip())
+        return f"{match.group('expression')} in ({values})"
+
+    return _BOUNDED_IN_LIST.sub(replace_in, normalized)
+
 def _norm(value: str | None) -> str | None:
     if value is None:
         return None
@@ -602,7 +627,7 @@ def _norm(value: str | None) -> str | None:
         normalized = normalized[5:].strip()
     normalized = re.sub(r"\((\d+)\)::(?:text|numeric|bigint|integer|boolean)", r"\1", normalized)
     normalized = re.sub(r"::(?:text|numeric|bigint|integer|boolean)", "", normalized)
-    normalized = re.sub(r"([a-z_]+) = any \(array\[(.*?)\]\)", r"\1 in (\2)", normalized)
+    normalized = _normalize_bounded_membership(normalized)
     normalized = re.sub(r"\s+", " ", normalized).strip()
     normalized = _normalize_numeric_between(normalized)
     normalized = _strip_outer_parentheses(normalized)
