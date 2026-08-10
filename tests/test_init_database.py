@@ -84,6 +84,28 @@ def test_any_array_normalization_does_not_rewrite_arbitrary_expression():
     assert "= any" in init_database._norm(unsupported)
 
 
+@pytest.mark.parametrize(("postgres_form", "plain_form"), [
+    (
+        "qstorage_bytes <= "
+        "'9999999999999999999999999999999999999999'::numeric",
+        "qstorage_bytes <= 9999999999999999999999999999999999999999",
+    ),
+    ("amount >= '-123'::numeric", "amount >= -123"),
+    ("ratio = '123.45'::numeric", "ratio = 123.45"),
+    ("ratio = ('123.45'::numeric)", "ratio = 123.45"),
+])
+def test_explicit_quoted_numeric_cast_normalizes_to_numeric_literal(
+    postgres_form, plain_form
+):
+    assert init_database._norm(postgres_form) == init_database._norm(plain_form)
+
+
+def test_uncast_quoted_digits_remain_a_string_literal():
+    assert init_database._norm("some_text = '123'") != init_database._norm(
+        "some_text = 123"
+    )
+
+
 def test_participant_authoritative_contract_is_exact():
     table = "transaction_participants"
     assert table in init_database.EXPECTED_TABLES

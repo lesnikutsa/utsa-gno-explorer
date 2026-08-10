@@ -574,6 +574,9 @@ def _remove_atomic_parentheses(value: str) -> str:
 
 
 _NUMERIC_BOUND = r"-?\d+(?:\.\d+)?"
+_QUOTED_NUMERIC_CAST = re.compile(
+    rf"'(?P<number>{_NUMERIC_BOUND})'\s*::\s*numeric\b"
+)
 _IDENTIFIER_BOUND = r"[a-z_][a-z0-9_]*"
 _SIMPLE_BETWEEN_BOUND = rf"(?:{_NUMERIC_BOUND}|{_IDENTIFIER_BOUND})"
 _BOUNDED_EXPRESSION = r"[a-z_][a-z0-9_]*(?:\s*\(\s*[a-z_][a-z0-9_]*\s*\))?"
@@ -625,6 +628,7 @@ def _norm(value: str | None) -> str | None:
     normalized = value.strip().lower()
     if normalized.startswith("check"):
         normalized = normalized[5:].strip()
+    normalized = _QUOTED_NUMERIC_CAST.sub(r"\g<number>", normalized)
     normalized = re.sub(r"\((\d+)\)::(?:text|numeric|bigint|integer|boolean)", r"\1", normalized)
     normalized = re.sub(r"::(?:text|numeric|bigint|integer|boolean)", "", normalized)
     normalized = _normalize_bounded_membership(normalized)
