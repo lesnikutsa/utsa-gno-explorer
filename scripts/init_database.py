@@ -574,15 +574,18 @@ def _remove_atomic_parentheses(value: str) -> str:
 
 
 _NUMERIC_BOUND = r"-?\d+(?:\.\d+)?"
+_IDENTIFIER_BOUND = r"[a-z_][a-z0-9_]*"
+_SIMPLE_BETWEEN_BOUND = rf"(?:{_NUMERIC_BOUND}|{_IDENTIFIER_BOUND})"
 _BOUNDED_EXPRESSION = r"[a-z_][a-z0-9_]*(?:\s*\(\s*[a-z_][a-z0-9_]*\s*\))?"
 _NUMERIC_BETWEEN = re.compile(
     rf"(?P<expression>\b{_BOUNDED_EXPRESSION})\s+between\s+"
-    rf"(?P<lower>{_NUMERIC_BOUND})\s+and\s+(?P<upper>{_NUMERIC_BOUND})\b"
+    rf"(?P<lower>{_SIMPLE_BETWEEN_BOUND})\s+and\s+"
+    rf"(?P<upper>{_SIMPLE_BETWEEN_BOUND})\b"
 )
 
 
 def _normalize_numeric_between(value: str) -> str:
-    """Expand bounded numeric BETWEEN expressions to PostgreSQL's canonical form."""
+    """Expand BETWEEN with simple numeric/identifier bounds to canonical form."""
     return _NUMERIC_BETWEEN.sub(
         lambda match: (
             f"({match.group('expression')} >= {match.group('lower')} and "

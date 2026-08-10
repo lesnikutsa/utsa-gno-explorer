@@ -45,6 +45,24 @@ def snapshot(expectations):
     })
 
 
+@pytest.mark.parametrize(("between", "canonical"), [
+    (
+        "gno_file_count BETWEEN 0 AND file_count",
+        "(gno_file_count >= 0 AND gno_file_count <= file_count)",
+    ),
+    (
+        "test_file_count BETWEEN 0 AND gno_file_count",
+        "(test_file_count >= 0 AND test_file_count <= gno_file_count)",
+    ),
+    (
+        "current_height BETWEEN lower_height AND upper_height",
+        "(current_height >= lower_height AND current_height <= upper_height)",
+    ),
+])
+def test_between_normalization_accepts_simple_identifier_bounds(between, canonical):
+    assert init_database._norm(between) == init_database._norm(canonical)
+
+
 def test_participant_authoritative_contract_is_exact():
     table = "transaction_participants"
     assert table in init_database.EXPECTED_TABLES
