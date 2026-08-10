@@ -59,17 +59,13 @@ function emptyMessage({ error, snapshotMissing, appliedSearch, kind }) {
   return 'No realms or packages have been indexed yet.'
 }
 
+const APPLICATION_WINDOW_LABELS = { '24h': '24H', '7d': '7D', '30d': '30D' }
+const APPLICATION_WINDOW_DESCRIPTIONS = { '24h': 'the last 24 hours', '7d': 'the last 7 days', '30d': 'the last 30 days' }
+
 function RealmApplications({ applications }) {
-  const { items, source, loading, error, snapshotMissing, retry } = applications
-  const activityFromHeight = source?.activity_from_height
-  const activityThroughHeight = source?.activity_through_height
-  const hasActivityFromHeight = activityFromHeight !== null && activityFromHeight !== undefined
-  const hasActivityThroughHeight = activityThroughHeight !== null && activityThroughHeight !== undefined
-  const intro = hasActivityFromHeight && hasActivityThroughHeight
-    ? <>Activity metrics cover blocks #{formatCount(activityFromHeight)}–#<ChangedValue value={activityThroughHeight}>{formatCount(activityThroughHeight)}</ChangedValue>.</>
-    : hasActivityFromHeight
-      ? `Activity metrics are indexed since block #${formatCount(activityFromHeight)}.`
-      : 'Curated Realm namespaces ranked by indexed direct calls.'
+  const { items, source, window, loading, error, windowUnavailable, snapshotMissing, selectWindow, retry } = applications
+  const availableWindows = Array.isArray(source?.available_windows) ? source.available_windows : null
+  const intro = `Realm applications ranked by direct calls in ${APPLICATION_WINDOW_DESCRIPTIONS[window]}.`
 
   return (
     <section className="realms-applications" aria-labelledby="realms-applications-title">
@@ -78,43 +74,51 @@ function RealmApplications({ applications }) {
           <h2 id="realms-applications-title">Applications</h2>
           <p className="realms-applications__intro">{intro}</p>
         </div>
-        {error && <button className="blocks-page__button" type="button" onClick={retry} disabled={loading}>Retry</button>}
+        <div className="realms-applications__actions">
+          <div className="realms-applications__windows" aria-label="Application activity window">
+            {Object.entries(APPLICATION_WINDOW_LABELS).map(([value, label]) => (
+              <button className={window === value ? 'is-active' : ''} type="button" key={value}
+                aria-pressed={window === value} disabled={loading || (availableWindows && !availableWindows.includes(value))}
+                onClick={() => selectWindow(value)}>{label}</button>
+            ))}
+          </div>
+          {error && <button className="blocks-page__button" type="button" onClick={retry} disabled={loading}>Retry</button>}
+        </div>
       </div>
       {loading ? (
         <div className="panel realms-applications__state">Loading applications…</div>
       ) : error ? (
         <div className="panel realms-applications__state">Applications are currently unavailable.</div>
+      ) : windowUnavailable ? (
+        <div className="panel realms-applications__state">Complete activity history is not available for this period.</div>
       ) : snapshotMissing ? (
         <div className="panel realms-applications__state">Application ranking is not available yet.</div>
       ) : items.length === 0 ? (
-        <div className="panel realms-applications__state">No curated applications are available yet.</div>
+        <div className="panel realms-applications__state">No Realm applications were called during this period.</div>
       ) : (
         <div className="realms-applications__grid">
-          {items.map((item) => (
-            <article className="panel realms-application-card" key={item.namespace_key}>
-              <header className="realms-application-card__header">
-                <div className="realms-application-card__identity">
-                  <h3>{item.application.display_name}</h3>
-                  <p className="realms-application-card__namespace mono">Namespace: {item.namespace_key}</p>
-                </div>
-                <StatusBadge tone="neutral">{item.application.category}</StatusBadge>
-              </header>
-              <dl className="realms-application-card__primary">
-                <div><dt>Direct Calls</dt><dd><ChangedValue value={item.direct_call_count}>{formatCount(item.direct_call_count)}</ChangedValue></dd></div>
-                <div><dt>Success</dt><dd><ChangedValue value={item.success_rate}>{formatSuccessRate(item.success_rate)}</ChangedValue></dd></div>
-              </dl>
-              <dl className="realms-application-card__metrics">
-                <div>
-                  <dt className="sr-only">Realm coverage</dt>
-                  <dd><ChangedValue value={item.realm_count}>{formatCount(item.realm_count)}</ChangedValue> realms · <ChangedValue value={item.called_realm_count}>{formatCount(item.called_realm_count)}</ChangedValue> called</dd>
-                </div>
-                <div>
-                  <dt className="sr-only">Last activity</dt>
-                  <dd>Last activity <LastActivityValue timestamp={item.last_activity_at} emptyLabel="never" /></dd>
-                </div>
-              </dl>
-            </article>
-          ))}
+          {items.map((item) => {
+            const curated = item.application !== null && typeof item.application === 'object'
+            return (
+              <article className="panel realms-application-card" key={item.namespace_key}>
+                <header className="realms-application-card__header">
+                  <div className="realms-application-card__identity">
+                    <h3>{curated ? item.application.display_name : item.namespace_key}</h3>
+                    <p className="realms-application-card__namespace mono">Namespace: {item.namespace_key}</p>
+                  </div>
+                  <StatusBadge tone="neutral">{curated ? item.application.category : 'Namespace'}</StatusBadge>
+                </header>
+                <dl className="realms-application-card__primary">
+                  <div><dt>Direct Calls ({APPLICATION_WINDOW_LABELS[window]})</dt><dd><ChangedValue value={item.direct_call_count}>{formatCount(item.direct_call_count)}</ChangedValue></dd></div>
+                  <div><dt>Success ({APPLICATION_WINDOW_LABELS[window]})</dt><dd><ChangedValue value={item.success_rate}>{formatSuccessRate(item.success_rate)}</ChangedValue></dd></div>
+                </dl>
+                <dl className="realms-application-card__metrics">
+                  <div><dt className="sr-only">Realm coverage</dt><dd><ChangedValue value={item.realm_count}>{formatCount(item.realm_count)}</ChangedValue> realms · <ChangedValue value={item.called_realm_count}>{formatCount(item.called_realm_count)}</ChangedValue> called in {APPLICATION_WINDOW_LABELS[window]}</dd></div>
+                  <div><dt className="sr-only">Last activity</dt><dd>Last activity <LastActivityValue timestamp={item.last_activity_at} emptyLabel="never" /></dd></div>
+                </dl>
+              </article>
+            )
+          })}
         </div>
       )}
     </section>

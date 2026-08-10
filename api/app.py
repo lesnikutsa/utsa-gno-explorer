@@ -1,7 +1,7 @@
 """FastAPI application for the read-only explorer API."""
 
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import logging
 import re
 import json
@@ -66,6 +66,9 @@ from api.schemas import (
     RealmDetailResponse,
     RealmDetailSource,
     RealmRankingSource,
+    RealmApplicationRankingSource,
+    RealmApplicationTopItem,
+    RealmApplicationTopResponse,
     RealmNamespaceMember,
     RealmNamespaceTopItem,
     RealmNamespaceTopResponse,
@@ -96,6 +99,7 @@ UNAVAILABLE_DETAIL = "Explorer database is unavailable"
 
 _HASH_RE = re.compile(r"^[0-9A-Fa-f]{64}$")
 CALLS_UNAVAILABLE_DETAIL = "Realm call history is not available"
+APPLICATION_WINDOW_UNAVAILABLE_DETAIL = "Realm application activity is not available for this window"
 
 
 def _validate_exact_catalog_path(path: str, *, expected_kind: str | None = None) -> str:
@@ -1330,6 +1334,100 @@ def _validate_activity_tuple(height, tx_index, timestamp, *, required: bool) -> 
                    and isinstance(timestamp, datetime))
     if not (all_present if required else all_null):
         raise ValueError("inconsistent activity tuple")
+
+
+_APPLICATION_WINDOW_HOURS = {"24h": 24, "7d": 24 * 7, "30d": 24 * 30}
+
+
+def _validate_realm_application_source(source: dict, *, chain_id: str, window: str) -> list[str]:
+    indexed = source["indexed_height"]
+    from_height = source["call_index_from_height"]
+    through_height = source["call_index_through_height"]
+    timestamps = tuple(source[name] for name in ("coverage_start_at", "window_start_at", "window_end_at"))
+    if (source["chain_id"] != chain_id
+            or any(type(value) is not int or value <= 0 for value in (indexed, from_height, through_height))
+            or from_height > through_height or through_height != indexed
+            or any(not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None
+                   for value in timestamps)):
+        raise ValueError("invalid application ranking source")
+    coverage_start, window_start, window_end = timestamps
+    expected_duration = timedelta(hours=_APPLICATION_WINDOW_HOURS[window])
+    if not coverage_start <= window_start <= window_end or window_end - window_start != expected_duration:
+        raise ValueError("invalid application ranking window")
+    available_hours = source["available_hours"]
+    if (not isinstance(available_hours, (tuple, list))
+            or any(type(value) is not int or value not in _APPLICATION_WINDOW_HOURS.values()
+                   for value in available_hours)
+            or len(set(available_hours)) != len(available_hours)):
+        raise ValueError("invalid available application windows")
+    available = [key for key, hours in _APPLICATION_WINDOW_HOURS.items() if hours in available_hours]
+    if window not in available:
+        raise ValueError("selected application window is unavailable")
+    return available
+
+
+@app.get("/api/realm-applications/top", response_model=RealmApplicationTopResponse)
+def get_top_realm_applications(
+    limit: int = Query(default=3, ge=1, le=10),
+    window: Literal["24h", "7d", "30d"] = Query(default="24h"),
+) -> RealmApplicationTopResponse:
+    try:
+        result = database.fetch_top_realm_applications(
+            chain_id=app.state.api_config.chain_id, limit=limit, window_hours=_APPLICATION_WINDOW_HOURS[window])
+        if result is None:
+            raise HTTPException(status_code=404, detail="Realm catalog not found")
+        if result.get("coverage_available") is not True:
+            raise HTTPException(status_code=409, detail=APPLICATION_WINDOW_UNAVAILABLE_DETAIL)
+        source = result["source"]
+        available = _validate_realm_application_source(
+            source, chain_id=app.state.api_config.chain_id, window=window)
+        items, previous, seen = [], None, set()
+        for row in result["items"]:
+            key = row["namespace_key"]
+            counts = [row[name] for name in ("realm_count", "rpc_visible_realm_count", "called_realm_count",
+                "direct_call_count", "successful_call_count", "failed_call_count", "unknown_result_call_count")]
+            if (namespace_key(f"gno.land/r/{key}") != key or key in seen
+                    or any(type(value) is not int or value < 0 for value in counts)
+                    or min(counts[:4]) < 1
+                    or sum(counts[4:]) != row["direct_call_count"]
+                    or row["called_realm_count"] > row["realm_count"]
+                    or row["rpc_visible_realm_count"] > row["realm_count"]):
+                raise ValueError("invalid application ranking row")
+            seen.add(key)
+            activity = (row["last_activity_height"], row["last_activity_tx_index"],
+                        row["last_activity_message_index"], row["last_activity_at"])
+            if (type(activity[0]) is not int or activity[0] <= 0 or type(activity[1]) is not int or activity[1] < 0
+                    or type(activity[2]) is not int or not 0 <= activity[2] <= 19 or not isinstance(activity[3], datetime)):
+                raise ValueError("invalid application activity")
+            order = (-row["direct_call_count"], -activity[0], -activity[1], -activity[2], key)
+            if previous is not None and order < previous:
+                raise ValueError("invalid application ranking order")
+            previous = order
+            application = REALM_APPLICATION_REGISTRY.get(key)
+            items.append(RealmApplicationTopItem(
+                namespace_key=key, application=dict(application) if application else None,
+                realm_count=row["realm_count"], rpc_visible_realm_count=row["rpc_visible_realm_count"],
+                called_realm_count=row["called_realm_count"], direct_call_count=row["direct_call_count"],
+                successful_call_count=row["successful_call_count"], failed_call_count=row["failed_call_count"],
+                unknown_result_call_count=row["unknown_result_call_count"],
+                success_rate=_namespace_rate(row["successful_call_count"], row["failed_call_count"]),
+                last_activity_height=activity[0], last_activity_tx_index=activity[1],
+                last_activity_message_index=activity[2], last_activity_at=isoformat_utc_z(activity[3])))
+        if len(items) > limit:
+            raise ValueError("unbounded application ranking")
+        return RealmApplicationTopResponse(source=RealmApplicationRankingSource(
+            chain_id=source["chain_id"], indexed_height=source["indexed_height"],
+            call_index_from_height=source["call_index_from_height"],
+            call_index_through_height=source["call_index_through_height"],
+            coverage_start_at=isoformat_utc_z(source["coverage_start_at"]),
+            window_start_at=isoformat_utc_z(source["window_start_at"]),
+            window_end_at=isoformat_utc_z(source["window_end_at"]), window=window,
+            available_windows=available), items=items)
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.error("Explorer database Realm application ranking query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
 
 
 @app.get("/api/realm-namespaces/top", response_model=RealmNamespaceTopResponse)

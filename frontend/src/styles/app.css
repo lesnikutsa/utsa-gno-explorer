@@ -685,12 +685,18 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .realms-applications__heading { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .realms-applications__heading h2 { margin: 0 0 4px; color: var(--color-text-bright); font-size: 18px; }
 .realms-applications__intro { margin: 0; color: var(--color-text-secondary); font-size: 11px; line-height: 1.5; }
-.realms-applications__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 325px)); justify-content: start; gap: 10px; }
+.realms-applications__actions { display: flex; align-items: center; gap: 8px; }
+.realms-applications__windows { display: inline-flex; overflow: hidden; border: 1px solid var(--color-border); border-radius: 4px; }
+.realms-applications__windows button { min-height: 30px; padding: 4px 9px; border: 0; border-right: 1px solid var(--color-border); background: var(--color-card); color: var(--color-text-secondary); font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
+.realms-applications__windows button:last-child { border-right: 0; }
+.realms-applications__windows button.is-active { background: rgb(220 121 94 / 14%); color: var(--color-text-bright); }
+.realms-applications__windows button:disabled { cursor: not-allowed; opacity: .45; }
+.realms-applications__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .realms-applications__state { padding: 16px; color: var(--color-text-secondary); }
 .realms-application-card { min-width: 0; padding: 10px 12px; background: linear-gradient(135deg, var(--color-accent-soft), var(--color-card)); }
 .realms-application-card__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 7px; }
 .realms-application-card__identity { min-width: 0; }
-.realms-application-card__identity h3 { margin: 0 0 3px; color: var(--color-text-bright); font-size: 15px; }
+.realms-application-card__identity h3 { margin: 0 0 3px; color: var(--color-text-bright); font-size: 15px; overflow-wrap: anywhere; }
 .realms-application-card__namespace { margin: 0; color: var(--color-text-secondary); font-size: 10px; overflow-wrap: anywhere; }
 .realms-application-card__primary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; column-gap: 16px; margin: 9px 0; }
 .realms-application-card__primary div { min-width: 0; }
@@ -722,6 +728,9 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .realms-table__type--realm .status-badge { border-color: #b85f48; background: rgb(184 95 72 / 12%); color: #ef9a7e; }
 .realms-table__type--package .status-badge { border-color: #387f9d; background: rgb(56 127 157 / 12%); color: #75c8e8; }
 .realms-table__package-placeholder { color: var(--color-text-secondary); }
+@media (max-width: 1000px) and (min-width: 761px) {
+  .realms-applications__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 @media (max-width: 760px) {
   .realms-applications__grid { grid-template-columns: minmax(0, 1fr); }
   .realms-page__summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }

@@ -28,6 +28,8 @@ from api.database import (
     REALM_DETAIL_ITEM_SQL,
     REALM_DETAIL_SOURCE_SQL,
     REALM_NAMESPACE_TOP_SQL,
+    REALM_APPLICATION_SOURCE_SQL,
+    REALM_APPLICATION_TOP_SQL,
     VALIDATOR_IDENTITY_SQL,
     ApiDatabase,
     MissingIndexerStateError,
@@ -1945,6 +1947,17 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             positions = [(row["block_height"], row["tx_index"], row["message_index"]) for row in first["items"] + second["items"]]
             self.assertNotIn((1,0,0), positions)
             self.assertNotIn((4,0,0), positions)
+            checkpoint_time = datetime(2026, 1, 2, tzinfo=timezone.utc)
+            with psycopg.connect(url) as connection, connection.cursor() as cursor:
+                cursor.execute("UPDATE blocks SET time_utc=%s WHERE height=2", (checkpoint_time - timedelta(hours=25),))
+                cursor.execute("UPDATE blocks SET time_utc=%s WHERE height=3", (checkpoint_time,))
+            ranking = api_db.fetch_top_realm_applications(chain_id="topaz-1", limit=3, window_hours=24)
+            self.assertTrue(ranking["coverage_available"])
+            self.assertEqual(ranking["source"]["window_end_at"], checkpoint_time)
+            self.assertEqual(ranking["source"]["window_start_at"], checkpoint_time - timedelta(hours=24))
+            self.assertEqual(ranking["items"][0]["namespace_key"], "gnoswap")
+            self.assertEqual((ranking["items"][0]["direct_call_count"], ranking["items"][0]["called_realm_count"]), (2, 1))
+            self.assertEqual((ranking["items"][0]["successful_call_count"], ranking["items"][0]["unknown_result_call_count"]), (2, 0))
             self.assertIsNone(api_db.fetch_realm_detail(chain_id="topaz-1", path="gno.land/r/isolated" )["item"])
             with psycopg.connect(url) as connection, connection.cursor() as cursor:
                 cursor.execute("SET ROLE utsa_gno_api")
@@ -1954,6 +1967,16 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                 self.assertEqual(cursor.fetchone()[1], 3)
                 cursor.execute(REALM_CALLS_PAGE_SQL, ("topaz-1", "gno.land/r/gnoswap/app", 2, 3, None, None, None, None, 3))
                 self.assertEqual([(row[0], row[1], row[2]) for row in cursor.fetchall()], [(3,0,1),(3,0,0),(2,0,0)])
+                cursor.execute(REALM_APPLICATION_SOURCE_SQL, ("topaz-1",))
+                application_source = cursor.fetchone()
+                self.assertEqual((application_source[0], application_source[1]), ("topaz-1", 3))
+                cursor.execute(REALM_APPLICATION_TOP_SQL, (
+                    "topaz-1", "topaz-1", 2, 3,
+                    checkpoint_time - timedelta(hours=24), checkpoint_time, 3))
+                application_rows = cursor.fetchall()
+                self.assertEqual((application_rows[0][0], application_rows[0][1]), ("gnoswap", 2))
+                self.assertEqual(tuple(application_rows[0][2:6]), (1, 2, 0, 0))
+                self.assertEqual(tuple(application_rows[0][8:11]), (3, 0, 1))
                 for table in ("blocks", "transactions", "indexer_state", "transaction_execution_results",
                               "realm_catalog", "realm_catalog_state", "realm_call_index", "realm_call_index_state"):
                     cursor.execute(f"SELECT count(*) FROM {table}")

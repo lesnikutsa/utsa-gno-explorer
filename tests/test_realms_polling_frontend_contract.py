@@ -80,8 +80,8 @@ class RealmsPollingFrontendContractTests(unittest.TestCase):
         hook = self.read("frontend/src/hooks/useRealmApplications.js")
         section = self.function_section(hook, "const refreshInBackground", "useEffect(() =>")
         self.assertIn("limit: APPLICATIONS_LIMIT", section)
-        self.assertIn("scope: 'curated'", section)
-        self.assertIn("Array.isArray(response.items)", section)
+        self.assertIn("window: currentWindow.current", section)
+        self.assertIn("applyResponse(response)", section)
         for forbidden in ("setLoading(true)", "setItems([])", "setSource(null)"):
             self.assertNotIn(forbidden, section)
         self.assertIn("setError(false)", section)

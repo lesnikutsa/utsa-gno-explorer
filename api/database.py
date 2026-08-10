@@ -1,6 +1,6 @@
 """Database pool and read-only query helpers for the API."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from psycopg.rows import dict_row
@@ -318,6 +318,69 @@ WITH ranked AS (
  FROM realm_catalog WHERE chain_id=%s AND path_kind='realm' AND split_part(path,'/',3) COLLATE "C"=ANY(%s::text[])
 )
 SELECT * FROM ranked WHERE member_number<=100 ORDER BY namespace_key COLLATE "C",path COLLATE "C"
+"""
+
+REALM_APPLICATION_SOURCE_SQL = """
+SELECT state.chain_id, state.last_finalized_height AS indexed_height,
+       call_state.from_height AS call_index_from_height,
+       call_state.through_height AS call_index_through_height,
+       coverage_block.time_utc AS coverage_start_at,
+       checkpoint_block.time_utc AS window_end_at
+FROM indexer_state state
+JOIN blocks checkpoint_block ON checkpoint_block.height = state.last_finalized_height
+JOIN realm_catalog_state catalog_state ON catalog_state.chain_id = state.chain_id
+LEFT JOIN realm_call_index_state call_state ON call_state.chain_id = state.chain_id
+LEFT JOIN blocks coverage_block ON coverage_block.height = call_state.from_height
+WHERE state.state_key = 'default' AND state.chain_id = %s
+"""
+
+REALM_APPLICATION_TOP_SQL = """
+WITH catalog_namespaces AS MATERIALIZED (
+ SELECT split_part(path, '/', 3) COLLATE "C" AS namespace_key,
+        count(*)::bigint AS realm_count,
+        count(*) FILTER (WHERE rpc_visible)::bigint AS rpc_visible_realm_count
+ FROM realm_catalog
+ WHERE chain_id = %s AND path_kind = 'realm'
+ GROUP BY split_part(path, '/', 3) COLLATE "C"
+ HAVING count(*) FILTER (WHERE rpc_visible) > 0
+), window_calls AS MATERIALIZED (
+ SELECT split_part(call.path, '/', 3) COLLATE "C" AS namespace_key,
+        call.path, call.block_height, call.tx_index, call.message_index,
+        block.time_utc, result.execution_status
+ FROM realm_call_index call
+ JOIN blocks block ON block.height = call.block_height
+ LEFT JOIN transaction_execution_results result
+   ON (result.block_height, result.tx_index) = (call.block_height, call.tx_index)
+ WHERE call.chain_id = %s AND call.block_height BETWEEN %s AND %s
+   AND block.time_utc >= %s AND block.time_utc <= %s
+), aggregates AS (
+ SELECT namespace_key, count(*)::bigint AS direct_call_count,
+        count(DISTINCT path)::bigint AS called_realm_count,
+        count(*) FILTER (WHERE execution_status = 'success')::bigint AS successful_call_count,
+        count(*) FILTER (WHERE execution_status = 'failed')::bigint AS failed_call_count,
+        count(*) FILTER (WHERE execution_status IS NULL)::bigint AS unknown_result_call_count
+ FROM window_calls GROUP BY namespace_key
+), latest_activity AS (
+ SELECT DISTINCT ON (namespace_key) namespace_key,
+        block_height AS last_activity_height,
+        tx_index AS last_activity_tx_index,
+        message_index AS last_activity_message_index,
+        time_utc AS last_activity_at
+ FROM window_calls
+ ORDER BY namespace_key, block_height DESC, tx_index DESC, message_index DESC
+)
+SELECT aggregate.*, catalog.realm_count, catalog.rpc_visible_realm_count,
+       latest.last_activity_height, latest.last_activity_tx_index,
+       latest.last_activity_message_index, latest.last_activity_at
+FROM aggregates aggregate
+JOIN catalog_namespaces catalog ON catalog.namespace_key = aggregate.namespace_key COLLATE "C"
+JOIN latest_activity latest ON latest.namespace_key = aggregate.namespace_key COLLATE "C"
+ORDER BY aggregate.direct_call_count DESC,
+         latest.last_activity_height DESC,
+         latest.last_activity_tx_index DESC,
+         latest.last_activity_message_index DESC,
+         aggregate.namespace_key COLLATE "C" ASC
+LIMIT %s
 """
 
 BLOCK_COLUMNS = """
@@ -1013,6 +1076,37 @@ class ApiDatabase:
                 cursor.execute(REALM_NAMESPACE_MEMBERS_SQL, (chain_id, list(keys)))
                 members = [dict(row) for row in cursor.fetchall()]
         return {"source": dict(source), "items": rows, "members": members}
+
+    def fetch_top_realm_applications(self, *, chain_id: str, limit: int, window_hours: int) -> dict[str, Any] | None:
+        """Read a checkpoint-anchored application ranking from one read-only snapshot."""
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection, connection.transaction(), connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            cursor.execute(REALM_APPLICATION_SOURCE_SQL, (chain_id,))
+            source_row = cursor.fetchone()
+            if source_row is None:
+                return None
+            source = dict(source_row)
+            window_end = source["window_end_at"]
+            window_start = window_end - timedelta(hours=window_hours)
+            source["window_start_at"] = window_start
+            coverage_complete = (
+                source["call_index_from_height"] is not None
+                and source["call_index_through_height"] == source["indexed_height"]
+                and source["coverage_start_at"] is not None
+            )
+            available_hours = tuple(hours for hours in (24, 168, 720)
+                                    if coverage_complete and source["coverage_start_at"] <= window_end - timedelta(hours=hours))
+            source["available_hours"] = available_hours
+            if window_hours not in available_hours:
+                return {"source": source, "items": [], "coverage_available": False}
+            cursor.execute(REALM_APPLICATION_TOP_SQL, (
+                chain_id, chain_id, source["call_index_from_height"], source["indexed_height"],
+                window_start, window_end, limit,
+            ))
+            rows = [dict(row) for row in cursor.fetchall()]
+        return {"source": source, "items": rows, "coverage_available": True}
 
     def _default_indexer_state_exists(self) -> bool:
         if self.pool is None:

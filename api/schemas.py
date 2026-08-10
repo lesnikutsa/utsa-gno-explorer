@@ -711,3 +711,40 @@ class RealmNamespaceTopResponse(BaseModel):
     source: RealmRankingSource
     scope: Literal["all", "curated"]
     items: list[RealmNamespaceTopItem] = Field(max_length=10)
+
+
+class RealmApplicationRankingSource(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    chain_id: str = Field(min_length=1, max_length=128)
+    indexed_height: int = Field(ge=0)
+    call_index_from_height: int = Field(gt=0)
+    call_index_through_height: int = Field(gt=0)
+    coverage_start_at: str
+    window_start_at: str
+    window_end_at: str
+    window: Literal["24h", "7d", "30d"]
+    available_windows: list[Literal["24h", "7d", "30d"]]
+
+
+class RealmApplicationTopItem(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    namespace_key: str = Field(min_length=1, max_length=256)
+    application: RealmApplicationMetadata | None
+    realm_count: int = Field(gt=0)
+    rpc_visible_realm_count: int = Field(gt=0)
+    called_realm_count: int = Field(gt=0)
+    direct_call_count: int = Field(gt=0)
+    successful_call_count: int = Field(ge=0)
+    failed_call_count: int = Field(ge=0)
+    unknown_result_call_count: int = Field(ge=0)
+    success_rate: float | None = Field(default=None, ge=0, le=1)
+    last_activity_height: int = Field(gt=0)
+    last_activity_tx_index: int = Field(ge=0)
+    last_activity_message_index: int = Field(ge=0, le=19)
+    last_activity_at: str
+
+
+class RealmApplicationTopResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    source: RealmApplicationRankingSource
+    items: list[RealmApplicationTopItem] = Field(max_length=10)

@@ -76,6 +76,14 @@ export const getTopRealmNamespaces = ({ limit = 3, scope = 'curated', signal } =
   query.set('scope', scope)
   return request(`/realm-namespaces/top?${query.toString()}`, { signal })
 }
+
+export const getTopRealmApplications = ({ limit = 3, window = '24h', signal } = {}) => {
+  const query = new URLSearchParams()
+  query.set('limit', limit)
+  query.set('window', window)
+  return request(`/realm-applications/top?${query.toString()}`, { signal })
+}
+
 export const getBlock = (height) => request(`/blocks/${encodeURIComponent(height)}`)
 export const getTransaction = (blockHeight, index) => request(`/blocks/${encodeURIComponent(blockHeight)}/transactions/${encodeURIComponent(index)}`)
 export const getTransactionByHash = (txHash) => request(`/transactions/by-hash/${encodeURIComponent(txHash)}`)
