@@ -103,7 +103,13 @@ def test_schema_contains_exact_pagination_envelope_and_exclusions():
     migration = open("database/migrations/0009_add_realm_call_index.sql").read()
     schema = open("database/schema.sql").read()
     assert migration.strip().startswith("BEGIN;") and migration.strip().endswith("COMMIT;")
-    assert schema.rfind("BEGIN;") < schema.rfind("CREATE TABLE realm_call_index") < schema.rfind("COMMIT;")
+    create_pos = schema.find("CREATE TABLE realm_call_index")
+    begin_pos = schema.rfind("BEGIN;", 0, create_pos)
+    commit_pos = schema.find("COMMIT;", create_pos)
+    assert create_pos >= 0
+    assert begin_pos >= 0
+    assert commit_pos >= 0
+    assert begin_pos < create_pos < commit_pos
     assert "(chain_id, path, block_height DESC, tx_index DESC, message_index DESC)" in migration
     assert "ON DELETE CASCADE" in migration
     for excluded in ("raw_result", "error_text", "gas_used", "tx_hash_hex"):
