@@ -2566,6 +2566,7 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                 {"realm_metadata_imports_source_idx", "realm_metadata_imports_reverse_idx"},
             )
             for table in init_database.METADATA_TABLES:
+                expected_api_select = table != "realm_metadata_refresh_state"
                 for privilege in (
                     "SELECT", "INSERT", "UPDATE", "DELETE",
                     "TRUNCATE", "REFERENCES", "TRIGGER",
@@ -2582,10 +2583,21 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                         "SELECT has_table_privilege('utsa_gno_api', %s, %s)",
                         (f"public.{table}", privilege),
                     )
-                    self.assertFalse(cursor.fetchone()[0])
+                    self.assertEqual(
+                        cursor.fetchone()[0],
+                        expected_api_select if privilege == "SELECT" else False,
+                    )
+            cursor.execute("SET ROLE utsa_gno_api")
+            cursor.execute("SELECT path FROM realm_metadata LIMIT 1")
+            cursor.fetchall()
+            cursor.execute("RESET ROLE")
             cursor.execute("SET ROLE utsa_gno_api")
             with self.assertRaises(psycopg.errors.InsufficientPrivilege):
-                cursor.execute("SELECT * FROM realm_metadata")
+                cursor.execute("SELECT * FROM realm_metadata_refresh_state")
+            connection.rollback()
+            cursor.execute("SET ROLE utsa_gno_api")
+            with self.assertRaises(psycopg.errors.InsufficientPrivilege):
+                cursor.execute("DELETE FROM realm_metadata")
             connection.rollback()
 
         with psycopg.connect(url) as connection, connection.cursor() as cursor:
@@ -2649,6 +2661,7 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                 {table: "utsa_gno_indexer" for table in init_database.METADATA_TABLES},
             )
             for table in init_database.METADATA_TABLES:
+                expected_api_select = table != "realm_metadata_refresh_state"
                 for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
                     cursor.execute(
                         "SELECT has_table_privilege('utsa_gno_indexer', %s, %s)",
@@ -2663,7 +2676,10 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                         "SELECT has_table_privilege('utsa_gno_api', %s, %s)",
                         (f"public.{table}", privilege),
                     )
-                    self.assertFalse(cursor.fetchone()[0])
+                    self.assertEqual(
+                        cursor.fetchone()[0],
+                        expected_api_select if privilege == "SELECT" else False,
+                    )
 
     def test_metadata_publication_replacement_preservation_and_stale_guard(self):
         url = self.prepare_metadata_database(f"utsa_metadata_publish_{os.getpid()}")
