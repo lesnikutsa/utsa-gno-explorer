@@ -61,6 +61,17 @@ indexer unless indexer files changed.
    indexer in the release-documented order.
 7. Verify the `indexer_state` checkpoint and `/api/health`.
 
+Repository updates never install or enable systemd units automatically. When a release
+adds the Realm metadata refresh units, install both files explicitly and enable only the
+timer after review:
+
+```bash
+sudo install -o root -g root -m 0644 deploy/systemd/utsa-gno-realm-metadata-refresh.service /etc/systemd/system/
+sudo install -o root -g root -m 0644 deploy/systemd/utsa-gno-realm-metadata-refresh.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now utsa-gno-realm-metadata-refresh.timer
+```
+
 ## Health and rollback
 
 ```bash

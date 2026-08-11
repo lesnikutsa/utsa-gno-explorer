@@ -87,6 +87,18 @@ def test_separate_coverage_result_and_absent_state():
     assert result == RealmCallCoverageResult(None, None, False)
 
 
+def test_fresh_coverage_initializes_at_current_height():
+    cursor = Cursor(None)
+    result = advance_realm_call_coverage(
+        cursor, "dev", 10, initialize_if_missing=True
+    )
+    assert result == RealmCallCoverageResult(None, 10, True)
+    assert cursor.queries[-1] == (
+        "INSERT INTO realm_call_index_state(chain_id, from_height, through_height) VALUES (%s, %s, %s)",
+        ("dev", 10, 10),
+    )
+
+
 def test_exact_next_replay_and_empty_call_height_coverage():
     assert advance_realm_call_coverage(Cursor((1, 9)), "dev", 10).advanced
     assert not advance_realm_call_coverage(Cursor((1, 10)), "dev", 10).advanced
@@ -141,3 +153,27 @@ def test_live_writer_locks_before_call_replacement_and_checkpoint():
 
     assert cursor.queries[0][0] == "SELECT pg_advisory_xact_lock(%s)"
     assert order.index("calls") < order.index("call_coverage") < order.index("checkpoint")
+
+
+@pytest.mark.parametrize("checkpoint, initialize", [(None, True), (11, False)])
+def test_live_writer_only_requests_initialization_without_checkpoint(checkpoint, initialize):
+    from indexer.database import write_height_cursor
+
+    cursor = Cursor()
+    parsed = SimpleNamespace(height=12)
+    with patch("indexer.database.get_checkpoint_cursor", return_value=checkpoint), \
+         patch("indexer.database._verify_finalized_conflicts"), \
+         patch("indexer.database._upsert_block"), \
+         patch("indexer.database._upsert_transactions"), \
+         patch("indexer.database._replace_realm_calls_for_height"), \
+         patch("indexer.database._upsert_realm_catalog"), \
+         patch("indexer.database.advance_realm_call_coverage") as coverage, \
+         patch("indexer.database.advance_realm_activity_coverage"), \
+         patch("indexer.database._upsert_validators_and_members"), \
+         patch("indexer.database._upsert_signatures"), \
+         patch("indexer.database._advance_checkpoint"):
+        write_height_cursor(cursor, parsed, "dev", 12, None)
+
+    coverage.assert_called_once_with(
+        cursor, "dev", 12, initialize_if_missing=initialize
+    )

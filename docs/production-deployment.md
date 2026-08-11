@@ -188,6 +188,25 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now utsa-gno-realm-catalog-refresh.timer
 ```
 
+Install the independent metadata refresh after the catalog timer. It runs at 00:15,
+03:15, 06:15, 09:15, 12:15, 15:15, 18:15, and 21:15 UTC, with a small randomized
+delay, by invoking the existing metadata collector:
+
+```bash
+sudo install -o root -g root -m 0644 \
+  deploy/systemd/utsa-gno-realm-metadata-refresh.service \
+  /etc/systemd/system/utsa-gno-realm-metadata-refresh.service
+sudo install -o root -g root -m 0644 \
+  deploy/systemd/utsa-gno-realm-metadata-refresh.timer \
+  /etc/systemd/system/utsa-gno-realm-metadata-refresh.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now utsa-gno-realm-metadata-refresh.timer
+```
+
+Each metadata run is isolated from the indexer, API, and catalog service. A failed or
+partial run does not stop those services; the timer tries again at its next occurrence.
+The collector retains its advisory lock and partial-publication semantics.
+
 Verify the schedule and journal, or safely request a manual refresh:
 
 ```bash
@@ -207,6 +226,27 @@ the database lock, so they cannot roll back visibility, source RPC, or timestamp
 This timer does not recalculate Realm activity or change its coverage range, does
 not require stopping the indexer, does not restart the API, and does not modify the
 application registry. It only refreshes the RPC-derived catalog fields.
+
+### Fresh database Realm derived-data bootstrap
+
+For a fresh database, initialize the schema and start the continuous indexer. The first
+successfully indexed block creates Realm call coverage bounded exactly to that height;
+the configured start height may be greater than one. The catalog timer then discovers
+current Realm and package paths, and the metadata timer populates their metadata after
+the catalog refresh. Normal live indexing advances call coverage for every sequential
+block thereafter.
+
+This bootstrap deliberately fails closed for an existing database. If `indexer_state`
+already contains a checkpoint but `realm_call_index_state` is missing, live indexing
+does not create a coverage claim. Inspect the intended range first:
+
+```bash
+.venv/bin/python scripts/check_realm_call_index_coverage.py
+.venv/bin/python scripts/rebuild_realm_call_index.py --help
+```
+
+After validating the intended range and rebuild arguments, run the existing rebuild
+tool explicitly. Never infer coverage from `realm_call_index` rows alone.
 
 ### Automatic Valopers profile refresh
 
