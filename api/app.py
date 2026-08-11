@@ -573,6 +573,7 @@ def _transaction_list_item_from_row(row: dict) -> TransactionListItem:
         block_time=isoformat_utc_z(row["time_utc"]),
         type=summary.primary.type if summary is not None else "unknown",
         operation=summary.primary.label if summary is not None else "Transaction",
+        message_count=summary.message_count if summary is not None else None,
         **_execution_fields_from_row(row),
     )
 
@@ -624,7 +625,9 @@ def _account_transaction_item_from_row(row: dict, address: str, profile) -> Acco
         block_height=row["block_height"], index=row["tx_index"],
         tx_hash=_normalize_tx_hash(row.get("tx_hash_hex")),
         block_time=isoformat_utc_z(row["time_utc"]), type=tx_type,
-        operation=operation, direction=direction, counterparty=counterparty, amount=amount,
+        operation=operation,
+        message_count=summary.message_count if summary is not None else None,
+        direction=direction, counterparty=counterparty, amount=amount,
         **_execution_fields_from_row(row),
     )
 

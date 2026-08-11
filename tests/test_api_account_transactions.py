@@ -72,6 +72,15 @@ def test_newest_first_empty_and_single_database_query():
     assert empty.calls == [(ADDRESS, 20, None, None)]
 
 
+def test_account_transaction_includes_validated_message_count():
+    messages = [message(), message(sender=OTHER, recipient=ADDRESS)]
+    response = request(FakeDatabase([
+        row(12, 0, [{"message_index": 0, "role": "sender"}], summary(messages)),
+    ]))
+    assert response.status_code == 200
+    assert response.json()["items"][0]["message_count"] == 2
+
+
 def test_validation_cursor_and_pagination_contract():
     assert request(FakeDatabase(), "/api/accounts/not-an-address/transactions").status_code == 422
     assert request(FakeDatabase(), f"/api/accounts/{ADDRESS}/transactions?before_height=8").status_code == 422
