@@ -230,8 +230,11 @@ SELECT filename,file_kind,byte_count,line_count,sha256,package_declared,import_c
 FROM realm_metadata_files WHERE chain_id=%s AND path=%s ORDER BY filename COLLATE "C" ASC
 """
 REALM_METADATA_IMPORTS_SQL = """
-SELECT DISTINCT imported_path,imported_kind FROM realm_metadata_imports
-WHERE chain_id=%s AND path=%s ORDER BY imported_path COLLATE "C" ASC,imported_kind ASC LIMIT %s
+SELECT imported_path,imported_kind FROM (
+ SELECT DISTINCT imported_path,imported_kind FROM realm_metadata_imports
+ WHERE chain_id=%s AND path=%s
+) dependencies
+ORDER BY imported_path COLLATE "C" ASC,imported_kind ASC LIMIT %s
 """
 REALM_METADATA_FILE_SQL = """
 SELECT chain_id,path,filename,file_kind,byte_count,line_count,sha256,content

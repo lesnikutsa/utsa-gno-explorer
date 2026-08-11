@@ -2625,6 +2625,58 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         with self.assertRaises(init_database.SchemaCompatibilityError):
             init_database.initialize_or_validate(partial_url)
 
+    def test_metadata_dependency_query_deduplicates_orders_and_bounds(self):
+        url = self.prepare_metadata_database(f"utsa_metadata_dependencies_{os.getpid()}")
+        files = tuple(
+            MetadataFile(filename, "package metadata_demo\n")
+            for filename in ("a.gno", "b.gno", "c.gno")
+        )
+        snapshot = MetadataSnapshot(
+            "topaz-1", "gno.land/r/metadata_demo", "realm", 10, "complete",
+            tuple(item.filename for item in files), files,
+            datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        with psycopg.connect(url) as connection:
+            publish_metadata_snapshot(connection, snapshot)
+            with connection.cursor() as cursor:
+                cursor.executemany(
+                    """INSERT INTO realm_metadata_imports(
+                      chain_id,path,source_filename,imported_path,imported_kind
+                    ) VALUES ('topaz-1','gno.land/r/metadata_demo',%s,%s,%s)""",
+                    [
+                        ("a.gno", "gno.land/p/alpha", "package"),
+                        ("b.gno", "gno.land/p/alpha", "package"),
+                        ("a.gno", "gno.land/r/alpha", "realm"),
+                        ("b.gno", "gno.land/p/Zed", "package"),
+                        ("c.gno", "gno.land/p/beta", "package"),
+                    ],
+                )
+
+        database = ApiDatabase()
+        database.open(ApiConfig(database_url=url, chain_id="topaz-1"))
+        self.addCleanup(database.close)
+        result = database.fetch_realm_metadata(
+            chain_id="topaz-1", path="gno.land/r/metadata_demo",
+        )
+        self.assertIsNotNone(result["metadata"])
+        self.assertEqual(
+            [(row["imported_path"], row["imported_kind"]) for row in result["dependencies"]],
+            [
+                ("gno.land/p/Zed", "package"),
+                ("gno.land/p/alpha", "package"),
+                ("gno.land/p/beta", "package"),
+                ("gno.land/r/alpha", "realm"),
+            ],
+        )
+        bounded = database.fetch_realm_metadata(
+            chain_id="topaz-1", path="gno.land/r/metadata_demo", dependency_limit=2,
+        )
+        self.assertEqual(len(bounded["dependencies"]), 3)
+        self.assertEqual(
+            [row["imported_path"] for row in bounded["dependencies"]],
+            ["gno.land/p/Zed", "gno.land/p/alpha", "gno.land/p/beta"],
+        )
+
     def test_metadata_upgrade_with_production_writer_ownership(self):
         name = f"utsa_metadata_writer_owner_{os.getpid()}"
         writer_url = self.create_writer_owned_database(name)
