@@ -27,12 +27,20 @@ test('Docs uses a bounded definition grid and existing status badges', () => {
 
 test('Source expansion is independent from selected-file loading', () => {
   assert.match(detail, /useState\(false\)/)
-  assert.match(detail, /sourceExpanded \? 'Hide source' : 'Show source'/)
+  assert.match(detail, /sourceExpanded \? 'Hide source ↑' : 'Show source ↓'/)
+  assert.match(detail, /className="blocks-page__button realm-metadata__source-toggle"/)
+  assert.match(styles, /\.realm-metadata__source-toggle \{[^}]*border-color: var\(--color-accent\);[^}]*background: var\(--color-accent-soft\);[^}]*color: var\(--color-text-bright\);/)
   assert.match(detail, /aria-expanded=\{sourceExpanded\}/)
   assert.match(detail, /sourceExpanded && metadata\.source\.data && <pre><code>\{metadata\.source\.data\.content\}<\/code><\/pre>/)
   assert.match(hook, /const \[selectedFilename, setSelectedFilename\] = useState\(null\)/)
   assert.match(detail, /aria-pressed=\{file\.filename === metadata\.selectedFilename\}/)
   assert.doesNotMatch(hook, /setSourceExpanded/)
+})
+
+test('Files follow Dependencies and remain close to Source', () => {
+  const grid = detail.slice(detail.indexOf('<div className="realm-metadata__grid">'), detail.indexOf('<div className="realm-metadata__source">'))
+  assert.ok(grid.indexOf('<h3>Dependencies') < grid.indexOf('<h3>Files'))
+  assert.ok(grid.indexOf('<h3>Files') < grid.indexOf('<h3>Docs'))
 })
 
 test('untrusted source stays exact passive React text', () => {
@@ -46,7 +54,7 @@ test('untrusted source stays exact passive React text', () => {
 
 test('Source and long-path geometry remain bounded', () => {
   assert.match(styles, /\.realm-metadata__source pre \{[^}]*width: 100%;[^}]*max-width: 100%;[^}]*max-height: min\(560px, 65vh\);[^}]*overflow: auto;[^}]*white-space: pre;[^}]*tab-size: 4;/)
-  assert.match(styles, /\.realm-metadata__files button > span:first-child, \.realm-metadata__names a, \.realm-metadata__source > p \{ overflow-wrap: anywhere; word-break: break-word; \}/)
+  assert.match(styles, /\.realm-metadata__files button > span:first-child, \.realm-metadata__names a, \.realm-metadata__source-header > p \{ overflow-wrap: anywhere; word-break: break-word; \}/)
 })
 
 test('Realm and Package dependencies share the canonical detail helper', () => {
