@@ -58,6 +58,14 @@ Detail responses preserve the `RealmCatalogItem` catalog semantics used by `GET 
 
 The detail source is read in one `REPEATABLE READ, READ ONLY` transaction with the exact catalog row, catalog state, call-index state, and default indexer checkpoint. `call_index_complete` is true only when `realm_call_index_state.through_height` equals `indexer_state.last_finalized_height`; missing, behind, ahead, or mismatched coverage is not reported as complete. Missing catalog rows return `404`; malformed paths return `422`; unavailable or inconsistent database state returns `503`.
 
+## Realm or Package metadata
+
+`GET /api/realms/metadata?path=gno.land/r/gnoswap/app` returns the bounded, persisted metadata summary, complete file metadata list, and up to 200 distinct ordered dependencies for an exact canonical Realm or Package path. `dependencies_truncated` indicates additional dependencies. The endpoint is database-backed only; it never performs live RPC. A catalog path may legitimately return `404 Realm metadata not found` until the one-shot collector visits it, and `collection_status=partial` remains a valid useful snapshot.
+
+Only validated qdoc, qpkg_json, and qfuncs summaries are exposed. Raw capability payloads and the qrender body are never returned; qstorage numeric values are decimal strings to preserve precision.
+
+`GET /api/realms/metadata/file?path=gno.land/r/gnoswap/app&filename=main.gno` returns one exact source file from the persisted qfile snapshot. The filename is an exact database key rather than a filesystem path. Source content is omitted from the main metadata response and returned only by this endpoint; neither metadata endpoint contacts RPC.
+
 ## Realm recent calls
 
 `GET /api/realms/calls?path=gno.land/r/gnoswap/app` returns a descending page of recent direct calls for one exact canonical Realm path. Package paths are rejected with `422`; malformed paths are rejected with `422`; unknown Realm catalog paths return `404`. The endpoint is PostgreSQL-only, uses `realm_call_index`, and does not inspect `transactions.payload_summary` or call Gno RPC.

@@ -633,6 +633,105 @@ class RealmDetailResponse(BaseModel):
     application: RealmApplicationMetadata | None
 
 
+class RealmQdocSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    available: bool
+    package_doc_present: bool
+    documented_function_count: int = Field(ge=0)
+    value_count: int = Field(ge=0)
+    type_count: int = Field(ge=0)
+    byte_count: int = Field(ge=0)
+
+
+class RealmQpkgSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    available: bool
+    top_level_type: Literal["dict", "list"]
+    top_level_keys: list[str] = Field(max_length=50)
+    byte_count: int = Field(ge=0)
+    maximum_depth: int = Field(ge=0)
+    node_count: int = Field(ge=0)
+
+
+class RealmQfuncsSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    function_count: int = Field(ge=0)
+    function_names: list[str] = Field(max_length=50)
+    functions_with_params: int = Field(ge=0)
+    functions_with_results: int = Field(ge=0)
+    duplicate_names: bool
+
+
+CapabilityStatus = Literal["ok", "not_applicable", "application_error", "rpc_error", "invalid_response"]
+
+
+class RealmMetadataSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    file_count: int = Field(ge=1, le=256)
+    gno_file_count: int = Field(ge=0, le=256)
+    test_file_count: int = Field(ge=0, le=256)
+    has_gnomod: bool
+    total_file_bytes: int = Field(ge=0, le=8388608)
+    total_file_lines: int = Field(ge=0)
+    dependency_count: int = Field(ge=0)
+    qdoc_status: CapabilityStatus
+    qdoc_summary: RealmQdocSummary | None
+    qpkg_json_status: CapabilityStatus
+    qpkg_json_summary: RealmQpkgSummary | None
+    qfuncs_status: CapabilityStatus
+    qfuncs_summary: RealmQfuncsSummary | None
+    qrender_status: CapabilityStatus
+    qrender_byte_count: int | None = Field(default=None, ge=0)
+    qrender_line_count: int | None = Field(default=None, ge=0)
+    qrender_non_empty: bool | None
+    qstorage_status: CapabilityStatus
+    qstorage_bytes: str | None = Field(default=None, pattern=r"^(0|[1-9][0-9]*)$")
+    qstorage_deposit_ugnot: str | None = Field(default=None, pattern=r"^(0|[1-9][0-9]*)$")
+
+
+class RealmMetadataFileItem(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    filename: str = Field(min_length=1, max_length=160)
+    file_kind: Literal["gno_source", "gno_test", "gnomod", "other"]
+    byte_count: int = Field(ge=0, le=1048576)
+    line_count: int = Field(ge=0, le=100000)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    package_declared: bool
+    import_candidate_count: int = Field(ge=0, le=1000)
+
+
+class RealmMetadataDependency(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    imported_path: str = Field(min_length=1, max_length=256)
+    imported_kind: Literal["realm", "package"]
+
+
+class RealmMetadataResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    chain_id: str = Field(min_length=1, max_length=128)
+    path: str = Field(min_length=1, max_length=256)
+    kind: Literal["realm", "package"]
+    observed_height: int = Field(gt=0)
+    collected_at: str
+    collection_status: Literal["complete", "partial"]
+    summary: RealmMetadataSummary
+    files: list[RealmMetadataFileItem] = Field(max_length=256)
+    dependencies: list[RealmMetadataDependency] = Field(max_length=200)
+    dependencies_truncated: bool
+
+
+class RealmMetadataFileResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    chain_id: str = Field(min_length=1, max_length=128)
+    path: str = Field(min_length=1, max_length=256)
+    filename: str = Field(min_length=1, max_length=160)
+    file_kind: Literal["gno_source", "gno_test", "gnomod", "other"]
+    byte_count: int = Field(ge=0, le=1048576)
+    line_count: int = Field(ge=0, le=100000)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    content: str = Field(max_length=1048576)
+
+
 class RealmCallSource(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     chain_id: str = Field(min_length=1, max_length=128)

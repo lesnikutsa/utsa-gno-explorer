@@ -217,6 +217,26 @@ SELECT chain_id,path,path_kind,rpc_visible,deployer_address,deploy_height,deploy
  failed_call_count,unknown_result_call_count
 FROM realm_catalog WHERE chain_id=%s AND path=%s
 """
+REALM_METADATA_SQL = """
+SELECT chain_id,path,path_kind,observed_height,collected_at,collection_status,
+ file_count,gno_file_count,test_file_count,has_gnomod,total_file_bytes,total_file_lines,dependency_count,
+ qdoc_status,qdoc_summary,qpkg_json_status,qpkg_json_summary,qfuncs_status,qfuncs_summary,
+ qrender_status,qrender_byte_count,qrender_line_count,qrender_non_empty,qstorage_status,
+ qstorage_bytes::text AS qstorage_bytes,qstorage_deposit_ugnot::text AS qstorage_deposit_ugnot
+FROM realm_metadata WHERE chain_id=%s AND path=%s
+"""
+REALM_METADATA_FILES_SQL = """
+SELECT filename,file_kind,byte_count,line_count,sha256,package_declared,import_candidate_count
+FROM realm_metadata_files WHERE chain_id=%s AND path=%s ORDER BY filename COLLATE "C" ASC
+"""
+REALM_METADATA_IMPORTS_SQL = """
+SELECT DISTINCT imported_path,imported_kind FROM realm_metadata_imports
+WHERE chain_id=%s AND path=%s ORDER BY imported_path COLLATE "C" ASC,imported_kind ASC LIMIT %s
+"""
+REALM_METADATA_FILE_SQL = """
+SELECT chain_id,path,filename,file_kind,byte_count,line_count,sha256,content
+FROM realm_metadata_files WHERE chain_id=%s AND path=%s AND filename=%s
+"""
 REALM_CALLS_PAGE_SQL = """
 SELECT
     call.block_height,
@@ -1017,6 +1037,36 @@ class ApiDatabase:
             cursor.execute(REALM_DETAIL_SOURCE_SQL, (chain_id,))
             source = cursor.fetchone()
         return {"source": dict(source) if source is not None else None, "item": dict(item)}
+
+    def fetch_realm_metadata(self, *, chain_id: str, path: str, dependency_limit: int = 200) -> dict[str, Any] | None:
+        """Read one bounded metadata snapshot without contacting RPC."""
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection, connection.transaction(), connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            cursor.execute(REALM_DETAIL_ITEM_SQL, (chain_id, path))
+            if cursor.fetchone() is None:
+                return None
+            cursor.execute(REALM_METADATA_SQL, (chain_id, path))
+            metadata = cursor.fetchone()
+            if metadata is None:
+                return {"metadata": None, "files": [], "dependencies": []}
+            cursor.execute(REALM_METADATA_FILES_SQL, (chain_id, path))
+            files = cursor.fetchall()
+            cursor.execute(REALM_METADATA_IMPORTS_SQL, (chain_id, path, dependency_limit + 1))
+            dependencies = cursor.fetchall()
+        return {"metadata": dict(metadata), "files": [dict(row) for row in files],
+                "dependencies": [dict(row) for row in dependencies]}
+
+    def fetch_realm_metadata_file(self, *, chain_id: str, path: str, filename: str) -> dict[str, Any] | None:
+        """Read one exact persisted qfile source row."""
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection, connection.transaction(), connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION READ ONLY")
+            cursor.execute(REALM_METADATA_FILE_SQL, (chain_id, path, filename))
+            row = cursor.fetchone()
+        return dict(row) if row is not None else None
 
     def fetch_realm_calls(self, *, chain_id: str, path: str, limit: int,
                           before_height: int | None, before_tx_index: int | None,

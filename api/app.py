@@ -65,6 +65,9 @@ from api.schemas import (
     RealmCallsResponse,
     RealmDetailResponse,
     RealmDetailSource,
+    RealmMetadataFileResponse,
+    RealmMetadataResponse,
+    RealmMetadataSummary,
     RealmRankingSource,
     RealmApplicationRankingSource,
     RealmApplicationTopItem,
@@ -1220,6 +1223,54 @@ def get_realm_detail(path: str = Query(..., min_length=1, max_length=256)) -> Re
         raise
     except Exception:
         LOGGER.error("Explorer database Realm detail query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+
+
+@app.get("/api/realms/metadata/file", response_model=RealmMetadataFileResponse)
+def get_realm_metadata_file(
+    path: str = Query(..., min_length=1, max_length=256),
+    filename: str = Query(..., min_length=1, max_length=160),
+) -> RealmMetadataFileResponse:
+    _validate_exact_catalog_path(path)
+    if filename != filename.strip() or not filename.isprintable():
+        raise HTTPException(status_code=422, detail="filename is invalid")
+    try:
+        row = database.fetch_realm_metadata_file(chain_id=app.state.api_config.chain_id, path=path, filename=filename)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Realm metadata file not found")
+        return RealmMetadataFileResponse(**row)
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.error("Explorer database Realm metadata file query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+
+
+@app.get("/api/realms/metadata", response_model=RealmMetadataResponse)
+def get_realm_metadata(path: str = Query(..., min_length=1, max_length=256)) -> RealmMetadataResponse:
+    _validate_exact_catalog_path(path)
+    try:
+        result = database.fetch_realm_metadata(chain_id=app.state.api_config.chain_id, path=path)
+        if result is None or result.get("metadata") is None:
+            raise HTTPException(status_code=404, detail="Realm metadata not found")
+        row = result["metadata"]
+        if row.get("chain_id") != app.state.api_config.chain_id or row.get("path") != path:
+            raise ValueError("malformed Realm metadata identity")
+        summary_keys = ("file_count", "gno_file_count", "test_file_count", "has_gnomod",
+            "total_file_bytes", "total_file_lines", "dependency_count", "qdoc_status", "qdoc_summary",
+            "qpkg_json_status", "qpkg_json_summary", "qfuncs_status", "qfuncs_summary", "qrender_status",
+            "qrender_byte_count", "qrender_line_count", "qrender_non_empty", "qstorage_status",
+            "qstorage_bytes", "qstorage_deposit_ugnot")
+        dependencies = result["dependencies"]
+        return RealmMetadataResponse(chain_id=row["chain_id"], path=row["path"], kind=row["path_kind"],
+            observed_height=row["observed_height"], collected_at=isoformat_utc_z(row["collected_at"]),
+            collection_status=row["collection_status"],
+            summary=RealmMetadataSummary(**{key: row[key] for key in summary_keys}), files=result["files"],
+            dependencies=dependencies[:200], dependencies_truncated=len(dependencies) > 200)
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.error("Explorer database Realm metadata query failed")
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
 
 

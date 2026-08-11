@@ -125,6 +125,14 @@ export const getRealmDetail = ({ path, signal } = {}) => {
   query.set('path', path)
   return request(`/realms/detail?${query.toString()}`, { signal })
 }
+export const getRealmMetadata = ({ path, signal } = {}) => {
+  const query = new URLSearchParams({ path })
+  return request(`/realms/metadata?${query.toString()}`, { signal })
+}
+export const getRealmMetadataFile = ({ path, filename, signal } = {}) => {
+  const query = new URLSearchParams({ path, filename })
+  return request(`/realms/metadata/file?${query.toString()}`, { signal })
+}
 export const getRealmCalls = ({ path, limit = 25, beforeHeight, beforeTxIndex, beforeMessageIndex, signal } = {}) => {
   const query = new URLSearchParams()
   query.set('path', path)

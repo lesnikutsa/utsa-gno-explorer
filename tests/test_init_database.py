@@ -14,9 +14,9 @@ EXPECTED_PRIVILEGES = {
         "realm_catalog_state": {"SELECT"},
         "realm_call_index": {"SELECT"},
         "realm_call_index_state": {"SELECT"},
-        "realm_metadata": set(),
-        "realm_metadata_files": set(),
-        "realm_metadata_imports": set(),
+        "realm_metadata": {"SELECT"},
+        "realm_metadata_files": {"SELECT"},
+        "realm_metadata_imports": {"SELECT"},
         "realm_metadata_refresh_state": set(),
     },
     "utsa_gno_indexer": {
@@ -168,6 +168,16 @@ def test_metadata_migration_contract_and_envelope_are_exact():
     assert "realm_metadata_json_success_check" in body
     assert "GRANT SELECT,INSERT,UPDATE,DELETE" in body
     assert "utsa_gno_api" not in body
+
+
+def test_metadata_api_read_migration_envelope_and_scope_are_exact():
+    body = init_database.migration_body_for_outer_transaction(
+        init_database.REALM_METADATA_API_READ_MIGRATION.read_text()
+    )
+    assert "GRANT SELECT ON realm_metadata,realm_metadata_files,realm_metadata_imports" in body
+    assert "realm_metadata_refresh_state" not in body
+    for privilege in ("INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"):
+        assert privilege not in body
 
 
 def test_exact_pre_0010_stage_runs_only_metadata_migration():
@@ -392,7 +402,7 @@ def test_api_writes_and_missing_indexer_grants_fail_closed():
     with pytest.raises(init_database.SchemaCompatibilityError, match="API role"):
         init_database.validate_participant_privileges(PrivilegeCursor(grants))
     grants = copy.deepcopy(EXPECTED_PRIVILEGES)
-    grants["utsa_gno_api"]["realm_metadata"].add("SELECT")
+    grants["utsa_gno_api"]["realm_metadata"].add("INSERT")
     with pytest.raises(init_database.SchemaCompatibilityError, match="API role"):
         init_database.validate_participant_privileges(PrivilegeCursor(grants))
     grants = copy.deepcopy(EXPECTED_PRIVILEGES)

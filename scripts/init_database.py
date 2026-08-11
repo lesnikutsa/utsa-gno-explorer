@@ -17,6 +17,7 @@ EXECUTION_RESULT_MIGRATION = REPO_ROOT / "database" / "migrations" / "0007_add_t
 REALM_CATALOG_MIGRATION = REPO_ROOT / "database" / "migrations" / "0008_add_realm_catalog.sql"
 REALM_CALL_INDEX_MIGRATION = REPO_ROOT / "database" / "migrations" / "0009_add_realm_call_index.sql"
 REALM_METADATA_MIGRATION = REPO_ROOT / "database" / "migrations" / "0010_add_realm_metadata.sql"
+REALM_METADATA_API_READ_MIGRATION = REPO_ROOT / "database" / "migrations" / "0011_grant_realm_metadata_api_read.sql"
 EXPECTED_TABLES = {
     "blocks", "transactions", "validators", "validator_set_members", "validator_signatures", "rpc_endpoints", "rpc_endpoint_checks", "indexer_state", "valoper_profiles", "valopers_snapshot_state",
 }
@@ -364,7 +365,7 @@ EXPECTED_CHECKS.update({
  "realm_metadata_files_filename_check":"CHECK (char_length(filename) BETWEEN 1 AND 160 AND filename !~ '^/' AND filename !~ '^[A-Za-z]:/' AND filename !~ '\\\\' AND filename !~ '[[:cntrl:]]' AND filename !~ '(^|/)(\\.|\\.\\.|)(/|$)')","realm_metadata_files_kind_check":"CHECK (file_kind IN ('gno_source', 'gno_test', 'gnomod', 'other'))","realm_metadata_files_size_check":"CHECK (byte_count BETWEEN 0 AND 1048576 AND octet_length(content) = byte_count AND line_count BETWEEN 0 AND 100000)","realm_metadata_files_sha256_check":"CHECK (sha256 ~ '^[0-9a-f]{64}$')","realm_metadata_files_import_count_check":"CHECK (import_candidate_count BETWEEN 0 AND 1000)","realm_metadata_imports_kind_check":"CHECK (imported_kind IN ('realm', 'package'))",
  "realm_metadata_imports_path_check":"CHECK ((char_length(imported_path) >= 1 AND char_length(imported_path) <= 256) AND imported_path ~ '^gno\\.land/[rp]/[!-\\.0-~]+(/[!-\\.0-~]+)*$' AND imported_path !~ '[?#]' AND ((imported_kind = 'realm' AND imported_path ~~ 'gno.land/r/%') OR (imported_kind = 'package' AND imported_path ~~ 'gno.land/p/%')))","realm_metadata_refresh_state_chain_id_check":"CHECK (char_length(chain_id) BETWEEN 1 AND 128)","realm_metadata_refresh_state_height_check":"CHECK (observed_height > 0)","realm_metadata_refresh_state_status_check":"CHECK (run_status IN ('running', 'complete', 'partial', 'failed'))","realm_metadata_refresh_state_counts_check":"CHECK (selected_path_count >= 0 AND published_path_count >= 0 AND failed_path_count >= 0 AND published_path_count + failed_path_count <= selected_path_count)","realm_metadata_refresh_state_completion_check":"CHECK (((run_status = 'running' AND completed_at IS NULL) OR (run_status <> 'running' AND completed_at IS NOT NULL)) AND (completed_at IS NULL OR completed_at >= started_at))","realm_metadata_refresh_state_success_check":"CHECK ((last_successful_height IS NULL) = (last_successful_at IS NULL) AND (last_successful_height IS NULL OR (last_successful_height > 0 AND last_successful_height <= observed_height)))"})
 for metadata_table in METADATA_TABLES:
-    EXPECTED_TABLE_PRIVILEGES["utsa_gno_api"][metadata_table] = set()
+    EXPECTED_TABLE_PRIVILEGES["utsa_gno_api"][metadata_table] = ({"SELECT"} if metadata_table != "realm_metadata_refresh_state" else set())
     EXPECTED_TABLE_PRIVILEGES["utsa_gno_indexer"][metadata_table] = {"SELECT","INSERT","UPDATE","DELETE"}
 FINAL_SCHEMA_EXPECTATIONS = schema_expectations()
 
@@ -886,6 +887,8 @@ def initialize_or_validate(database_url: str, schema_path: Path = SCHEMA, connec
                             "python scripts/migrate_network_distribution_schema.py"
                         )
                 validate_schema_snapshot(snapshot)
+            # The grant-only migration has no schema marker and is intentionally idempotent.
+            cursor.execute(migration_body_for_outer_transaction(REALM_METADATA_API_READ_MIGRATION.read_text()))
             validate_participant_privileges(cursor)
         connection.commit()
 
