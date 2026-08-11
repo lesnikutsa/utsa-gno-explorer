@@ -1,5 +1,6 @@
 import { DataTable } from '../components/DataTable'
 import { TransactionTypeBadge } from '../components/TransactionTypeBadge'
+import { AdditionalMessageBadge } from '../components/AdditionalMessageBadge'
 import { TransactionExecutionBadge } from '../components/TransactionExecutionBadge'
 import { GasValue } from '../components/GasValue'
 import { relativeTime } from '../utils/time'
@@ -11,7 +12,12 @@ const columns = [
   {
     key: 'operation',
     label: 'Type',
-    render: (transaction) => <TransactionTypeBadge title={transaction.type !== 'unknown' ? transaction.type : undefined}>{transaction.operation}</TransactionTypeBadge>,
+    render: (transaction) => (
+      <div className="transactions-table__type-cell">
+        <TransactionTypeBadge title={transaction.type !== 'unknown' ? transaction.type : undefined}>{transaction.operation}</TransactionTypeBadge>
+        <AdditionalMessageBadge messageCount={transaction.message_count} />
+      </div>
+    ),
   },
   {
     key: 'tx_hash',

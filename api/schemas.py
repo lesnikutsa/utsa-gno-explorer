@@ -307,6 +307,7 @@ class TransactionListItem(BaseModel):
     block_time: str
     type: str = Field(min_length=1, max_length=160)
     operation: str = Field(min_length=1, max_length=80)
+    message_count: int | None = Field(default=None, ge=0, le=100000)
     execution_status: Literal["success", "failed"] | None = None
     gas_wanted: str | None = None
     gas_used: str | None = None

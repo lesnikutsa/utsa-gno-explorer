@@ -12,14 +12,14 @@ DATABASE_URL = "postgresql://api:secret@database/explorer"
 BLOCK_TIME = datetime(2026, 7, 25, 12, 30, 45, tzinfo=timezone.utc)
 
 
-def summary(tx_type="gno.bank.MsgSend"):
+def summary(tx_type="gno.bank.MsgSend", message_count=1):
     primary = {"type": tx_type, "category": "bank", "action": "send", "label": "Send Tokens"}
     return {
         "schema_version": 1,
         "chain_family": "gno",
         "parse_status": "parsed",
-        "message_count": 1,
-        "messages_truncated": False,
+        "message_count": message_count,
+        "messages_truncated": message_count > 1,
         "primary": primary,
         "messages": [{**primary, "sender": "g1sender", "internal_error": "secret"}],
         "decoder_error": "secret",
@@ -163,6 +163,7 @@ class ApiTransactionsTests(unittest.TestCase):
             "block_time": "2026-07-25T12:30:45Z",
             "type": "gno.bank.MsgSend",
             "operation": "Send Tokens",
+            "message_count": 1,
             "execution_status": None,
             "gas_wanted": None,
             "gas_used": None,
@@ -221,6 +222,26 @@ class ApiTransactionsTests(unittest.TestCase):
             item = client.get("/api/transactions").json()["items"][0]
         self.assertEqual(item["type"], "unknown")
         self.assertEqual(item["operation"], "Transaction")
+        self.assertIsNone(item["message_count"])
+
+    def test_message_count_comes_from_validated_public_summary(self):
+        fake = FakeDatabase([
+            transaction_row(10, 1, payload_summary=summary(message_count=7)),
+            transaction_row(10, 0, payload_summary=summary(message_count=1)),
+        ])
+        with self.make_client(fake) as client:
+            items = client.get("/api/transactions").json()["items"]
+        self.assertEqual([item["message_count"] for item in items], [7, 1])
+
+    def test_malformed_summary_does_not_expose_unsafe_message_count(self):
+        malformed = summary(message_count=7)
+        malformed["message_count"] = "7"
+        with self.make_client(FakeDatabase([
+            transaction_row(10, 0, payload_summary=malformed),
+        ])) as client:
+            item = client.get("/api/transactions").json()["items"][0]
+        self.assertIsNone(item["message_count"])
+        self.assertEqual((item["type"], item["operation"]), ("unknown", "Transaction"))
 
 
 if __name__ == "__main__":
