@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import { CopyButton } from './CopyButton'
 import { StatusBadge } from './StatusBadge'
+import { isCanonicalRealmPath, realmDetailHref } from '../utils/realm'
 import { isValidArgumentValue } from '../utils/transactionArguments'
 
 const DETAIL_FIELDS = [
@@ -80,6 +81,19 @@ const humanize = (value) => typeof value === 'string'
   ? value.replace(/[_-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
   : '—'
 
+function RealmPathLink({ path, stopDisclosureToggle = false }) {
+  if (!isCanonicalRealmPath(path)) return path
+  return (
+    <a
+      className="transaction-summary__realm-link"
+      href={realmDetailHref(path)}
+      onClick={stopDisclosureToggle ? (event) => event.stopPropagation() : undefined}
+    >
+      {path}
+    </a>
+  )
+}
+
 function DetailFields({ message, showArgumentFallback }) {
   const fields = DETAIL_FIELDS.filter(({ key }) => isScalar(message[key]))
   if (showArgumentFallback && isScalar(message.args_count)) {
@@ -95,7 +109,9 @@ function DetailFields({ message, showArgumentFallback }) {
         <div className={`transaction-summary__detail${key === 'sender' ? ' transaction-summary__detail--sender' : ''}`} key={key}>
           <dt>{label}</dt>
           <dd className={mono ? 'mono' : undefined}>
-            <span>{displayValue(message[key])}</span>
+            <span>{key === 'package_path'
+              ? <RealmPathLink path={message[key]} />
+              : displayValue(message[key])}</span>
             {copyLabel && typeof message[key] === 'string' && <CopyButton value={message[key]} label={copyLabel} />}
           </dd>
         </div>
@@ -110,7 +126,9 @@ function Arguments({ detail, count }) {
     <section className="transaction-summary__arguments" aria-label="Message arguments">
       <h4>Arguments · {isScalar(count) ? count : detail.values.length}</h4>
       {detail.values.length > 0 && <ol>
-        {detail.values.map((value, index) => <li key={index}><code>{value === '' ? '—' : value}</code></li>)}
+        {detail.values.map((value, index) => (
+          <li key={index}><code>{value === '' ? '—' : <RealmPathLink path={value} />}</code></li>
+        ))}
       </ol>}
       {detail.truncated && <p>Some argument values were shortened or are not shown.</p>}
     </section>
@@ -147,7 +165,11 @@ function MessageDisclosure({ message, index, argumentDetail }) {
       <summary id={`transaction-summary-message-${index + 1}`}>
         <strong>Message #{index + 1}</strong>
         <span>{isScalar(message.label) ? message.label : '—'}</span>
-        {isScalar(location) && <span className="mono">{location}</span>}
+        {isScalar(location) && <span className="mono">
+          {message.package_path === location
+            ? <RealmPathLink path={location} stopDisclosureToggle />
+            : location}
+        </span>}
         {isScalar(message.function) && <span className="mono">{message.function}</span>}
         {isScalar(message.args_count) && <span>{message.args_count} arguments</span>}
       </summary>
