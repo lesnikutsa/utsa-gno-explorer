@@ -28,8 +28,7 @@ from block 1. Never restore or reuse Topaz rows, checkpoints, or backups for Sap
 | `utsa-gno-api.service` | Localhost read-only HTTP API. |
 | `utsa-gno-indexer.service` | Sequential finalized block/transaction ingestion. |
 | `utsa-gno-governance-updater.service` | Continuous Governance snapshot updater. |
-| `utsa-gno-explorer-backup.service` | On-demand/timer-invoked verified PostgreSQL logical backup. |
-| `utsa-gno-explorer-backup.timer` | Daily verified PostgreSQL logical backup. |
+| `utsa-gno-explorer-backup.service` | Manual/on-demand verified PostgreSQL logical backup. |
 | `utsa-gno-network-distribution.service` / `.timer` | Observed peer sample, every 15 minutes. |
 | `utsa-gno-valopers-refresh.service` / `.timer` | Official Valopers metadata refresh, hourly. |
 | `utsa-gno-realm-catalog-refresh.service` / `.timer` | Realm/Package catalog refresh. |
@@ -69,9 +68,10 @@ sudo -u utsa-gno sh -c 'set -a; . /etc/utsa-gno-explorer/indexer.env; . /etc/uts
 It inspects systemd, one consistent read-only PostgreSQL snapshot, and the bounded local
 `/api/health` endpoint. It never repairs state or prints configured database/RPC URLs.
 Exit `0` means all required checks are healthy, `1` means a runtime invariant failed,
-and `2` means required configuration was missing or invalid. Inactive refresh and backup
-oneshot services are normal between timer runs; their enabled and active timers are the
-required runtime state.
+and `2` means required configuration was missing or invalid. Scheduled refresh services are
+oneshots and may normally be inactive between runs, but each service unit must be installed
+and its corresponding timer must be enabled and active. Backup remains manual/on-demand and
+is not a required timer.
 
 ## Fresh network / database reset checklist
 
@@ -89,8 +89,8 @@ Use the detailed procedures in [installation](install.md), [restore](restore.md)
    `realm_call_index_state` bounded to that block, and sequential indexing advances it. Do
    not manually rebuild this state during a normal fresh bootstrap. Run or wait for a
    successful Realm catalog snapshot; only then run or wait for metadata refresh.
-4. **Other scheduled data:** enable and verify the Valopers, Network distribution, and Backup
-   timers, plus the continuous Governance updater.
+4. **Other scheduled data:** enable and verify the Valopers and Network distribution timers,
+   verify the continuous Governance updater, and run an on-demand backup as required.
 5. **Final validation:** run `scripts/check_runtime.py`, verify the local API health endpoint,
    and verify the frontend after publication.
 

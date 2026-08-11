@@ -31,14 +31,35 @@ def test_healthy_runtime_and_partial_metadata(capsys):
     assert "Result: HEALTHY" in output and "partial=1" in output
 
 
-def test_inactive_service_fails_but_oneshots_are_not_inspected(capsys):
-    seen = []
+def test_inactive_long_running_service_fails(capsys):
     def units(name):
-        seen.append(name)
         return {"LoadState": "loaded", "ActiveState": "inactive" if name == check_runtime.SERVICES[1] else "active", "UnitFileState": "enabled"}
     code, output = run(capsys, unit=units)
     assert code == 1 and "utsa-gno-indexer.service: inactive" in output
-    assert not any(name.endswith("-refresh.service") for name in seen)
+
+
+def test_installed_inactive_and_active_oneshots_are_healthy(capsys):
+    def units(name):
+        active = "inactive" if name == check_runtime.SCHEDULED_SERVICES[0] else "active"
+        return {"LoadState": "loaded", "ActiveState": active, "UnitFileState": "enabled"}
+    code, output = run(capsys, unit=units)
+    assert code == 0
+    assert f"{check_runtime.SCHEDULED_SERVICES[0]}: installed, inactive" in output
+    assert f"{check_runtime.SCHEDULED_SERVICES[1]}: installed, active" in output
+
+
+def test_missing_oneshot_fails_even_when_timer_is_healthy(capsys):
+    missing = check_runtime.SCHEDULED_SERVICES[2]
+    def units(name):
+        return {
+            "LoadState": "not-found" if name == missing else "loaded",
+            "ActiveState": "inactive" if name == missing else "active",
+            "UnitFileState": "enabled",
+        }
+    code, output = run(capsys, unit=units)
+    assert code == 1
+    assert f"{missing}: not installed" in output
+    assert all(f"{timer}: enabled, active" in output for timer in check_runtime.TIMERS)
 
 
 def test_missing_or_disabled_timer_fails(capsys):
@@ -70,6 +91,18 @@ def test_missing_database_config_is_inspection_error_and_secrets_stay_hidden(cap
 def test_existing_checkpoint_without_call_state_fails(capsys):
     code, output = run(capsys, db=snapshot(call_state=None, call_rows=9))
     assert code == 1 and "coverage state is missing" in output
+
+
+def test_failed_metadata_refresh_fails_runtime(capsys):
+    code, output = run(capsys, db=snapshot(metadata_refresh=(99, "failed")))
+    assert code == 1
+    assert "refresh #99 failed" in output
+
+
+def test_running_metadata_refresh_warns_without_failing(capsys):
+    code, output = run(capsys, db=snapshot(metadata_refresh=(99, "running")))
+    assert code == 0
+    assert "[WARN] Metadata" in output
 
 
 def test_valid_coverage_uses_one_consistent_snapshot(capsys):

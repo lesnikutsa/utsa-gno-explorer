@@ -26,7 +26,12 @@ TIMERS = (
     "utsa-gno-realm-metadata-refresh.timer",
     "utsa-gno-valopers-refresh.timer",
     "utsa-gno-network-distribution.timer",
-    "utsa-gno-explorer-backup.timer",
+)
+SCHEDULED_SERVICES = (
+    "utsa-gno-realm-catalog-refresh.service",
+    "utsa-gno-realm-metadata-refresh.service",
+    "utsa-gno-valopers-refresh.service",
+    "utsa-gno-network-distribution.service",
 )
 HEALTH_URL = "http://127.0.0.1:18180/api/health"
 
@@ -72,10 +77,16 @@ def inspect_unit(unit: str) -> dict[str, str]:
 
 def inspect_database(database_url: str, chain_id: str) -> DatabaseSnapshot:
     database = PostgresDatabase(database_url)
-    with database.connect() as connection:
-        # Every fact below belongs to one stable checkpoint even while indexing continues.
-        connection.set_session(readonly=True, isolation_level="REPEATABLE READ")
+    with database.connect() as connection, connection.transaction():
         with connection.cursor() as cursor:
+            # PostgreSQL must establish these characteristics before the first snapshot.
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            cursor.execute(
+                "SELECT current_setting('transaction_read_only'), "
+                "current_setting('transaction_isolation')"
+            )
+            if cursor.fetchone() != ("on", "repeatable read"):
+                raise RuntimeError("read-only repeatable-read snapshot unavailable")
             def one(sql: str):
                 cursor.execute(sql, (chain_id,))
                 return cursor.fetchone()
@@ -141,7 +152,20 @@ def run(
         except Exception as exc:
             report.line("FAIL", f"{unit}: inspection unavailable ({_safe_failure(exc)})")
 
-    print("\nScheduled jobs")
+    print("\nScheduled job services")
+    for unit in SCHEDULED_SERVICES:
+        try:
+            state = unit_inspector(unit)
+            if state.get("LoadState") == "not-found":
+                report.line("FAIL", f"{unit}: not installed")
+            elif state.get("LoadState") == "loaded":
+                report.line("OK", f"{unit}: installed, {state.get('ActiveState', 'unknown')}")
+            else:
+                report.line("FAIL", f"{unit}: not loadable ({state.get('LoadState', 'unknown')})")
+        except Exception as exc:
+            report.line("FAIL", f"{unit}: inspection unavailable ({_safe_failure(exc)})")
+
+    print("\nScheduled job timers")
     for unit in TIMERS:
         try:
             state = unit_inspector(unit)
@@ -179,7 +203,12 @@ def run(
         else: report.line("FAIL", f"Call coverage is not contiguous at indexed checkpoint #{snapshot.indexed_height}")
         status = ", ".join(f"{name}={count}" for name, count in snapshot.metadata_statuses) or "none"
         suffix = f", refresh #{snapshot.metadata_refresh[0]} {snapshot.metadata_refresh[1]}" if snapshot.metadata_refresh else ""
-        report.line("OK" if snapshot.metadata_rows else "WARN", f"Metadata: {snapshot.metadata_rows} paths ({status}), latest #{snapshot.metadata_height or 'missing'}{suffix}")
+        metadata_level = "OK" if snapshot.metadata_rows else "WARN"
+        if snapshot.metadata_refresh:
+            refresh_status = snapshot.metadata_refresh[1]
+            if refresh_status == "failed": metadata_level = "FAIL"
+            elif refresh_status == "running" and metadata_level == "OK": metadata_level = "WARN"
+        report.line(metadata_level, f"Metadata: {snapshot.metadata_rows} paths ({status}), latest #{snapshot.metadata_height or 'missing'}{suffix}")
 
     print("\nAPI")
     try:

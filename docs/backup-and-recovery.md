@@ -10,8 +10,7 @@ This document describes operational expectations for the future PostgreSQL datab
 - Encrypt backups at rest when they leave the trusted database environment.
 - Do not include private RPC credentials in database backups because the schema does not store secrets.
 
-The Explorer backup runs daily through `utsa-gno-explorer-backup.timer` and can also be
-run on demand with `python3 scripts/backup_database.py` or the
+The Explorer backup is run manually with `python3 scripts/backup_database.py` or the
 `utsa-gno-explorer-backup.service` one-shot unit. Run it before destructive maintenance or
 network retirement. It validates a temporary dump before atomic publication and then keeps
 only the latest verified dump. A failed replacement preserves the previous valid dump.
