@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 import { isValidArgumentValue } from '../src/utils/transactionArguments.js'
+import { isCanonicalRealmPath, realmDetailHref } from '../src/utils/realm.js'
 
 const summary = readFileSync(new URL('../src/components/TransactionSummary.jsx', import.meta.url), 'utf8')
 const detail = readFileSync(new URL('../src/pages/TransactionDetail.jsx', import.meta.url), 'utf8')
@@ -32,6 +33,51 @@ test('bounded arguments render as escaped message-local text with fallback and t
   assert.match(summary, /Some argument values were shortened or are not shown\./)
   assert.doesNotMatch(summary, /dangerouslySetInnerHTML/)
   assert.match(styles, /overflow-wrap: anywhere/)
+})
+
+test('canonical realm and package paths use internal detail links without replacing disclosures', () => {
+  assert.equal(isCanonicalRealmPath('gno.land/r/gnops/valopers'), true)
+  assert.equal(isCanonicalRealmPath('gno.land/p/nt/avl/v0'), true)
+  assert.equal(realmDetailHref('gno.land/r/gnops/valopers'), '/realm?path=gno.land%2Fr%2Fgnops%2Fvalopers')
+  assert.equal(realmDetailHref('gno.land/p/nt/avl/v0'), '/realm?path=gno.land%2Fp%2Fnt%2Favl%2Fv0')
+  assert.match(summary, /function RealmPathLink/)
+  assert.match(summary, /href=\{realmDetailHref\(path\)\}/)
+  assert.match(summary, /<details[\s\S]*<summary id=/)
+  assert.match(summary, /onClick=\{\(event\) => event\.stopPropagation\(\)\}/)
+})
+
+test('package details and decoded arguments remain plain escaped text', () => {
+  const detailFields = summary.slice(summary.indexOf('function DetailFields'), summary.indexOf('function Arguments'))
+  const argumentsSection = summary.slice(summary.indexOf('function Arguments'), summary.indexOf('function validArgumentDetails'))
+  assert.match(detailFields, /<span>\{displayValue\(message\[key\]\)\}<\/span>/)
+  assert.doesNotMatch(detailFields, /RealmPathLink/)
+  assert.match(argumentsSection, /value === '' \? '—' : value/)
+  assert.doesNotMatch(argumentsSection, /RealmPathLink|realmDetailHref/)
+  assert.doesNotMatch(summary, /dangerouslySetInnerHTML/)
+})
+
+test('summary path validation stays strict and does not infer links from other values', () => {
+  assert.equal(isCanonicalRealmPath('gno.land/r/gnoland/wugnot'), true)
+  assert.equal(isCanonicalRealmPath('gno.land/p/nt/avl/v0'), true)
+
+  for (const value of [
+    'g1arw7msrsupe436spp4knv3pnp0n3gn4vjeksmt',
+    'hello gno.land/r/foo',
+    'https://example.com/gno.land/r/foo',
+    'gno.land/x/foo',
+    'gno.land/r/foo?bar=1',
+    ' gno.land/r/foo',
+    'gno.land/r/foo ',
+    'gno.land/r/',
+    `gno.land/r/${'a'.repeat(246)}`,
+    '<a href="/realm">gno.land/r/foo</a>',
+  ]) assert.equal(isCanonicalRealmPath(value), false, value)
+
+})
+
+test('realm links retain monospace wrapping and keyboard focus styling', () => {
+  assert.match(styles, /\.transaction-summary__realm-link \{[^}]*font-family: var\(--font-mono\)[^}]*overflow-wrap: anywhere/)
+  assert.match(styles, /\.transaction-summary__realm-link:focus-visible/)
 })
 
 test('four-field sender details are prioritized while three-field MsgSend is not', () => {

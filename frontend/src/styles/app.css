@@ -333,6 +333,9 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .transaction-summary__message > summary > * { min-width: 0; overflow-wrap: anywhere; }
 .transaction-summary__message > summary strong { color: var(--color-text-bright); }
 .transaction-summary__message > summary span { color: var(--color-text-secondary); }
+.transaction-summary__realm-link { color: var(--color-accent); font-family: var(--font-mono); text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 2px; overflow-wrap: anywhere; word-break: break-word; transition: color .15s ease, text-decoration-color .15s ease; }
+.transaction-summary__realm-link:hover { color: var(--color-text-bright); text-decoration-color: currentColor; }
+.transaction-summary__realm-link:focus-visible { border-radius: 2px; outline: 2px solid var(--color-accent); outline-offset: 2px; text-decoration-color: currentColor; }
 .transaction-summary__message-content { border-top: 1px solid var(--color-border-soft); }
 .transaction-summary__arguments { min-width: 0; padding: 10px 13px; border-top: 1px solid var(--color-border-soft); }
 .transaction-summary__arguments h4 { margin: 0 0 8px; color: var(--color-text-bright); font-size: 11px; }

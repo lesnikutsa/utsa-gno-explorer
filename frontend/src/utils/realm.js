@@ -10,13 +10,16 @@ export function realmDetailHref(path) {
   return `/realm?${params.toString()}`
 }
 
+export function isCanonicalRealmPath(path) {
+  if (typeof path !== 'string') return false
+  if (path.length < 1 || path.length > 256) return false
+  if (path !== path.trim()) return false
+  if (/\s/.test(path) || path.includes('?') || path.includes('#')) return false
+  return /^gno\.land\/[rp]\/[!-.0-~]+(?:\/[!-.0-~]+)*$/.test(path)
+}
+
 export function decodeRealmDetailPath(search = window.location.search) {
   const params = new URLSearchParams(search)
   const path = params.get('path')
-  if (typeof path !== 'string') return null
-  if (path.length < 1 || path.length > 256) return null
-  if (path !== path.trim()) return null
-  if (/\s/.test(path) || path.includes('?') || path.includes('#')) return null
-  if (!/^gno\.land\/[rp]\/[!-.0-~]+(?:\/[!-.0-~]+)*$/.test(path)) return null
-  return path
+  return isCanonicalRealmPath(path) ? path : null
 }

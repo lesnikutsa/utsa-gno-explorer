@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import { CopyButton } from './CopyButton'
 import { StatusBadge } from './StatusBadge'
+import { isCanonicalRealmPath, realmDetailHref } from '../utils/realm'
 import { isValidArgumentValue } from '../utils/transactionArguments'
 
 const DETAIL_FIELDS = [
@@ -80,6 +81,19 @@ const humanize = (value) => typeof value === 'string'
   ? value.replace(/[_-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
   : '—'
 
+function RealmPathLink({ path }) {
+  if (!isCanonicalRealmPath(path)) return path
+  return (
+    <a
+      className="transaction-summary__realm-link"
+      href={realmDetailHref(path)}
+      onClick={(event) => event.stopPropagation()}
+    >
+      {path}
+    </a>
+  )
+}
+
 function DetailFields({ message, showArgumentFallback }) {
   const fields = DETAIL_FIELDS.filter(({ key }) => isScalar(message[key]))
   if (showArgumentFallback && isScalar(message.args_count)) {
@@ -147,7 +161,11 @@ function MessageDisclosure({ message, index, argumentDetail }) {
       <summary id={`transaction-summary-message-${index + 1}`}>
         <strong>Message #{index + 1}</strong>
         <span>{isScalar(message.label) ? message.label : '—'}</span>
-        {isScalar(location) && <span className="mono">{location}</span>}
+        {isScalar(location) && <span className="mono">
+          {message.package_path === location
+            ? <RealmPathLink path={location} />
+            : location}
+        </span>}
         {isScalar(message.function) && <span className="mono">{message.function}</span>}
         {isScalar(message.args_count) && <span>{message.args_count} arguments</span>}
       </summary>
