@@ -33,12 +33,8 @@ def successful_backups(directory: Path) -> list[Path]:
     return sorted(backups, key=lambda path: path.name)
 
 
-def apply_retention(directory: Path, keep: int, newest: Path) -> None:
-    if keep <= 0:
-        return
-    backups = successful_backups(directory)
-    victims = backups[: max(0, len(backups) - keep)]
-    for victim in victims:
+def remove_previous_backups(directory: Path, newest: Path) -> None:
+    for victim in successful_backups(directory):
         if victim.resolve() == newest.resolve():
             continue
         victim.unlink()
@@ -50,9 +46,7 @@ def run_checked(command: list[str], stdout=None, stdin=None) -> None:
         raise RuntimeError(f"Command failed with exit code {result.returncode}")
 
 
-def create_backup(backup_dir: Path, compose_file: Path, env_file: Path, retention: int) -> Path:
-    if retention < 0:
-        raise ValueError("retention must be greater than or equal to 0")
+def create_backup(backup_dir: Path, compose_file: Path, env_file: Path) -> Path:
     if not compose_file.is_file():
         raise FileNotFoundError(f"Compose file not found: {compose_file}")
     if not env_file.is_file():
@@ -76,7 +70,7 @@ def create_backup(backup_dir: Path, compose_file: Path, env_file: Path, retentio
                 pass
             raise
         part_path.replace(final_path)
-        apply_retention(backup_dir, retention, final_path)
+        remove_previous_backups(backup_dir, final_path)
         return final_path
     finally:
         os.umask(old_umask)
@@ -87,14 +81,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--backup-dir", type=Path, default=DEFAULT_BACKUP_DIR)
     parser.add_argument("--compose-file", type=Path, default=DEFAULT_COMPOSE_FILE)
     parser.add_argument("--env-file", type=Path, default=DEFAULT_ENV_FILE)
-    parser.add_argument("--retention", type=int, default=3, help="Number of successful backups to keep; 0 disables deletion.")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        path = create_backup(args.backup_dir, args.compose_file, args.env_file, args.retention)
+        path = create_backup(args.backup_dir, args.compose_file, args.env_file)
     except Exception as exc:
         print(f"Backup failed: {exc}", file=sys.stderr)
         return 1

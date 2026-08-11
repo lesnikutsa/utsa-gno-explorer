@@ -22,7 +22,7 @@ remain in the [production reference](production-deployment.md).
 | `utsa-gno-api.service` | Localhost read-only HTTP API. |
 | `utsa-gno-indexer.service` | Sequential finalized block/transaction ingestion. |
 | `utsa-gno-governance-updater.service` | Continuous Governance snapshot updater. |
-| `utsa-gno-explorer-backup.service` / `.timer` | Verified PostgreSQL logical backup, daily. |
+| `utsa-gno-explorer-backup.service` | Manual verified PostgreSQL logical backup. |
 | `utsa-gno-network-distribution.service` / `.timer` | Observed peer sample, every 15 minutes. |
 | `utsa-gno-valopers-refresh.service` / `.timer` | Official Valopers metadata refresh, hourly. |
 
@@ -71,8 +71,9 @@ sudo journalctl -u utsa-gno-explorer-backup.service -n 100 --no-pager
 sudo find /var/backups/utsa-gno-explorer -maxdepth 1 -name '*.dump' -type f -printf '%TY-%Tm-%Td %TT %s %p\n'
 ```
 
-The job validates archives before atomic publication. Periodically perform the isolated
-restore validation from [Backup and recovery](backup-and-recovery.md); file presence alone
+Run the manual job before destructive maintenance or network retirement. It retains one
+latest verified dump; a failed replacement preserves the previous valid dump. Periodically
+perform the isolated restore validation from [Backup and recovery](backup-and-recovery.md); file presence alone
 is not sufficient.
 
 ## Safe reboot checklist
