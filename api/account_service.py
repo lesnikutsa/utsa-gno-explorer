@@ -10,7 +10,7 @@ import time
 from urllib.parse import urlsplit, urlunsplit
 
 from api.account_adapters import AccountParseError, parse_auth_account, parse_bank_balances
-from api.network_profile import topaz_profile
+from api.network_profile import gno_profile
 from indexer.rpc import RpcProbeResult, probe_rpc_endpoints, suitable_rpc_candidates
 from scripts.inspect_rpc import RpcError
 
@@ -158,7 +158,7 @@ def _prefer_account_candidate(candidates: list, preferred_rpc_url: str | None) -
 
 def fetch_live_account(address: str, config, *, preferred_rpc_url: str | None = None) -> dict:
     total_started_at = time.perf_counter()
-    profile = topaz_profile(config.chain_id)
+    profile = gno_profile(config.chain_id)
     try:
         try:
             lookup = _account_probes(config)

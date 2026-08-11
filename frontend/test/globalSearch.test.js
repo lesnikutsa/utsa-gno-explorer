@@ -40,7 +40,7 @@ test('classifies monikers and signing or operator addresses as validator searche
   assert.equal(shouldSearchValidators('f'.repeat(64)), false)
 })
 
-test('strictly validates Topaz account addresses', () => {
+test('strictly validates Gno account addresses', () => {
   assert.equal(isValidAccountAddress(validAccount), true)
   assert.equal(isValidAccountAddress(` \t${validAccount}\n`), true)
   assert.equal(isValidAccountAddress(`${validAccount.slice(0, -1)}q`), false)

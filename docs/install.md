@@ -59,8 +59,8 @@ sudo install -o root -g utsa-gno -m 0640 deploy/systemd/api.env.example /etc/uts
 ```
 
 Write a strong placeholder-replacing password, without a trailing newline, to
-`postgres-password`. Edit the three `.env` files securely. Keep `GNO_CHAIN_ID=topaz-1` in
-`rpc.env` and replace example RPC URLs with approved endpoints. `indexer.env` uses the
+`postgres-password`. Edit the three `.env` files securely. Keep `GNO_CHAIN_ID=sapphire-1`
+and the approved Sapphire RPC endpoint in `rpc.env`. `indexer.env` uses the
 writer role `utsa_gno_indexer`; `api.env` uses the separately created read-only
 `utsa_gno_api` role. Replace every password placeholder with URL-safe values. Never print
 or commit these values and do not add a shared raw `DATABASE_URL` file.
@@ -69,19 +69,13 @@ or commit these values and do not add a shared raw `DATABASE_URL` file.
 with a leading `-`. When overrides are needed, create it as `root:utsa-gno`, mode `0640`;
 use only variables documented in the [production reference](production-deployment.md).
 
-## 5. Choose exactly one bootstrap mode
+## 5. Bootstrap Sapphire from block 1
 
-**Mode A — full history:** use an entirely empty database and set
-`INDEXER_START_HEIGHT=1`. This is required when complete Topaz history is wanted.
-
-**Mode B — fresh current-state deployment:** use an entirely empty database and do not
-restore a backup. Query healthy RPCs, choose a recent finalized height (for example, the
-current RPC height minus about 100), and set that fixed value as `INDEXER_START_HEIGHT`
-before initialization. Blocks, transactions, account history, validator sets, and signing
-history before it will not exist locally. Future ingestion remains sequential from the
-chosen height; missing history cannot appear without indexing or restoring it. Current
-Valopers, Governance, and observed network-distribution snapshots are populated separately
-by their respective services.
+Sapphire is a fresh chain, not a Topaz hardfork, and has no Topaz historical replay. Use
+an entirely empty production database and set `INDEXER_START_HEIGHT=1` to index every
+normal block from block 1. Do not restore or reuse Topaz database rows, checkpoints, or
+backups. Initialize the existing schema normally; no network data conversion or SQL
+migration is part of the Sapphire cutover.
 
 ## 6. Start PostgreSQL and create the required roles
 

@@ -1,14 +1,13 @@
-export const TELEGRAM_BOT_USERNAME = 'UTSAGNOBot'
-export const TELEGRAM_WATCH_PREFIX = 'watch_topaz_'
+import { networkProfile } from '../config/networkProfile'
+import { buildConfiguredTelegramValidatorWatchUrl } from './telegramWatch'
 
-const SIGNING_ADDRESS_PATTERN = /^g1[0-9a-z]{38}$/
+export const TELEGRAM_BOT_USERNAME = 'UTSAGNOBot'
 
 export function buildTelegramValidatorWatchUrl(signingAddress) {
-  if (typeof signingAddress !== 'string') return null
-
-  const normalizedSigningAddress = signingAddress.trim().toLowerCase()
-  if (!SIGNING_ADDRESS_PATTERN.test(normalizedSigningAddress)) return null
-
-  const startPayload = `${TELEGRAM_WATCH_PREFIX}${normalizedSigningAddress}`
-  return `https://t.me/${TELEGRAM_BOT_USERNAME}?start=${encodeURIComponent(startPayload)}`
+  return buildConfiguredTelegramValidatorWatchUrl({
+    botUsername: TELEGRAM_BOT_USERNAME,
+    enabled: networkProfile.telegramValidatorMonitorEnabled,
+    watchPrefix: networkProfile.telegramValidatorWatchPrefix,
+    signingAddress,
+  })
 }

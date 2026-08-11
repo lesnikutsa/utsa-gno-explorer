@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, NamedTuple
 
-from api.network_profile import topaz_profile, validate_account_address
+from api.network_profile import gno_profile, validate_account_address
 from .transaction_summary import MAX_MESSAGES
 
 
@@ -21,7 +21,7 @@ def extract_transaction_participants(summary: Any) -> list[TransactionParticipan
         messages = summary.get("messages")
         if not isinstance(messages, list) or len(messages) > MAX_MESSAGES:
             return []
-        profile = topaz_profile("")
+        profile = gno_profile("")
         found: set[TransactionParticipant] = set()
         for message_index, message in enumerate(messages):
             if not isinstance(message, dict):
