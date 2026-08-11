@@ -2596,6 +2596,14 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                 init_database.validate_participant_privileges(cursor)
             connection.rollback()
 
+        with psycopg.connect(url) as connection, connection.cursor() as cursor:
+            cursor.execute("GRANT TRUNCATE ON realm_metadata TO utsa_gno_indexer")
+            with self.assertRaisesRegex(
+                init_database.SchemaCompatibilityError, "Indexer role"
+            ):
+                init_database.validate_participant_privileges(cursor)
+            connection.rollback()
+
         partial_url = self.create_exact_stage_database(
             f"utsa_metadata_partial_{os.getpid()}",
             init_database.PRE_REALM_METADATA_EXPECTATIONS,
