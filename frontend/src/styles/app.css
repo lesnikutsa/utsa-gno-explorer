@@ -900,6 +900,17 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .realm-detail__field dt { margin-bottom: 5px; color: var(--color-text-secondary); font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
 .realm-detail__field dd { margin: 0; color: var(--color-text-bright); font: 600 13px var(--font-mono); overflow-wrap: anywhere; }
 .realm-detail__source { margin: 8px 2px 0; }
+.realm-metadata__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; border-top: 1px solid var(--color-border-soft); }
+.realm-metadata__grid > div, .realm-metadata__source { min-width: 0; padding: 13px; border-top: 1px solid var(--color-border-soft); }
+.realm-metadata h3 { margin: 0 0 8px; color: var(--color-text-bright); font-size: 13px; }
+.realm-metadata h3 span, .realm-metadata p, .realm-metadata small { color: var(--color-text-secondary); font-size: 11px; }
+.realm-metadata ul { margin: 0; padding: 0; list-style: none; }
+.realm-metadata__files button { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; width: 100%; padding: 7px 0; border: 0; background: none; color: var(--color-text-bright); text-align: left; cursor: pointer; }
+.realm-metadata__files button > span:first-child, .realm-metadata__names a, .realm-metadata__source > p { overflow-wrap: anywhere; word-break: break-word; }
+.realm-metadata__names { display: grid; gap: 6px; color: var(--color-text-secondary); font-size: 12px; }
+.realm-metadata__docs { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 10px; margin: 0; color: var(--color-text-secondary); font-size: 12px; }
+.realm-metadata__docs dd { margin: 0; color: var(--color-text-bright); }
+.realm-metadata__source pre { max-width: 100%; max-height: 560px; margin: 8px 0 0; padding: 12px; overflow: auto; border: 1px solid var(--color-border-soft); border-radius: 4px; background: var(--color-bg); color: var(--color-text-bright); font: 12px/1.55 var(--font-mono); }
 .realm-detail__message-label { display: block; margin-top: 3px; color: var(--color-text-secondary); font-size: 9px; font-weight: 400; }
 .realm-detail__calls .data-table { min-width: 900px; }
 .realm-detail__note { padding: 14px; }
@@ -910,4 +921,4 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .realms-table__path-link:hover { color: var(--color-accent); }
 .realms-table__path-link:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
 @media (max-width: 900px) { .realm-detail__overview { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 620px) { .realm-detail__overview { grid-template-columns: 1fr; } .realm-detail__header h1 { font-size: 17px; } }
+@media (max-width: 620px) { .realm-detail__overview, .realm-metadata__grid { grid-template-columns: 1fr; } .realm-detail__header h1 { font-size: 17px; } .realm-metadata__files button { grid-template-columns: minmax(0, 1fr) auto; } .realm-metadata__files small { grid-column: 1 / -1; } }

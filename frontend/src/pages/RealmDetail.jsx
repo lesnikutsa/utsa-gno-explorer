@@ -6,6 +6,7 @@ import { relativeTime } from '../utils/time'
 import { formatSuccessRate } from '../utils/realm'
 import { getRealmDetailViewModel, getRealmSourceStatusParts, realmCallsPageLabel, realmCallsPathForDetail } from '../utils/realmDetail'
 import { useRealmCalls } from '../hooks/useRealmCalls'
+import { useRealmMetadata } from '../hooks/useRealmMetadata'
 
 const formatCount = (value) => typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString() : value == null ? '—' : String(value)
 const formatBlock = (value) => value == null ? '—' : <a className="accent-value mono" href={`/blocks/${encodeURIComponent(value)}`} aria-label={`Open block ${value}`}>#{formatCount(value)}</a>
@@ -13,6 +14,9 @@ const formatAccount = (value) => value ? <a className="accent-value mono" href={
 const shortHash = (value) => value ? `${value.slice(0, 10)}…${value.slice(-8)}` : '—'
 const txHref = (row) => row.tx_hash ? `/blocks/${encodeURIComponent(row.block_height)}/transactions/${encodeURIComponent(row.tx_index)}` : null
 const field = (label, value) => <div className="realm-detail__field"><dt>{label}</dt><dd>{value}</dd></div>
+const formatBytes = (value) => value == null ? '—' : value < 1024 ? `${value} B` : `${(value / 1024).toFixed(1)} KB`
+const statusLabel = (value) => value ? value.replaceAll('_', ' ') : 'Unavailable'
+const fileKindLabel = { gno_source: 'Gno source', gno_test: 'Test', gnomod: 'Module', other: 'Other' }
 
 function StatePanel({ title, message, retry }) {
   return (
@@ -87,7 +91,43 @@ export function RecentCalls({ response }) {
   )
 }
 
+function Metadata({ metadata }) {
+  if (metadata.loading) return <section className="panel realm-detail__section realm-detail__note"><h2>Metadata</h2><p>Loading persisted metadata…</p></section>
+  if (metadata.notFound) return <section className="panel realm-detail__section realm-detail__note"><h2>Metadata</h2><p>Metadata has not been collected for this path yet.</p></section>
+  if (metadata.error || !metadata.data) return <section className="panel realm-detail__section realm-detail__note"><h2>Metadata</h2><p>Metadata is temporarily unavailable.</p></section>
+  const data = metadata.data
+  const summary = data.summary
+  const funcs = summary.qfuncs_status === 'ok' ? summary.qfuncs_summary : null
+  const docs = summary.qdoc_status === 'ok' ? summary.qdoc_summary : null
+  const storageAvailable = summary.qstorage_status === 'ok'
+  return (
+    <section className="panel realm-detail__section realm-metadata" aria-labelledby="realm-metadata-title">
+      <div className="panel__heading"><h2 id="realm-metadata-title">Metadata</h2><StatusBadge tone={data.collection_status === 'complete' ? 'success' : 'neutral'}>{data.collection_status === 'complete' ? 'Complete' : 'Partial'}</StatusBadge></div>
+      <dl className="realm-detail__overview">
+        {field('Files', formatCount(summary.file_count))}
+        {field('Functions', funcs ? formatCount(funcs.function_count) : 'Unavailable')}
+        {field('Dependencies', formatCount(summary.dependency_count))}
+        {field('Docs', docs?.available ? 'Available' : statusLabel(summary.qdoc_status))}
+        {field('Metadata height', `#${formatCount(data.observed_height)}`)}
+        {field('Collected', <time dateTime={data.collected_at} title={data.collected_at}>{relativeTime(data.collected_at)}</time>)}
+        {field('Package metadata', statusLabel(summary.qpkg_json_status))}
+        {data.kind === 'realm' && field('Storage', storageAvailable && summary.qstorage_bytes != null ? `${summary.qstorage_bytes} bytes` : statusLabel(summary.qstorage_status))}
+        {data.kind === 'realm' && field('Deposit', storageAvailable && summary.qstorage_deposit_ugnot != null ? `${summary.qstorage_deposit_ugnot} uGNOT` : statusLabel(summary.qstorage_status))}
+        {data.kind === 'realm' && field('Render', summary.qrender_status === 'ok' ? 'Available' : statusLabel(summary.qrender_status))}
+      </dl>
+      <div className="realm-metadata__grid">
+        <div><h3>Files <span>{formatCount(summary.file_count)}</span></h3><ul className="realm-metadata__files">{data.files.map((file) => <li key={file.filename}><button type="button" onClick={() => metadata.selectFile(file.filename)}><span className="mono">{file.filename}</span><StatusBadge tone="neutral">{fileKindLabel[file.file_kind]}</StatusBadge><small>{formatBytes(file.byte_count)} · {formatCount(file.line_count)} lines</small></button></li>)}</ul></div>
+        <div><h3>Functions {funcs && <span>{formatCount(funcs.function_count)}</span>}</h3>{funcs ? <><ul className="realm-metadata__names">{funcs.function_names.map((name, index) => <li className="mono" key={`${name}-${index}`}>{name}</li>)}</ul>{funcs.function_count > funcs.function_names.length && <p>Showing {funcs.function_names.length} of {funcs.function_count} functions</p>}</> : <p>Functions unavailable · {statusLabel(summary.qfuncs_status)}</p>}</div>
+        <div><h3>Dependencies <span>{formatCount(summary.dependency_count)}</span></h3><ul className="realm-metadata__names">{data.dependencies.map((dependency) => <li key={`${dependency.imported_path}-${dependency.imported_kind}`}><a className="mono" href={`/realms/detail?path=${encodeURIComponent(dependency.imported_path)}`}>{dependency.imported_path}</a></li>)}</ul>{data.dependencies_truncated && <p>Showing first 200 dependencies</p>}</div>
+        <div><h3>Docs</h3>{docs ? <dl className="realm-metadata__docs"><dt>Available</dt><dd>Yes</dd><dt>Package doc</dt><dd>{docs.package_doc_present ? 'Yes' : 'No'}</dd><dt>Documented functions</dt><dd>{docs.documented_function_count}</dd><dt>Values</dt><dd>{docs.value_count}</dd><dt>Types</dt><dd>{docs.type_count}</dd></dl> : <p>Docs unavailable · {statusLabel(summary.qdoc_status)}</p>}</div>
+      </div>
+      <div className="realm-metadata__source"><h3>Source</h3>{metadata.source.loading && <p>Loading source…</p>}{metadata.source.error && <p>Source file is temporarily unavailable.</p>}{metadata.source.data && <><p className="mono">{metadata.source.data.filename} · {formatBytes(metadata.source.data.byte_count)} · {metadata.source.data.line_count} lines</p><pre><code>{metadata.source.data.content}</code></pre></>}</div>
+    </section>
+  )
+}
+
 export function RealmDetail({ path, detailState }) {
+  const metadata = useRealmMetadata(path)
   if (!path) return <StatePanel title="Invalid Realm or Package path" message="The path query parameter is required and must be a canonical gno.land/r/... or gno.land/p/... path." />
   if (detailState.loading) return <StatePanel title="Loading Realm or Package details…" />
   if (detailState.notFound) return <StatePanel title="Realm or Package not found" message="This path has not been indexed." />
@@ -110,6 +150,7 @@ export function RealmDetail({ path, detailState }) {
       </header>
       <Overview item={item} source={source} />
       <SourceStatus source={source} item={item} />
+      <Metadata metadata={metadata} />
       <RecentCalls response={response} />
     </article>
   )
