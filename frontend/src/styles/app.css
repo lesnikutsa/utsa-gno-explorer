@@ -159,6 +159,11 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .validators-page__legend small { color: var(--color-text-secondary); font-size: 9px; }
 .validators-page__table { max-width: 100%; }
 .validators-page__table .data-table { min-width: 980px; }
+.validator-identity-cell { display: flex; align-items: flex-start; min-width: 0; gap: 4px; }
+.validator-favorite { flex: 0 0 auto; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--color-text-secondary); cursor: pointer; font-size: 15px; line-height: 18px; }
+.validator-favorite:hover { background: var(--color-surface-hover); color: var(--color-text-bright); }
+.validator-favorite:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+.validator-favorite--active { color: var(--color-warning); }
 .validator-identity { display: grid; min-width: 130px; max-width: 220px; gap: 2px; }
 .validator-identity__moniker { overflow: hidden; color: var(--color-text-bright); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .validator-identity__address { color: var(--color-text-secondary); font-size: 9px; }

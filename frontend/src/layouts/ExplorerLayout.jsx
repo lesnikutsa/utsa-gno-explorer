@@ -35,7 +35,7 @@ export function ExplorerLayout({ children, healthState, nextFastRefreshAt, showR
       />
       <div className="app-frame">
         <TopBar onMenuClick={() => setSidebarOpen(true)} healthState={healthState} nextFastRefreshAt={nextFastRefreshAt} showRefreshCountdown={showRefreshCountdown} averageBlockTimeSeconds={averageBlockTimeSeconds} averageBlockTimeSampleSize={averageBlockTimeSampleSize} theme={theme} onToggleTheme={toggleTheme} />
-        <main className="main-content">{children}</main>
+        <main className="main-content">{typeof children === 'function' ? children(chainId) : children}</main>
       </div>
     </div>
   )

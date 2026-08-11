@@ -127,7 +127,7 @@ function ValidatorsPage() {
 
   return (
     <ExplorerLayout healthState={validatorsPage.healthState} showRefreshCountdown={false}>
-      <Validators validatorsPage={validatorsPage} />
+      {(chainId) => <Validators validatorsPage={validatorsPage} chainId={chainId} />}
     </ExplorerLayout>
   )
 }
