@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { BlocksIcon, MenuIcon, SearchIcon } from './Icons'
+import { BlocksIcon, MenuIcon, MoonIcon, SearchIcon, SunIcon } from './Icons'
 import { useGlobalSearch } from '../hooks/useGlobalSearch'
 import { shortAddress } from '../utils/address'
 import { formatAverageBlockTime } from '../utils/blockTime'
 
 const labels = { loading: 'Connecting', healthy: 'Healthy', degraded: 'Degraded', error: 'Unavailable' }
 
-export function TopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefreshCountdown = true, averageBlockTimeSeconds, averageBlockTimeSampleSize }) {
+export function TopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefreshCountdown = true, averageBlockTimeSeconds, averageBlockTimeSampleSize, theme, onToggleTheme }) {
   const [clock, setClock] = useState(Date.now())
   const searchInputRef = useRef(null)
   const searchFormRef = useRef(null)
@@ -151,6 +151,16 @@ export function TopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefres
           <strong className={averageBlockTimeUpdating ? 'topbar-block-time__value topbar-block-time__value--updating' : 'topbar-block-time__value'}>{formattedAverageBlockTime}</strong>
         </div>
       )}
+      <button
+        className="theme-toggle"
+        type="button"
+        onClick={onToggleTheme}
+        aria-label={theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
+        aria-pressed={theme === 'light'}
+        title={theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
+      >
+        {theme === 'light' ? <MoonIcon /> : <SunIcon />}
+      </button>
       <div className="network-update">
         <span className={`pulse pulse--${healthState}`} />
         <div><strong>{labels[healthState]}</strong>{showRefreshCountdown && <span>Next refresh: {secondsUntilRefresh}s</span>}</div>

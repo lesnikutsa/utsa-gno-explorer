@@ -227,11 +227,11 @@ test('transaction account, block, and hash columns preserve their links', () => 
   assert.equal(transactions.includes('CopyButton'), false)
 })
 test('shared data table headers use consistent typography', () => {
-  assert.ok(styles.includes('.data-table th { padding: 10px 16px; color: #758b9d; font-size: 11px; font-weight: 700;'))
+  assert.ok(styles.includes('.data-table th { padding: 10px 16px; color: var(--color-table-heading); font-size: 11px; font-weight: 700;'))
   assert.ok(styles.includes('.data-table__sort { display: inline-flex;'))
 })
 test('transaction headers and rows share desktop columns and become labeled field grids', () => {
-  const transactionStyles = styles.slice(styles.indexOf('.account-detail__transaction-list'))
+  const transactionStyles = styles.slice(styles.indexOf('.account-detail__transaction-list'), styles.indexOf('.realm-detail'))
   assert.ok(transactionStyles.includes('--transaction-columns:'))
   assert.ok(transactionStyles.includes('.account-detail__transaction-header, .account-detail__transaction { display: grid; grid-template-columns: var(--transaction-columns)'))
   assert.ok(transactionStyles.includes('--transaction-columns: 110px minmax(20px, 1fr) 100px minmax(20px, 1fr) 330px minmax(20px, 1fr) 125px minmax(20px, 1fr) 80px minmax(20px, 1fr) 220px minmax(20px, 1fr) 82px'))
