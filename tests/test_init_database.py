@@ -341,10 +341,14 @@ def test_migration_failure_does_not_commit_or_report_ready():
     assert connection.commits == 0
 
 class PrivilegeCursor:
-    def __init__(self, grants): self.grants, self.params = grants, None
-    def execute(self, sql, params=None): self.params = params
+    def __init__(self, grants, owned_tables=()):
+        self.grants, self.owned_tables, self.params, self.sql = grants, set(owned_tables), None, ""
+    def execute(self, sql, params=None): self.sql, self.params = str(sql), params
     def fetchone(self):
         if len(self.params) == 1: return (self.params[0] in self.grants,)
+        if "FROM pg_class AS c" in self.sql:
+            schema, table, role = self.params
+            return ((schema, table, role) in self.owned_tables,)
         role, table, privilege = self.params
         table = table.removeprefix("public.")
         return (privilege in self.grants.get(role, {}).get(table, set()),)
@@ -352,6 +356,34 @@ class PrivilegeCursor:
 
 def test_participant_privilege_validation_accepts_least_privilege():
     init_database.validate_participant_privileges(PrivilegeCursor(copy.deepcopy(EXPECTED_PRIVILEGES)))
+
+
+def test_indexer_owner_derived_privileges_are_accepted():
+    grants = copy.deepcopy(EXPECTED_PRIVILEGES)
+    grants["utsa_gno_indexer"]["transaction_participants"].update(
+        {"UPDATE", "TRUNCATE", "REFERENCES", "TRIGGER"}
+    )
+    init_database.validate_participant_privileges(PrivilegeCursor(
+        grants,
+        owned_tables={("public", "transaction_participants", "utsa_gno_indexer")},
+    ))
+
+
+def test_indexer_owner_missing_required_privilege_fails_closed():
+    grants = copy.deepcopy(EXPECTED_PRIVILEGES)
+    grants["utsa_gno_indexer"]["transaction_participants"].remove("DELETE")
+    with pytest.raises(init_database.SchemaCompatibilityError, match="Indexer role"):
+        init_database.validate_participant_privileges(PrivilegeCursor(
+            grants,
+            owned_tables={("public", "transaction_participants", "utsa_gno_indexer")},
+        ))
+
+
+def test_indexer_non_owner_unexpected_privilege_fails_closed():
+    grants = copy.deepcopy(EXPECTED_PRIVILEGES)
+    grants["utsa_gno_indexer"]["transaction_participants"].add("TRUNCATE")
+    with pytest.raises(init_database.SchemaCompatibilityError, match="Indexer role"):
+        init_database.validate_participant_privileges(PrivilegeCursor(grants))
 
 
 def test_api_writes_and_missing_indexer_grants_fail_closed():
@@ -370,10 +402,10 @@ def test_api_writes_and_missing_indexer_grants_fail_closed():
 
 
 @pytest.mark.parametrize(("role", "table", "privilege", "message"), [
+    ("utsa_gno_api", "transaction_participants", "INSERT", "API role"),
     ("utsa_gno_api", "realm_metadata", "TRUNCATE", "API role"),
     ("utsa_gno_api", "realm_metadata_files", "REFERENCES", "API role"),
     ("utsa_gno_api", "realm_metadata_imports", "TRIGGER", "API role"),
-    ("utsa_gno_indexer", "realm_metadata_refresh_state", "TRUNCATE", "Indexer role"),
 ])
 def test_extended_metadata_privileges_fail_closed(role, table, privilege, message):
     grants = copy.deepcopy(EXPECTED_PRIVILEGES)

@@ -911,8 +911,20 @@ def validate_table_privileges(cursor) -> None:
                     actual.add(privilege)
             if role == "utsa_gno_api" and actual != required:
                 raise SchemaCompatibilityError(f"API role has incompatible privileges for {table}")
-            if role == "utsa_gno_indexer" and actual != required:
-                raise SchemaCompatibilityError(f"Indexer role has incompatible privileges for {table}")
+            if role == "utsa_gno_indexer":
+                cursor.execute(
+                    """SELECT EXISTS (
+                      SELECT 1
+                      FROM pg_class AS c
+                      JOIN pg_namespace AS n ON n.oid = c.relnamespace
+                      JOIN pg_roles AS r ON r.oid = c.relowner
+                      WHERE n.nspname = %s AND c.relname = %s AND r.rolname = %s
+                    )""",
+                    ("public", table, role),
+                )
+                owns_table = cursor.fetchone()[0]
+                if actual != required and not (owns_table and required <= actual):
+                    raise SchemaCompatibilityError(f"Indexer role has incompatible privileges for {table}")
 
 
 def validate_participant_privileges(cursor) -> None:

@@ -184,6 +184,27 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
     def database_url_for(self, name):
         return f"postgresql://utsa_test:{self.password}@{self.host}:{self.port}/{name}"
 
+    def create_writer_owned_database(self, name):
+        """Create the documented production ownership model in a disposable database."""
+        from psycopg import sql
+
+        self.ensure_application_roles()
+        with self.connect("postgres") as connection:
+            connection.autocommit = True
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    sql.SQL("ALTER ROLE utsa_gno_indexer LOGIN PASSWORD {}").format(
+                        sql.Literal(self.password)
+                    )
+                )
+                cursor.execute(f'CREATE DATABASE "{name}" OWNER utsa_gno_indexer')
+        with self.connect(name) as connection, connection.cursor() as cursor:
+            cursor.execute("ALTER SCHEMA public OWNER TO utsa_gno_indexer")
+        return (
+            f"postgresql://utsa_gno_indexer:{self.password}@"
+            f"{self.host}:{self.port}/{name}"
+        )
+
     @staticmethod
     def build_historical_schema(expectations):
         """Remove every canonical DDL section later than an exact known stage."""
@@ -2567,6 +2588,22 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                 cursor.execute("SELECT * FROM realm_metadata")
             connection.rollback()
 
+        with psycopg.connect(url) as connection, connection.cursor() as cursor:
+            cursor.execute("REVOKE DELETE ON realm_metadata FROM utsa_gno_indexer")
+            with self.assertRaisesRegex(
+                init_database.SchemaCompatibilityError, "Indexer role"
+            ):
+                init_database.validate_participant_privileges(cursor)
+            connection.rollback()
+
+        with psycopg.connect(url) as connection, connection.cursor() as cursor:
+            cursor.execute("GRANT TRUNCATE ON realm_metadata TO utsa_gno_indexer")
+            with self.assertRaisesRegex(
+                init_database.SchemaCompatibilityError, "Indexer role"
+            ):
+                init_database.validate_participant_privileges(cursor)
+            connection.rollback()
+
         partial_url = self.create_exact_stage_database(
             f"utsa_metadata_partial_{os.getpid()}",
             init_database.PRE_REALM_METADATA_EXPECTATIONS,
@@ -2575,6 +2612,58 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             cursor.execute("CREATE TABLE realm_metadata(chain_id text)")
         with self.assertRaises(init_database.SchemaCompatibilityError):
             init_database.initialize_or_validate(partial_url)
+
+    def test_metadata_upgrade_with_production_writer_ownership(self):
+        name = f"utsa_metadata_writer_owner_{os.getpid()}"
+        writer_url = self.create_writer_owned_database(name)
+        schema = self.build_historical_schema(
+            init_database.PRE_REALM_METADATA_EXPECTATIONS
+        )
+        with psycopg.connect(writer_url) as connection, connection.cursor() as cursor:
+            cursor.execute(schema)
+            init_database.validate_schema_snapshot(
+                init_database.fetch_schema_snapshot(cursor),
+                init_database.PRE_REALM_METADATA_EXPECTATIONS,
+            )
+            cursor.execute(
+                "SELECT tableowner FROM pg_tables "
+                "WHERE schemaname = 'public' AND tablename = 'transaction_participants'"
+            )
+            self.assertEqual(cursor.fetchone()[0], "utsa_gno_indexer")
+
+        upgraded = self.run_init(writer_url)
+        self.assertEqual(upgraded.returncode, 0, upgraded.stderr)
+        repeated = self.run_init(writer_url)
+        self.assertEqual(repeated.returncode, 0, repeated.stderr)
+
+        with psycopg.connect(writer_url) as connection, connection.cursor() as cursor:
+            init_database.validate_schema_snapshot(init_database.fetch_schema_snapshot(cursor))
+            init_database.validate_participant_privileges(cursor)
+            cursor.execute(
+                "SELECT tablename, tableowner FROM pg_tables "
+                "WHERE schemaname = 'public' AND tablename = ANY(%s)",
+                (list(init_database.METADATA_TABLES),),
+            )
+            self.assertEqual(
+                dict(cursor.fetchall()),
+                {table: "utsa_gno_indexer" for table in init_database.METADATA_TABLES},
+            )
+            for table in init_database.METADATA_TABLES:
+                for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+                    cursor.execute(
+                        "SELECT has_table_privilege('utsa_gno_indexer', %s, %s)",
+                        (f"public.{table}", privilege),
+                    )
+                    self.assertTrue(cursor.fetchone()[0])
+                for privilege in (
+                    "SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE",
+                    "REFERENCES", "TRIGGER",
+                ):
+                    cursor.execute(
+                        "SELECT has_table_privilege('utsa_gno_api', %s, %s)",
+                        (f"public.{table}", privilege),
+                    )
+                    self.assertFalse(cursor.fetchone()[0])
 
     def test_metadata_publication_replacement_preservation_and_stale_guard(self):
         url = self.prepare_metadata_database(f"utsa_metadata_publish_{os.getpid()}")
