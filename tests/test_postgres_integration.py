@@ -186,12 +186,16 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
 
     def create_writer_owned_database(self, name):
         """Create the documented production ownership model in a disposable database."""
+        from psycopg import sql
+
         self.ensure_application_roles()
         with self.connect("postgres") as connection:
             connection.autocommit = True
             with connection.cursor() as cursor:
                 cursor.execute(
-                    "ALTER ROLE utsa_gno_indexer LOGIN PASSWORD %s", (self.password,)
+                    sql.SQL("ALTER ROLE utsa_gno_indexer LOGIN PASSWORD {}").format(
+                        sql.Literal(self.password)
+                    )
                 )
                 cursor.execute(f'CREATE DATABASE "{name}" OWNER utsa_gno_indexer')
         with self.connect(name) as connection, connection.cursor() as cursor:
