@@ -125,7 +125,7 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         for forbidden in ("sender", "recipient", "amount", "fee"):
             self.assertNotIn(forbidden, page.lower())
 
-    def test_states_pagination_and_responsive_layout(self):
+    def test_states_pagination_and_native_scrollable_table_layout(self):
         page = self.read("frontend/src/pages/Transactions.jsx")
         styles = self.read("frontend/src/styles/app.css")
         badge = self.read("frontend/src/components/TransactionTypeBadge.jsx")
@@ -135,34 +135,40 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         self.assertIn("disabled={loading || !canLoadOlder}", page)
         self.assertIn("pageIndex === 0 ? 'Latest' : `Page ${pageIndex + 1}`", page)
         transactions_rules = styles[styles.index(".transactions-page {"):styles.index(".transaction-type-badge")]
-        template = "110px minmax(24px, 1fr) 250px minmax(24px, 1fr) 110px minmax(24px, 1fr) 90px minmax(24px, 1fr) 100px minmax(24px, 1fr) 120px"
-        self.assertIn(f"grid-template-columns: {template}", transactions_rules)
-        self.assertEqual(template.count("minmax(24px, 1fr)"), 5)
-        for child, column in enumerate((1, 3, 5, 7, 9, 11), start=1):
-            self.assertIn(f"tr > :nth-child({child}) {{ grid-column: {column}; }}", transactions_rules)
-        self.assertIn("padding-right: 16px; padding-left: 16px", transactions_rules)
+        self.assertIn(".table-scroll { overflow-x: auto; }", styles)
+        self.assertIn(".transactions-page__table .data-table { min-width: 940px; }", transactions_rules)
+        self.assertNotIn("display: grid", transactions_rules)
+        self.assertNotIn("display: block", transactions_rules)
+        self.assertNotIn("grid-template-columns", transactions_rules)
+        self.assertNotIn("overflow-x: visible", transactions_rules)
+        self.assertNotIn("thead { display: none", transactions_rules)
+        self.assertNotIn("td[data-label]::before", transactions_rules)
         shared_headers = styles[styles.index(".data-table th {"):styles.index("\n", styles.index(".data-table th {"))]
         self.assertIn("font-size: 11px", shared_headers)
         self.assertIn("font-weight: 700", shared_headers)
-        self.assertIn(".transactions-page__table .data-table th { padding: 10px 0; text-align: center; }", transactions_rules)
-        self.assertNotIn("column-gap:", transactions_rules)
-        self.assertNotIn("justify-content: center", transactions_rules)
-        self.assertNotIn("justify-content: space-between", transactions_rules)
-        self.assertNotIn("min-width: 1042px", transactions_rules)
-        self.assertIn("@media (max-width: 1180px)", transactions_rules)
-        self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr))", transactions_rules)
-        self.assertIn("@media (max-width: 520px)", transactions_rules)
-        self.assertIn("grid-template-columns: minmax(0, 1fr)", transactions_rules)
-        self.assertIn("td[data-label]::before", transactions_rules)
+        self.assertIn(".transactions-page__table .data-table th, .transactions-page__table .data-table td { text-align: center; }", transactions_rules)
+        self.assertIn("width: 160px", transactions_rules)
         self.assertIn("data-label={column.label}", self.read("frontend/src/components/DataTable.jsx"))
         self.assertIn(".transactions-table__hash-cell { white-space: nowrap; }", styles)
         self.assertIn(".transactions-table__hash { color: var(--color-text-bright); font-weight: 600; white-space: nowrap; }", styles)
         self.assertNotIn(".transactions-table__hash-cell .copy-button", styles)
         self.assertIn("import { TransactionTypeBadge }", page)
         self.assertIn("<TransactionTypeBadge title={transaction.type !== 'unknown' ? transaction.type : undefined}>{transaction.operation}</TransactionTypeBadge>", page)
-        self.assertIn('className="transaction-type-badge"', badge)
+        self.assertIn("className={`transaction-type-badge transaction-type-badge--${variant}`}", badge)
         self.assertIn(".transaction-type-badge {", styles)
         self.assertNotIn("transactions-table__operation", page + styles)
+
+    def test_additional_message_badge_does_not_shift_primary_type(self):
+        page = self.read("frontend/src/pages/Transactions.jsx")
+        badge = self.read("frontend/src/components/AdditionalMessageBadge.jsx")
+        styles = self.read("frontend/src/styles/app.css")
+        self.assertIn('className="transactions-table__type-cell"', page)
+        self.assertIn("<AdditionalMessageBadge messageCount={transaction.message_count} />", page)
+        self.assertIn("Number.isInteger(messageCount) || messageCount <= 1", badge)
+        self.assertIn("return null", badge)
+        self.assertIn(".transactions-table__type-cell { position: relative; display: inline-block; }", styles)
+        self.assertIn(".transactions-table__type-cell .additional-message-badge { position: absolute;", styles)
+        self.assertIn("left: calc(100% + 4px)", styles)
 
     def test_execution_status_badge_has_accessible_text_and_safe_fallback(self):
         badge = self.read("frontend/src/components/TransactionExecutionBadge.jsx")

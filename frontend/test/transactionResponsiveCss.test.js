@@ -21,22 +21,16 @@ function mediaBody(maxWidth, occurrence = 0) {
   assert.fail(`${marker} must have a closing brace`)
 }
 
-test('transaction grid keeps desktop placement and explicitly resets it in responsive cards', () => {
-  for (const [child, column] of [[1, 1], [2, 3], [3, 5], [4, 7], [5, 9], [6, 11]]) {
-    assert.ok(styles.includes(`.transactions-page__table .data-table tr > :nth-child(${child}) { grid-column: ${column}; }`))
-  }
+test('transactions remain a native wide table inside the shared scroll container', () => {
+  assert.match(styles, /\.table-scroll \{ overflow-x: auto; \}/)
+  assert.match(styles, /\.transactions-page__table \.data-table \{ min-width: 940px; \}/)
 
-  const responsive = mediaBody(1180)
-  assert.match(responsive, /\.transactions-page__table \.data-table \{ width: 100%; min-width: 0; \}/)
-  assert.match(responsive, /\.transactions-page__table \.data-table thead \{ display: none; \}/)
-  assert.match(responsive, /grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/)
-  for (let child = 1; child <= 6; child += 1) {
-    assert.ok(responsive.includes(`.transactions-page__table .data-table tbody tr > :nth-child(${child})`))
-  }
-  assert.match(responsive, /:nth-child\(6\) \{ grid-column: auto; \}/)
-  assert.doesNotMatch(responsive, /overflow-x:\s*(auto|scroll)/)
-
-  assert.match(mediaBody(520), /\.transactions-page__table \.data-table tbody tr \{ grid-template-columns: minmax\(0, 1fr\); \}/)
+  const transactionRules = styles.slice(styles.indexOf('.transactions-page {'), styles.indexOf('.transaction-type-badge'))
+  assert.doesNotMatch(transactionRules, /display:\s*(?:grid|block)/)
+  assert.doesNotMatch(transactionRules, /thead[^}]*display:\s*none/)
+  assert.doesNotMatch(transactionRules, /grid-template-columns/)
+  assert.doesNotMatch(transactionRules, /overflow-x:\s*visible/)
+  assert.doesNotMatch(transactionRules, /td\[data-label\]::before/)
 })
 
 test('account transaction grid keeps desktop placement and explicitly resets it in responsive cards', () => {
@@ -54,11 +48,11 @@ test('account transaction grid keeps desktop placement and explicitly resets it 
   assert.match(responsive, /\.account-detail__transaction-counterparty \{ white-space: normal; overflow-wrap: anywhere; \}/)
   assert.doesNotMatch(responsive, /(?:html|body|page)[^{]*\{[^}]*overflow-x/)
 
-  assert.match(mediaBody(520, 1), /\.account-detail__transaction \{ grid-template-columns: minmax\(0, 1fr\); \}/)
+  assert.match(mediaBody(520), /\.account-detail__transaction \{ grid-template-columns: minmax\(0, 1fr\); \}/)
 })
 
-test('responsive transaction contracts remain scoped to the two affected views', () => {
-  const responsiveRules = `${mediaBody(1180)}\n${mediaBody(1450)}`
+test('responsive transaction contracts remain scoped to account transactions', () => {
+  const responsiveRules = mediaBody(1450)
   for (const selector of ['blocks-page', 'validators', 'governance', 'overview', 'transaction-detail', 'sidebar']) {
     assert.equal(responsiveRules.includes(selector), false)
   }

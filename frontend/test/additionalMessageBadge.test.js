@@ -26,10 +26,21 @@ test('counter examples follow the additional-message rule', () => {
 })
 
 test('additional-message badge has a separate neutral theme class', () => {
-  const rule = styles.match(/\.additional-message-badge \{[^}]+\}/)?.[0] ?? ''
+  const rule = styles.match(/^\.additional-message-badge \{[^}]+\}/m)?.[0] ?? ''
   assert.match(rule, /border: 1px solid var\(--color-border\)/)
   assert.match(rule, /background: var\(--color-card\)/)
   assert.match(rule, /color: var\(--color-text-secondary\)/)
   assert.doesNotMatch(rule, /color-type-|success|warning|error/)
   assert.doesNotMatch(badge, /transaction-type-badge--|status-badge/)
+})
+
+test('additional-message badge is anchored outside the centered primary badge', () => {
+  const wrapperRule = styles.match(/\.transactions-table__type-cell \{[^}]+\}/)?.[0] ?? ''
+  const anchoredRule = styles.match(/\.transactions-table__type-cell \.additional-message-badge \{[^}]+\}/)?.[0] ?? ''
+  assert.match(wrapperRule, /position: relative/)
+  assert.match(wrapperRule, /display: inline-block/)
+  assert.doesNotMatch(wrapperRule, /display: inline-flex|gap:/)
+  assert.match(anchoredRule, /position: absolute/)
+  assert.match(anchoredRule, /left: calc\(100% \+ 4px\)/)
+  assert.match(anchoredRule, /transform: translateY\(-50%\)/)
 })
