@@ -1,3 +1,7 @@
+import { transactionTypeVariant } from './transactionTypeVariant'
+
 export function TransactionTypeBadge({ children, title }) {
-  return <span className="transaction-type-badge" title={title}>{children}</span>
+  const variant = transactionTypeVariant(children)
+
+  return <span className={`transaction-type-badge transaction-type-badge--${variant}`} title={title}>{children}</span>
 }
