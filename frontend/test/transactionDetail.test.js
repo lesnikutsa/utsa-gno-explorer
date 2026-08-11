@@ -28,7 +28,7 @@ test('each message disclosure owns state that survives parent rerenders independ
 test('bounded arguments render as escaped message-local text with fallback and truncation notice', () => {
   assert.match(summary, /argumentDetails\.get\(index\)/)
   assert.match(summary, /detail\.values\.map/)
-  assert.match(summary, /value === '' \? '—' : <RealmPathLink path=\{value\} \/>/)
+  assert.match(summary, /value === '' \? '—' : value/)
   assert.match(summary, /showArgumentFallback=\{!argumentDetail\}/)
   assert.match(summary, /Some argument values were shortened or are not shown\./)
   assert.doesNotMatch(summary, /dangerouslySetInnerHTML/)
@@ -39,15 +39,24 @@ test('canonical realm and package paths use internal detail links without replac
   assert.equal(isCanonicalRealmPath('gno.land/r/gnops/valopers'), true)
   assert.equal(isCanonicalRealmPath('gno.land/p/nt/avl/v0'), true)
   assert.equal(realmDetailHref('gno.land/r/gnops/valopers'), '/realm?path=gno.land%2Fr%2Fgnops%2Fvalopers')
+  assert.equal(realmDetailHref('gno.land/p/nt/avl/v0'), '/realm?path=gno.land%2Fp%2Fnt%2Favl%2Fv0')
   assert.match(summary, /function RealmPathLink/)
   assert.match(summary, /href=\{realmDetailHref\(path\)\}/)
   assert.match(summary, /<details[\s\S]*<summary id=/)
-  assert.match(summary, /stopDisclosureToggle \? \(event\) => event\.stopPropagation\(\)/)
+  assert.match(summary, /onClick=\{\(event\) => event\.stopPropagation\(\)\}/)
 })
 
-test('package details and exact canonical arguments are selectively linked', () => {
-  assert.match(summary, /key === 'package_path'[\s\S]*<RealmPathLink path=\{message\[key\]\}/)
-  assert.match(summary, /<RealmPathLink path=\{value\} \/>/)
+test('package details and decoded arguments remain plain escaped text', () => {
+  const detailFields = summary.slice(summary.indexOf('function DetailFields'), summary.indexOf('function Arguments'))
+  const argumentsSection = summary.slice(summary.indexOf('function Arguments'), summary.indexOf('function validArgumentDetails'))
+  assert.match(detailFields, /<span>\{displayValue\(message\[key\]\)\}<\/span>/)
+  assert.doesNotMatch(detailFields, /RealmPathLink/)
+  assert.match(argumentsSection, /value === '' \? '—' : value/)
+  assert.doesNotMatch(argumentsSection, /RealmPathLink|realmDetailHref/)
+  assert.doesNotMatch(summary, /dangerouslySetInnerHTML/)
+})
+
+test('summary path validation stays strict and does not infer links from other values', () => {
   assert.equal(isCanonicalRealmPath('gno.land/r/gnoland/wugnot'), true)
   assert.equal(isCanonicalRealmPath('gno.land/p/nt/avl/v0'), true)
 
@@ -60,10 +69,10 @@ test('package details and exact canonical arguments are selectively linked', () 
     ' gno.land/r/foo',
     'gno.land/r/foo ',
     'gno.land/r/',
+    `gno.land/r/${'a'.repeat(246)}`,
     '<a href="/realm">gno.land/r/foo</a>',
   ]) assert.equal(isCanonicalRealmPath(value), false, value)
 
-  assert.doesNotMatch(summary, /dangerouslySetInnerHTML/)
 })
 
 test('realm links retain monospace wrapping and keyboard focus styling', () => {
