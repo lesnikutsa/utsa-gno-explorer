@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Sidebar } from '../components/Sidebar'
 import { TopBar } from '../components/TopBar'
 import { useChainIdentity } from '../hooks/useChainIdentity'
+import { useTheme } from '../hooks/useTheme'
 
 export function ExplorerLayout({ children, healthState, nextFastRefreshAt, showRefreshCountdown = true, averageBlockTimeSeconds, averageBlockTimeSampleSize }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -13,6 +14,7 @@ export function ExplorerLayout({ children, healthState, nextFastRefreshAt, showR
     }
   })
   const chainId = useChainIdentity()
+  const { theme, toggleTheme } = useTheme()
 
   useEffect(() => {
     try {
@@ -32,7 +34,7 @@ export function ExplorerLayout({ children, healthState, nextFastRefreshAt, showR
         onToggleCollapsed={() => setSidebarCollapsed((collapsed) => !collapsed)}
       />
       <div className="app-frame">
-        <TopBar onMenuClick={() => setSidebarOpen(true)} healthState={healthState} nextFastRefreshAt={nextFastRefreshAt} showRefreshCountdown={showRefreshCountdown} averageBlockTimeSeconds={averageBlockTimeSeconds} averageBlockTimeSampleSize={averageBlockTimeSampleSize} />
+        <TopBar onMenuClick={() => setSidebarOpen(true)} healthState={healthState} nextFastRefreshAt={nextFastRefreshAt} showRefreshCountdown={showRefreshCountdown} averageBlockTimeSeconds={averageBlockTimeSeconds} averageBlockTimeSampleSize={averageBlockTimeSampleSize} theme={theme} onToggleTheme={toggleTheme} />
         <main className="main-content">{children}</main>
       </div>
     </div>

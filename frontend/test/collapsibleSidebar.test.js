@@ -44,7 +44,7 @@ test('active navigation styling stays quiet and does not use a stripe', () => {
   assert.doesNotMatch(styles, /\.nav-item\.is-active::(?:before|after)/)
   assert.match(styles, /\.nav-item\.is-active \{ border-color: rgba\(200,75,49,\.35\); background: var\(--color-accent-soft\); color: var\(--color-text-bright\); font-weight: 600; \}/)
   assert.match(styles, /\.nav-item\.is-active:hover \{ border-color: rgba\(200,75,49,\.65\); background: var\(--color-accent-soft\); color: var\(--color-text-bright\); \}/)
-  assert.match(styles, /\.nav-item:hover \{ color: var\(--color-text\); background: rgba\(255,255,255,\.025\); \}/)
+  assert.match(styles, /\.nav-item:hover \{ color: var\(--color-text\); background: var\(--color-overlay-hover\); \}/)
 })
 
 test('network icon is configurable and safely falls back to ChainIcon', () => {
@@ -84,7 +84,7 @@ test('Explorer-themed tooltips are desktop-only and preserve approved dimensions
   assert.match(sidebar, /data-sidebar-tooltip=\{collapsed \? 'Expand sidebar' : 'Collapse sidebar'\}/)
   assert.match(styles, /\[data-sidebar-tooltip\]::before/)
   assert.match(styles, /\[data-sidebar-tooltip\]::after/)
-  assert.match(styles, /background: #0d2133/)
+  assert.match(styles, /background: var\(--color-popover\)/)
   assert.match(styles, /border: 1px solid var\(--color-border\)/)
   assert.match(styles, /\[data-sidebar-tooltip\]:hover::before/)
   assert.match(styles, /\[data-sidebar-tooltip\]:focus-visible::before/)

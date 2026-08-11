@@ -13,6 +13,8 @@ export const MapIcon = () => <Icon><path d="m4 6 5-2 6 2 5-2v14l-5 2-6-2-5 2Z" /
 export const ChainIcon = () => <Icon><path d="M9.5 14.5 8 16a3 3 0 0 1-4-4l3-3a3 3 0 0 1 4 0M14.5 9.5 16 8a3 3 0 0 1 4 4l-3 3a3 3 0 0 1-4 0M9 15l6-6" /></Icon>
 export const SearchIcon = () => <Icon><circle cx="11" cy="11" r="6" /><path d="m16 16 4 4" /></Icon>
 export const MenuIcon = () => <Icon><path d="M4 7h16M4 12h16M4 17h16" /></Icon>
+export const SunIcon = () => <Icon><circle cx="12" cy="12" r="3.5" /><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42" /></Icon>
+export const MoonIcon = () => <Icon><path d="M20 15.2A8.5 8.5 0 0 1 8.8 4 8.5 8.5 0 1 0 20 15.2Z" /></Icon>
 export const ChevronDownIcon = () => <Icon><path d="m8 10 4 4 4-4" /></Icon>
 export const ChevronLeftIcon = () => <Icon><path d="m15 18-6-6 6-6" /></Icon>
 export const ChevronRightIcon = () => <Icon><path d="m9 18 6-6-6-6" /></Icon>
