@@ -2,7 +2,7 @@ module github.com/lesnikutsa/utsa-gno-explorer/tools/gno-tx-decoder
 
 go 1.25.9
 
-require github.com/gnolang/gno v0.0.0-20260807195958-9ab5198acac6
+require github.com/gnolang/gno v0.0.0-20260720122938-d14a03770521
 
 require (
 	github.com/bits-and-blooms/bitset v1.24.4 // indirect

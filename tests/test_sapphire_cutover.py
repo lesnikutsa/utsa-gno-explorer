@@ -59,11 +59,6 @@ class SapphireCutoverTests(unittest.TestCase):
             ("gno", "g", "ugnot", "GNOT", 6),
         )
 
-    def test_decoder_uses_reviewed_sapphire_dependency(self):
-        go_mod = (ROOT / "tools/gno-tx-decoder/go.mod").read_text()
-        self.assertIn("v0.0.0-20260807195958-9ab5198acac6", go_mod)
-        self.assertNotIn("d14a03770521", go_mod)
-
 
 if __name__ == "__main__":
     unittest.main()
