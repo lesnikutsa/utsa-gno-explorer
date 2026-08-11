@@ -20,6 +20,7 @@ from indexer.database import PostgresDatabase
 from indexer.realm_catalog import path_kind
 from indexer.realm_metadata_collector import CollectionRequest, collect_path_metadata
 from indexer.realm_metadata_persistence import (
+    MetadataPersistenceError,
     MetadataRefreshState,
     persist_metadata_refresh_state_cursor,
     publish_metadata_snapshot,
@@ -64,19 +65,23 @@ def select_catalog_paths(cursor, chain_id: str, requested: list[str],
     if any(path_kind(path) is None for path in requested):
         raise RuntimeError("invalid_requested_path")
     cursor.execute(
-        "SELECT observed_height FROM realm_catalog_state WHERE chain_id=%s", (chain_id,)
+        """SELECT state.observed_height,catalog.path,catalog.path_kind
+        FROM realm_catalog_state AS state
+        LEFT JOIN realm_catalog AS catalog
+          ON catalog.chain_id=state.chain_id AND catalog.rpc_visible=true
+        WHERE state.chain_id=%s
+        ORDER BY catalog.path""",
+        (chain_id,),
     )
-    row = cursor.fetchone()
-    if row is None:
+    rows = cursor.fetchall()
+    if not rows:
         raise RuntimeError("catalog_state_missing")
-    height = row[0]
+    height = rows[0][0]
     if isinstance(height, bool) or not isinstance(height, int) or height <= 0:
         raise RuntimeError("catalog_height_invalid")
-    cursor.execute(
-        "SELECT path,path_kind FROM realm_catalog "
-        "WHERE chain_id=%s AND rpc_visible=true ORDER BY path", (chain_id,)
-    )
-    available = tuple((str(path), str(kind)) for path, kind in cursor.fetchall())
+    if any(row[0] != height for row in rows):
+        raise RuntimeError("inconsistent_catalog_height")
+    available = tuple((str(path), str(kind)) for _, path, kind in rows if path is not None)
     if not available:
         raise RuntimeError("no_rpc_visible_paths")
     if any(path_kind(path) != kind for path, kind in available):
@@ -135,6 +140,13 @@ def main(argv: list[str] | None = None) -> int:
             selection = select_catalog_paths(cursor, config.chain_id, args.path, args.limit)
         connection.commit()
 
+        run_started = datetime.now(timezone.utc)
+        running_state = MetadataRefreshState(
+            config.chain_id, selection.observed_height, "running", len(selection.paths),
+            0, 0, run_started,
+        )
+        _persist_state(connection, running_state)
+
         preferred = db.get_selected_rpc_url(config.chain_id)
         urls = ([preferred] if preferred else []) + [url for url in config.rpc_urls if url != preferred]
         probes = probe_rpc_endpoints(
@@ -155,18 +167,18 @@ def main(argv: list[str] | None = None) -> int:
         connection.commit()
         endpoint_id = int(endpoint_row[0]) if endpoint_row else None
 
-        run_started = datetime.now(timezone.utc)
-        running_state = MetadataRefreshState(
-            config.chain_id, selection.observed_height, "running", len(selection.paths),
-            0, 0, run_started,
-        )
-        _persist_state(connection, running_state)
         for path, kind in selection.paths:
-            result = collect_path_metadata(
-                candidate.client,
-                CollectionRequest(config.chain_id, path, kind, selection.observed_height,
-                                  endpoint_id),
-            )
+            try:
+                result = collect_path_metadata(
+                    candidate.client,
+                    CollectionRequest(config.chain_id, path, kind, selection.observed_height,
+                                      endpoint_id),
+                )
+            except Exception:
+                failed += 1
+                LOGGER.info("path=%s kind=%s status=failed observed_height=%s",
+                            path, kind, selection.observed_height)
+                continue
             if result.snapshot is None:
                 failed += 1
                 LOGGER.info("path=%s kind=%s status=failed observed_height=%s",
@@ -174,7 +186,7 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             try:
                 publish_metadata_snapshot(connection, result.snapshot)
-            except Exception:
+            except MetadataPersistenceError:
                 failed += 1
                 LOGGER.info("path=%s kind=%s status=failed observed_height=%s",
                             path, kind, selection.observed_height)

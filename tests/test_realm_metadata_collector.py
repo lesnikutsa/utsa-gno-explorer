@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 from indexer.realm_metadata_collector import CollectionRequest, collect_path_metadata
+from indexer.realm_metadata_persistence import MetadataPersistenceError
 from scripts.inspect_rpc import RpcError
+from scripts import refresh_realm_metadata as cli
 from scripts.refresh_realm_metadata import select_catalog_paths
 
 
@@ -108,15 +111,14 @@ def test_package_realm_capabilities_are_not_applicable_and_error_is_partial():
 class CatalogCursor:
     def __init__(self):
         self.query = ""
+        self.execute_count = 0
 
     def execute(self, query, params):
         self.query = query
-
-    def fetchone(self):
-        return (99,)
+        self.execute_count += 1
 
     def fetchall(self):
-        return [(PACKAGE, "package"), (REALM, "realm")]
+        return [(99, PACKAGE, "package"), (99, REALM, "realm")]
 
 
 def test_catalog_selection_deduplicates_filters_orders_and_limits():
@@ -124,7 +126,10 @@ def test_catalog_selection_deduplicates_filters_orders_and_limits():
     selection = select_catalog_paths(cursor, "dev", [REALM, REALM], 1)
     assert selection.observed_height == 99
     assert selection.paths == ((REALM, "realm"),)
-    assert "rpc_visible=true ORDER BY path" in cursor.query
+    assert cursor.execute_count == 1
+    assert "LEFT JOIN realm_catalog" in cursor.query
+    assert "catalog.rpc_visible=true" in cursor.query
+    assert "ORDER BY catalog.path" in cursor.query
 
 
 def test_requested_non_catalog_path_is_rejected():
@@ -134,3 +139,183 @@ def test_requested_non_catalog_path_is_rejected():
         assert str(exc) == "requested_path_not_visible"
     else:
         raise AssertionError("missing catalog path accepted")
+
+
+class CoordinatorCursor:
+    def __init__(self, connection):
+        self.connection = connection
+        self.query = ""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return None
+
+    def execute(self, query, params=()):
+        self.query = query
+        if "pg_advisory_unlock" in query:
+            self.connection.unlocked = True
+
+    def fetchone(self):
+        if "pg_try_advisory_lock" in self.query:
+            return (self.connection.locked,)
+        if "rpc_endpoints" in self.query:
+            return (17,)
+        raise AssertionError(self.query)
+
+    def fetchall(self):
+        assert "LEFT JOIN realm_catalog" in self.query
+        return [(77, REALM, "realm"), (77, PACKAGE, "package")]
+
+
+class CoordinatorConnection:
+    def __init__(self, locked=True):
+        self.locked = locked
+        self.unlocked = False
+        self.closed = False
+
+    def cursor(self):
+        return CoordinatorCursor(self)
+
+    def commit(self):
+        pass
+
+    def close(self):
+        self.closed = True
+
+
+class CoordinatorDB:
+    def __init__(self, connection):
+        self.connection = connection
+
+    def connect(self):
+        return self.connection
+
+    def get_selected_rpc_url(self, chain_id):
+        return None
+
+
+class CoordinatorClient:
+    def __init__(self):
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
+
+def coordinator(monkeypatch, *, locked=True):
+    connection = CoordinatorConnection(locked)
+    database = CoordinatorDB(connection)
+    client = CoordinatorClient()
+    probe = SimpleNamespace(client=client, url="https://rpc.example/private", latest_height=100)
+    states = []
+    monkeypatch.setattr(cli, "load_config", lambda: SimpleNamespace(
+        database_url="secret", chain_id="dev", rpc_urls=[probe.url], max_height_lag=5,
+    ))
+    monkeypatch.setattr(cli, "PostgresDatabase", lambda url: database)
+    monkeypatch.setattr(cli, "_persist_state", lambda connection, state: states.append(state))
+    monkeypatch.setattr(cli, "probe_rpc_endpoints", lambda *args, **kwargs: [probe])
+    monkeypatch.setattr(cli, "suitable_rpc_probes", lambda probes: probes)
+    return connection, client, states, probe
+
+
+def result_for(request):
+    return SimpleNamespace(snapshot=object(), status="complete")
+
+
+def test_advisory_lock_already_held_exits_without_collection(monkeypatch):
+    connection, client, states, _ = coordinator(monkeypatch, locked=False)
+    called = []
+    monkeypatch.setattr(cli, "collect_path_metadata", lambda *args: called.append(args))
+    assert cli.main([]) == 1
+    assert not called and not states
+    assert connection.closed and not connection.unlocked
+    assert not client.closed
+
+
+def test_running_is_persisted_before_rpc_probe_and_no_rpc_becomes_failed(monkeypatch):
+    connection, client, states, _ = coordinator(monkeypatch)
+
+    def no_rpc(*args, **kwargs):
+        assert [state.run_status for state in states] == ["running"]
+        return []
+
+    monkeypatch.setattr(cli, "probe_rpc_endpoints", no_rpc)
+    assert cli.main([]) == 1
+    assert [state.run_status for state in states] == ["running", "failed"]
+    assert states[0].selected_path_count == 2 and states[0].observed_height == 77
+    assert connection.closed and connection.unlocked
+
+
+def test_all_paths_complete_advances_success_and_closes_resources(monkeypatch):
+    connection, client, states, _ = coordinator(monkeypatch)
+    monkeypatch.setattr(cli, "collect_path_metadata", lambda client, request: result_for(request))
+    monkeypatch.setattr(cli, "publish_metadata_snapshot", lambda connection, snapshot: None)
+    assert cli.main([]) == 0
+    assert [state.run_status for state in states] == ["running", "complete"]
+    assert states[-1].published_path_count == 2
+    assert states[-1].last_successful_height == 77
+    assert states[-1].last_successful_at is not None
+    assert connection.closed and connection.unlocked and client.closed
+
+
+def test_unexpected_collection_error_is_isolated_and_partial(monkeypatch, caplog):
+    _, _, states, _ = coordinator(monkeypatch)
+    calls = 0
+
+    def collect(client, request):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("sensitive collection payload")
+        return result_for(request)
+
+    monkeypatch.setattr(cli, "collect_path_metadata", collect)
+    monkeypatch.setattr(cli, "publish_metadata_snapshot", lambda connection, snapshot: None)
+    assert cli.main([]) == 2
+    assert calls == 2 and states[-1].run_status == "partial"
+    assert states[-1].last_successful_height is None
+    assert "sensitive" not in caplog.text and "payload" not in caplog.text
+
+
+def test_metadata_rejection_is_isolated_and_next_path_publishes(monkeypatch):
+    _, _, states, _ = coordinator(monkeypatch)
+    monkeypatch.setattr(cli, "collect_path_metadata", lambda client, request: result_for(request))
+    calls = 0
+
+    def publish(*args):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise MetadataPersistenceError("bounded")
+
+    monkeypatch.setattr(cli, "publish_metadata_snapshot", publish)
+    assert cli.main([]) == 2
+    assert calls == 2 and states[-1].run_status == "partial"
+    assert states[-1].published_path_count == states[-1].failed_path_count == 1
+    assert states[-1].last_successful_height is None
+
+
+def test_zero_publishable_paths_finishes_failed(monkeypatch):
+    _, _, states, _ = coordinator(monkeypatch)
+    failed_result = SimpleNamespace(snapshot=None, status="failed")
+    monkeypatch.setattr(cli, "collect_path_metadata", lambda client, request: failed_result)
+    assert cli.main([]) == 2
+    assert states[-1].run_status == "failed"
+    assert states[-1].published_path_count == 0 and states[-1].failed_path_count == 2
+    assert states[-1].last_successful_height is None
+
+
+def test_database_publication_failure_is_fatal_and_message_is_not_logged(monkeypatch, caplog):
+    connection, client, states, _ = coordinator(monkeypatch)
+    monkeypatch.setattr(cli, "collect_path_metadata", lambda client, request: result_for(request))
+
+    def publish(*args):
+        raise RuntimeError("database password and payload")
+
+    monkeypatch.setattr(cli, "publish_metadata_snapshot", publish)
+    assert cli.main([]) == 1
+    assert [state.run_status for state in states] == ["running", "failed"]
+    assert "password" not in caplog.text and "payload" not in caplog.text
+    assert connection.closed and connection.unlocked and client.closed
