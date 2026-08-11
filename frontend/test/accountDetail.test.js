@@ -195,7 +195,7 @@ test('account history and main transactions share a non-clickable type badge', (
   assert.ok(page.includes("import { TransactionTypeBadge } from '../components/TransactionTypeBadge'"))
   assert.ok(transactionsPage.includes("import { TransactionTypeBadge } from '../components/TransactionTypeBadge'"))
   assert.ok(transactionsPage.includes("<TransactionTypeBadge title={transaction.type !== 'unknown' ? transaction.type : undefined}>{transaction.operation}</TransactionTypeBadge>"))
-  assert.ok(transactionTypeBadge.includes('className="transaction-type-badge"'))
+  assert.ok(transactionTypeBadge.includes('className={`transaction-type-badge transaction-type-badge--${variant}`}'))
   assert.ok(transactionTypeBadge.includes('{children}'))
   assert.equal(transactionTypeBadge.includes('<a'), false)
   for (const operation of ['Send Tokens', 'Contract Call', 'Run Package', 'Add Package']) assert.equal(transactionTypeBadge.includes(operation), false)
