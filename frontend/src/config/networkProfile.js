@@ -30,6 +30,10 @@ export const networkProfile = Object.freeze({
   telegramValidatorMonitorEnabled: publicFlag(
     import.meta.env.VITE_TELEGRAM_VALIDATOR_MONITOR_ENABLED,
   ),
+  telegramValidatorWatchPrefix: publicValue(
+    import.meta.env.VITE_TELEGRAM_VALIDATOR_WATCH_PREFIX,
+    '',
+  ),
   links,
 })
 

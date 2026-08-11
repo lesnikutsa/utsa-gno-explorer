@@ -25,6 +25,7 @@ class FrontendNetworkProfileTests(unittest.TestCase):
             "VITE_PROJECT_NAME", "VITE_NETWORK_NAME", "VITE_PROJECT_DESCRIPTION",
             "VITE_PROJECT_WEBSITE", "VITE_PROJECT_DOCUMENTATION", "VITE_PROJECT_GITHUB",
             "VITE_TELEGRAM_VALIDATOR_MONITOR_ENABLED",
+            "VITE_TELEGRAM_VALIDATOR_WATCH_PREFIX",
         ):
             self.assertIn(f"import.meta.env.{name}", self.profile)
         self.assertIn("typeof value === 'string'", self.profile)
@@ -32,6 +33,7 @@ class FrontendNetworkProfileTests(unittest.TestCase):
         self.assertIn("'Gno.land'", self.profile)
         self.assertIn("'Sapphire'", self.profile)
         self.assertIn("telegramValidatorMonitorEnabled", self.profile)
+        self.assertIn("telegramValidatorWatchPrefix", self.profile)
         self.assertIn("=== 'true'", self.profile)
         self.assertEqual(self.profile.count("Object.freeze("), 2)
         self.assertIn("export const networkProfile", self.profile)

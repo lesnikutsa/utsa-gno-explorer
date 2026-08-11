@@ -43,7 +43,13 @@ class SapphireCutoverTests(unittest.TestCase):
         self.assertIn("Sapphire is the current public test network", profile)
         self.assertIn("VITE_NETWORK_NAME=Sapphire", environment)
         self.assertIn("VITE_TELEGRAM_VALIDATOR_MONITOR_ENABLED=false", environment)
-        self.assertIn("if (!networkProfile.telegramValidatorMonitorEnabled) return null", telegram)
+        self.assertIn("VITE_TELEGRAM_VALIDATOR_WATCH_PREFIX=\n", environment)
+        self.assertNotIn("watch_topaz_", telegram)
+        self.assertNotIn(
+            "watch_topaz_",
+            "\n".join(path.read_text() for path in (ROOT / "frontend/src").rglob("*") if path.is_file()),
+        )
+        self.assertIn("networkProfile.telegramValidatorWatchPrefix", telegram)
 
     def test_generic_gno_profile_preserves_address_semantics(self):
         profile = gno_profile("sapphire-1")

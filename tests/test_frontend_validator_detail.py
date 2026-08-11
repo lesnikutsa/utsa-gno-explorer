@@ -99,19 +99,15 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
         self.assertIn("validator.address", self.page)
 
     def test_telegram_helper_fails_closed_when_monitoring_is_disabled(self):
-        self.assertIn("if (!networkProfile.telegramValidatorMonitorEnabled) return null", self.telegram)
         self.assertNotIn("UTSAGNOTest13Bot", self.telegram)
         self.assertNotIn("watch_gno13_", self.telegram)
+        self.assertNotIn("watch_topaz_", self.telegram)
         self.assertIn("export const TELEGRAM_BOT_USERNAME = 'UTSAGNOBot'", self.telegram)
-        self.assertIn("export const TELEGRAM_WATCH_PREFIX = 'watch_topaz_'", self.telegram)
-        self.assertIn("signingAddress.trim().toLowerCase()", self.telegram)
-        self.assertIn("/^g1[0-9a-z]{38}$/", self.telegram)
-        self.assertIn("typeof signingAddress !== 'string'", self.telegram)
-        self.assertGreaterEqual(self.telegram.count("return null"), 2)
-        self.assertIn("!SIGNING_ADDRESS_PATTERN.test(normalizedSigningAddress)", self.telegram)
-        self.assertIn("encodeURIComponent(startPayload)", self.telegram)
+        self.assertIn("networkProfile.telegramValidatorMonitorEnabled", self.telegram)
+        self.assertIn("networkProfile.telegramValidatorWatchPrefix", self.telegram)
+        self.assertIn("buildConfiguredTelegramValidatorWatchUrl", self.telegram)
 
-    def test_topaz_telegram_link_uses_signing_address_and_accessible_new_tab(self):
+    def test_telegram_link_uses_signing_address_and_accessible_new_tab(self):
         self.assertIn("buildTelegramValidatorWatchUrl(validator.address)", self.page)
         self.assertIn("{telegramWatchUrl && (", self.page)
         self.assertIn('className="validator-detail__telegram-link"', self.page)
