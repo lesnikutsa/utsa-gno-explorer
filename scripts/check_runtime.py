@@ -158,10 +158,12 @@ def run(
             state = unit_inspector(unit)
             if state.get("LoadState") == "not-found":
                 report.line("FAIL", f"{unit}: not installed")
-            elif state.get("LoadState") == "loaded":
-                report.line("OK", f"{unit}: installed, {state.get('ActiveState', 'unknown')}")
-            else:
+            elif state.get("LoadState") != "loaded":
                 report.line("FAIL", f"{unit}: not loadable ({state.get('LoadState', 'unknown')})")
+            elif state.get("ActiveState") in {"inactive", "active", "activating"}:
+                report.line("OK", f"{unit}: installed, {state['ActiveState']}")
+            else:
+                report.line("FAIL", f"{unit}: installed, {state.get('ActiveState', 'unknown')}")
         except Exception as exc:
             report.line("FAIL", f"{unit}: inspection unavailable ({_safe_failure(exc)})")
 

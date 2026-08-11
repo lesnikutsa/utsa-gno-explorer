@@ -38,14 +38,34 @@ def test_inactive_long_running_service_fails(capsys):
     assert code == 1 and "utsa-gno-indexer.service: inactive" in output
 
 
-def test_installed_inactive_and_active_oneshots_are_healthy(capsys):
+def test_installed_inactive_active_and_activating_oneshots_are_healthy(capsys):
     def units(name):
-        active = "inactive" if name == check_runtime.SCHEDULED_SERVICES[0] else "active"
+        states = dict(zip(check_runtime.SCHEDULED_SERVICES, ("inactive", "active", "activating", "inactive")))
+        active = states.get(name, "active")
         return {"LoadState": "loaded", "ActiveState": active, "UnitFileState": "enabled"}
     code, output = run(capsys, unit=units)
     assert code == 0
     assert f"{check_runtime.SCHEDULED_SERVICES[0]}: installed, inactive" in output
     assert f"{check_runtime.SCHEDULED_SERVICES[1]}: installed, active" in output
+    assert f"{check_runtime.SCHEDULED_SERVICES[2]}: installed, activating" in output
+
+
+def test_failed_oneshot_is_runtime_failure(capsys):
+    failed = check_runtime.SCHEDULED_SERVICES[0]
+    def units(name):
+        return {"LoadState": "loaded", "ActiveState": "failed" if name == failed else "active", "UnitFileState": "enabled"}
+    code, output = run(capsys, unit=units)
+    assert code == 1
+    assert f"{failed}: installed, failed" in output
+
+
+def test_unexpected_oneshot_active_state_is_runtime_failure(capsys):
+    unexpected = check_runtime.SCHEDULED_SERVICES[1]
+    def units(name):
+        return {"LoadState": "loaded", "ActiveState": "deactivating" if name == unexpected else "active", "UnitFileState": "enabled"}
+    code, output = run(capsys, unit=units)
+    assert code == 1
+    assert f"{unexpected}: installed, deactivating" in output
 
 
 def test_missing_oneshot_fails_even_when_timer_is_healthy(capsys):
