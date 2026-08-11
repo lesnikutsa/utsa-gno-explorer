@@ -911,7 +911,7 @@ def validate_table_privileges(cursor) -> None:
                     actual.add(privilege)
             if role == "utsa_gno_api" and actual != required:
                 raise SchemaCompatibilityError(f"API role has incompatible privileges for {table}")
-            if role == "utsa_gno_indexer" and actual != required:
+            if role == "utsa_gno_indexer" and not required <= actual:
                 raise SchemaCompatibilityError(f"Indexer role has incompatible privileges for {table}")
 
 

@@ -354,6 +354,14 @@ def test_participant_privilege_validation_accepts_least_privilege():
     init_database.validate_participant_privileges(PrivilegeCursor(copy.deepcopy(EXPECTED_PRIVILEGES)))
 
 
+def test_indexer_owner_derived_privileges_are_accepted():
+    grants = copy.deepcopy(EXPECTED_PRIVILEGES)
+    grants["utsa_gno_indexer"]["transaction_participants"].update(
+        {"UPDATE", "TRUNCATE", "REFERENCES", "TRIGGER"}
+    )
+    init_database.validate_participant_privileges(PrivilegeCursor(grants))
+
+
 def test_api_writes_and_missing_indexer_grants_fail_closed():
     grants = copy.deepcopy(EXPECTED_PRIVILEGES)
     grants["utsa_gno_api"]["transaction_participants"].add("INSERT")
@@ -370,10 +378,10 @@ def test_api_writes_and_missing_indexer_grants_fail_closed():
 
 
 @pytest.mark.parametrize(("role", "table", "privilege", "message"), [
+    ("utsa_gno_api", "transaction_participants", "INSERT", "API role"),
     ("utsa_gno_api", "realm_metadata", "TRUNCATE", "API role"),
     ("utsa_gno_api", "realm_metadata_files", "REFERENCES", "API role"),
     ("utsa_gno_api", "realm_metadata_imports", "TRIGGER", "API role"),
-    ("utsa_gno_indexer", "realm_metadata_refresh_state", "TRUNCATE", "Indexer role"),
 ])
 def test_extended_metadata_privileges_fail_closed(role, table, privilege, message):
     grants = copy.deepcopy(EXPECTED_PRIVILEGES)

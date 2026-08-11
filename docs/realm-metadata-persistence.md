@@ -54,7 +54,10 @@ successful height and timestamp rather than erasing them.
 
 ## Privileges and deferred work
 
-`utsa_gno_indexer` receives `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on the four
-tables. `utsa_gno_api` intentionally receives no metadata-table privileges in
-this change. Metadata collection, public API access, frontend presentation, and
-Render execution are deferred to separately reviewed changes.
+The explicit metadata DML contract for `utsa_gno_indexer` is `SELECT`, `INSERT`,
+`UPDATE`, and `DELETE` on all four tables. In the documented production setup the
+writer also owns the schema and tables, so its effective owner privileges may be
+broader. `utsa_gno_api` remains the strict privilege boundary and intentionally
+receives no metadata-table access. Metadata collection, public API access,
+frontend presentation, and Render execution are deferred to separately reviewed
+changes.
