@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -33,7 +34,8 @@ SCHEDULED_SERVICES = (
     "utsa-gno-valopers-refresh.service",
     "utsa-gno-network-distribution.service",
 )
-HEALTH_URL = "http://127.0.0.1:18180/api/health"
+DEFAULT_API_BIND_HOST = "127.0.0.1"
+DEFAULT_API_BIND_PORT = 18180
 
 
 @dataclass(frozen=True)
@@ -110,8 +112,26 @@ def inspect_database(database_url: str, chain_id: str) -> DatabaseSnapshot:
     )
 
 
-def inspect_api() -> dict[str, object]:
-    request = Request(HEALTH_URL, headers={"Accept": "application/json"})
+def resolve_health_url(environ=None) -> str:
+    """Resolve the configured API listener to a safe local health probe URL."""
+    values = os.environ if environ is None else environ
+    host = values.get("API_BIND_HOST", DEFAULT_API_BIND_HOST).strip() or DEFAULT_API_BIND_HOST
+    if host in {"0.0.0.0", "::", "[::]", "*"}:
+        host = DEFAULT_API_BIND_HOST
+    raw_port = values.get("API_BIND_PORT", str(DEFAULT_API_BIND_PORT)).strip()
+    try:
+        port = int(raw_port)
+    except ValueError as exc:
+        raise ValueError("API_BIND_PORT must be an integer") from exc
+    if not 1 <= port <= 65535:
+        raise ValueError("API_BIND_PORT must be between 1 and 65535")
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    return f"http://{host}:{port}/api/health"
+
+
+def inspect_api(health_url: str) -> dict[str, object]:
+    request = Request(health_url, headers={"Accept": "application/json"})
     with urlopen(request, timeout=3) as response:
         if response.status != 200:
             raise RuntimeError(f"HTTP status {response.status}")
@@ -214,7 +234,7 @@ def run(
 
     print("\nAPI")
     try:
-        health = api_inspector()
+        health = api_inspector(resolve_health_url())
         report.line("OK" if health.get("status") == "ok" else "FAIL", f"Health endpoint: status={health.get('status', 'missing')}, database={health.get('database', 'missing')}, indexed_height={health.get('indexed_height', 'missing')}, indexer_lag={health.get('indexer_lag', 'missing')}")
         if health.get("chain_id") != config.chain_id: report.line("FAIL", "API chain_id does not match configured chain")
         elif snapshot and health.get("indexed_height") != snapshot.indexed_height: report.line("WARN", "API and snapshot heights differ (indexing may have advanced)")

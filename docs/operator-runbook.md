@@ -62,7 +62,7 @@ Do not print `rpc.env` because URLs may contain credentials.
 Run the read-only checker after installation, update, restore, or database replacement:
 
 ```bash
-sudo -u utsa-gno sh -c 'set -a; . /etc/utsa-gno-explorer/indexer.env; . /etc/utsa-gno-explorer/rpc.env; set +a; cd /opt/utsa-gno-explorer && exec .venv/bin/python scripts/check_runtime.py'
+sudo -u utsa-gno sh -c 'set -a; . /etc/utsa-gno-explorer/api.env; . /etc/utsa-gno-explorer/indexer.env; . /etc/utsa-gno-explorer/rpc.env; set +a; cd /opt/utsa-gno-explorer && exec .venv/bin/python scripts/check_runtime.py'
 ```
 
 It inspects systemd, one consistent read-only PostgreSQL snapshot, and the bounded local

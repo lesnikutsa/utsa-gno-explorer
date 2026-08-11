@@ -41,6 +41,17 @@ class DeploymentAssetTests(unittest.TestCase):
             for forbidden in ("cat ", "grep ", "sed ", "printenv", "set -x"):
                 self.assertNotIn(forbidden, inspect_command)
 
+        runtime_command = next(
+            line for line in self.text("docs/operator-runbook.md").splitlines()
+            if "scripts/check_runtime.py" in line
+        )
+        api_at = runtime_command.index(". /etc/utsa-gno-explorer/api.env")
+        indexer_at = runtime_command.index(". /etc/utsa-gno-explorer/indexer.env")
+        rpc_at = runtime_command.index(". /etc/utsa-gno-explorer/rpc.env")
+        self.assertLess(api_at, indexer_at)
+        self.assertLess(indexer_at, rpc_at)
+        self.assertIn("exec .venv/bin/python scripts/check_runtime.py", runtime_command)
+
     def test_root_owned_checkout_builds_through_writable_root_commands(self):
         install = self.text("docs/install.md")
         self.assertIn("sudo python3 -m venv /opt/utsa-gno-explorer/.venv", install)

@@ -20,7 +20,7 @@ def run(capsys, *, unit=None, db=None, api=None, config=None):
         config_loader=lambda: config or SimpleNamespace(database_url="postgresql://user:secret@db/name", chain_id="sapphire-1", rpc_urls=["https://token@rpc.invalid"]),
         unit_inspector=unit or healthy_unit,
         database_inspector=lambda *_: db or snapshot(),
-        api_inspector=api or (lambda: {"status": "ok", "database": "ok", "chain_id": "sapphire-1", "indexed_height": 100, "indexer_lag": 0}),
+        api_inspector=api or (lambda _: {"status": "ok", "database": "ok", "chain_id": "sapphire-1", "indexed_height": 100, "indexer_lag": 0}),
     )
     return code, capsys.readouterr().out
 
@@ -94,10 +94,23 @@ def test_missing_or_disabled_timer_fails(capsys):
 
 
 def test_api_unreachable_and_chain_mismatch(capsys):
-    code, output = run(capsys, api=lambda: (_ for _ in ()).throw(OSError("postgresql://leak:secret@host")))
+    code, output = run(capsys, api=lambda _: (_ for _ in ()).throw(OSError("postgresql://leak:secret@host")))
     assert code == 1 and "OSError" in output and "secret" not in output
-    code, output = run(capsys, api=lambda: {"status": "ok", "database": "ok", "chain_id": "wrong", "indexed_height": 100, "indexer_lag": 0})
+    code, output = run(capsys, api=lambda _: {"status": "ok", "database": "ok", "chain_id": "wrong", "indexed_height": 100, "indexer_lag": 0})
     assert code == 1 and "does not match" in output
+
+
+def test_health_url_uses_api_bind_defaults():
+    assert check_runtime.resolve_health_url({}) == "http://127.0.0.1:18180/api/health"
+
+
+def test_health_url_honors_non_default_port():
+    assert check_runtime.resolve_health_url({"API_BIND_PORT": "28180"}) == "http://127.0.0.1:28180/api/health"
+
+
+def test_health_url_replaces_wildcard_hosts_with_loopback():
+    for host in ("0.0.0.0", "::"):
+        assert check_runtime.resolve_health_url({"API_BIND_HOST": host}) == "http://127.0.0.1:18180/api/health"
 
 
 def test_missing_database_config_is_inspection_error_and_secrets_stay_hidden(capsys, monkeypatch):
@@ -135,7 +148,7 @@ def test_valid_coverage_uses_one_consistent_snapshot(capsys):
         config_loader=lambda: SimpleNamespace(database_url="configured", chain_id="sapphire-1"),
         unit_inspector=lambda _: {"LoadState": "loaded", "ActiveState": "active", "UnitFileState": "enabled"},
         database_inspector=database,
-        api_inspector=lambda: {"status": "ok", "database": "ok", "chain_id": "sapphire-1", "indexed_height": 102, "indexer_lag": 0},
+        api_inspector=lambda _: {"status": "ok", "database": "ok", "chain_id": "sapphire-1", "indexed_height": 102, "indexer_lag": 0},
     )
     output = capsys.readouterr().out
     assert code == 0 and calls == 1 and "#1 -> #101, contiguous" in output
@@ -148,7 +161,7 @@ def test_database_failure_is_sanitized(capsys):
         config_loader=lambda: SimpleNamespace(database_url="postgresql://user:secret@host/db", chain_id="sapphire-1"),
         unit_inspector=lambda _: {"LoadState": "loaded", "ActiveState": "active", "UnitFileState": "enabled"},
         database_inspector=database,
-        api_inspector=lambda: {"status": "ok", "database": "ok", "chain_id": "sapphire-1", "indexed_height": 1, "indexer_lag": 0},
+        api_inspector=lambda _: {"status": "ok", "database": "ok", "chain_id": "sapphire-1", "indexed_height": 1, "indexer_lag": 0},
     )
     output = capsys.readouterr().out
     assert code == 1 and "RuntimeError" in output and "secret" not in output
