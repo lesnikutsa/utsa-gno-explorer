@@ -144,12 +144,20 @@ password entered with `\password`, and `indexer.env` uses the password file's wr
 sudo install -o root -g root -m 0644 deploy/systemd/*.service deploy/systemd/*.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now utsa-gno-api.service utsa-gno-indexer.service utsa-gno-governance-updater.service
-sudo systemctl enable --now utsa-gno-explorer-backup.timer utsa-gno-network-distribution.timer utsa-gno-valopers-refresh.timer
+sudo systemctl enable --now utsa-gno-network-distribution.timer utsa-gno-valopers-refresh.timer
 ```
 
 The inventory is: API, continuous indexer, continuous Governance updater; one-shot backup,
-network-distribution, and Valopers refresh services; and a timer for each one-shot service.
-There is no frontend service.
+network-distribution, and Valopers refresh services; and timers for network distribution and
+Valopers refresh. The backup service is manual and there is no frontend service. Run it before
+destructive maintenance or network retirement:
+
+```bash
+sudo systemctl start utsa-gno-explorer-backup.service
+```
+
+It publishes one verified dump and retains only that dump. A failed replacement preserves
+the previous valid dump.
 
 ## 8. Publish the frontend and configure Nginx
 
@@ -181,5 +189,5 @@ After reconnecting, repeat health, service, timer, Nginx, and public URL checks.
 - [ ] PostgreSQL healthy; schema initialized.
 - [ ] Decoder executable exists at `/opt/utsa-gno-explorer/bin/gno-tx-decoder`.
 - [ ] API healthy; indexer checkpoint progressing; Governance updater active.
-- [ ] Backup, network-distribution, and Valopers timers active.
+- [ ] Manual backup verified; network-distribution and Valopers timers active.
 - [ ] Frontend published; Nginx configuration valid; public Explorer opens.

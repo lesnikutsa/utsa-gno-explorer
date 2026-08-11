@@ -10,9 +10,10 @@ This document describes operational expectations for the future PostgreSQL datab
 - Encrypt backups at rest when they leave the trusted database environment.
 - Do not include private RPC credentials in database backups because the schema does not store secrets.
 
-The automated Explorer backup writes a temporary `.part` archive, validates it with `pg_restore --list`, and atomically finalizes it before rotation runs. Rotation retains exactly the 3 newest successful dumps named `utsa-gno-explorer-YYYYMMDDTHHMMSSZ.dump`. Manually named recovery dumps, validation restore files, checksum files, and unrelated files are outside automatic rotation.
-
-The production backup timer may be enabled only after the updated service and timer units are installed and `systemctl daemon-reload` has completed. Repository changes do not enable the production timer.
+The Explorer backup is run manually with `python3 scripts/backup_database.py` or the
+`utsa-gno-explorer-backup.service` one-shot unit. Run it before destructive maintenance or
+network retirement. It validates a temporary dump before atomic publication and then keeps
+only the latest verified dump. A failed replacement preserves the previous valid dump.
 
 ## Suggested logical backup command
 

@@ -285,49 +285,26 @@ The second indexer command is expected to fail while the service owns the adviso
 
 ## Backup
 
-Backups use `pg_dump -Fc` through the PostgreSQL Compose container. Online logical backups are acceptable while the indexer is running for routine daily recovery points because `pg_dump` reads a consistent database snapshot; the daily backup does not stop the indexer. Before destructive upgrades, create a separate checkpoint-aligned backup after stopping the indexer.
-
-Manual backup command:
+Backups are manual. Before destructive maintenance or network retirement, run:
 
 ```bash
-python scripts/backup_database.py --backup-dir /var/backups/utsa-gno-explorer --retention 3
-```
-
-Install the automated backup timer. Enable it only after the updated service and timer units are installed and `systemctl daemon-reload` has completed; installing these files does not itself enable the production timer:
-
-```bash
-install -o root -g root -m 0644 \
-  deploy/systemd/utsa-gno-explorer-backup.service \
-  /etc/systemd/system/utsa-gno-explorer-backup.service
-install -o root -g root -m 0644 \
-  deploy/systemd/utsa-gno-explorer-backup.timer \
-  /etc/systemd/system/utsa-gno-explorer-backup.timer
-systemctl daemon-reload
-install -d -o root -g root -m 0700 \
-  /var/backups/utsa-gno-explorer
-systemctl enable --now utsa-gno-explorer-backup.timer
-```
-
-Manually test and inspect the timer:
-
-```bash
+python3 scripts/backup_database.py
+# Or use the installed one-shot unit:
 systemctl start utsa-gno-explorer-backup.service
-systemctl status utsa-gno-explorer-backup.service
-systemctl status utsa-gno-explorer-backup.timer
-systemctl list-timers utsa-gno-explorer-backup.timer
-journalctl -u utsa-gno-explorer-backup.service
 ```
 
-Verify backup archives:
+The script creates a temporary custom-format dump, validates it with `pg_restore --list`,
+and atomically publishes it. Only after publication does it remove older matching dumps,
+so `/var/backups/utsa-gno-explorer` contains one latest verified dump. If creation or
+validation fails, the previous valid dump is preserved.
+
+Install the optional manual service without enabling a timer:
 
 ```bash
-find /var/backups/utsa-gno-explorer \
-  -maxdepth 1 \
-  -type f \
-  -name 'utsa-gno-explorer-*.dump'
+install -o root -g root -m 0644 deploy/systemd/utsa-gno-explorer-backup.service /etc/systemd/system/
+systemctl daemon-reload
+install -d -o root -g root -m 0700 /var/backups/utsa-gno-explorer
 ```
-
-The service runs as root so it can access Docker without adding `utsa-gno` to the docker group, logs to journald, uses restrictive `UMask=0077`, and passes only file paths and non-secret options in argv. Backup files and the backup directory remain root-only. The systemd service sets `DOCKER_CONFIG=/run/utsa-gno-explorer-backup`, using its private `RuntimeDirectory=utsa-gno-explorer-backup` as Docker CLI configuration storage so the hardened `ProtectHome=true` sandbox does not depend on `/root/.docker`. The script uses umask `077`, writes a `.part` file first, validates the archive with `pg_restore --list`, and atomically renames only after success. Only then does rotation retain the 3 newest successful files matching `utsa-gno-explorer-YYYYMMDDTHHMMSSZ.dump`. Manually named recovery dumps, validation restore files, checksum files, and unrelated files are outside automatic rotation. It never deletes the newest backup it just created and does not stop the indexer.
 
 ## Validation restore
 

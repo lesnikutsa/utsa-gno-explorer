@@ -98,44 +98,14 @@ Quick production checks:
 docker compose -f deploy/postgres/compose.yml --env-file /etc/utsa-gno-explorer/postgres.env ps
 systemctl status utsa-gno-indexer.service
 journalctl -u utsa-gno-indexer.service -n 100 --no-pager
-python scripts/backup_database.py --backup-dir /var/backups/utsa-gno-explorer --retention 3
+python3 scripts/backup_database.py
 ```
 
-Automated PostgreSQL backups are installed as a root-owned systemd timer. The Compose file has a stable default project name, so normal Compose and backup commands work without exporting `COMPOSE_PROJECT_NAME`; set that variable only for isolated integration or validation environments. Enable the timer only after the updated service and timer units are installed and `systemctl daemon-reload` has completed; installing these files does not itself enable the production timer:
-
-```bash
-install -o root -g root -m 0644 \
-  deploy/systemd/utsa-gno-explorer-backup.service \
-  /etc/systemd/system/utsa-gno-explorer-backup.service
-install -o root -g root -m 0644 \
-  deploy/systemd/utsa-gno-explorer-backup.timer \
-  /etc/systemd/system/utsa-gno-explorer-backup.timer
-systemctl daemon-reload
-install -d -o root -g root -m 0700 \
-  /var/backups/utsa-gno-explorer
-systemctl enable --now utsa-gno-explorer-backup.timer
-```
-
-Manual test and status commands:
-
-```bash
-systemctl start utsa-gno-explorer-backup.service
-systemctl status utsa-gno-explorer-backup.service
-systemctl status utsa-gno-explorer-backup.timer
-systemctl list-timers utsa-gno-explorer-backup.timer
-journalctl -u utsa-gno-explorer-backup.service
-```
-
-Verify backup archives:
-
-```bash
-find /var/backups/utsa-gno-explorer \
-  -maxdepth 1 \
-  -type f \
-  -name 'utsa-gno-explorer-*.dump'
-```
-
-Backups use `pg_dump -Fc`, write archives as `.part` first, validate each archive with `pg_restore --list`, then atomically rename successful backups. Only after that validation and finalization does rotation retain the 3 newest successful files matching `utsa-gno-explorer-YYYYMMDDTHHMMSSZ.dump`. Manually named recovery dumps, validation restore files, checksum files, and unrelated files are outside automatic rotation. Backup files and the backup directory remain root-only. The systemd service sets `DOCKER_CONFIG=/run/utsa-gno-explorer-backup`, using its private `RuntimeDirectory=utsa-gno-explorer-backup` as Docker CLI configuration storage so the hardened `ProtectHome=true` sandbox does not depend on `/root/.docker`. The daily backup is online and does not stop the indexer. Before destructive upgrades, stop the indexer and create a separate checkpoint-aligned backup.
+PostgreSQL backups are manual. The optional root-owned
+`utsa-gno-explorer-backup.service` runs the same command. Run a backup before destructive
+maintenance or network retirement. A dump is validated with `pg_restore --list` before
+atomic publication; only then are older matching dumps removed. Thus one latest verified
+dump is retained, and a failed replacement preserves the previous valid dump.
 
 ## Apply the Valopers schema migration
 
