@@ -98,7 +98,8 @@ function Metadata({ metadata }) {
   const data = metadata.data
   const summary = data.summary
   const funcs = summary.qfuncs_status === 'ok' ? summary.qfuncs_summary : null
-  const docs = summary.qdoc_summary
+  const docs = summary.qdoc_status === 'ok' ? summary.qdoc_summary : null
+  const storageAvailable = summary.qstorage_status === 'ok'
   return (
     <section className="panel realm-detail__section realm-metadata" aria-labelledby="realm-metadata-title">
       <div className="panel__heading"><h2 id="realm-metadata-title">Metadata</h2><StatusBadge tone={data.collection_status === 'complete' ? 'success' : 'neutral'}>{data.collection_status === 'complete' ? 'Complete' : 'Partial'}</StatusBadge></div>
@@ -110,8 +111,8 @@ function Metadata({ metadata }) {
         {field('Metadata height', `#${formatCount(data.observed_height)}`)}
         {field('Collected', <time dateTime={data.collected_at} title={data.collected_at}>{relativeTime(data.collected_at)}</time>)}
         {field('Package metadata', statusLabel(summary.qpkg_json_status))}
-        {data.kind === 'realm' && field('Storage', summary.qstorage_bytes == null ? statusLabel(summary.qstorage_status) : `${summary.qstorage_bytes} bytes`)}
-        {data.kind === 'realm' && field('Deposit', summary.qstorage_deposit_ugnot == null ? '—' : `${summary.qstorage_deposit_ugnot} uGNOT`)}
+        {data.kind === 'realm' && field('Storage', storageAvailable && summary.qstorage_bytes != null ? `${summary.qstorage_bytes} bytes` : statusLabel(summary.qstorage_status))}
+        {data.kind === 'realm' && field('Deposit', storageAvailable && summary.qstorage_deposit_ugnot != null ? `${summary.qstorage_deposit_ugnot} uGNOT` : statusLabel(summary.qstorage_status))}
         {data.kind === 'realm' && field('Render', summary.qrender_status === 'ok' ? 'Available' : statusLabel(summary.qrender_status))}
       </dl>
       <div className="realm-metadata__grid">

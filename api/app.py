@@ -1238,6 +1238,9 @@ def get_realm_metadata_file(
         row = database.fetch_realm_metadata_file(chain_id=app.state.api_config.chain_id, path=path, filename=filename)
         if row is None:
             raise HTTPException(status_code=404, detail="Realm metadata file not found")
+        if (row.get("chain_id") != app.state.api_config.chain_id
+                or row.get("path") != path or row.get("filename") != filename):
+            raise ValueError("malformed Realm metadata file identity")
         return RealmMetadataFileResponse(**row)
     except HTTPException:
         raise
@@ -1261,11 +1264,23 @@ def get_realm_metadata(path: str = Query(..., min_length=1, max_length=256)) -> 
             "qpkg_json_status", "qpkg_json_summary", "qfuncs_status", "qfuncs_summary", "qrender_status",
             "qrender_byte_count", "qrender_line_count", "qrender_non_empty", "qstorage_status",
             "qstorage_bytes", "qstorage_deposit_ugnot")
+        summary_values = {key: row[key] for key in summary_keys}
+        capability_values = {
+            "qdoc_status": ("qdoc_summary",),
+            "qpkg_json_status": ("qpkg_json_summary",),
+            "qfuncs_status": ("qfuncs_summary",),
+            "qrender_status": ("qrender_byte_count", "qrender_line_count", "qrender_non_empty"),
+            "qstorage_status": ("qstorage_bytes", "qstorage_deposit_ugnot"),
+        }
+        for status_key, value_keys in capability_values.items():
+            if summary_values[status_key] != "ok":
+                for value_key in value_keys:
+                    summary_values[value_key] = None
         dependencies = result["dependencies"]
         return RealmMetadataResponse(chain_id=row["chain_id"], path=row["path"], kind=row["path_kind"],
             observed_height=row["observed_height"], collected_at=isoformat_utc_z(row["collected_at"]),
             collection_status=row["collection_status"],
-            summary=RealmMetadataSummary(**{key: row[key] for key in summary_keys}), files=result["files"],
+            summary=RealmMetadataSummary(**summary_values), files=result["files"],
             dependencies=dependencies[:200], dependencies_truncated=len(dependencies) > 200)
     except HTTPException:
         raise

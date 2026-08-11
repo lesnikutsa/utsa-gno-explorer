@@ -56,6 +56,34 @@ class RealmMetadataApiTests(unittest.TestCase):
         self.assertEqual(response.summary.qfuncs_status, "application_error")
         self.assertIsNone(response.summary.qfuncs_summary)
 
+    def test_preserved_capability_values_are_hidden_when_current_status_failed(self):
+        row = metadata_row(status="partial")
+        row.update(qdoc_status="rpc_error", qpkg_json_status="invalid_response",
+                   qfuncs_status="application_error",
+                   qrender_status="rpc_error", qstorage_status="rpc_error")
+        # These values represent an older successful observation preserved by persistence.
+        self.assertIsNotNone(row["qdoc_summary"])
+        self.assertIsNotNone(row["qfuncs_summary"])
+        self.assertIsNotNone(row["qrender_byte_count"])
+        self.assertIsNotNone(row["qstorage_bytes"])
+        with patch.object(module.database, "fetch_realm_metadata", return_value={
+            "metadata":row, "files":[], "dependencies":[],
+        }):
+            summary = module.get_realm_metadata(path=row["path"]).summary
+        self.assertEqual(summary.qdoc_status, "rpc_error")
+        self.assertIsNone(summary.qdoc_summary)
+        self.assertEqual(summary.qpkg_json_status, "invalid_response")
+        self.assertIsNone(summary.qpkg_json_summary)
+        self.assertEqual(summary.qfuncs_status, "application_error")
+        self.assertIsNone(summary.qfuncs_summary)
+        self.assertEqual(summary.qrender_status, "rpc_error")
+        self.assertIsNone(summary.qrender_byte_count)
+        self.assertIsNone(summary.qrender_line_count)
+        self.assertIsNone(summary.qrender_non_empty)
+        self.assertEqual(summary.qstorage_status, "rpc_error")
+        self.assertIsNone(summary.qstorage_bytes)
+        self.assertIsNone(summary.qstorage_deposit_ugnot)
+
     def test_validation_and_absence_are_static(self):
         with self.assertRaises(HTTPException) as invalid:
             module.get_realm_metadata(path="not-a-path")
@@ -76,6 +104,15 @@ class RealmMetadataApiTests(unittest.TestCase):
             with self.assertRaises(HTTPException) as missing:
                 module.get_realm_metadata_file(path=row["path"], filename="missing.gno")
         self.assertEqual(missing.exception.status_code, 404)
+
+    def test_file_identity_mismatch_fails_closed(self):
+        row = {"chain_id":"other-chain", "path":"gno.land/r/demo/app", "filename":"main.gno",
+            "file_kind":"gno_source", "byte_count":12, "line_count":1, "sha256":SHA, "content":"package demo"}
+        with patch.object(module.database, "fetch_realm_metadata_file", return_value=row):
+            with self.assertRaises(HTTPException) as malformed:
+                module.get_realm_metadata_file(path=row["path"], filename=row["filename"])
+        self.assertEqual((malformed.exception.status_code, malformed.exception.detail),
+                         (503, module.UNAVAILABLE_DETAIL))
 
 
 if __name__ == "__main__":
