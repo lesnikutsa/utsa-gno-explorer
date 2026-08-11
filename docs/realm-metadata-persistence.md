@@ -1,8 +1,30 @@
 # Realm and Package metadata persistence
 
-This persistence layer prepares bounded PostgreSQL storage for a future metadata
-collector. It does not collect RPC data and does not expose metadata through the
-API or frontend.
+This persistence layer supports a manual, one-shot metadata collector. It does
+not expose metadata through the API or frontend.
+
+## Manual collection
+
+No schedule, timer, or recurring service is installed. An operator runs the
+collector only when desired:
+
+```sh
+sudo -u utsa-gno sh -c '
+  set -a
+  . /etc/utsa-gno-explorer/indexer.env
+  . /etc/utsa-gno-explorer/rpc.env
+  set +a
+  cd /opt/utsa-gno-explorer
+  exec .venv/bin/python scripts/refresh_realm_metadata.py
+'
+```
+
+Use `--limit 5` for a small smoke run, or repeat
+`--path gno.land/r/example` for targeted current catalog paths. Collection is
+sequential and anchored to the current `realm_catalog_state` height. It is safe
+to rerun: unchanged file fingerprints avoid child-row churn, and a failed path
+preserves its previously published metadata. Render responses are summarized in
+memory; qrender bodies are never persisted, logged, or included in reports.
 
 ## Schema
 
@@ -16,7 +38,7 @@ The schema contains exactly four metadata tables:
 * `realm_metadata_imports` holds canonical `gno.land/r/...` and
   `gno.land/p/...` imports extracted from persisted Gno source. An import target
   need not exist in `realm_catalog`.
-* `realm_metadata_refresh_state` holds bounded run-level state for a future
+* `realm_metadata_refresh_state` holds bounded run-level state for the manual
   collector; it does not schedule or execute a run.
 
 ## Publication and preservation
