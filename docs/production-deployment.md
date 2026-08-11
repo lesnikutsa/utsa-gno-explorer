@@ -326,6 +326,9 @@ The second indexer command is expected to fail while the service owns the adviso
 
 ## Backup
 
+For a compact check of all required production units and derived-data invariants, use
+[Production runtime verification](operator-runbook.md#production-runtime-verification).
+
 Backups are manual. Before destructive maintenance or network retirement, run:
 
 ```bash

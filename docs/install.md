@@ -145,8 +145,8 @@ sudo systemctl enable --now utsa-gno-realm-catalog-refresh.timer utsa-gno-realm-
 The inventory is: API, continuous indexer, continuous Governance updater; one-shot backup,
 network-distribution, Valopers, Realm catalog, and Realm metadata refresh services; and their
 corresponding timers. The Realm metadata schedule follows the catalog by 15 minutes. The backup
-service is manual and there is no frontend service. Run it before
-destructive maintenance or network retirement:
+service is manual and there is no frontend service. Run it before destructive maintenance or
+network retirement:
 
 ```bash
 sudo systemctl start utsa-gno-explorer-backup.service

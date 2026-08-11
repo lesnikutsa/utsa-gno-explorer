@@ -14,6 +14,13 @@ from indexer.config import load_config
 from indexer.database import PostgresDatabase
 
 
+def coverage_is_contiguous(
+    state: tuple[int, int] | None, indexed_height: int | None
+) -> bool:
+    """Return whether the recorded call-index range reaches one DB checkpoint."""
+    return state is not None and indexed_height is not None and int(state[1]) == indexed_height
+
+
 def run(database_url: str | None = None) -> int:
     """Print bounded coverage facts and return a stable health exit code."""
     try:
@@ -49,7 +56,7 @@ def run(database_url: str | None = None) -> int:
             return 2
 
         start, through = int(state[0]), int(state[1])
-        contiguous = indexed_height is not None and through == indexed_height
+        contiguous = coverage_is_contiguous((start, through), indexed_height)
         print(
             f"chain_id={config.chain_id} call_index_from={start} "
             f"call_index_through={through} "

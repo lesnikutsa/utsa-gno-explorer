@@ -68,6 +68,7 @@ from scripts.migrate_governance_schema import migrate as migrate_governance_sche
 from scripts.rebuild_realm_activity import rebuild_cursor
 from scripts.rebuild_realm_call_index import rebuild_cursor as rebuild_realm_call_index_cursor
 from scripts.refresh_realm_catalog import RefreshStatus, persist_refresh
+from scripts.check_runtime import DatabaseSnapshot, inspect_database
 
 try:
     import psycopg
@@ -2890,6 +2891,55 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                 self.assertIn("package demo", cursor.fetchone()[0])
                 cursor.execute("SELECT 1")
                 self.assertEqual(cursor.fetchone()[0], 1)
+
+    def test_runtime_inspector_reads_current_schema_in_one_read_only_snapshot(self):
+        url = self.prepare_metadata_database(f"utsa_runtime_inspector_{os.getpid()}")
+        partial = self.metadata_snapshot()
+        partial = MetadataSnapshot(
+            partial.chain_id, partial.path, partial.path_kind, partial.observed_height,
+            "partial", partial.expected_filenames, partial.files, partial.collected_at,
+        )
+        with psycopg.connect(url) as connection:
+            publish_metadata_snapshot(connection, partial)
+            with connection.cursor() as cursor:
+                cursor.execute("""INSERT INTO blocks(
+                  height,block_hash_base64,block_hash_hex,time_utc,tx_count
+                ) VALUES (100,'ZA==','64',now(),1)""")
+                cursor.execute("""INSERT INTO transactions(
+                  block_height,tx_index,raw_base64,raw_base64_length,
+                  decode_status
+                ) VALUES (100,0,'',0,'not_attempted')""")
+                cursor.execute("""INSERT INTO indexer_state(
+                  state_key,chain_id,last_finalized_height,finalized_tip_height
+                ) VALUES ('default','topaz-1',100,100)""")
+                cursor.execute("""INSERT INTO realm_catalog_state(
+                  chain_id,observed_height,rpc_path_count,refreshed_at
+                ) VALUES ('topaz-1',99,1,now())""")
+                cursor.execute("""INSERT INTO realm_call_index_state(
+                  chain_id,from_height,through_height
+                ) VALUES ('topaz-1',1,100)""")
+                cursor.execute("""INSERT INTO realm_call_index(
+                  chain_id,block_height,tx_index,message_index,path
+                ) VALUES ('topaz-1',100,0,0,'gno.land/r/metadata_demo')""")
+                now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+                persist_metadata_refresh_state_cursor(cursor, MetadataRefreshState(
+                    "topaz-1", 99, "partial", 1, 1, 0, now,
+                    now + timedelta(seconds=1), 99, now + timedelta(seconds=1),
+                ))
+
+        observed = inspect_database(url, "topaz-1")
+
+        self.assertEqual(observed, DatabaseSnapshot(
+            indexed_height=100,
+            catalog_state=(99, 1),
+            catalog_counts=(1, 0, 1),
+            call_state=(1, 100),
+            call_rows=1,
+            metadata_rows=1,
+            metadata_statuses=(("partial", 1),),
+            metadata_height=10,
+            metadata_refresh=(99, "partial"),
+        ))
 
 
 if __name__ == "__main__":
