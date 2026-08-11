@@ -44,6 +44,24 @@ class ValidatorFavoritesTests(unittest.TestCase):
         """)
         self.assertTrue(all(result.values()))
 
+    def test_browser_storage_resolution_failures_do_not_escape(self):
+        result = self.run_module("""
+          import { loadValidatorFavorites, saveValidatorFavorites } from './frontend/src/utils/validatorFavorites.js'
+          const withoutWindow = loadValidatorFavorites('no-window').size === 0
+          Object.defineProperty(globalThis, 'window', {
+            configurable: true,
+            value: Object.defineProperty({}, 'localStorage', {
+              get: () => { throw new DOMException('blocked', 'SecurityError') },
+            }),
+          })
+          let readSafe = false
+          let writeSafe = false
+          try { readSafe = loadValidatorFavorites('blocked-window').size === 0 } catch {}
+          try { saveValidatorFavorites('blocked-window', new Set(['g1x'])); writeSafe = true } catch {}
+          console.log(JSON.stringify({ withoutWindow, readSafe, writeSafe }))
+        """)
+        self.assertTrue(all(result.values()))
+
     def test_favorites_group_without_mutating_sort_or_rank(self):
         result = self.run_module("""
           import { compareFavoriteGroups } from './frontend/src/utils/validatorFavorites.js'
