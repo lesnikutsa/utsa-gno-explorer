@@ -1,9 +1,10 @@
+import { useState } from 'react'
 import { DataTable } from '../components/DataTable'
 import { StatusBadge } from '../components/StatusBadge'
 import { formatGas } from '../utils/gas'
 import { shortAddress } from '../utils/address'
 import { relativeTime } from '../utils/time'
-import { formatSuccessRate } from '../utils/realm'
+import { formatSuccessRate, realmDetailHref } from '../utils/realm'
 import { getRealmDetailViewModel, getRealmSourceStatusParts, realmCallsPageLabel, realmCallsPathForDetail } from '../utils/realmDetail'
 import { useRealmCalls } from '../hooks/useRealmCalls'
 import { useRealmMetadata } from '../hooks/useRealmMetadata'
@@ -92,6 +93,7 @@ export function RecentCalls({ response }) {
 }
 
 function Metadata({ metadata }) {
+  const [sourceExpanded, setSourceExpanded] = useState(false)
   if (metadata.loading) return <section className="panel realm-detail__section realm-detail__note"><h2>Metadata</h2><p>Loading persisted metadata…</p></section>
   if (metadata.notFound) return <section className="panel realm-detail__section realm-detail__note"><h2>Metadata</h2><p>Metadata has not been collected for this path yet.</p></section>
   if (metadata.error || !metadata.data) return <section className="panel realm-detail__section realm-detail__note"><h2>Metadata</h2><p>Metadata is temporarily unavailable.</p></section>
@@ -100,9 +102,12 @@ function Metadata({ metadata }) {
   const funcs = summary.qfuncs_status === 'ok' ? summary.qfuncs_summary : null
   const docs = summary.qdoc_status === 'ok' ? summary.qdoc_summary : null
   const storageAvailable = summary.qstorage_status === 'ok'
+  const selectedFile = data.files.find((file) => file.filename === metadata.selectedFilename)
+  const sourceFile = metadata.source.data || selectedFile
   return (
     <section className="panel realm-detail__section realm-metadata" aria-labelledby="realm-metadata-title">
       <div className="panel__heading"><h2 id="realm-metadata-title">Metadata</h2><StatusBadge tone={data.collection_status === 'complete' ? 'success' : 'neutral'}>{data.collection_status === 'complete' ? 'Complete' : 'Partial'}</StatusBadge></div>
+      {data.collection_status === 'partial' && <p className="realm-metadata__partial">Some metadata capabilities were unavailable during collection.</p>}
       <dl className="realm-detail__overview">
         {field('Files', formatCount(summary.file_count))}
         {field('Functions', funcs ? formatCount(funcs.function_count) : 'Unavailable')}
@@ -116,12 +121,12 @@ function Metadata({ metadata }) {
         {data.kind === 'realm' && field('Render', summary.qrender_status === 'ok' ? 'Available' : statusLabel(summary.qrender_status))}
       </dl>
       <div className="realm-metadata__grid">
-        <div><h3>Files <span>{formatCount(summary.file_count)}</span></h3><ul className="realm-metadata__files">{data.files.map((file) => <li key={file.filename}><button type="button" onClick={() => metadata.selectFile(file.filename)}><span className="mono">{file.filename}</span><StatusBadge tone="neutral">{fileKindLabel[file.file_kind]}</StatusBadge><small>{formatBytes(file.byte_count)} · {formatCount(file.line_count)} lines</small></button></li>)}</ul></div>
+        <div><h3>Dependencies <span>{formatCount(summary.dependency_count)}</span></h3>{summary.dependency_count === 0 ? <p>No dependencies</p> : <ul className="realm-metadata__names">{data.dependencies.map((dependency) => <li key={`${dependency.imported_path}-${dependency.imported_kind}`}><a className="mono" href={realmDetailHref(dependency.imported_path)}>{dependency.imported_path}</a></li>)}</ul>}{data.dependencies_truncated && <p>Showing first 200 dependencies</p>}</div>
         <div><h3>Functions {funcs && <span>{formatCount(funcs.function_count)}</span>}</h3>{funcs ? <><ul className="realm-metadata__names">{funcs.function_names.map((name, index) => <li className="mono" key={`${name}-${index}`}>{name}</li>)}</ul>{funcs.function_count > funcs.function_names.length && <p>Showing {funcs.function_names.length} of {funcs.function_count} functions</p>}</> : <p>Functions unavailable · {statusLabel(summary.qfuncs_status)}</p>}</div>
-        <div><h3>Dependencies <span>{formatCount(summary.dependency_count)}</span></h3><ul className="realm-metadata__names">{data.dependencies.map((dependency) => <li key={`${dependency.imported_path}-${dependency.imported_kind}`}><a className="mono" href={`/realms/detail?path=${encodeURIComponent(dependency.imported_path)}`}>{dependency.imported_path}</a></li>)}</ul>{data.dependencies_truncated && <p>Showing first 200 dependencies</p>}</div>
-        <div><h3>Docs</h3>{docs ? <dl className="realm-metadata__docs"><dt>Available</dt><dd>Yes</dd><dt>Package doc</dt><dd>{docs.package_doc_present ? 'Yes' : 'No'}</dd><dt>Documented functions</dt><dd>{docs.documented_function_count}</dd><dt>Values</dt><dd>{docs.value_count}</dd><dt>Types</dt><dd>{docs.type_count}</dd></dl> : <p>Docs unavailable · {statusLabel(summary.qdoc_status)}</p>}</div>
+        <div><h3>Files <span>{formatCount(summary.file_count)}</span></h3><ul className="realm-metadata__files">{data.files.map((file) => <li key={file.filename}><button className={file.filename === metadata.selectedFilename ? 'is-selected' : undefined} type="button" aria-pressed={file.filename === metadata.selectedFilename} onClick={() => metadata.selectFile(file.filename)}><span className="realm-metadata__filename mono">{file.filename}</span><StatusBadge tone="neutral">{fileKindLabel[file.file_kind]}</StatusBadge><small>{formatBytes(file.byte_count)} · {formatCount(file.line_count)} lines</small></button></li>)}</ul></div>
+        <div><h3>Docs</h3>{docs ? <dl className="realm-metadata__docs"><dt>Available</dt><dd><StatusBadge tone={docs.available ? 'success' : 'neutral'}>{docs.available ? 'Yes' : 'No'}</StatusBadge></dd><dt>Package doc</dt><dd><StatusBadge tone={docs.package_doc_present ? 'success' : 'neutral'}>{docs.package_doc_present ? 'Yes' : 'No'}</StatusBadge></dd><dt>Documented functions</dt><dd>{docs.documented_function_count}</dd><dt>Values</dt><dd>{docs.value_count}</dd><dt>Types</dt><dd>{docs.type_count}</dd></dl> : <p>Docs unavailable · {statusLabel(summary.qdoc_status)}</p>}</div>
       </div>
-      <div className="realm-metadata__source"><h3>Source</h3>{metadata.source.loading && <p>Loading source…</p>}{metadata.source.error && <p>Source file is temporarily unavailable.</p>}{metadata.source.data && <><p className="mono">{metadata.source.data.filename} · {formatBytes(metadata.source.data.byte_count)} · {metadata.source.data.line_count} lines</p><pre><code>{metadata.source.data.content}</code></pre></>}</div>
+      <div className="realm-metadata__source"><div className="realm-metadata__source-header"><h3>Source</h3><button className="blocks-page__button realm-metadata__source-toggle" type="button" aria-expanded={sourceExpanded} onClick={() => setSourceExpanded((expanded) => !expanded)} disabled={!sourceFile}>{sourceExpanded ? 'Hide source ↑' : 'Show source ↓'}</button></div>{sourceFile && <p className="mono">{sourceFile.filename} · {formatBytes(sourceFile.byte_count)} · {formatCount(sourceFile.line_count)} lines</p>}{metadata.source.loading && <p>Loading source…</p>}{metadata.source.error && <p>Source file is temporarily unavailable.</p>}{sourceExpanded && metadata.source.data && <pre><code>{metadata.source.data.content}</code></pre>}</div>
     </section>
   )
 }

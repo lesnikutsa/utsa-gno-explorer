@@ -9,10 +9,12 @@ export function useRealmMetadata(path) {
   const fileController = useRef(null)
   const [state, setState] = useState({ loading: Boolean(path), data: null, notFound: false, error: false })
   const [source, setSource] = useState({ loading: false, data: null, error: false })
+  const [selectedFilename, setSelectedFilename] = useState(null)
 
   const selectFile = useCallback((filename) => {
     fileController.current?.abort()
     if (!path || !filename) return
+    setSelectedFilename(filename)
     const controller = new AbortController()
     fileController.current = controller
     setSource({ loading: true, data: null, error: false })
@@ -27,6 +29,7 @@ export function useRealmMetadata(path) {
     metadataController.current?.abort()
     fileController.current?.abort()
     setSource({ loading: false, data: null, error: false })
+    setSelectedFilename(null)
     if (!path) return undefined
     const controller = new AbortController()
     metadataController.current = controller
@@ -43,5 +46,5 @@ export function useRealmMetadata(path) {
     return () => { controller.abort(); fileController.current?.abort() }
   }, [path, selectFile])
 
-  return { ...state, source, selectFile }
+  return { ...state, source, selectedFilename, selectFile }
 }
