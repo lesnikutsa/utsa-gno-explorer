@@ -1,0 +1,13 @@
+[Unit]
+Description=Refresh UTSA Gno Explorer Realm metadata every three hours
+Documentation=file:/opt/utsa-gno-explorer/docs/production-deployment.md
+
+[Timer]
+OnCalendar=*-*-* 00,03,06,09,12,15,18,21:15:00 UTC
+Persistent=true
+RandomizedDelaySec=2m
+AccuracySec=1m
+Unit=utsa-gno-realm-metadata-refresh.service
+
+[Install]
+WantedBy=timers.target

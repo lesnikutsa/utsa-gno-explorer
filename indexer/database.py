@@ -323,7 +323,9 @@ def write_height_cursor(cursor, parsed, chain_id: str, finalized_tip: int, selec
     _upsert_transactions(cursor, parsed, selected_rpc_endpoint_id)
     _replace_realm_calls_for_height(cursor, parsed, chain_id)
     _upsert_realm_catalog(cursor, parsed, chain_id)
-    advance_realm_call_coverage(cursor, chain_id, parsed.height)
+    advance_realm_call_coverage(
+        cursor, chain_id, parsed.height, initialize_if_missing=checkpoint is None
+    )
     advance_realm_activity_coverage(cursor, chain_id, parsed.height)
     _upsert_validators_and_members(cursor, parsed)
     _upsert_signatures(cursor, parsed)
@@ -370,8 +372,10 @@ def lock_realm_call_index(cursor) -> None:
     cursor.execute("SELECT pg_advisory_xact_lock(%s)", (REALM_CALL_INDEX_LOCK_ID,))
 
 
-def advance_realm_call_coverage(cursor, chain_id: str, height: int) -> RealmCallCoverageResult:
-    """Advance existing call-index coverage exactly; never create a coverage claim."""
+def advance_realm_call_coverage(
+    cursor, chain_id: str, height: int, *, initialize_if_missing: bool = False
+) -> RealmCallCoverageResult:
+    """Initialize truthful fresh coverage or advance existing coverage exactly."""
     if not isinstance(chain_id, str) or not chain_id.strip():
         raise ValueError("chain_id must be a non-empty string")
     if isinstance(height, bool) or not isinstance(height, int) or height < 1:
@@ -382,6 +386,17 @@ def advance_realm_call_coverage(cursor, chain_id: str, height: int) -> RealmCall
     )
     row = cursor.fetchone()
     if row is None:
+        if initialize_if_missing:
+            cursor.execute(
+                "INSERT INTO realm_call_index_state(chain_id, from_height, through_height) "
+                "VALUES (%s, %s, %s)",
+                (chain_id, height, height),
+            )
+            if cursor.rowcount != 1:
+                raise RealmCallCoverageError(
+                    "Realm call coverage initialization did not affect exactly one row"
+                )
+            return RealmCallCoverageResult(None, height, True)
         return RealmCallCoverageResult(None, None, False)
     if len(row) != 2 or row[0] is None or row[1] is None:
         raise RealmCallCoverageError(f"Incompatible Realm call coverage state for chain {chain_id}")

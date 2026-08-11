@@ -377,6 +377,36 @@ class DeploymentAssetTests(unittest.TestCase):
         self.assertEqual(timer.count("OnCalendar="), 1)
         self.assertNotIn("OnUnitActiveSec", timer)
 
+    def test_realm_metadata_refresh_service_contract(self):
+        unit = self.text("deploy/systemd/utsa-gno-realm-metadata-refresh.service")
+        for value in (
+            "Type=oneshot", "User=utsa-gno", "Group=utsa-gno",
+            "WorkingDirectory=/opt/utsa-gno-explorer",
+            "EnvironmentFile=/etc/utsa-gno-explorer/indexer.env",
+            "EnvironmentFile=/etc/utsa-gno-explorer/rpc.env",
+            "ExecStartPre=/opt/utsa-gno-explorer/.venv/bin/python /opt/utsa-gno-explorer/scripts/wait_for_postgres.py --timeout 120 --retry-interval 2",
+            "ExecStart=/opt/utsa-gno-explorer/.venv/bin/python /opt/utsa-gno-explorer/scripts/refresh_realm_metadata.py",
+            "StandardOutput=journal", "StandardError=journal",
+            "NoNewPrivileges=true", "ProtectSystem=strict",
+            "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
+        ):
+            self.assertIn(value, unit)
+        self.assertLess(unit.index("indexer.env"), unit.index("rpc.env"))
+        for forbidden in ("Restart=", "git pull", "init_database.py", "systemctl"):
+            self.assertNotIn(forbidden, unit)
+
+    def test_realm_metadata_refresh_timer_contract(self):
+        timer = self.text("deploy/systemd/utsa-gno-realm-metadata-refresh.timer")
+        for value in (
+            "OnCalendar=*-*-* 00,03,06,09,12,15,18,21:15:00 UTC",
+            "Persistent=true", "RandomizedDelaySec=2m", "AccuracySec=1m",
+            "Unit=utsa-gno-realm-metadata-refresh.service",
+            "WantedBy=timers.target",
+        ):
+            self.assertIn(value, timer)
+        self.assertEqual(timer.count("OnCalendar="), 1)
+        self.assertNotIn("OnUnitActiveSec", timer)
+
 
     def test_compose_has_stable_project_name_with_override(self):
         compose = self.text("deploy/postgres/compose.yml")

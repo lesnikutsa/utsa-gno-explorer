@@ -139,11 +139,13 @@ sudo install -o root -g root -m 0644 deploy/systemd/*.service deploy/systemd/*.t
 sudo systemctl daemon-reload
 sudo systemctl enable --now utsa-gno-api.service utsa-gno-indexer.service utsa-gno-governance-updater.service
 sudo systemctl enable --now utsa-gno-network-distribution.timer utsa-gno-valopers-refresh.timer
+sudo systemctl enable --now utsa-gno-realm-catalog-refresh.timer utsa-gno-realm-metadata-refresh.timer
 ```
 
 The inventory is: API, continuous indexer, continuous Governance updater; one-shot backup,
-network-distribution, and Valopers refresh services; and timers for network distribution and
-Valopers refresh. The backup service is manual and there is no frontend service. Run it before
+network-distribution, Valopers, Realm catalog, and Realm metadata refresh services; and their
+corresponding timers. The Realm metadata schedule follows the catalog by 15 minutes. The backup
+service is manual and there is no frontend service. Run it before
 destructive maintenance or network retirement:
 
 ```bash
