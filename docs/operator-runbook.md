@@ -28,9 +28,12 @@ from block 1. Never restore or reuse Topaz rows, checkpoints, or backups for Sap
 | `utsa-gno-api.service` | Localhost read-only HTTP API. |
 | `utsa-gno-indexer.service` | Sequential finalized block/transaction ingestion. |
 | `utsa-gno-governance-updater.service` | Continuous Governance snapshot updater. |
-| `utsa-gno-explorer-backup.service` | Manual verified PostgreSQL logical backup. |
+| `utsa-gno-explorer-backup.service` | On-demand/timer-invoked verified PostgreSQL logical backup. |
+| `utsa-gno-explorer-backup.timer` | Daily verified PostgreSQL logical backup. |
 | `utsa-gno-network-distribution.service` / `.timer` | Observed peer sample, every 15 minutes. |
 | `utsa-gno-valopers-refresh.service` / `.timer` | Official Valopers metadata refresh, hourly. |
+| `utsa-gno-realm-catalog-refresh.service` / `.timer` | Realm/Package catalog refresh. |
+| `utsa-gno-realm-metadata-refresh.service` / `.timer` | Realm/Package metadata refresh after catalog discovery. |
 
 The frontend has no systemd service; it is static content published by a script.
 
@@ -54,6 +57,59 @@ sudo -u utsa-gno sh -c 'set -a; . /etc/utsa-gno-explorer/rpc.env; set +a; cd /op
 ```
 
 Do not print `rpc.env` because URLs may contain credentials.
+
+## Production runtime verification
+
+Run the read-only checker after installation, update, restore, or database replacement:
+
+```bash
+sudo -u utsa-gno sh -c 'set -a; . /etc/utsa-gno-explorer/indexer.env; . /etc/utsa-gno-explorer/rpc.env; set +a; cd /opt/utsa-gno-explorer && exec .venv/bin/python scripts/check_runtime.py'
+```
+
+It inspects systemd, one consistent read-only PostgreSQL snapshot, and the bounded local
+`/api/health` endpoint. It never repairs state or prints configured database/RPC URLs.
+Exit `0` means all required checks are healthy, `1` means a runtime invariant failed,
+and `2` means required configuration was missing or invalid. Inactive refresh and backup
+oneshot services are normal between timer runs; their enabled and active timers are the
+required runtime state.
+
+## Fresh network / database reset checklist
+
+Use the detailed procedures in [installation](install.md), [restore](restore.md), and the
+[production reference](production-deployment.md); this list defines the operator order:
+
+1. **Before reset:** stop database writers and relevant scheduled jobs so they cannot race
+   database replacement. Preserve required external configuration, but never reuse rows,
+   checkpoints, or backups from the previous chain for a fresh chain.
+2. **Fresh database:** require healthy PostgreSQL, initialize the schema, and create/verify
+   the separate read-only API role and grants as documented in installation. Configure the
+   intended chain ID and `INDEXER_START_HEIGHT`, start the core runtime, and verify its first
+   checkpoint.
+3. **Realm bootstrap:** the first successfully committed indexed block automatically creates
+   `realm_call_index_state` bounded to that block, and sequential indexing advances it. Do
+   not manually rebuild this state during a normal fresh bootstrap. Run or wait for a
+   successful Realm catalog snapshot; only then run or wait for metadata refresh.
+4. **Other scheduled data:** enable and verify the Valopers, Network distribution, and Backup
+   timers, plus the continuous Governance updater.
+5. **Final validation:** run `scripts/check_runtime.py`, verify the local API health endpoint,
+   and verify the frontend after publication.
+
+### Existing checkpoint but missing Realm call coverage
+
+This is recovery, **not** fresh bootstrap. Realm Recent Calls and Applications intentionally
+fail closed because `realm_call_index` row existence alone does not prove complete coverage.
+First run the read-only inspector:
+
+```bash
+.venv/bin/python scripts/check_realm_call_index_coverage.py
+```
+
+Inspect and explicitly validate the correct starting and ending heights for this chain and
+database; block 1 is not a universal recovery start. Only after confirming that range, stop
+the continuous indexer and use `scripts/rebuild_realm_call_index.py` with the verified range.
+After the rebuild, require the coverage checker to report `contiguous=true` and
+`rebuild_required=false`, start the indexer, then verify Realm Recent Calls and
+`GET /api/realm-applications/top`.
 
 ## Frontend publication
 

@@ -326,7 +326,11 @@ The second indexer command is expected to fail while the service owns the adviso
 
 ## Backup
 
-Backups are manual. Before destructive maintenance or network retirement, run:
+For a compact check of all required production units and derived-data invariants, use
+[Production runtime verification](operator-runbook.md#production-runtime-verification).
+
+Backups run daily, and operators can also request one before destructive maintenance or
+network retirement:
 
 ```bash
 python3 scripts/backup_database.py
@@ -339,13 +343,16 @@ and atomically publishes it. Only after publication does it remove older matchin
 so `/var/backups/utsa-gno-explorer` contains one latest verified dump. If creation or
 validation fails, the previous valid dump is preserved.
 
-Install the optional manual service without enabling a timer:
+Install and enable the service timer:
 
 ```bash
-install -o root -g root -m 0644 deploy/systemd/utsa-gno-explorer-backup.service /etc/systemd/system/
+install -o root -g root -m 0644 deploy/systemd/utsa-gno-explorer-backup.service deploy/systemd/utsa-gno-explorer-backup.timer /etc/systemd/system/
 systemctl daemon-reload
 install -d -o root -g root -m 0700 /var/backups/utsa-gno-explorer
+systemctl enable --now utsa-gno-explorer-backup.timer
 ```
+
+The service is a oneshot and is normally inactive between timer runs.
 
 ## Validation restore
 

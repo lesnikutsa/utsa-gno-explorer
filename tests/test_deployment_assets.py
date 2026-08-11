@@ -463,10 +463,12 @@ class DeploymentAssetTests(unittest.TestCase):
         )
         self.assertIn("systemctl start utsa-gno-explorer-backup.service", install)
 
-    def test_backup_timer_is_not_part_of_deployment_contract(self):
-        self.assertFalse((ROOT / "deploy/systemd/utsa-gno-explorer-backup.timer").exists())
-        for relative in ("docs/install.md", "docs/production-deployment.md", "docs/operator-runbook.md", "docs/backup-and-recovery.md"):
-            self.assertNotIn("utsa-gno-explorer-backup.timer", self.text(relative))
+    def test_backup_timer_is_part_of_deployment_contract(self):
+        timer = self.text("deploy/systemd/utsa-gno-explorer-backup.timer")
+        self.assertIn("Unit=utsa-gno-explorer-backup.service", timer)
+        self.assertIn("Persistent=true", timer)
+        self.assertIn("utsa-gno-explorer-backup.timer", self.text("docs/install.md"))
+        self.assertIn("utsa-gno-explorer-backup.timer", self.text("docs/operator-runbook.md"))
 
     def test_unrelated_timer_assets_remain_available(self):
         for name in ("utsa-gno-realm-catalog-refresh.timer", "utsa-gno-valopers-refresh.timer", "utsa-gno-network-distribution.timer"):
