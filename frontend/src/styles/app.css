@@ -906,11 +906,14 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .realm-metadata h3 span, .realm-metadata p, .realm-metadata small { color: var(--color-text-secondary); font-size: 11px; }
 .realm-metadata ul { margin: 0; padding: 0; list-style: none; }
 .realm-metadata__files button { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; width: 100%; padding: 7px 0; border: 0; background: none; color: var(--color-text-bright); text-align: left; cursor: pointer; }
+.realm-metadata__files button:hover, .realm-metadata__files button:focus-visible, .realm-metadata__files button.is-selected { background: var(--color-accent-soft); }
+.realm-metadata__files button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .realm-metadata__files button > span:first-child, .realm-metadata__names a, .realm-metadata__source > p { overflow-wrap: anywhere; word-break: break-word; }
 .realm-metadata__names { display: grid; gap: 6px; color: var(--color-text-secondary); font-size: 12px; }
-.realm-metadata__docs { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 10px; margin: 0; color: var(--color-text-secondary); font-size: 12px; }
+.realm-metadata__docs { display: grid; grid-template-columns: minmax(130px, 190px) max-content; gap: 7px 14px; width: fit-content; max-width: 100%; margin: 0; color: var(--color-text-secondary); font-size: 12px; }
 .realm-metadata__docs dd { margin: 0; color: var(--color-text-bright); }
-.realm-metadata__source pre { max-width: 100%; max-height: 560px; margin: 8px 0 0; padding: 12px; overflow: auto; border: 1px solid var(--color-border-soft); border-radius: 4px; background: var(--color-bg); color: var(--color-text-bright); font: 12px/1.55 var(--font-mono); }
+.realm-metadata__partial { margin: 0; padding: 0 13px 11px; }
+.realm-metadata__source pre { box-sizing: border-box; width: 100%; max-width: 100%; max-height: min(560px, 65vh); margin: 8px 0 0; padding: 12px; overflow: auto; border: 1px solid var(--color-border-soft); border-radius: 4px; background: var(--color-bg); color: var(--color-text-bright); font: 12px/1.55 var(--font-mono); white-space: pre; tab-size: 4; }
 .realm-detail__message-label { display: block; margin-top: 3px; color: var(--color-text-secondary); font-size: 9px; font-weight: 400; }
 .realm-detail__calls .data-table { min-width: 900px; }
 .realm-detail__note { padding: 14px; }
