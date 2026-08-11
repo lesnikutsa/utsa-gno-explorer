@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { DataTable } from '../components/DataTable'
 import { StatusBadge } from '../components/StatusBadge'
 import { SIGNING_STATUSES, getSigningStatusLabel, ValidatorSigningStrip } from '../components/ValidatorSigningStrip'
@@ -12,6 +12,7 @@ import {
   getValidatorMissedBreakdown,
 } from '../utils/validatorHealth'
 import { compareValidatorIdentity, hasValidatorMoniker, matchesValidatorSearch } from '../utils/validatorIdentity'
+import { compareFavoriteGroups, loadValidatorFavorites, saveValidatorFavorites, toggleValidatorFavorite } from '../utils/validatorFavorites'
 
 const formatPercent = (value) => {
   if (value === null || value === undefined || value === '') return '—'
@@ -35,18 +36,39 @@ const legend = [
   { label: 'Unknown / No data', tone: 'neutral', detail: 'incomplete or unavailable signing history' },
 ]
 
-export function Validators({ validatorsPage }) {
+export function Validators({ validatorsPage, chainId }) {
   const [sort, setSort] = useState({ key: 'voting_power', direction: 'descending' })
   const [searchInput, setSearchInput] = useState('')
+  const [favoriteState, setFavoriteState] = useState(() => ({ chainId: null, values: new Set() }))
+  const favorites = favoriteState.chainId === chainId ? favoriteState.values : new Set()
   const { response, validators, historyResponse, loading, backgroundRefreshing, manualRefreshing, error, historyError, hasSuccessfulResponse, hasSuccessfulHistoryResponse, refresh } = validatorsPage
   const historyMap = useMemo(() => new Map(
     (historyResponse?.items ?? []).filter((item) => item?.address).map((item) => [item.address, item]),
   ), [historyResponse])
   const historyBlocks = historyResponse?.blocks
+  useEffect(() => {
+    setFavoriteState({ chainId, values: loadValidatorFavorites(chainId) })
+  }, [chainId])
+
+  const toggleFavorite = (address) => {
+    setFavoriteState((currentState) => {
+      const currentFavorites = currentState.chainId === chainId ? currentState.values : new Set()
+      const nextFavorites = toggleValidatorFavorite(currentFavorites, address)
+      saveValidatorFavorites(chainId, nextFavorites)
+      return { chainId, values: nextFavorites }
+    })
+  }
   const columns = useMemo(() => [
     { key: 'powerRank', label: 'Power Rank', render: (row) => <span className="power-rank">#{row.powerRank}</span> },
-    { key: 'address', label: 'Validator', sortable: true, defaultSortDirection: 'ascending', render: (row) => (
-      <a className="validator-identity validator-identity--link" href={`/validators/${encodeURIComponent(row.address)}`} title={row.address}>
+    { key: 'address', label: 'Validator', sortable: true, defaultSortDirection: 'ascending', render: (row) => {
+      const isFavorite = favorites.has(row.address)
+      const identityLabel = hasValidatorMoniker(row) ? row.moniker : row.address
+      const favoriteLabel = `${isFavorite ? 'Remove' : 'Add'} ${identityLabel} ${isFavorite ? 'from' : 'to'} favorites`
+      return <span className="validator-identity-cell">
+        <button className={`validator-favorite ${isFavorite ? 'validator-favorite--active' : ''}`} type="button" aria-pressed={isFavorite} aria-label={favoriteLabel} title={favoriteLabel} onClick={() => toggleFavorite(row.address)}>
+          <span aria-hidden="true">{isFavorite ? '★' : '☆'}</span>
+        </button>
+        <a className="validator-identity validator-identity--link" href={`/validators/${encodeURIComponent(row.address)}`} title={row.address}>
         {hasValidatorMoniker(row) ? (
           <>
             <strong className="validator-identity__moniker">{row.moniker}</strong>
@@ -55,8 +77,9 @@ export function Validators({ validatorsPage }) {
         ) : (
           <strong className="validator-identity__fallback mono">{shortAddress(row.address)}</strong>
         )}
-      </a>
-    ) },
+        </a>
+      </span>
+    } },
     { key: 'voting_power', label: 'Voting Power', sortable: true, defaultSortDirection: 'descending', render: (row) => <span className="validator-power mono"><span>{formatIntegerString(row.voting_power)}</span><span className="validator-power__percent">{formatPercent(row.percent)}</span></span> },
     { key: 'uptime_1000', label: 'Uptime (1000)', sortable: true, defaultSortDirection: 'descending', render: (row) => <span className="mono">{formatPercent(row.uptime_1000?.uptime_percent)}</span> },
     { key: 'missed_1000', label: 'Signing (1000)', sortable: true, defaultSortDirection: 'descending', render: (row) => {
@@ -66,10 +89,12 @@ export function Validators({ validatorsPage }) {
     } },
     { key: 'health_1000', label: 'Health (1000)', sortable: true, defaultSortDirection: 'descending', render: (row) => healthBadge(row.uptime_1000) },
     { key: 'proposer_priority', label: 'Proposer Priority', sortable: true, defaultSortDirection: 'descending', headerTitle: 'Consensus proposer-selection priority. A higher current value generally means the validator is closer to proposing. This is not a performance or health score.', render: (row) => <span className="mono">{formatIntegerString(row.proposer_priority)}</span> },
-  ], [historyBlocks, historyMap])
+  ], [favorites, historyBlocks, historyMap])
   const rows = useMemo(() => validators.map((validator, index) => ({ ...validator, powerRank: index + 1 })), [validators])
   const filteredRows = useMemo(() => rows.filter((validator) => matchesValidatorSearch(validator, searchInput)), [rows, searchInput])
   const sortedRows = useMemo(() => [...filteredRows].sort((left, right) => {
+    const favoriteComparison = compareFavoriteGroups(left, right, favorites)
+    if (favoriteComparison !== 0) return favoriteComparison
     let comparison = 0
     if (sort.key === 'address') comparison = compareValidatorIdentity(left, right)
     if (sort.key === 'voting_power') comparison = compareIntegerStrings(left.voting_power, right.voting_power)
@@ -79,7 +104,7 @@ export function Validators({ validatorsPage }) {
     if (sort.key === 'proposer_priority') comparison = compareIntegerStrings(left.proposer_priority, right.proposer_priority)
     if (comparison === 0) return left.powerRank - right.powerRank
     return sort.direction === 'ascending' ? comparison : -comparison
-  }), [filteredRows, sort])
+  }), [favorites, filteredRows, sort])
   const effectiveQuery = searchInput.trim()
   const emptyMessage = error && !hasSuccessfulResponse
     ? 'Validators are currently unavailable.'
