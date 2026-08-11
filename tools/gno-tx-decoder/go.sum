@@ -57,8 +57,8 @@ github.com/fortytw2/leaktest v1.3.0 h1:u8491cBMTQ8ft8aeV+adlcytMZylmA5nnwwkRZjI8
 github.com/fortytw2/leaktest v1.3.0/go.mod h1:jDsjWgpAGjm2CA7WthBh/CdZYEPF31XHquHwclZch5g=
 github.com/getsentry/sentry-go v0.35.0 h1:+FJNlnjJsZMG3g0/rmmP7GiKjQoUF5EXfEtBwtPtkzY=
 github.com/getsentry/sentry-go v0.35.0/go.mod h1:C55omcY9ChRQIUcVcGcs+Zdy4ZpQGvNJ7JYHIoSWOtE=
-github.com/gnolang/gno v0.0.0-20260720122938-d14a03770521 h1:O5rBPK8gNmyEfoJwv271gQMriwR/nG6i/vs4AiZKQ4Q=
-github.com/gnolang/gno v0.0.0-20260720122938-d14a03770521/go.mod h1:Vby9oL4oRmmpg4W8+lVqiD9uQMf2GnPB8CtsMq0pD/c=
+github.com/gnolang/gno v0.0.0-20260807195958-9ab5198acac6 h1:kTvV+pRfT8Wz1Xow0/T59AXHVRVXjg1ixC5+4OXrfz0=
+github.com/gnolang/gno v0.0.0-20260807195958-9ab5198acac6/go.mod h1:Vby9oL4oRmmpg4W8+lVqiD9uQMf2GnPB8CtsMq0pD/c=
 github.com/go-logr/logr v1.2.2/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=
 github.com/go-logr/logr v1.4.3 h1:CjnDlHq8ikf6E492q6eKboGOC0T8CDaOvkHCIg8idEI=
 github.com/go-logr/logr v1.4.3/go.mod h1:9T104GzyrTigFIr8wt5mBrctHMim0Nb2HLGrmQ40KvY=

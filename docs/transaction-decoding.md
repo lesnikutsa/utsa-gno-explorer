@@ -33,11 +33,9 @@ The repository now contains an isolated Go command in `tools/gno-tx-decoder`.
 It uses Gno's official Amino implementation and concrete SDK message
 registrations rather than reimplementing Amino in Python. The reviewed
 dependency target is `github.com/gnolang/gno` commit
-`d14a03770521051749c87364fa8f1b6aae61e508`. The dependency is pinned and the
-canonical generated `go.sum` is committed. The helper was verified on exp2
-against Topaz block 192805, where it decoded the real transaction as
-`gno.vm.MsgCall` with the primary label `Contract Call` and a 445-byte compact
-summary.
+`9ab5198acac68016341655c82290ecaff5591edb`, represented by the canonical Go
+pseudo-version `v0.0.0-20260807195958-9ab5198acac6`. The dependency is pinned and
+the generated `go.sum` is committed.
 
 The command is a long-lived JSONL filter. It reads one request per non-empty
 standard-input line and writes exactly one compact JSON response line:

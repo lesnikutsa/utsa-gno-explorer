@@ -15,7 +15,7 @@ from fastapi import FastAPI, HTTPException, Path, Query
 
 from api.config import ConfigError, load_config
 from api.account_service import AccountUnavailableError, fetch_live_account, public_rpc_url
-from api.network_profile import topaz_profile, validate_account_address
+from api.network_profile import gno_profile, validate_account_address
 from api.transaction_argument_decoder import decode_transaction_arguments
 from indexer.realm_catalog import namespace_key, path_kind as realm_path_kind
 from api.realm_application_registry import CURATED_NAMESPACE_KEYS, REALM_APPLICATION_REGISTRY
@@ -306,7 +306,7 @@ def utc_now() -> datetime:
 @app.get("/api/accounts/{address}", response_model=AccountResponse)
 def get_account(address: str) -> AccountResponse:
     config = app.state.api_config
-    if not validate_account_address(address, topaz_profile(config.chain_id)):
+    if not validate_account_address(address, gno_profile(config.chain_id)):
         raise HTTPException(status_code=422, detail="Invalid account address")
     account_started_at = time.perf_counter()
     try:
@@ -353,7 +353,7 @@ def get_account_transactions(
     before_tx_index: int | None = Query(default=None, ge=0),
 ) -> AccountTransactionsResponse:
     config = app.state.api_config
-    if not validate_account_address(address, topaz_profile(config.chain_id)):
+    if not validate_account_address(address, gno_profile(config.chain_id)):
         raise HTTPException(status_code=422, detail="Invalid account address")
     if (before_height is None) != (before_tx_index is None):
         raise HTTPException(
@@ -373,7 +373,7 @@ def get_account_transactions(
         last_row = page_rows[-1] if len(rows) > limit and page_rows else None
         return AccountTransactionsResponse(
             items=[
-                _account_transaction_item_from_row(row, address, topaz_profile(config.chain_id))
+                _account_transaction_item_from_row(row, address, gno_profile(config.chain_id))
                 for row in page_rows
             ],
             pagination=AccountTransactionsPagination(

@@ -1,9 +1,12 @@
+import { networkProfile } from '../config/networkProfile'
+
 export const TELEGRAM_BOT_USERNAME = 'UTSAGNOBot'
 export const TELEGRAM_WATCH_PREFIX = 'watch_topaz_'
 
 const SIGNING_ADDRESS_PATTERN = /^g1[0-9a-z]{38}$/
 
 export function buildTelegramValidatorWatchUrl(signingAddress) {
+  if (!networkProfile.telegramValidatorMonitorEnabled) return null
   if (typeof signingAddress !== 'string') return null
 
   const normalizedSigningAddress = signingAddress.trim().toLowerCase()

@@ -98,7 +98,8 @@ class ValidatorDetailSourceContractTests(unittest.TestCase):
         self.assertNotIn("Profile Source Height", self.page)
         self.assertIn("validator.address", self.page)
 
-    def test_topaz_telegram_helper_normalizes_and_validates_signing_address(self):
+    def test_telegram_helper_fails_closed_when_monitoring_is_disabled(self):
+        self.assertIn("if (!networkProfile.telegramValidatorMonitorEnabled) return null", self.telegram)
         self.assertNotIn("UTSAGNOTest13Bot", self.telegram)
         self.assertNotIn("watch_gno13_", self.telegram)
         self.assertIn("export const TELEGRAM_BOT_USERNAME = 'UTSAGNOBot'", self.telegram)

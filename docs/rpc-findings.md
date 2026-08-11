@@ -2,9 +2,10 @@
 
 This document preserves the Testnet 13 observations that informed `scripts/inspect_rpc.py`.
 They are historical and are not active endpoint or deployment instructions. The active
-single-network runtime is Gno.land Topaz Testnet (`topaz-1`), using, in order,
-`https://rpc.topaz.testnets.gno.land`, `https://gnoland-testnet-rpc.itrocket.net`, and
-`https://topaz.rpc.onbloc.xyz`. Topaz full-history indexing starts at block 1. A current-state deployment may instead use a fixed recent finalized bootstrap height; rows and checkpoints from another chain must not be reused.
+single-network runtime is Gno.land Sapphire Testnet (`sapphire-1`), whose safe public RPC
+example is `https://rpc.sapphire.testnets.gno.land`. Sapphire is a fresh chain: use an
+empty database, never restore Topaz rows or checkpoints, and start complete history at
+block 1 with `INDEXER_START_HEIGHT=1`.
 
 ## RPC methods used
 
@@ -84,7 +85,7 @@ For latest height `H` from `/status`:
 
 - Endpoints are read from `GNO_RPC_URLS` as a comma-separated ordered list.
 - Legacy `GNO_RPC_URL` is supported only when `GNO_RPC_URLS` is unset.
-- Expected chain ID is read from `GNO_CHAIN_ID` and defaults to `topaz-1`.
+- Expected chain ID is read from `GNO_CHAIN_ID` and defaults to `sapphire-1`.
 - Maximum acceptable height lag is read from `RPC_MAX_HEIGHT_LAG` and defaults to `10`.
 - Every endpoint is probed with `/status` before selection.
 - Malformed status responses, wrong chain IDs, and catching-up endpoints are rejected.

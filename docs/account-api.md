@@ -20,7 +20,7 @@ selection. `observed_height` is the finalized height used for the successful can
 queries; it does not claim a cryptographic binding between that height and the ABCI
 responses.
 
-Balances are native `bank/balances` results. The Topaz `ugnot` denomination is displayed as `GNOT` with six decimals, while unknown denominations retain their raw denomination and amount. Realm token holdings are not included.
+Balances are native `bank/balances` results. The Gno `ugnot` denomination is displayed as `GNOT` with six decimals, while unknown denominations retain their raw denomination and amount. Realm token holdings are not included.
 
 The nullable validator relation is an exact match of the requested account address against the persisted `valoper_profiles.operator_address`. It is not a signing-address lookup.
 

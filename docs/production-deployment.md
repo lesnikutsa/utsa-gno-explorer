@@ -32,17 +32,18 @@ Stop the production indexer before running `python scripts/migrate_transaction_h
 
 This guide packages the existing foreground continuous indexer without changing indexing semantics. Production uses PostgreSQL 16 in Docker Compose and runs the Python indexer on the host through systemd. Production deployment is operator-controlled: no container entrypoint or systemd unit runs `git pull`, schema updates, or destructive restore automatically.
 
-## Active Topaz runtime configuration
+## Active Sapphire runtime configuration
 
-The single-network runtime targets **Gno.land Topaz Testnet** with chain ID `topaz-1`.
+The single-network runtime targets **Gno.land Sapphire Testnet** with chain ID `sapphire-1`.
 Configure `GNO_RPC_URLS`, `GNO_CHAIN_ID`, and `RPC_MAX_HEIGHT_LAG` in the protected
-shared file `/etc/utsa-gno-explorer/rpc.env`. Configure the Topaz RPC URLs in this exact
-order: `https://rpc.topaz.testnets.gno.land`, `https://gnoland-testnet-rpc.itrocket.net`,
-and `https://topaz.rpc.onbloc.xyz`. Keep API database credentials, API-only settings,
+shared file `/etc/utsa-gno-explorer/rpc.env`. The safe public RPC example is
+`https://rpc.sapphire.testnets.gno.land`. Keep API database credentials, API-only settings,
 and `API_ACCOUNT_RPC_TIMEOUT_SECONDS` in `/etc/utsa-gno-explorer/api.env`. Keep indexer
 database credentials, indexer scheduling, Governance scheduling, and transaction-decoder
-settings in `/etc/utsa-gno-explorer/indexer.env`. Set `INDEXER_START_HEIGHT=1` only when complete history is required; a new empty deployment may instead select a fixed recent finalized height as described in the installation guide.
-For either bootstrap mode, create the Explorer database empty unless following the verified restore procedure. Never reuse rows or checkpoints from another chain.
+settings in `/etc/utsa-gno-explorer/indexer.env`. Sapphire is a fresh chain, not a Topaz
+hardfork, and has no historical replay. Production must use an empty database and
+`INDEXER_START_HEIGHT=1` for complete history from block 1. Never restore or reuse Topaz
+rows, checkpoints, or backups; this cutover has no database migration or conversion.
 Database replacement and production deployment remain explicit operator operations outside
 this repository change.
 

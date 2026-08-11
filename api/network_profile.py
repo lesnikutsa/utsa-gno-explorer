@@ -17,7 +17,7 @@ class NetworkProfile:
     native_decimals: int = 6
 
 
-def topaz_profile(chain_id: str) -> NetworkProfile:
+def gno_profile(chain_id: str) -> NetworkProfile:
     return NetworkProfile(chain_family="gno", chain_id=chain_id)
 
 
