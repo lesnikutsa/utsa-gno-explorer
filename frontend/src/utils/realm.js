@@ -10,8 +10,16 @@ export function sortRealmItems(items, sortKey, sortDirection) {
   return items
     .map((item, index) => ({ item, index }))
     .sort((left, right) => {
-      const leftValue = left.item.kind === 'realm' && Number.isFinite(left.item[sortKey]) ? left.item[sortKey] : null
-      const rightValue = right.item.kind === 'realm' && Number.isFinite(right.item[sortKey]) ? right.item[sortKey] : null
+      const sortableValue = (item) => {
+        if (item.kind !== 'realm') return null
+        if (sortKey === 'last_activity_at') {
+          const timestamp = Date.parse(item.last_activity_at)
+          return Number.isFinite(timestamp) ? timestamp : null
+        }
+        return Number.isFinite(item[sortKey]) ? item[sortKey] : null
+      }
+      const leftValue = sortableValue(left.item)
+      const rightValue = sortableValue(right.item)
 
       if (leftValue === null && rightValue === null) return left.index - right.index
       if (leftValue === null) return 1

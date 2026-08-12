@@ -39,6 +39,8 @@ const columns = [
   {
     key: 'last_activity_at',
     label: 'Last Activity',
+    sortable: true,
+    defaultSortDirection: 'descending',
     render: (item) => item.kind === 'package'
       ? packageMetricPlaceholder('Not tracked')
       : <LastActivityValue timestamp={item.last_activity_at} emptyLabel="Never" />,
@@ -128,7 +130,7 @@ function RealmApplications({ applications }) {
 }
 
 export function Realms({ realmsPage, realmApplications }) {
-  const [sort, setSort] = useState({ key: null, direction: null })
+  const [sort, setSort] = useState({ key: 'last_activity_at', direction: 'descending' })
   const { items, summary, loading, error, snapshotMissing, kind, searchInput, appliedSearch, pageIndex, canLoadOlder, setSearchInput, selectKind, submitSearch, clearSearch, retry, loadOlder, loadNewer } = realmsPage
   const sortedItems = useMemo(() => sortRealmItems(items, sort.key, sort.direction), [items, sort])
   const metrics = [
