@@ -4,6 +4,24 @@ export function formatSuccessRate(value) {
   return `${Number.isInteger(percentage) ? percentage.toFixed(0) : percentage.toFixed(1)}%`
 }
 
+export function sortRealmItems(items, sortKey, sortDirection) {
+  if (!sortKey) return items
+
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort((left, right) => {
+      const leftValue = left.item.kind === 'realm' && Number.isFinite(left.item[sortKey]) ? left.item[sortKey] : null
+      const rightValue = right.item.kind === 'realm' && Number.isFinite(right.item[sortKey]) ? right.item[sortKey] : null
+
+      if (leftValue === null && rightValue === null) return left.index - right.index
+      if (leftValue === null) return 1
+      if (rightValue === null) return -1
+      if (leftValue === rightValue) return left.index - right.index
+      return sortDirection === 'ascending' ? leftValue - rightValue : rightValue - leftValue
+    })
+    .map(({ item }) => item)
+}
+
 export function realmDetailHref(path) {
   const params = new URLSearchParams()
   params.set('path', path)

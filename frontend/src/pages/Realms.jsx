@@ -1,7 +1,9 @@
+import { useMemo, useState } from 'react'
 import { DataTable } from '../components/DataTable'
 import { ChangedValue } from '../components/ChangedValue'
 import { StatusBadge } from '../components/StatusBadge'
 import { formatSuccessRate, realmDetailHref } from '../utils/realm'
+import { sortRealmItems } from '../utils/realm'
 import { relativeTime } from '../utils/time'
 
 const formatCount = (value) => typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString() : '—'
@@ -32,8 +34,8 @@ const columns = [
         ? <span className="realms-table__type realms-table__type--package"><StatusBadge tone="neutral">Package</StatusBadge></span>
         : <StatusBadge tone="neutral">Unknown</StatusBadge>,
   },
-  { key: 'call_count', label: 'Direct Calls', render: (item) => item.kind === 'package' ? packageMetricPlaceholder() : <ChangedValue value={item.call_count}>{formatCount(item.call_count)}</ChangedValue> },
-  { key: 'success_rate', label: 'Success Rate', render: (item) => item.kind === 'package' ? packageMetricPlaceholder() : <ChangedValue value={item.success_rate}>{formatSuccessRate(item.success_rate)}</ChangedValue> },
+  { key: 'call_count', label: 'Direct Calls', sortable: true, defaultSortDirection: 'descending', render: (item) => item.kind === 'package' ? packageMetricPlaceholder() : <ChangedValue value={item.call_count}>{formatCount(item.call_count)}</ChangedValue> },
+  { key: 'success_rate', label: 'Success Rate', sortable: true, defaultSortDirection: 'descending', render: (item) => item.kind === 'package' ? packageMetricPlaceholder() : <ChangedValue value={item.success_rate}>{formatSuccessRate(item.success_rate)}</ChangedValue> },
   {
     key: 'last_activity_at',
     label: 'Last Activity',
@@ -126,7 +128,9 @@ function RealmApplications({ applications }) {
 }
 
 export function Realms({ realmsPage, realmApplications }) {
+  const [sort, setSort] = useState({ key: null, direction: null })
   const { items, summary, loading, error, snapshotMissing, kind, searchInput, appliedSearch, pageIndex, canLoadOlder, setSearchInput, selectKind, submitSearch, clearSearch, retry, loadOlder, loadNewer } = realmsPage
+  const sortedItems = useMemo(() => sortRealmItems(items, sort.key, sort.direction), [items, sort])
   const metrics = [
     ['Realms', summary?.total_realms],
     ['Packages', summary?.total_packages],
@@ -172,7 +176,7 @@ export function Realms({ realmsPage, realmApplications }) {
       <p className="realms-page__package-note">Package usage through imports is not indexed yet. Direct-call metrics apply to realms only.</p>
 
       <div className="panel blocks-page__table realms-page__table">
-        <DataTable columns={columns} rows={items} rowKey={(item) => item.path} loading={loading} emptyMessage={emptyMessage({ error, snapshotMissing, appliedSearch, kind })} />
+        <DataTable columns={columns} rows={sortedItems} rowKey={(item) => item.path} loading={loading} emptyMessage={emptyMessage({ error, snapshotMissing, appliedSearch, kind })} sortKey={sort.key} sortDirection={sort.direction} onSort={(key, direction) => setSort({ key, direction })} />
       </div>
       <nav className="blocks-pagination" aria-label="Realms pagination">
         <button className="blocks-page__button" type="button" onClick={loadNewer} disabled={loading || pageIndex === 0}>Newer entries</button>
