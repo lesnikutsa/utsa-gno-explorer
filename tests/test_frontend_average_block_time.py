@@ -36,7 +36,7 @@ console.log(JSON.stringify([f(null), f(undefined), f('3'), f(NaN), f(Infinity), 
     def test_topbar_metric_and_update_highlight_contract(self):
         source = (ROOT / "frontend/src/components/TopBar.jsx").read_text()
         css = (ROOT / "frontend/src/styles/app.css").read_text()
-        for text in ("formatAverageBlockTime", "averageBlockTimeSeconds", "averageBlockTimeSampleSize", "indexed blocks", "intervals", "topbar-block-time"):
+        for text in ("formatAverageBlockTime", "averageBlockTimeSeconds", "averageBlockTimeSampleSize", "Last {sampleSize} blocks", "intervals", "topbar-block-time"):
             self.assertIn(text, source)
         self.assertNotIn("20 indexed blocks", source)
         self.assertNotRegex(source, r"fetch\(|axios")
@@ -49,9 +49,17 @@ console.log(JSON.stringify([f(null), f(undefined), f('3'), f(NaN), f(Infinity), 
         self.assertGreaterEqual(source.count("window.clearTimeout(averageBlockTimeTimer.current)"), 2)
         self.assertIn("@media (max-width: 760px)", css)
         mobile_css = css.split("@media (max-width: 760px)", 1)[1].split("@media", 1)[0]
-        self.assertIn(".topbar-block-time { display: none; }", mobile_css)
+        self.assertIn(".topbar-block-time-control { display: none; }", mobile_css)
         self.assertIn("prefers-reduced-motion", css)
         self.assertIn(".topbar-block-time__value--updating", css)
+
+    def test_history_popover_contract(self):
+        source = (ROOT / "frontend/src/components/TopBar.jsx").read_text()
+        css = (ROOT / "frontend/src/styles/app.css").read_text()
+        for text in ("normalizeBlockTimeIntervals", "aria-expanded", "aria-controls", "Escape", "blockTimePointerType.current === 'touch'", "block-time-chart", "Min ", "Max "):
+            self.assertIn(text, source)
+        for token in ("var(--color-popover)", "var(--color-border)", "var(--color-accent)"):
+            self.assertIn(token, css)
         self.assertNotIn(".network-preview__metric-value--updating", css)
 
     def test_only_overview_passes_metric_through_layout(self):

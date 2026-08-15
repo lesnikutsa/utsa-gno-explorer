@@ -94,6 +94,7 @@ def network_row(**overrides):
         "validator_total_voting_power": "123456789",
         "average_block_time_seconds": Decimal("3.1842"),
         "average_block_time_sample_size": 100,
+        "average_block_time_intervals_seconds": [3.1, 3.4, 3.05],
         "rpc_url": "https://example-rpc",
         "rpc_healthy": True,
         "rpc_catching_up": False,
@@ -139,6 +140,7 @@ class ApiNetworkBlocksTests(unittest.TestCase):
                 "indexer_lag": 0,
                 "average_block_time_seconds": 3.1842,
                 "average_block_time_sample_size": 100,
+                "average_block_time_intervals_seconds": [3.1, 3.4, 3.05],
                 "latest_block": {
                     "height": 869383,
                     "block_hash": BLOCK_HASH,

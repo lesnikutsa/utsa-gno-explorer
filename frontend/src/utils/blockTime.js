@@ -8,3 +8,10 @@ export function formatAverageBlockTime(value) {
   const seconds = totalSeconds % 60
   return `${minutes}m ${String(seconds).padStart(2, '0')}s`
 }
+
+export function normalizeBlockTimeIntervals(values) {
+  if (!Array.isArray(values)) return []
+  return values.slice(0, 9).filter((value) => (
+    typeof value === 'number' && Number.isFinite(value) && value > 0
+  ))
+}

@@ -1,11 +1,12 @@
 """Response schemas for the read-only API."""
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 JsonSafeScalar = str | int | float | bool | None
+PositiveFiniteFloat = Annotated[float, Field(gt=0, allow_inf_nan=False)]
 
 
 class AccountBalance(BaseModel):
@@ -115,6 +116,9 @@ class NetworkResponse(BaseModel):
     indexer_lag: int | None
     average_block_time_seconds: float | None = Field(default=None, ge=0)
     average_block_time_sample_size: int = Field(ge=0)
+    average_block_time_intervals_seconds: list[PositiveFiniteFloat] = Field(
+        default_factory=list, max_length=9
+    )
     latest_block: BlockSummary
     validators: NetworkValidators
     selected_rpc: SelectedRpc | None

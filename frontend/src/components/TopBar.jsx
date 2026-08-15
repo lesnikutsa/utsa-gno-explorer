@@ -2,17 +2,20 @@ import { useEffect, useRef, useState } from 'react'
 import { BlocksIcon, MenuIcon, MoonIcon, SearchIcon, SunIcon } from './Icons'
 import { useGlobalSearch } from '../hooks/useGlobalSearch'
 import { shortAddress } from '../utils/address'
-import { formatAverageBlockTime } from '../utils/blockTime'
+import { formatAverageBlockTime, normalizeBlockTimeIntervals } from '../utils/blockTime'
 
 const labels = { loading: 'Connecting', healthy: 'Healthy', degraded: 'Degraded', error: 'Unavailable' }
 
-export function TopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefreshCountdown = true, averageBlockTimeSeconds, averageBlockTimeSampleSize, theme, onToggleTheme }) {
+export function TopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefreshCountdown = true, averageBlockTimeSeconds, averageBlockTimeSampleSize, averageBlockTimeIntervalsSeconds, theme, onToggleTheme }) {
   const [clock, setClock] = useState(Date.now())
   const searchInputRef = useRef(null)
   const searchFormRef = useRef(null)
   const previousAverageBlockTime = useRef(null)
   const averageBlockTimeTimer = useRef(null)
+  const blockTimeControlRef = useRef(null)
+  const blockTimePointerType = useRef(null)
   const [averageBlockTimeUpdating, setAverageBlockTimeUpdating] = useState(false)
+  const [blockTimeHistoryOpen, setBlockTimeHistoryOpen] = useState(false)
   const {
     query, status, message, searching, validatorResults, dropdownOpen, highlightedIndex,
     submitSearch, updateQuery, clearSearch, selectValidator, closeDropdown, moveHighlight,
@@ -20,6 +23,15 @@ export function TopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefres
   const formattedAverageBlockTime = formatAverageBlockTime(averageBlockTimeSeconds)
   const sampleSize = Number(averageBlockTimeSampleSize)
   const showAverageBlockTime = formattedAverageBlockTime !== '—' && Number.isInteger(sampleSize) && sampleSize >= 2
+  const intervals = normalizeBlockTimeIntervals(averageBlockTimeIntervalsSeconds)
+
+  useEffect(() => {
+    const closeOnOutsideClick = (event) => {
+      if (!blockTimeControlRef.current?.contains(event.target)) setBlockTimeHistoryOpen(false)
+    }
+    document.addEventListener('pointerdown', closeOnOutsideClick)
+    return () => document.removeEventListener('pointerdown', closeOnOutsideClick)
+  }, [])
 
   useEffect(() => {
     if (!showAverageBlockTime) {
@@ -89,6 +101,9 @@ export function TopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefres
     ? Math.min(5, Math.max(0, Math.ceil((nextFastRefreshAt - clock) / 1_000)))
     : 0
   const hasOpenResults = dropdownOpen && validatorResults.length > 0
+  const chartMaximum = intervals.length ? Math.max(...intervals) * 1.1 : 1
+  const chartAverage = Number(averageBlockTimeSeconds)
+  const averageLineY = 58 - Math.min(chartAverage / chartMaximum, 1) * 48
 
   return (
     <header className="topbar">
@@ -145,10 +160,63 @@ export function TopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefres
         )}
       </form>
       {showAverageBlockTime && (
-        <div className="topbar-block-time" title={`Average across ${sampleSize} indexed blocks (${sampleSize - 1} intervals)`}>
-          <BlocksIcon />
-          <span className="topbar-block-time__label">Avg Block Time</span>
-          <strong className={averageBlockTimeUpdating ? 'topbar-block-time__value topbar-block-time__value--updating' : 'topbar-block-time__value'}>{formattedAverageBlockTime}</strong>
+        <div
+          ref={blockTimeControlRef}
+          className="topbar-block-time-control"
+          onPointerEnter={(event) => { if (event.pointerType === 'mouse') setBlockTimeHistoryOpen(true) }}
+          onPointerLeave={(event) => { if (event.pointerType === 'mouse') setBlockTimeHistoryOpen(false) }}
+        >
+          <button
+            type="button"
+            className="topbar-block-time"
+            aria-label={`Average block time ${chartAverage} seconds. Show recent block time history.`}
+            aria-expanded={blockTimeHistoryOpen}
+            aria-controls="block-time-history"
+            onPointerDown={(event) => { blockTimePointerType.current = event.pointerType }}
+            onClick={() => {
+              if (blockTimePointerType.current === 'touch') setBlockTimeHistoryOpen((open) => !open)
+              else setBlockTimeHistoryOpen(true)
+              blockTimePointerType.current = null
+            }}
+            onFocus={() => {
+              if (blockTimePointerType.current !== 'touch') setBlockTimeHistoryOpen(true)
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                setBlockTimeHistoryOpen(false)
+                event.currentTarget.blur()
+              }
+            }}
+          >
+            <BlocksIcon />
+            <span className="topbar-block-time__label">Avg Block Time</span>
+            <strong className={averageBlockTimeUpdating ? 'topbar-block-time__value topbar-block-time__value--updating' : 'topbar-block-time__value'}>{formattedAverageBlockTime}</strong>
+          </button>
+          {blockTimeHistoryOpen && (
+            <div id="block-time-history" className="block-time-popover" role="status">
+              <strong className="block-time-popover__title">Block time</strong>
+              <span className="block-time-popover__subtitle">Last {sampleSize} blocks · {intervals.length} intervals</span>
+              {intervals.length ? (
+                <>
+                  <svg className="block-time-chart" viewBox="0 0 216 64" role="img" aria-label={`Recent block intervals, oldest to newest: ${intervals.join(', ')} seconds`}>
+                    {intervals.map((value, index) => {
+                      const slotWidth = 216 / intervals.length
+                      const height = Math.max(2, (value / chartMaximum) * 48)
+                      return <rect key={`${index}-${value}`} x={index * slotWidth + slotWidth * 0.2} y={58 - height} width={slotWidth * 0.6} height={height} rx="1" />
+                    })}
+                    <line className="block-time-chart__average" x1="0" x2="216" y1={averageLineY} y2={averageLineY} />
+                    <text x="214" y={Math.max(8, averageLineY - 3)} textAnchor="end">avg</text>
+                  </svg>
+                  <div className="block-time-summary">
+                    <span>Min <strong>{formatAverageBlockTime(Math.min(...intervals))}</strong></span>
+                    <span>Avg <strong>{formattedAverageBlockTime}</strong></span>
+                    <span>Max <strong>{formatAverageBlockTime(Math.max(...intervals))}</strong></span>
+                  </div>
+                </>
+              ) : <span className="block-time-popover__empty">Recent interval history unavailable</span>}
+            </div>
+          )}
         </div>
       )}
       <button

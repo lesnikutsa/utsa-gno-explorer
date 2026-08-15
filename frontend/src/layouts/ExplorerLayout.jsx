@@ -4,7 +4,7 @@ import { TopBar } from '../components/TopBar'
 import { useChainIdentity } from '../hooks/useChainIdentity'
 import { useTheme } from '../hooks/useTheme'
 
-export function ExplorerLayout({ children, healthState, nextFastRefreshAt, showRefreshCountdown = true, averageBlockTimeSeconds, averageBlockTimeSampleSize }) {
+export function ExplorerLayout({ children, healthState, nextFastRefreshAt, showRefreshCountdown = true, averageBlockTimeSeconds, averageBlockTimeSampleSize, averageBlockTimeIntervalsSeconds }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
@@ -34,7 +34,7 @@ export function ExplorerLayout({ children, healthState, nextFastRefreshAt, showR
         onToggleCollapsed={() => setSidebarCollapsed((collapsed) => !collapsed)}
       />
       <div className="app-frame">
-        <TopBar onMenuClick={() => setSidebarOpen(true)} healthState={healthState} nextFastRefreshAt={nextFastRefreshAt} showRefreshCountdown={showRefreshCountdown} averageBlockTimeSeconds={averageBlockTimeSeconds} averageBlockTimeSampleSize={averageBlockTimeSampleSize} theme={theme} onToggleTheme={toggleTheme} />
+        <TopBar onMenuClick={() => setSidebarOpen(true)} healthState={healthState} nextFastRefreshAt={nextFastRefreshAt} showRefreshCountdown={showRefreshCountdown} averageBlockTimeSeconds={averageBlockTimeSeconds} averageBlockTimeSampleSize={averageBlockTimeSampleSize} averageBlockTimeIntervalsSeconds={averageBlockTimeIntervalsSeconds} theme={theme} onToggleTheme={toggleTheme} />
         <main className="main-content">{typeof children === 'function' ? children(chainId) : children}</main>
       </div>
     </div>

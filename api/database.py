@@ -45,6 +45,7 @@ SELECT
     COALESCE(v.total_voting_power, 0)::text AS validator_total_voting_power,
     block_time.average_block_time_seconds,
     block_time.average_block_time_sample_size,
+    block_time.average_block_time_intervals_seconds,
     r.url AS rpc_url,
     r.healthy AS rpc_healthy,
     r.catching_up AS rpc_catching_up,
@@ -76,20 +77,35 @@ LEFT JOIN LATERAL (
              AND ending_time > starting_time
             THEN EXTRACT(EPOCH FROM (ending_time - starting_time)) / (sample_size - 1)
             ELSE NULL
-        END AS average_block_time_seconds
+        END AS average_block_time_seconds,
+        CASE
+            WHEN sample_size >= 2
+             AND maximum_height - minimum_height + 1 = sample_size
+             AND intervals_are_positive
+            THEN interval_seconds
+            ELSE ARRAY[]::double precision[]
+        END AS average_block_time_intervals_seconds
     FROM (
         SELECT
             count(*)::bigint AS sample_size,
             min(height) AS minimum_height,
             max(height) AS maximum_height,
             (array_agg(time_utc ORDER BY height ASC))[1] AS starting_time,
-            (array_agg(time_utc ORDER BY height DESC))[1] AS ending_time
+            (array_agg(time_utc ORDER BY height DESC))[1] AS ending_time,
+            COALESCE(bool_and(interval_seconds > 0) FILTER (WHERE interval_seconds IS NOT NULL), false) AS intervals_are_positive,
+            array_agg(interval_seconds ORDER BY height) FILTER (WHERE interval_seconds IS NOT NULL) AS interval_seconds
         FROM (
-            SELECT height, time_utc
-            FROM blocks
-            WHERE height <= s.last_finalized_height
-            ORDER BY height DESC
-            LIMIT 10
+            SELECT
+                height,
+                time_utc,
+                EXTRACT(EPOCH FROM (time_utc - lag(time_utc) OVER (ORDER BY height)))::double precision AS interval_seconds
+            FROM (
+                SELECT height, time_utc
+                FROM blocks
+                WHERE height <= s.last_finalized_height
+                ORDER BY height DESC
+                LIMIT 10
+            ) bounded_blocks
         ) bounded_blocks
     ) sampled_blocks
 ) block_time ON true
