@@ -201,8 +201,15 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .blocks-page__table .data-table { min-width: 620px; }
 .blocks-page__table .data-table td { height: 34px; }
 .blocks-page__table--listing .data-table th,
+.blocks-page__table--listing .data-table td,
 .realms-page__table .data-table th,
-.validators-page__table .data-table th { padding-right: 12px; padding-left: 12px; }
+.realms-page__table .data-table td,
+.validators-page__table .data-table th,
+.validators-page__table .data-table td { text-align: center; }
+.blocks-page__table--listing .proposer-identity { margin-right: auto; margin-left: auto; }
+.validators-page__table .validator-identity-cell { justify-content: center; }
+.validators-page__table .validator-power,
+.validators-page__table .validator-signing-cell { align-items: center; }
 .transactions-page { min-width: 0; }
 .transactions-page__table .data-table { min-width: 940px; }
 .transactions-page__table .data-table th, .transactions-page__table .data-table td { text-align: center; }
@@ -737,7 +744,7 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
   .realms-page__table thead { display: none; }
   .realms-page__table tbody, .realms-page__table tr, .realms-page__table td { display: block; }
   .realms-page__table tr { padding: 8px 12px; border-bottom: 1px solid var(--color-border-soft); }
-  .realms-page__table td { display: grid; grid-template-columns: minmax(90px, .35fr) minmax(0, 1fr); gap: 10px; padding: 6px 0; border: 0; }
+  .realms-page__table td { display: grid; grid-template-columns: minmax(90px, .35fr) minmax(0, 1fr); gap: 10px; padding: 6px 0; border: 0; text-align: left; }
   .realms-page__table td::before { color: var(--color-text-secondary); content: attr(data-label); font-size: 9px; font-weight: 700; text-transform: uppercase; }
   .realms-page__table .table-message { display: block; }
   .realms-page__table .table-message::before { content: none; }
