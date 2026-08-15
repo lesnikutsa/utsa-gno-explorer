@@ -256,6 +256,41 @@ REALM_METADATA_FILE_SQL = """
 SELECT chain_id,path,filename,file_kind,byte_count,line_count,sha256,content
 FROM realm_metadata_files WHERE chain_id=%s AND path=%s AND filename=%s
 """
+
+TOKEN_DIRECTORY_SOURCE_SQL = """
+SELECT state.chain_id, state.last_finalized_height AS indexed_height,
+       catalog.observed_height AS catalog_observed_height,
+       metadata.observed_height AS metadata_observed_height,
+       checkpoint.time_utc AS checkpoint_at
+FROM indexer_state state
+JOIN realm_catalog_state catalog ON catalog.chain_id=state.chain_id
+JOIN blocks checkpoint ON checkpoint.height=state.last_finalized_height
+LEFT JOIN realm_metadata_refresh_state metadata ON metadata.chain_id=state.chain_id
+WHERE state.state_key='default' AND state.chain_id=%s
+"""
+TOKEN_DIRECTORY_CANDIDATES_SQL = """
+WITH confirmed AS MATERIALIZED (
+ SELECT c.path,c.rpc_visible,c.call_count,c.successful_call_count,c.failed_call_count,
+        c.last_activity_height,c.last_activity_at,m.observed_height AS metadata_observed_height
+ FROM realm_catalog c
+ JOIN realm_metadata m ON m.chain_id=c.chain_id AND m.path=c.path
+ WHERE c.chain_id=%s AND c.path_kind='realm' AND m.qfuncs_status='ok'
+   AND m.qfuncs_payload @> '[{"FuncName":"TotalSupply"}]'::jsonb
+   AND m.qfuncs_payload @> '[{"FuncName":"BalanceOf"}]'::jsonb
+   AND m.qfuncs_payload @> '[{"FuncName":"Transfer"}]'::jsonb
+   AND EXISTS (SELECT 1 FROM realm_metadata_imports imp
+     WHERE imp.chain_id=c.chain_id AND imp.path=c.path
+       AND imp.imported_path='gno.land/p/demo/tokens/grc20')
+ ORDER BY COALESCE(c.last_activity_height,-1) DESC,c.path COLLATE "C" ASC
+ LIMIT %s
+)
+SELECT confirmed.*,files.filename,files.file_kind,files.content
+FROM confirmed
+LEFT JOIN realm_metadata_files files ON files.chain_id=%s AND files.path=confirmed.path
+ AND files.file_kind='gno_source' AND files.filename LIKE '%%.gno'
+ORDER BY COALESCE(confirmed.last_activity_height,-1) DESC,confirmed.path COLLATE "C" ASC,
+ files.filename COLLATE "C" ASC
+"""
 REALM_CALLS_PAGE_SQL = """
 SELECT
     call.block_height,
@@ -1086,6 +1121,20 @@ class ApiDatabase:
             cursor.execute(REALM_METADATA_FILE_SQL, (chain_id, path, filename))
             row = cursor.fetchone()
         return dict(row) if row is not None else None
+
+    def fetch_token_candidates(self, *, chain_id: str, candidate_limit: int = 1001) -> dict[str, Any] | None:
+        """Read the bounded, automatically confirmed token set and its sources in one snapshot."""
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection, connection.transaction(), connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            cursor.execute(TOKEN_DIRECTORY_SOURCE_SQL, (chain_id,))
+            source = cursor.fetchone()
+            if source is None:
+                return None
+            cursor.execute(TOKEN_DIRECTORY_CANDIDATES_SQL, (chain_id, candidate_limit, chain_id))
+            rows = cursor.fetchall()
+        return {"source": dict(source), "rows": [dict(row) for row in rows]}
 
     def fetch_realm_calls(self, *, chain_id: str, path: str, limit: int,
                           before_height: int | None, before_tx_index: int | None,

@@ -70,6 +70,16 @@ export const getRealms = ({ limit, kind, q, beforeActivityHeight, beforePath, si
   const queryString = query.toString()
   return request(`/realms${queryString ? `?${queryString}` : ''}`, { signal })
 }
+export const getTokens = ({ limit = 50, q, beforeActivityHeight, beforePath, signal } = {}) => {
+  const query = new URLSearchParams({ limit })
+  const trimmedQuery = typeof q === 'string' ? q.trim() : ''
+  if (trimmedQuery) query.set('q', trimmedQuery)
+  if (beforeActivityHeight !== undefined && beforePath) {
+    query.set('before_activity_height', beforeActivityHeight)
+    query.set('before_path', beforePath)
+  }
+  return request(`/tokens?${query.toString()}`, { signal })
+}
 export const getTopRealmNamespaces = ({ limit = 3, scope = 'curated', signal } = {}) => {
   const query = new URLSearchParams()
   query.set('limit', limit)

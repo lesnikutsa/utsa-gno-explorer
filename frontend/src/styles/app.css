@@ -957,5 +957,30 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .realms-table__path-link { max-width: 420px; color: var(--color-text-bright); text-decoration: none; overflow-wrap: anywhere; white-space: normal; }
 .realms-table__path-link:hover { color: var(--color-accent); }
 .realms-table__path-link:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
+.tokens-page__header { margin-bottom: 12px; }
+.tokens-page__summary { grid-template-columns: repeat(2, minmax(0, 220px)); }
+.tokens-page__metric { padding: 12px 14px; }
+.tokens-page__metric span { display: block; margin-bottom: 5px; color: var(--color-text-secondary); font-size: 12px; font-weight: 700; text-transform: uppercase; }
+.tokens-page__metric strong { color: var(--color-text-bright); font-size: 17px; }
+.tokens-page__search { display: flex; gap: 6px; margin: 12px 0 10px; }
+.tokens-page__search input { min-width: 0; flex: 1; padding: 7px 10px; border: 1px solid var(--color-border); border-radius: 4px; background: var(--color-card); color: var(--color-text-bright); }
+.tokens-page__table .data-table { min-width: 850px; table-layout: fixed; }
+.tokens-page__table .data-table th, .tokens-page__table .data-table td { text-align: center; }
+.tokens-page__table .data-table th:first-child, .tokens-page__table .data-table td:first-child { width: 42%; text-align: left; }
+.tokens-table__token { display: grid; gap: 3px; color: var(--color-text-bright); text-decoration: none; }
+.tokens-table__token:hover { color: var(--color-accent); }
+.tokens-table__identity { display: flex; align-items: baseline; gap: 7px; font-size: 13px; font-weight: 700; }
+.tokens-table__identity small, .tokens-table__path, .tokens-table__app small { color: var(--color-text-secondary); font-size: 10px; font-weight: 500; overflow-wrap: anywhere; }
+.tokens-table__app { display: grid; gap: 2px; }
+@media (max-width: 760px) {
+  .tokens-page__table .table-scroll { overflow: visible; }
+  .tokens-page__table .data-table { display: block; min-width: 0; }
+  .tokens-page__table thead { display: none; }
+  .tokens-page__table tbody { display: grid; gap: 8px; }
+  .tokens-page__table tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(90px, auto); border-top: 1px solid var(--color-border); }
+  .tokens-page__table .data-table td { width: auto; height: auto; text-align: right; white-space: normal; }
+  .tokens-page__table .data-table td:first-child { grid-column: 1 / -1; width: auto; text-align: left; }
+  .tokens-page__table td[data-label]::before { display: block; margin-bottom: 3px; color: var(--color-text-secondary); content: attr(data-label); font-size: 9px; font-weight: 700; text-transform: uppercase; }
+}
 @media (max-width: 900px) { .realm-detail__overview { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 620px) { .realm-detail__overview, .realm-metadata__grid { grid-template-columns: 1fr; } .realm-detail__header h1 { font-size: 17px; } .realm-metadata__files button { grid-template-columns: minmax(0, 1fr) auto; } .realm-metadata__files small { grid-column: 1 / -1; } }

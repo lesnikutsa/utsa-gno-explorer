@@ -565,6 +565,56 @@ class RealmCatalogResponse(BaseModel):
     items: list[RealmCatalogItem]
     pagination: RealmCatalogPagination
 
+
+class TokenDirectorySource(BaseModel):
+    chain_id: str = Field(min_length=1, max_length=128)
+    catalog_observed_height: int = Field(gt=0)
+    indexed_height: int = Field(ge=0)
+    metadata_observed_height: int | None = Field(default=None, gt=0)
+
+
+class TokenDirectorySummary(BaseModel):
+    token_count: int = Field(ge=0)
+    active_24h_count: int | None = Field(default=None, ge=0)
+
+
+class TokenApplicationPresentation(BaseModel):
+    display_name: str = Field(min_length=1, max_length=256)
+    category: str = Field(min_length=1, max_length=256)
+    description: str | None = Field(default=None, max_length=256)
+    website: str | None = Field(default=None, max_length=256)
+    metadata_source: Literal["curated_registry"]
+
+
+class TokenDirectoryItem(BaseModel):
+    path: str = Field(min_length=1, max_length=256)
+    namespace_key: str = Field(min_length=1, max_length=256)
+    application: TokenApplicationPresentation | None = None
+    name: str | None = Field(default=None, max_length=128)
+    symbol: str | None = Field(default=None, max_length=32)
+    decimals: int | None = Field(default=None, ge=0, le=30)
+    identity_verified: bool
+    rpc_visible: bool
+    direct_call_count: int = Field(ge=0)
+    successful_call_count: int = Field(ge=0)
+    failed_call_count: int = Field(ge=0)
+    success_rate: float | None = Field(default=None, ge=0, le=1)
+    last_activity_height: int | None
+    last_activity_at: str | None
+    metadata_observed_height: int = Field(gt=0)
+
+
+class TokenDirectoryPagination(BaseModel):
+    next_before_activity_height: int | None
+    next_before_path: str | None
+
+
+class TokenDirectoryResponse(BaseModel):
+    source: TokenDirectorySource
+    summary: TokenDirectorySummary
+    items: list[TokenDirectoryItem] = Field(max_length=100)
+    pagination: TokenDirectoryPagination
+
 class RealmRankingSource(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     chain_id: str = Field(min_length=1, max_length=128)

@@ -6,6 +6,7 @@ import { BlockDetail } from './pages/BlockDetail'
 import { TransactionDetail } from './pages/TransactionDetail'
 import { Transactions } from './pages/Transactions'
 import { Realms } from './pages/Realms'
+import { Tokens } from './pages/Tokens'
 import { RealmDetail } from './pages/RealmDetail'
 import { decodeRealmDetailPath } from './utils/realm'
 import { Overview } from './pages/Overview'
@@ -19,6 +20,7 @@ import { useBlockDetail } from './hooks/useBlockDetail'
 import { useTransactionDetail } from './hooks/useTransactionDetail'
 import { useTransactionsPage } from './hooks/useTransactionsPage'
 import { useRealmsPage } from './hooks/useRealmsPage'
+import { useTokensPage } from './hooks/useTokensPage'
 import { useRealmApplications } from './hooks/useRealmApplications'
 import { useRealmsAutoRefresh } from './hooks/useRealmsAutoRefresh'
 import { useExplorerData } from './hooks/useExplorerData'
@@ -111,6 +113,13 @@ function RealmsPage() {
   )
 }
 
+function TokensPage() {
+  const tokensPage = useTokensPage()
+  return <ExplorerLayout healthState={tokensPage.healthState} showRefreshCountdown={false}>
+    <Tokens tokensPage={tokensPage} />
+  </ExplorerLayout>
+}
+
 
 function RealmDetailPage() {
   const realmPath = decodeRealmDetailPath()
@@ -193,6 +202,9 @@ export default function App() {
   }
   if (path === '/realms' || path === '/realms/') {
     return <RealmsPage />
+  }
+  if (path === '/tokens' || path === '/tokens/') {
+    return <TokensPage />
   }
   if (path === '/realm' || path === '/realm/') {
     return <RealmDetailPage />

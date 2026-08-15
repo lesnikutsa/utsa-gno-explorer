@@ -17,6 +17,7 @@ from api.config import ConfigError, load_config
 from api.account_service import AccountUnavailableError, fetch_live_account, public_rpc_url
 from api.network_profile import gno_profile, validate_account_address
 from api.transaction_argument_decoder import decode_transaction_arguments
+from api.token_identity import extract_token_identity
 from indexer.realm_catalog import namespace_key, path_kind as realm_path_kind
 from api.realm_application_registry import CURATED_NAMESPACE_KEYS, REALM_APPLICATION_REGISTRY
 from api.database import (
@@ -83,6 +84,11 @@ from api.schemas import (
     TransactionSummaryResponse,
     TransactionsPagination,
     TransactionsResponse,
+    TokenDirectoryItem,
+    TokenDirectoryPagination,
+    TokenDirectoryResponse,
+    TokenDirectorySource,
+    TokenDirectorySummary,
     ValidatorListItem,
     ValidatorSearchItem,
     ValidatorSearchResponse,
@@ -103,6 +109,7 @@ UNAVAILABLE_DETAIL = "Explorer database is unavailable"
 _HASH_RE = re.compile(r"^[0-9A-Fa-f]{64}$")
 CALLS_UNAVAILABLE_DETAIL = "Realm call history is not available"
 APPLICATION_WINDOW_UNAVAILABLE_DETAIL = "Realm application activity is not available for this window"
+TOKEN_CANDIDATE_LIMIT = 1000
 
 
 def _validate_exact_catalog_path(path: str, *, expected_kind: str | None = None) -> str:
@@ -1324,6 +1331,76 @@ def get_realm_calls(
         raise
     except Exception:
         LOGGER.error("Explorer database Realm calls query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+
+@app.get("/api/tokens", response_model=TokenDirectoryResponse)
+def get_tokens(limit: int = Query(default=50, ge=1, le=100), q: str | None = Query(default=None, min_length=1, max_length=128),
+               before_activity_height: int | None = Query(default=None, ge=-1),
+               before_path: str | None = Query(default=None, min_length=1, max_length=256)) -> TokenDirectoryResponse:
+    """Return confirmed GRC20 Realm tokens using persisted metadata only."""
+    if (before_activity_height is None) != (before_path is None):
+        raise HTTPException(status_code=422, detail="both token cursor fields are required")
+    search = q.strip().casefold() if q else None
+    if q is not None and not search:
+        raise HTTPException(status_code=422, detail="q must not be blank")
+    try:
+        result = database.fetch_token_candidates(chain_id=app.state.api_config.chain_id,
+                                                   candidate_limit=TOKEN_CANDIDATE_LIMIT + 1)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Token directory is not available yet")
+        grouped: dict[str, dict] = {}
+        for row in result["rows"]:
+            candidate = grouped.setdefault(row["path"], {**row, "files": []})
+            if row.get("filename") is not None:
+                candidate["files"].append({key: row[key] for key in ("filename", "file_kind", "content")})
+        if len(grouped) > TOKEN_CANDIDATE_LIMIT:
+            raise ValueError("confirmed token candidate bound exceeded")
+        checkpoint = result["source"].get("checkpoint_at")
+        if not isinstance(checkpoint, datetime) or checkpoint.tzinfo is None:
+            raise ValueError("malformed token checkpoint timestamp")
+        items = []
+        for row in grouped.values():
+            identity = extract_token_identity(row["files"])
+            key = namespace_key(row["path"])
+            decided = int(row["successful_call_count"]) + int(row["failed_call_count"])
+            item = TokenDirectoryItem(path=row["path"], namespace_key=key,
+                application=dict(REALM_APPLICATION_REGISTRY[key]) if key in REALM_APPLICATION_REGISTRY else None,
+                name=identity.name, symbol=identity.symbol, decimals=identity.decimals,
+                identity_verified=identity.verified, rpc_visible=row["rpc_visible"],
+                direct_call_count=int(row["call_count"]), successful_call_count=int(row["successful_call_count"]),
+                failed_call_count=int(row["failed_call_count"]),
+                success_rate=int(row["successful_call_count"]) / decided if decided else None,
+                last_activity_height=row["last_activity_height"],
+                last_activity_at=isoformat_utc_z(row["last_activity_at"]) if row["last_activity_at"] else None,
+                metadata_observed_height=int(row["metadata_observed_height"]))
+            if search and not any(search in value.casefold() for value in
+                                  (item.path, item.namespace_key, item.name or "", item.symbol or "")):
+                continue
+            position = item.last_activity_height if item.last_activity_height is not None else -1
+            if before_activity_height is not None and not (position < before_activity_height or
+                    (position == before_activity_height and item.path > before_path)):
+                continue
+            items.append(item)
+        items.sort(key=lambda item: (-(item.last_activity_height if item.last_activity_height is not None else -1), item.path))
+        page, tail = items[:limit], (items[limit - 1] if len(items) > limit else None)
+        rows = list(grouped.values())
+        active_count = sum(1 for row in rows if row.get("last_activity_at") is not None and
+                           row["last_activity_at"] >= checkpoint - timedelta(hours=24))
+        source = result["source"]
+        metadata_height = source.get("metadata_observed_height")
+        if metadata_height is None and rows:
+            metadata_height = max(row["metadata_observed_height"] for row in rows)
+        return TokenDirectoryResponse(source=TokenDirectorySource(chain_id=source["chain_id"],
+            indexed_height=source["indexed_height"], catalog_observed_height=source["catalog_observed_height"],
+            metadata_observed_height=metadata_height),
+            summary=TokenDirectorySummary(token_count=len(grouped), active_24h_count=active_count), items=page,
+            pagination=TokenDirectoryPagination(next_before_activity_height=(tail.last_activity_height
+                if tail and tail.last_activity_height is not None else (-1 if tail else None)),
+                next_before_path=tail.path if tail else None))
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.exception("Explorer database token directory query failed")
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
 
 @app.get("/api/realms", response_model=RealmCatalogResponse)
