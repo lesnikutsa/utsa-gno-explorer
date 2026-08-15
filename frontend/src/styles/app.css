@@ -200,6 +200,20 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .blocks-page__context { margin: 0 0 9px; color: var(--color-text-secondary); font-size: 10px; overflow-wrap: anywhere; }
 .blocks-page__table .data-table { min-width: 620px; }
 .blocks-page__table .data-table td { height: 34px; }
+.blocks-page__table--listing .data-table th,
+.blocks-page__table--listing .data-table td,
+.realms-page__table .data-table th,
+.realms-page__table .data-table td,
+.validators-page__table .data-table th,
+.validators-page__table .data-table td { text-align: center; }
+.realms-page__table .data-table th:first-child,
+.realms-page__table .data-table td:first-child,
+.validators-page__table .data-table th:nth-child(2),
+.validators-page__table .data-table td:nth-child(2) { text-align: left; }
+.blocks-page__table--listing .proposer-identity { margin-right: auto; margin-left: auto; }
+.validators-page__table .validator-identity-cell { justify-content: flex-start; }
+.validators-page__table .validator-power,
+.validators-page__table .validator-signing-cell { align-items: center; }
 .transactions-page { min-width: 0; }
 .transactions-page__table .data-table { min-width: 940px; }
 .transactions-page__table .data-table th, .transactions-page__table .data-table td { text-align: center; }
@@ -596,6 +610,8 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .governance-page__metric--accepted strong { color: var(--color-success); }
 .governance-page__metric--rejected strong { color: var(--color-error); }
 .governance-page__warning { margin: 0 0 10px; padding: 9px 12px; border: 1px solid var(--color-border-soft); color: var(--color-warning); font-size: 10px; }
+.governance-page__table .data-table th,
+.governance-page__table .data-table td { text-align: center; }
 .governance-page__table .data-table { min-width: 1050px; table-layout: fixed; }
 .governance-page__table th:nth-child(1) { width: 8%; }
 .governance-page__table th:nth-child(2) { width: 31%; }
@@ -610,6 +626,9 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .governance-tiers { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .governance-tier { padding: 2px 5px; border: 1px solid var(--color-border); border-radius: 3px; color: var(--color-text-secondary); font-size: 9px; }
 .governance-vote-split__text { display: flex; flex-wrap: wrap; gap: 2px 7px; font-size: 9px; font-weight: 600; }
+.governance-page__table .governance-table__author,
+.governance-page__table .governance-tiers,
+.governance-page__table .governance-vote-split__text { justify-content: center; }
 .governance-vote-split__yes { color: var(--color-success); }
 .governance-vote-split__no { color: var(--color-error); }
 .governance-vote-split__abstain { color: var(--color-warning); }
@@ -734,7 +753,7 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
   .realms-page__table thead { display: none; }
   .realms-page__table tbody, .realms-page__table tr, .realms-page__table td { display: block; }
   .realms-page__table tr { padding: 8px 12px; border-bottom: 1px solid var(--color-border-soft); }
-  .realms-page__table td { display: grid; grid-template-columns: minmax(90px, .35fr) minmax(0, 1fr); gap: 10px; padding: 6px 0; border: 0; }
+  .realms-page__table td { display: grid; grid-template-columns: minmax(90px, .35fr) minmax(0, 1fr); gap: 10px; padding: 6px 0; border: 0; text-align: left; }
   .realms-page__table td::before { color: var(--color-text-secondary); content: attr(data-label); font-size: 9px; font-weight: 700; text-transform: uppercase; }
   .realms-page__table .table-message { display: block; }
   .realms-page__table .table-message::before { content: none; }
@@ -914,6 +933,8 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .realm-metadata__source-toggle:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .realm-metadata__source pre { box-sizing: border-box; width: 100%; max-width: 100%; max-height: min(560px, 65vh); margin: 8px 0 0; padding: 12px; overflow: auto; border: 1px solid var(--color-border-soft); border-radius: 4px; background: var(--color-code-background); color: var(--color-code-text); font: 12px/1.55 var(--font-mono); white-space: pre; tab-size: 4; }
 .realm-detail__message-label { display: block; margin-top: 3px; color: var(--color-text-secondary); font-size: 9px; font-weight: 400; }
+.realm-detail__calls .data-table th,
+.realm-detail__calls .data-table td { text-align: center; }
 .realm-detail__calls .data-table { min-width: 900px; }
 .realm-detail__note { padding: 14px; }
 .realm-detail__note h2 { margin-bottom: 6px; }
