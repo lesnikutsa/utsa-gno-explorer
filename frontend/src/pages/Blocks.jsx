@@ -78,7 +78,7 @@ export function Blocks({ blocksPage }) {
         )}
       </header>
 
-      <div className="panel blocks-page__table">
+      <div className="panel blocks-page__table blocks-page__table--listing">
         <DataTable
           columns={columns}
           rows={blocks}
