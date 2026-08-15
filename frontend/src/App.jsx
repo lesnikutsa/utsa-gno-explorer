@@ -40,6 +40,7 @@ function OverviewPage() {
       nextFastRefreshAt={explorerData.nextFastRefreshAt}
       averageBlockTimeSeconds={explorerData.data.network?.average_block_time_seconds}
       averageBlockTimeSampleSize={explorerData.data.network?.average_block_time_sample_size}
+      averageBlockTimeIntervalsSeconds={explorerData.data.network?.average_block_time_intervals_seconds}
     >
       <Overview
         explorerData={explorerData}

@@ -37,9 +37,18 @@ class AverageBlockTimeContractTests(unittest.TestCase):
         fields = NetworkResponse.model_fields
         self.assertIn("average_block_time_seconds", fields)
         self.assertIn("average_block_time_sample_size", fields)
+        self.assertIn("average_block_time_intervals_seconds", fields)
         source = inspect.getsource(app._network_response_from_row)
         self.assertIn('float(row["average_block_time_seconds"])', source)
         self.assertIn('int(row["average_block_time_sample_size"])', source)
+        self.assertIn('row.get("average_block_time_intervals_seconds")', source)
+
+    def test_interval_history_is_bounded_ordered_and_continuity_guarded(self):
+        self.assertIn("lag(time_utc) over (order by height)", self.sql)
+        self.assertIn("limit 10", self.sql)
+        self.assertIn("array_agg(interval_seconds order by height)", self.sql)
+        self.assertIn("maximum_height - minimum_height + 1 = sample_size", self.sql)
+        self.assertIn("else array[]::double precision[]", self.sql)
         paths = {route.path for route in app.app.routes}
         self.assertIn("/api/network", paths)
         self.assertNotIn("/api/average-block-time", paths)

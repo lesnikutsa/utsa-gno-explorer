@@ -391,10 +391,14 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
 
             row = sample([(1, epoch), (2, epoch + timedelta(seconds=4))])
             self.assertEqual((row["average_block_time_seconds"], row["average_block_time_sample_size"]), (4, 2))
+            self.assertEqual(row["average_block_time_intervals_seconds"], [4])
             row = sample([(1, epoch), (2, epoch + timedelta(seconds=3)), (3, epoch + timedelta(seconds=8))])
             self.assertEqual(row["average_block_time_seconds"], 4)
+            self.assertEqual(row["average_block_time_intervals_seconds"], [3, 5])
             self.assertIsNone(sample([(1, epoch)])["average_block_time_seconds"])
-            self.assertIsNone(sample([(1, epoch), (3, epoch + timedelta(seconds=8))])["average_block_time_seconds"])
+            discontinuous = sample([(1, epoch), (3, epoch + timedelta(seconds=8))])
+            self.assertIsNone(discontinuous["average_block_time_seconds"])
+            self.assertEqual(discontinuous["average_block_time_intervals_seconds"], [])
             self.assertIsNone(sample([(1, epoch), (2, epoch)])["average_block_time_seconds"])
 
             rows = [(height, epoch + timedelta(seconds=height * 3)) for height in range(1, 12)]
@@ -402,6 +406,7 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             row = sample(rows)
             self.assertEqual(row["average_block_time_sample_size"], 10)
             self.assertEqual(row["average_block_time_seconds"], 3)
+            self.assertEqual(row["average_block_time_intervals_seconds"], [3] * 9)
 
     def test_transaction_hash_constraints_allow_repeated_occurrences(self):
         name = f"utsa_tx_hash_{os.getpid()}"

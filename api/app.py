@@ -846,6 +846,10 @@ def _network_response_from_row(row: dict) -> NetworkResponse:
             else None
         ),
         average_block_time_sample_size=int(row["average_block_time_sample_size"]),
+        average_block_time_intervals_seconds=[
+            float(value)
+            for value in (row.get("average_block_time_intervals_seconds") or [])
+        ],
         latest_block=_block_summary_from_row(
             {
                 "height": row["block_height"],
