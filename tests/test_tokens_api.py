@@ -7,18 +7,23 @@ import api.app as module
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
 
 
-def result():
+def result(**source_overrides):
     base = {"rpc_visible": True, "call_count": 42, "successful_call_count": 40, "failed_call_count": 2,
-            "last_activity_height": 90, "last_activity_at": NOW - timedelta(hours=2), "metadata_observed_height": 100}
-    rows = []
-    for path, source in [
+            "last_activity_height": 90, "last_activity_at": NOW - timedelta(hours=2),
+            "metadata_observed_height": 100, "total_file_bytes": 100}
+    candidates, files = [], []
+    for path, content in [
         ("gno.land/r/gnoswap/test_token/test_sol", 'grc20.NewToken(owner, "Solana", "SOL", 9)'),
         ("gno.land/r/unknown/token", 'grc20.NewToken(owner, getName(), "UNK", 6)'),
         ("gno.land/r/g1address/token", 'grc20.NewToken(owner, "Address Coin", "AC", 6)'),
     ]:
-        rows.append({**base, "path": path, "filename": "main.gno", "file_kind": "gno_source", "content": source})
-    return {"source": {"chain_id": "sapphire-1", "indexed_height": 110, "catalog_observed_height": 100,
-                       "metadata_observed_height": 100, "checkpoint_at": NOW}, "rows": rows}
+        candidates.append({**base, "path": path})
+        files.append({"path": path, "filename": "main.gno", "file_kind": "gno_source", "byte_count": len(content), "content": content})
+    source = {"chain_id": "sapphire-1", "indexed_height": 110, "catalog_observed_height": 100,
+              "metadata_observed_height": 100, "checkpoint_at": NOW, "activity_from_height": 1,
+              "activity_through_height": 110, "activity_coverage_started_at": NOW - timedelta(days=2)}
+    source.update(source_overrides)
+    return {"source": source, "candidates": candidates, "files": files}
 
 
 def setup_module():
@@ -56,3 +61,15 @@ def test_unverified_identity_is_null_and_cursor_order_is_deterministic():
     assert (unknown.name, unknown.symbol, unknown.decimals, unknown.identity_verified) == (None, None, None, False)
     older = call(before_activity_height=90, before_path=response.items[-1].path)
     assert all(item.path > response.items[-1].path for item in older.items)
+
+
+def test_active_24h_requires_complete_coverage():
+    assert call().summary.active_24h_count == 3
+    for overrides in (
+        {"activity_coverage_started_at": NOW - timedelta(hours=12)},
+        {"activity_through_height": 109},
+        {"activity_from_height": None, "activity_coverage_started_at": None},
+    ):
+        with patch.object(module.database, "fetch_token_candidates", return_value=result(**overrides)):
+            response = module.get_tokens(limit=50, q=None, before_activity_height=None, before_path=None)
+        assert response.summary.active_24h_count is None

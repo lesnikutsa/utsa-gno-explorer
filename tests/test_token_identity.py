@@ -25,3 +25,20 @@ def test_source_is_not_executed(tmp_path):
     payload = f'__import__("pathlib").Path("{marker}").touch(); grc20.NewToken(x, "A", "A", 6)'
     assert extract_token_identity(source(payload)).verified
     assert not marker.exists()
+
+
+def test_current_official_constructor_layout():
+    identity = extract_token_identity(source('''Token, adm = grc20.NewToken(
+        "wrapped GNOT",
+        "wugnot",
+        0,
+        0,
+        cur,
+    )'''))
+    assert identity == TokenIdentity("wrapped GNOT", "wugnot", 0)
+
+
+def test_older_constructor_layout_with_identity_after_owner():
+    assert extract_token_identity(source(
+        'grc20.NewToken(owner, "Solana", "SOL", 9)'
+    )) == TokenIdentity("Solana", "SOL", 9)

@@ -566,6 +566,15 @@ class RealmCatalogResponse(BaseModel):
     pagination: RealmCatalogPagination
 
 
+class RealmApplicationMetadata(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    display_name: str = Field(min_length=1, max_length=256)
+    category: str = Field(min_length=1, max_length=256)
+    description: str | None = Field(default=None, max_length=256)
+    website: str | None = Field(default=None, max_length=256)
+    metadata_source: Literal["curated_registry"]
+
+
 class TokenDirectorySource(BaseModel):
     chain_id: str = Field(min_length=1, max_length=128)
     catalog_observed_height: int = Field(gt=0)
@@ -578,18 +587,10 @@ class TokenDirectorySummary(BaseModel):
     active_24h_count: int | None = Field(default=None, ge=0)
 
 
-class TokenApplicationPresentation(BaseModel):
-    display_name: str = Field(min_length=1, max_length=256)
-    category: str = Field(min_length=1, max_length=256)
-    description: str | None = Field(default=None, max_length=256)
-    website: str | None = Field(default=None, max_length=256)
-    metadata_source: Literal["curated_registry"]
-
-
 class TokenDirectoryItem(BaseModel):
     path: str = Field(min_length=1, max_length=256)
     namespace_key: str = Field(min_length=1, max_length=256)
-    application: TokenApplicationPresentation | None = None
+    application: RealmApplicationMetadata | None = None
     name: str | None = Field(default=None, max_length=128)
     symbol: str | None = Field(default=None, max_length=32)
     decimals: int | None = Field(default=None, ge=0, le=30)
@@ -627,14 +628,6 @@ class RealmTopResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     source: RealmRankingSource
     items: list[RealmCatalogItem] = Field(max_length=10)
-
-class RealmApplicationMetadata(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-    display_name: str = Field(min_length=1, max_length=256)
-    category: str = Field(min_length=1, max_length=256)
-    description: str | None = Field(default=None, max_length=256)
-    website: str | None = Field(default=None, max_length=256)
-    metadata_source: Literal["curated_registry"]
 
 class RealmNamespaceMember(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)

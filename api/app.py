@@ -112,6 +112,22 @@ APPLICATION_WINDOW_UNAVAILABLE_DETAIL = "Realm application activity is not avail
 TOKEN_CANDIDATE_LIMIT = 1000
 
 
+def _active_token_count(source: dict, rows: list[dict]) -> int | None:
+    checkpoint = source.get("checkpoint_at")
+    coverage_start = source.get("activity_coverage_started_at")
+    indexed_height = source.get("indexed_height")
+    if (not isinstance(checkpoint, datetime) or checkpoint.tzinfo is None
+            or not isinstance(coverage_start, datetime) or coverage_start.tzinfo is None
+            or type(indexed_height) is not int
+            or type(source.get("activity_from_height")) is not int
+            or source.get("activity_through_height") != indexed_height
+            or coverage_start > checkpoint - timedelta(hours=24)):
+        return None
+    window_start = checkpoint - timedelta(hours=24)
+    return sum(1 for row in rows if isinstance(row.get("last_activity_at"), datetime)
+               and window_start <= row["last_activity_at"] <= checkpoint)
+
+
 def _validate_exact_catalog_path(path: str, *, expected_kind: str | None = None) -> str:
     if path != path.strip() or not 1 <= len(path) <= 256:
         raise HTTPException(status_code=422, detail="path is invalid")
@@ -1348,16 +1364,13 @@ def get_tokens(limit: int = Query(default=50, ge=1, le=100), q: str | None = Que
                                                    candidate_limit=TOKEN_CANDIDATE_LIMIT + 1)
         if result is None:
             raise HTTPException(status_code=404, detail="Token directory is not available yet")
-        grouped: dict[str, dict] = {}
-        for row in result["rows"]:
-            candidate = grouped.setdefault(row["path"], {**row, "files": []})
-            if row.get("filename") is not None:
-                candidate["files"].append({key: row[key] for key in ("filename", "file_kind", "content")})
+        grouped = {row["path"]: {**row, "files": []} for row in result["candidates"]}
+        for file in result["files"]:
+            if file["path"] not in grouped:
+                raise ValueError("token source file without candidate")
+            grouped[file["path"]]["files"].append(file)
         if len(grouped) > TOKEN_CANDIDATE_LIMIT:
             raise ValueError("confirmed token candidate bound exceeded")
-        checkpoint = result["source"].get("checkpoint_at")
-        if not isinstance(checkpoint, datetime) or checkpoint.tzinfo is None:
-            raise ValueError("malformed token checkpoint timestamp")
         items = []
         for row in grouped.values():
             identity = extract_token_identity(row["files"])
@@ -1384,12 +1397,9 @@ def get_tokens(limit: int = Query(default=50, ge=1, le=100), q: str | None = Que
         items.sort(key=lambda item: (-(item.last_activity_height if item.last_activity_height is not None else -1), item.path))
         page, tail = items[:limit], (items[limit - 1] if len(items) > limit else None)
         rows = list(grouped.values())
-        active_count = sum(1 for row in rows if row.get("last_activity_at") is not None and
-                           row["last_activity_at"] >= checkpoint - timedelta(hours=24))
+        active_count = _active_token_count(result["source"], rows)
         source = result["source"]
         metadata_height = source.get("metadata_observed_height")
-        if metadata_height is None and rows:
-            metadata_height = max(row["metadata_observed_height"] for row in rows)
         return TokenDirectoryResponse(source=TokenDirectorySource(chain_id=source["chain_id"],
             indexed_height=source["indexed_height"], catalog_observed_height=source["catalog_observed_height"],
             metadata_observed_height=metadata_height),

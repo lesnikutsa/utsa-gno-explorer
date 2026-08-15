@@ -30,6 +30,9 @@ from api.database import (
     REALM_NAMESPACE_TOP_SQL,
     REALM_APPLICATION_SOURCE_SQL,
     REALM_APPLICATION_TOP_SQL,
+    TOKEN_DIRECTORY_CANDIDATES_SQL,
+    TOKEN_DIRECTORY_FILES_SQL,
+    TOKEN_DIRECTORY_SOURCE_SQL,
     VALIDATOR_IDENTITY_SQL,
     ApiDatabase,
     MissingIndexerStateError,
@@ -2682,6 +2685,53 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             [row["imported_path"] for row in bounded["dependencies"]],
             ["gno.land/p/Zed", "gno.land/p/alpha", "gno.land/p/beta"],
         )
+
+    def test_token_directory_discovery_and_api_role(self):
+        """Execute every token directory query under the existing read-only API role."""
+        url = self.prepare_metadata_database(f"utsa_token_directory_{os.getpid()}")
+        now = datetime(2026, 1, 2, tzinfo=timezone.utc)
+        functions = [{"FuncName": name, "Params": [], "Results": []}
+                     for name in ("TotalSupply", "BalanceOf", "Transfer")]
+        cases = (
+            ("gno.land/r/tokens/valid", "realm", functions, True,
+             'package valid\nimport "gno.land/p/demo/tokens/grc20"\nvar token = grc20.NewToken("Valid", "VAL", 6, 0, cur)\n'),
+            ("gno.land/r/tokens/import_only", "realm", functions[:2], True,
+             'package importonly\nimport "gno.land/p/demo/tokens/grc20"\n'),
+            ("gno.land/r/tokens/functions_only", "realm", functions, False, 'package functionsonly\n'),
+            ("gno.land/p/tokens/package", "package", functions, True,
+             'package package_token\nimport "gno.land/p/demo/tokens/grc20"\n'),
+            ("gno.land/r/tokens/internal", "realm", [{"FuncName": "Swap", "Params": [], "Results": []}], True,
+             'package internal\nimport "gno.land/p/demo/tokens/grc20"\n'),
+        )
+        with psycopg.connect(url) as connection, connection.cursor() as cursor:
+            cursor.execute("DELETE FROM realm_catalog WHERE path='gno.land/r/metadata_demo'")
+            cursor.execute("INSERT INTO blocks(height,block_hash_base64,block_hash_hex,time_utc,tx_count) VALUES (10,'token',repeat('A',64),%s,0)", (now,))
+            cursor.execute("INSERT INTO indexer_state(state_key,chain_id,last_finalized_height) VALUES ('default','topaz-1',10)")
+            cursor.execute("""INSERT INTO realm_catalog_state(chain_id,observed_height,rpc_path_count,refreshed_at,
+              activity_from_height,activity_through_height) VALUES ('topaz-1',10,5,%s,10,10)""", (now,))
+            for path, kind, qfuncs, _has_import, _source in cases:
+                cursor.execute("""INSERT INTO realm_catalog(chain_id,path,path_kind,seen_via_rpc,rpc_visible,last_rpc_seen_at)
+                  VALUES ('topaz-1',%s,%s,true,true,%s)""", (path, kind, now))
+            connection.commit()
+        with psycopg.connect(url) as connection:
+            for path, kind, qfuncs, _has_import, source in cases:
+                snapshot = MetadataSnapshot("topaz-1", path, kind, 10, "complete", ("main.gno",),
+                    (MetadataFile("main.gno", source),), now,
+                    qfuncs=JsonCapability("ok", json.dumps(qfuncs)))
+                publish_metadata_snapshot(connection, snapshot)
+        with psycopg.connect(url) as connection, connection.cursor() as cursor:
+            cursor.execute("SET ROLE utsa_gno_api")
+            cursor.execute(TOKEN_DIRECTORY_SOURCE_SQL, ("topaz-1",)); self.assertIsNotNone(cursor.fetchone())
+            cursor.execute(TOKEN_DIRECTORY_CANDIDATES_SQL, ("topaz-1", 1001))
+            candidates = cursor.fetchall()
+            self.assertEqual([row[0] for row in candidates], ["gno.land/r/tokens/valid"])
+            cursor.execute(TOKEN_DIRECTORY_FILES_SQL, ("topaz-1", ["gno.land/r/tokens/valid"]))
+            files = cursor.fetchall()
+            self.assertEqual([(row[0], row[1]) for row in files], [("gno.land/r/tokens/valid", "main.gno")])
+            cursor.execute("RESET ROLE")
+        database = ApiDatabase(); database.open(ApiConfig(database_url=url, chain_id="topaz-1")); self.addCleanup(database.close)
+        result = database.fetch_token_candidates(chain_id="topaz-1", candidate_limit=1001)
+        self.assertEqual([row["path"] for row in result["candidates"]], ["gno.land/r/tokens/valid"])
 
     def test_metadata_upgrade_with_production_writer_ownership(self):
         name = f"utsa_metadata_writer_owner_{os.getpid()}"

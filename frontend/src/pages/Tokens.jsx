@@ -18,7 +18,7 @@ const columns = [
 ]
 
 export function Tokens({ tokensPage }) {
-  const { items, summary, searchInput, appliedSearch, loading, error, setSearchInput, submitSearch, clearSearch, retry } = tokensPage
+  const { items, summary, searchInput, appliedSearch, loading, error, setSearchInput, submitSearch, clearSearch, retry, pageIndex, canLoadOlder, loadOlder, loadNewer } = tokensPage
   const empty = error ? 'Tokens are currently unavailable.' : appliedSearch ? `No tokens match “${appliedSearch}”.` : 'No confirmed GRC20 tokens have been indexed yet.'
   return <section className="blocks-page tokens-page" aria-labelledby="tokens-page-title">
     <header className="blocks-page__header tokens-page__header"><h1 id="tokens-page-title">Tokens</h1>
@@ -33,5 +33,10 @@ export function Tokens({ tokensPage }) {
       {appliedSearch && <button className="blocks-page__button" type="button" onClick={clearSearch}>Clear</button>}
     </form>
     <div className="panel blocks-page__table tokens-page__table"><DataTable columns={columns} rows={items} rowKey={(item) => item.path} loading={loading} emptyMessage={empty} /></div>
+    <nav className="blocks-pagination" aria-label="Tokens pagination">
+      <button className="blocks-page__button" type="button" onClick={loadNewer} disabled={loading || pageIndex === 0}>Newer entries</button>
+      <span>{pageIndex === 0 ? 'Latest' : `Page ${pageIndex + 1}`}</span>
+      <button className="blocks-page__button" type="button" onClick={loadOlder} disabled={loading || !canLoadOlder}>Older entries</button>
+    </nav>
   </section>
 }
