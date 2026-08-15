@@ -623,12 +623,12 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .governance-table__title:hover { color: var(--color-accent); }
 .governance-table__author,
 .governance-detail__copy-row { display: flex; min-width: 0; align-items: center; gap: 6px; }
-.governance-page__table .governance-table__author,
-.governance-page__table .governance-tiers,
-.governance-page__table .governance-vote-split__text { justify-content: center; }
 .governance-tiers { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .governance-tier { padding: 2px 5px; border: 1px solid var(--color-border); border-radius: 3px; color: var(--color-text-secondary); font-size: 9px; }
 .governance-vote-split__text { display: flex; flex-wrap: wrap; gap: 2px 7px; font-size: 9px; font-weight: 600; }
+.governance-page__table .governance-table__author,
+.governance-page__table .governance-tiers,
+.governance-page__table .governance-vote-split__text { justify-content: center; }
 .governance-vote-split__yes { color: var(--color-success); }
 .governance-vote-split__no { color: var(--color-error); }
 .governance-vote-split__abstain { color: var(--color-warning); }
