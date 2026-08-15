@@ -59,7 +59,7 @@ export function Validators({ validatorsPage, chainId }) {
     })
   }
   const columns = useMemo(() => [
-    { key: 'powerRank', label: 'Power Rank', render: (row) => <span className="power-rank">#{row.powerRank}</span> },
+    { key: 'powerRank', label: 'Rank', render: (row) => <span className="power-rank">#{row.powerRank}</span> },
     { key: 'address', label: 'Validator', sortable: true, defaultSortDirection: 'ascending', render: (row) => {
       const isFavorite = favorites.has(row.address)
       const identityLabel = hasValidatorMoniker(row) ? row.moniker : row.address
