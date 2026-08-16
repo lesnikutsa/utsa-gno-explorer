@@ -90,6 +90,7 @@ from api.schemas import (
     TokenDirectorySource,
     TokenDirectorySummary,
     TokenTop24hItem,
+    NativeTokenResponse,
     TokenSupplyResponse,
     ValidatorListItem,
     ValidatorSearchItem,
@@ -104,7 +105,8 @@ from api.schemas import (
     ValidatorsResponse,
     ValidatorUptime,
 )
-from api.token_supply import decimal_amount, query_total_supply, token_supply_cache
+from api.token_supply import (NATIVE_GNOT_DECIMALS, NATIVE_GNOT_DENOM, decimal_amount,
+                              query_native_gnot_supply, query_total_supply, token_supply_cache)
 
 LOGGER = logging.getLogger(__name__)
 UNAVAILABLE_DETAIL = "Explorer database is unavailable"
@@ -1418,11 +1420,22 @@ def get_tokens(limit: int = Query(default=50, ge=1, le=100), q: str | None = Que
                     continue
                 _, identity = verified
                 key = namespace_key(activity["path"])
+                successful = int(activity["successful_call_count_24h"])
+                failed = int(activity["failed_call_count_24h"])
+                unknown = int(activity["unknown_result_call_count_24h"])
+                direct = int(activity["direct_call_count_24h"])
+                if min(successful, failed, unknown) < 0 or successful + failed + unknown != direct:
+                    raise ValueError("malformed token 24H execution counts")
+                decided = successful + failed
                 ranked.append(TokenTop24hItem(
                     path=activity["path"], namespace_key=key,
                     application=dict(REALM_APPLICATION_REGISTRY[key]) if key in REALM_APPLICATION_REGISTRY else None,
                     name=identity.name, symbol=identity.symbol, decimals=identity.decimals,
-                    direct_call_count_24h=int(activity["direct_call_count_24h"]),
+                    direct_call_count_24h=direct,
+                    successful_call_count_24h=successful,
+                    failed_call_count_24h=failed,
+                    unknown_result_call_count_24h=unknown,
+                    success_rate_24h=successful / decided if decided else None,
                     last_activity_height_24h=int(activity["last_activity_height_24h"]),
                     last_activity_at_24h=isoformat_utc_z(activity["last_activity_at_24h"])))
             ranked.sort(key=lambda item: (-item.direct_call_count_24h,
@@ -1443,6 +1456,29 @@ def get_tokens(limit: int = Query(default=50, ge=1, le=100), q: str | None = Que
     except Exception:
         LOGGER.exception("Explorer database token directory query failed")
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+
+
+@app.get("/api/tokens/native", response_model=NativeTokenResponse)
+def get_native_token() -> NativeTokenResponse:
+    """Return fixed native GNOT metadata and a best-effort bank supply lookup."""
+    key = (app.state.api_config.chain_id, f"native:{NATIVE_GNOT_DENOM}")
+    raw = token_supply_cache.get(key)
+    if raw is None:
+        try:
+            rpc_url = database.fetch_selected_rpc_url(app.state.api_config.chain_id)
+            if rpc_url is None:
+                rpc_url = next(iter(app.state.api_config.rpc_urls), None)
+            if rpc_url is not None:
+                raw = query_native_gnot_supply(rpc_url=rpc_url)
+        except Exception:
+            LOGGER.warning("Native GNOT supply RPC query failed")
+        if raw is not None:
+            token_supply_cache.put(key, raw)
+    return NativeTokenResponse(name="GNOT", symbol="GNOT", type="Native",
+        base_denom=NATIVE_GNOT_DENOM, decimals=NATIVE_GNOT_DECIMALS,
+        raw_total_supply=raw,
+        total_supply=decimal_amount(raw, NATIVE_GNOT_DECIMALS) if raw is not None else None,
+        available=raw is not None)
 
 
 def _verified_token_identity(path: str):

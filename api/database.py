@@ -301,10 +301,15 @@ ORDER BY path COLLATE "C" ASC,filename COLLATE "C" ASC
 TOKEN_DIRECTORY_ACTIVITY_24H_SQL = """
 SELECT call.path,
        count(*)::bigint AS direct_call_count_24h,
+       count(*) FILTER (WHERE result.execution_status='success')::bigint AS successful_call_count_24h,
+       count(*) FILTER (WHERE result.execution_status='failed')::bigint AS failed_call_count_24h,
+       count(*) FILTER (WHERE result.execution_status IS NULL)::bigint AS unknown_result_call_count_24h,
        max(call.block_height)::bigint AS last_activity_height_24h,
        max(block.time_utc) AS last_activity_at_24h
 FROM realm_call_index call
 JOIN blocks block ON block.height=call.block_height
+LEFT JOIN transaction_execution_results result
+  ON (result.block_height,result.tx_index)=(call.block_height,call.tx_index)
 WHERE call.chain_id=%s
   AND call.path=ANY(%s::text[])
   AND call.block_height BETWEEN %s AND %s

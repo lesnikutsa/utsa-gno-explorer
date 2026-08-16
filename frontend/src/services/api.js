@@ -84,6 +84,7 @@ export const getTokenSupply = (path, { signal } = {}) => {
   const query = new URLSearchParams({ path })
   return request(`/tokens/supply?${query.toString()}`, { signal })
 }
+export const getNativeToken = ({ signal } = {}) => request('/tokens/native', { signal })
 export const getTopRealmNamespaces = ({ limit = 3, scope = 'curated', signal } = {}) => {
   const query = new URLSearchParams()
   query.set('limit', limit)

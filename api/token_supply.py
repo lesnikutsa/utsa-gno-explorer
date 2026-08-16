@@ -55,6 +55,8 @@ class TokenSupplyCache:
 
 
 token_supply_cache = TokenSupplyCache()
+NATIVE_GNOT_DENOM = "ugnot"
+NATIVE_GNOT_DECIMALS = 6
 
 
 def parse_total_supply(value: object) -> str | None:
@@ -80,3 +82,9 @@ def query_total_supply(*, rpc_url: str, path: str) -> str | None:
     expression = f"{path}.TotalSupply()"
     with GnoRpcClient(rpc_url, timeout=TOKEN_SUPPLY_RPC_TIMEOUT_SECONDS) as client:
         return parse_total_supply(client.abci_query("vm/qeval", expression))
+
+
+def query_native_gnot_supply(*, rpc_url: str) -> str | None:
+    """Query only the fixed native GNOT bank supply path."""
+    with GnoRpcClient(rpc_url, timeout=TOKEN_SUPPLY_RPC_TIMEOUT_SECONDS) as client:
+        return parse_total_supply(client.abci_query(f"bank/supply/{NATIVE_GNOT_DENOM}", ""))

@@ -22,6 +22,7 @@ import { useTransactionsPage } from './hooks/useTransactionsPage'
 import { useRealmsPage } from './hooks/useRealmsPage'
 import { useTokensPage } from './hooks/useTokensPage'
 import { useRealmApplications } from './hooks/useRealmApplications'
+import { useTokensAutoRefresh } from './hooks/useTokensAutoRefresh'
 import { useRealmsAutoRefresh } from './hooks/useRealmsAutoRefresh'
 import { useExplorerData } from './hooks/useExplorerData'
 import { useValidatorDetail } from './hooks/useValidatorDetail'
@@ -115,6 +116,10 @@ function RealmsPage() {
 
 function TokensPage() {
   const tokensPage = useTokensPage()
+  useTokensAutoRefresh({
+    enabled: tokensPage.pageIndex === 0 && !tokensPage.loading,
+    refreshTokens: tokensPage.refreshInBackground,
+  })
   return <ExplorerLayout healthState={tokensPage.healthState} showRefreshCountdown={false}>
     <Tokens tokensPage={tokensPage} />
   </ExplorerLayout>

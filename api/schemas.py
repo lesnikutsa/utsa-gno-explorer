@@ -618,8 +618,24 @@ class TokenTop24hItem(BaseModel):
     symbol: str = Field(min_length=1, max_length=32)
     decimals: int = Field(ge=0, le=30)
     direct_call_count_24h: int = Field(gt=0)
+    successful_call_count_24h: int = Field(ge=0)
+    failed_call_count_24h: int = Field(ge=0)
+    unknown_result_call_count_24h: int = Field(ge=0)
+    success_rate_24h: float | None = Field(default=None, ge=0, le=1)
     last_activity_height_24h: int = Field(gt=0)
     last_activity_at_24h: str
+
+
+class NativeTokenResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    name: Literal["GNOT"]
+    symbol: Literal["GNOT"]
+    type: Literal["Native"]
+    base_denom: Literal["ugnot"]
+    decimals: Literal[6]
+    raw_total_supply: str | None = None
+    total_supply: str | None = None
+    available: bool
 
 
 class TokenDirectoryResponse(BaseModel):

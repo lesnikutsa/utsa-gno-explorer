@@ -5,7 +5,8 @@ import pytest
 from fastapi import HTTPException
 
 import api.app as module
-from api.token_supply import TokenSupplyCache, decimal_amount, parse_total_supply, token_supply_cache
+from api.token_supply import (TokenSupplyCache, decimal_amount, parse_total_supply,
+                              query_native_gnot_supply, token_supply_cache)
 
 
 PATH = "gno.land/r/demo/token"
@@ -146,3 +147,45 @@ def test_backend_constructs_only_fixed_qeval_expression():
         client_type.return_value.__enter__.return_value.abci_query.assert_called_once_with(
             "vm/qeval", f"{PATH}.TotalSupply()",
         )
+
+
+def test_native_supply_uses_only_fixed_bank_path_and_preserves_precision():
+    raw = "184467440737095516161844674407370955161"
+    with patch("api.token_supply.GnoRpcClient") as client_type:
+        client_type.return_value.__enter__.return_value.abci_query.return_value = raw
+        assert query_native_gnot_supply(rpc_url="https://rpc.example") == raw
+        client_type.return_value.__enter__.return_value.abci_query.assert_called_once_with(
+            "bank/supply/ugnot", "",
+        )
+    with patch.object(module.database, "fetch_selected_rpc_url", return_value="https://selected.example"), \
+         patch.object(module, "query_native_gnot_supply", return_value=raw):
+        response = module.get_native_token()
+    assert response.raw_total_supply == raw
+    assert response.total_supply == "184467440737095516161844674407370.955161"
+    assert response.base_denom == "ugnot" and response.decimals == 6
+
+
+def test_native_supply_failure_is_unavailable_safe_and_not_directory_dependent(caplog):
+    secret_url = "https://user:SECRET@example.invalid/rpc?key=PRIVATE"
+    with patch.object(module.database, "fetch_selected_rpc_url", return_value=secret_url), \
+         patch.object(module.database, "fetch_token_candidates") as directory, \
+         patch.object(module, "query_native_gnot_supply",
+                      side_effect=RuntimeError(f"failed {secret_url}")):
+        response = module.get_native_token()
+    assert response.available is False and response.total_supply is None
+    directory.assert_not_called()
+    assert "Native GNOT supply RPC query failed" in caplog.text
+    assert "SECRET" not in caplog.text and "PRIVATE" not in caplog.text
+
+
+def test_native_and_wrapped_gnot_use_distinct_supply_paths():
+    wrapped = "gno.land/r/gnoland/wugnot"
+    with patch.object(module.database, "fetch_verified_token_candidate",
+                      return_value=exact_result(wrapped, 'grc20.NewToken("Wrapped GNOT", "WGNOT", 6, 0, cur)')), \
+         patch.object(module.database, "fetch_selected_rpc_url", return_value="https://rpc.example"), \
+         patch.object(module, "query_total_supply", return_value="10") as wrapped_query, \
+         patch.object(module, "query_native_gnot_supply", return_value="20") as native_query:
+        module.get_token_supply(wrapped)
+        module.get_native_token()
+    wrapped_query.assert_called_once_with(rpc_url="https://rpc.example", path=wrapped)
+    native_query.assert_called_once_with(rpc_url="https://rpc.example")

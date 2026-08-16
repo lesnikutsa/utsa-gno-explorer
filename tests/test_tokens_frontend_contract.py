@@ -27,9 +27,13 @@ def test_native_and_top_24h_are_separate_api_driven_sections():
     assert "realmDetailHref(networkProfile.nativeToken" not in page
     assert "getTokenSupply(networkProfile.nativeToken" not in hook
     assert "Top Tokens · 24H" in page and "Direct Calls (24H)" in page
+    assert "Success (24H)" in page and "Last activity" in page
+    assert "tokens-top__rank" not in page and "#{index + 1}" not in page
     assert "top24h.slice(0, 3)" in page and "realmDetailHref(token.path)" in page
     assert "response.top_24h" in hook and "response.items" not in hook.split("setTop24h", 1)[1].split("\n", 1)[0]
     assert "ranking is unavailable" in page and "No verified token calls" in page
+    assert 'id="tokens-directory-title">GRC20 Tokens' in page
+    assert "Total Supply" in page and "networkProfile.networkName" in page
     for forbidden in ("Price", "Market Cap", "TVL", "Holders", "Volume"):
         assert forbidden not in page
 
@@ -38,6 +42,10 @@ def test_tokens_styles_are_scoped():
     css = (ROOT / "frontend/src/styles/app.css").read_text()
     token_rules = "\n".join(line for line in css.splitlines() if "tokens" in line)
     assert "var(--color-card)" in token_rules and "var(--color-text-bright)" in token_rules
+    assert "linear-gradient(135deg, var(--color-accent-soft), var(--color-card))" in token_rules
+    assert ".tokens-native__card { width: 100%" in css
+    assert "max-width: 430px" not in token_rules
+    assert ".tokens-top__metrics > div:last-child { margin-left: auto; text-align: right; }" in css
 
 
 def test_tokens_cursor_pagination_and_request_safety_contract():
@@ -61,6 +69,20 @@ def test_tokens_cursor_pagination_and_request_safety_contract():
     assert "supplies[item.path]?.available" in page and ": '—'" in page
     assert "Newer entries" in page and "Older entries" in page
     assert "disabled={loading || !canLoadOlder}" in page
+    assert "refreshInBackground" in hook and "q: appliedSearch" in hook
+    assert "setItems([])" not in hook.split("const refreshInBackground", 1)[1].split("const resetAndLoad", 1)[0]
+    assert "ChangedValue" in page
+
+
+def test_tokens_auto_refresh_matches_visibility_and_overlap_contract():
+    auto = (ROOT / "frontend/src/hooks/useTokensAutoRefresh.js").read_text()
+    app = (ROOT / "frontend/src/App.jsx").read_text()
+    assert "TOKENS_POLL_MS = 30_000" in auto
+    assert "TOKENS_BACKGROUND_REQUEST_TIMEOUT_MS = 15_000" in auto
+    assert "document.visibilityState === 'hidden'" in auto
+    assert "visibilitychange" in auto and "runCycle()" in auto
+    assert "cycleRunning.current" in auto
+    assert "tokensPage.pageIndex === 0" in app
 
 
 def test_total_supply_formatting_uses_strings_without_precision_loss():

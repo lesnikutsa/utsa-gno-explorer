@@ -56,5 +56,9 @@ def test_top_activity_is_one_bounded_grouped_query_with_closed_time_boundaries()
     assert "call.block_height BETWEEN %s AND %s" in TOKEN_DIRECTORY_ACTIVITY_24H_SQL
     assert "block.time_utc >= %s" in TOKEN_DIRECTORY_ACTIVITY_24H_SQL
     assert "block.time_utc <= %s" in TOKEN_DIRECTORY_ACTIVITY_24H_SQL
+    assert "LEFT JOIN transaction_execution_results result" in TOKEN_DIRECTORY_ACTIVITY_24H_SQL
+    for status in ("success", "failed"):
+        assert f"result.execution_status='{status}'" in TOKEN_DIRECTORY_ACTIVITY_24H_SQL
+    assert "result.execution_status IS NULL" in TOKEN_DIRECTORY_ACTIVITY_24H_SQL
     method = inspect.getsource(ApiDatabase.fetch_token_candidates)
     assert method.count("cursor.execute(TOKEN_DIRECTORY_ACTIVITY_24H_SQL") == 1

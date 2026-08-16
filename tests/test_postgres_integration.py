@@ -2730,6 +2730,9 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             cursor.executemany("""INSERT INTO realm_call_index(
               chain_id,block_height,tx_index,message_index,path
             ) VALUES ('topaz-1',%s,0,0,'gno.land/r/tokens/valid')""", ((2,), (3,), (10,), (11,)))
+            cursor.executemany("""INSERT INTO transaction_execution_results(
+              block_height,tx_index,execution_status,gas_wanted,gas_used
+            ) VALUES (%s,0,%s,100,50)""", ((2, "success"), (10, "failed")))
             # Production's operator-created API role has read-only access to the
             # legacy/core tables. Reproduce only those grants in this disposable DB;
             # later Realm/metadata tables must keep relying on reviewed schema grants.
@@ -2769,8 +2772,8 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                 now - timedelta(hours=24), now,
             ))
             activity = cursor.fetchall()
-            self.assertEqual((activity[0][0], activity[0][1], activity[0][2]),
-                             ("gno.land/r/tokens/valid", 2, 10))
+            self.assertEqual(activity[0][:6],
+                             ("gno.land/r/tokens/valid", 2, 1, 1, 0, 10))
             cursor.execute(TOKEN_EXACT_CANDIDATE_SQL, ("topaz-1", "gno.land/r/tokens/valid"))
             exact = cursor.fetchone()
             self.assertEqual((exact[0], exact[1]), ("gno.land/r/tokens/valid", 1))

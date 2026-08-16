@@ -101,15 +101,22 @@ def test_top_24h_is_verified_global_and_not_historical_order():
     paths = [row["path"] for row in data["candidates"]]
     data["activity_24h"] = [
         {"path": paths[0], "direct_call_count_24h": 2, "last_activity_height_24h": 80,
+         "successful_call_count_24h": 1, "failed_call_count_24h": 0, "unknown_result_call_count_24h": 1,
          "last_activity_at_24h": NOW - timedelta(hours=1)},
         {"path": paths[1], "direct_call_count_24h": 5, "last_activity_height_24h": 70,
+         "successful_call_count_24h": 3, "failed_call_count_24h": 1, "unknown_result_call_count_24h": 1,
          "last_activity_at_24h": NOW - timedelta(hours=2)},
         {"path": paths[3], "direct_call_count_24h": 999, "last_activity_height_24h": 99,
+         "successful_call_count_24h": 999, "failed_call_count_24h": 0, "unknown_result_call_count_24h": 0,
          "last_activity_at_24h": NOW},
     ]
     data["candidates"][0]["call_count"] = 10000
     response = call(data, q="SOL", before_activity_height=None, before_path=None)
     assert [item.path for item in response.top_24h] == [paths[1], paths[0]]
+    assert response.top_24h[0].successful_call_count_24h == 3
+    assert response.top_24h[0].failed_call_count_24h == 1
+    assert response.top_24h[0].unknown_result_call_count_24h == 1
+    assert response.top_24h[0].success_rate_24h == .75
     assert [item.path for item in response.items] == [paths[0]]
 
 
@@ -122,6 +129,8 @@ def test_top_24h_unavailable_empty_and_deterministic_ties():
     verified_paths = [row["path"] for row in data["candidates"][:3]]
     data["activity_24h"] = [{"path": path, "direct_call_count_24h": 1,
                               "last_activity_height_24h": 50,
+                              "successful_call_count_24h": 0, "failed_call_count_24h": 0,
+                              "unknown_result_call_count_24h": 1,
                               "last_activity_at_24h": NOW - timedelta(hours=1)}
                              for path in reversed(verified_paths)]
     assert [item.path for item in call(data).top_24h] == sorted(verified_paths)
