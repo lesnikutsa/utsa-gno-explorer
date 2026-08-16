@@ -299,24 +299,47 @@ WHERE chain_id=%s AND path=ANY(%s::text[])
 ORDER BY path COLLATE "C" ASC,filename COLLATE "C" ASC
 """
 ASSET_DIRECTORY_CANDIDATES_SQL = """
+WITH candidates AS (
 SELECT c.path,c.rpc_visible,c.call_count,c.successful_call_count,c.failed_call_count,
        c.last_activity_height,c.last_activity_at,m.observed_height AS metadata_observed_height,
-       m.total_file_bytes,
-       CASE WHEN imp.imported_path='gno.land/p/demo/tokens/grc20' THEN 'grc20' ELSE 'grc721' END AS standard,
+       m.total_file_bytes,'grc20'::text AS standard,
        CASE WHEN jsonb_typeof(m.qfuncs_payload)='array'
          THEN ARRAY(SELECT element->>'FuncName' FROM jsonb_array_elements(m.qfuncs_payload) element)
          ELSE ARRAY[]::text[] END AS qfunc_names
 FROM realm_catalog c
 JOIN realm_metadata m ON m.chain_id=c.chain_id AND m.path=c.path
-JOIN realm_metadata_imports imp ON imp.chain_id=c.chain_id AND imp.path=c.path
 WHERE c.chain_id=%s AND c.path_kind='realm'
-  AND ((imp.imported_path='gno.land/p/demo/tokens/grc20'
-        AND m.qfuncs_status='ok'
-        AND m.qfuncs_payload @> '[{"FuncName":"TotalSupply"}]'::jsonb
-        AND m.qfuncs_payload @> '[{"FuncName":"BalanceOf"}]'::jsonb
-        AND m.qfuncs_payload @> '[{"FuncName":"Transfer"}]'::jsonb)
-    OR regexp_replace(imp.imported_path, '/+$', '') ~ '/(grc721|grc721v2)$')
-ORDER BY COALESCE(c.last_activity_height,-1) DESC,c.path COLLATE "C" ASC,standard ASC
+  AND m.qfuncs_status='ok'
+  AND m.qfuncs_payload @> '[{"FuncName":"TotalSupply"}]'::jsonb
+  AND m.qfuncs_payload @> '[{"FuncName":"BalanceOf"}]'::jsonb
+  AND m.qfuncs_payload @> '[{"FuncName":"Transfer"}]'::jsonb
+  AND EXISTS (SELECT 1 FROM realm_metadata_imports imp WHERE imp.chain_id=c.chain_id AND imp.path=c.path
+    AND imp.imported_path='gno.land/p/demo/tokens/grc20')
+UNION ALL
+SELECT c.path,c.rpc_visible,c.call_count,c.successful_call_count,c.failed_call_count,
+       c.last_activity_height,c.last_activity_at,m.observed_height AS metadata_observed_height,
+       m.total_file_bytes,'grc721'::text AS standard,
+       CASE WHEN jsonb_typeof(m.qfuncs_payload)='array'
+         THEN ARRAY(SELECT element->>'FuncName' FROM jsonb_array_elements(m.qfuncs_payload) element)
+         ELSE ARRAY[]::text[] END AS qfunc_names
+FROM realm_catalog c
+JOIN realm_metadata m ON m.chain_id=c.chain_id AND m.path=c.path
+WHERE c.chain_id=%s AND c.path_kind='realm' AND m.total_file_bytes > 0
+  AND (EXISTS (SELECT 1 FROM realm_metadata_imports imp WHERE imp.chain_id=c.chain_id AND imp.path=c.path
+       AND regexp_replace(imp.imported_path, '/+$', '') ~ '/(grc721|grc721v2)$')
+    OR (m.qfuncs_status='ok'
+       AND m.qfuncs_payload @> '[{"FuncName":"Name"}]'::jsonb
+       AND m.qfuncs_payload @> '[{"FuncName":"Symbol"}]'::jsonb
+       AND m.qfuncs_payload @> '[{"FuncName":"OwnerOf"}]'::jsonb
+       AND m.qfuncs_payload @> '[{"FuncName":"TokenURI"}]'::jsonb
+       AND m.qfuncs_payload @> '[{"FuncName":"TransferFrom"}]'::jsonb
+       AND (m.qfuncs_payload @> '[{"FuncName":"BalanceOf"}]'::jsonb
+         OR m.qfuncs_payload @> '[{"FuncName":"Approve"}]'::jsonb
+         OR m.qfuncs_payload @> '[{"FuncName":"TotalSupply"}]'::jsonb
+         OR m.qfuncs_payload @> '[{"FuncName":"TokenCount"}]'::jsonb)))
+)
+SELECT * FROM candidates
+ORDER BY COALESCE(last_activity_height,-1) DESC,path COLLATE "C" ASC,standard ASC
 LIMIT %s
 """
 TOKEN_DIRECTORY_ACTIVITY_SQL = """
@@ -1262,11 +1285,12 @@ class ApiDatabase:
             source = cursor.fetchone()
             if source is None:
                 return None
-            cursor.execute(ASSET_DIRECTORY_CANDIDATES_SQL, (chain_id, candidate_limit))
+            cursor.execute(ASSET_DIRECTORY_CANDIDATES_SQL, (chain_id, chain_id, candidate_limit))
             candidates = [dict(row) for row in cursor.fetchall()]
             if len(candidates) >= candidate_limit:
                 raise ValueError("asset candidate count bound exceeded")
-            if sum(int(row["total_file_bytes"]) for row in candidates) > MAX_TOKEN_DIRECTORY_SOURCE_BYTES:
+            source_bytes_by_path = {row["path"]: int(row["total_file_bytes"]) for row in candidates}
+            if sum(source_bytes_by_path.values()) > MAX_TOKEN_DIRECTORY_SOURCE_BYTES:
                 raise ValueError("asset directory source byte bound exceeded")
             paths = sorted({row["path"] for row in candidates})
             files = []

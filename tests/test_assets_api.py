@@ -27,11 +27,11 @@ def fixture():
     return {"source": source, "candidates": rows, "files": files}
 
 
-def call(**overrides):
+def call(mock_result=None, **overrides):
     module.app.state.api_config = SimpleNamespace(chain_id="sapphire-1")
     defaults = {"limit": 50, "q": None, "standard": "all",
                 "before_activity_height": None, "before_path": None}
-    with patch.object(module.database, "fetch_asset_candidates", return_value=fixture()):
+    with patch.object(module.database, "fetch_asset_candidates", return_value=mock_result or fixture()):
         return module.get_assets(**(defaults | overrides))
 
 
@@ -57,3 +57,13 @@ def test_search_is_scoped_and_ordering_is_deterministic():
     assert [item.symbol for item in call(q="art").items] == ["ART"]
     assert call(q="coin", standard="grc721").items == []
     assert [item.path for item in call().items] == sorted(item.path for item in call().items)
+
+
+def test_mixed_standard_path_fails_closed_without_identity_deduplication():
+    data = fixture()
+    grc20 = data["candidates"][0]
+    data["candidates"].append({**grc20, "standard": "grc721",
+                               "qfunc_names": ["Name", "Symbol", "OwnerOf", "TokenURI", "TransferFrom"]})
+    response = call(data)
+    assert response.summary.model_dump() == {"asset_count": 1, "grc20_count": 0, "grc721_count": 1}
+    assert [item.path for item in response.items] == ["gno.land/r/demo/art"]

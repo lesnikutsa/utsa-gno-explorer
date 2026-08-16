@@ -7,14 +7,15 @@ from api.database import (ASSET_DIRECTORY_CANDIDATES_SQL, MAX_TOKEN_DIRECTORY_SO
 
 def test_asset_discovery_adds_strict_grc721_without_changing_grc20_contract():
     assert "regexp_replace(imp.imported_path, '/+$', '') ~ '/(grc721|grc721v2)$'" in ASSET_DIRECTORY_CANDIDATES_SQL
-    grc721_branch = ASSET_DIRECTORY_CANDIDATES_SQL.split(" OR regexp_replace", 1)[1]
-    for name in ("BalanceOf", "OwnerOf", "TransferFrom"):
-        assert f'[{chr(123)}"FuncName":"{name}"{chr(125)}]' not in grc721_branch
-    assert "TokenCount" not in ASSET_DIRECTORY_CANDIDATES_SQL
+    assert "UNION ALL" in ASSET_DIRECTORY_CANDIDATES_SQL
+    grc20_branch, grc721_branch = ASSET_DIRECTORY_CANDIDATES_SQL.split("UNION ALL", 1)
+    for name in ("Name", "Symbol", "OwnerOf", "TokenURI", "TransferFrom"):
+        assert f'[{chr(123)}"FuncName":"{name}"{chr(125)}]' in grc721_branch
+    assert "m.total_file_bytes > 0" in grc721_branch
     assert "path_kind='realm'" in ASSET_DIRECTORY_CANDIDATES_SQL
-    grc20_branch = ASSET_DIRECTORY_CANDIDATES_SQL.split("OR regexp_replace", 1)[0]
     for name in ("TotalSupply", "BalanceOf", "Transfer"):
         assert f'[{chr(123)}"FuncName":"{name}"{chr(125)}]' in grc20_branch
+    assert "gno.land/p/demo/tokens/grc20" in grc20_branch
 
 
 def test_discovery_sql_remains_conservative():

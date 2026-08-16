@@ -61,12 +61,82 @@ func Mint() {}
     assert classify_grc721(source(literal)).identity == GRC721Identity("Literal Art", "LART")
 
 
+def test_grouped_const_identity_and_alias_import_verify():
+    fixture = '''import nft "gno.land/p/vendor/grc721v2"
+const (
+    CollectionName = "Gems"
+    CollectionSymbol = "GEMS"
+)
+var collection = nft.NewNFTWithMetadata(0, cur, CollectionName, CollectionSymbol)
+func OwnerOf() {}
+func TokenURI() {}
+'''
+    assert classify_grc721(source(fixture)).identity == GRC721Identity("Gems", "GEMS")
+
+
 def test_dynamic_and_conflicting_static_bindings_fail_closed():
     main = collection(constructor="grc721.NewNFTWithMetadata(0, cur, CollectionName, CollectionSymbol)")
     dynamic = 'const CollectionName = getName()\nconst CollectionSymbol = "DYN"'
     assert classify_grc721(source(main) + source(dynamic, filename="identity.gno")).reason == "dynamic_or_malformed_identity"
     conflicting = 'const CollectionName = "A"\nconst CollectionName = "B"\nconst CollectionSymbol = "AB"'
     assert classify_grc721(source(main) + source(conflicting, filename="identity.gno")).reason == "dynamic_or_malformed_identity"
+    grouped_conflict = '''const (
+CollectionName = "A"
+CollectionName = "B"
+CollectionSymbol = getSymbol()
+)'''
+    assert classify_grc721(source(main) + source(grouped_conflict, filename="grouped.gno")).reason == "dynamic_or_malformed_identity"
+
+
+def test_self_contained_collection_resolves_grouped_constants():
+    fixture = '''const (
+    CollectionName = "GnoBuilders Badges"
+    CollectionSymbol = "GNOBADGE"
+)
+func Name() string { return CollectionName }
+func Symbol() string { return CollectionSymbol }
+func OwnerOf() {}
+func TokenURI() {}
+func TransferFrom() {}
+func TotalSupply() {}
+func BalanceOf() {}
+func Approve() {}
+'''
+    result = classify_grc721(source(fixture))
+    assert result.status == "verified" and result.reason == "self_contained_collection"
+    assert result.identity == GRC721Identity("GnoBuilders Badges", "GNOBADGE")
+
+
+def test_self_contained_direct_literal_identity_verifies():
+    fixture = '''func Name() string { return "Demo NFT" }
+func Symbol() string { return "DEMO" }
+func OwnerOf() {}
+func TokenURI() {}
+func TransferFrom() {}
+func BalanceOf() {}
+func Mint() {}
+'''
+    assert classify_grc721(source(fixture)).identity == GRC721Identity("Demo NFT", "DEMO")
+
+
+def test_self_contained_forwarder_and_incomplete_collection_fail_closed():
+    adapter = '''func Name() string { return target.Name() }
+func Symbol() string { return target.Symbol() }
+func OwnerOf() { target.OwnerOf() }
+func TokenURI() { target.TokenURI() }
+func TransferFrom() { target.TransferFrom() }
+func BalanceOf() { target.BalanceOf() }
+func Approve() { target.Approve() }
+'''
+    assert classify_grc721(source(adapter)).status == "rejected"
+    incomplete = '''const collectionName = "Broken"
+func Name() string { return collectionName }
+func Symbol() string { return "ERR" }
+func OwnerOf() {}
+func TokenURI() {}
+func BalanceOf() {}
+'''
+    assert classify_grc721(source(incomplete)).status == "rejected"
 
 
 def test_gnoswap_real_world_source_shape_verifies():

@@ -13,16 +13,21 @@ and contain exactly one bounded, statically literal `NewToken` identity.
 
 ## GRC721 contract
 
-This stage verifies only constructor-backed GRC721 collection Realms. A candidate
-import path must have the normalized final path component `grc721` or `grc721v2`.
-Substring matches, dot imports, Packages, self-contained implementations, and
-imports without an owned collection constructor are not accepted.
+This stage supports two source-verified GRC721 collection routes: constructor-backed
+collections and self-contained standard-shape collections. Packages are never
+collections.
 
-Verification requires exactly one `NewBasicNFT` or `NewNFTWithMetadata` call
-qualified by an implementation alias imported in the same source file. The final
-arguments resolve to the collection name and symbol. They may be direct string
+### Constructor-backed route
+
+A candidate import path must have the normalized final path component `grc721` or
+`grc721v2`. Substring matches and dot imports are not accepted. Verification
+requires exactly one `NewBasicNFT` or `NewNFTWithMetadata` call qualified by an
+implementation alias imported in the same source file.
+
+The final constructor arguments resolve to the collection name and symbol. They may be direct string
 literals or identifiers with exactly one simple package-scope `const` or `var`
-string-literal binding across the Realm source set. Expressions, missing bindings,
+string-literal binding across the Realm source set. Ordinary package-scope grouped
+`const (...)` string declarations are supported. Expressions, missing bindings,
 local or conflicting declarations, and ambiguous constructors fail closed.
 
 Source must additionally declare `OwnerOf` and at least one of `TokenURI`,
@@ -31,10 +36,20 @@ Source must additionally declare `OwnerOf` and at least one of `TokenURI`,
 metadata is not used as the GRC721 compliance gate because custom GRC721 types are
 not represented reliably there.
 
-Self-contained GRC721 implementations without a recognized imported constructor
-remain deliberately unclassified. Marketplaces, adapters, accessors, and consumers
-remain unclassified unless the same constructor and collection-behavior rule proves
-that the Realm owns one distinct collection.
+### Self-contained route
+
+A self-contained collection must declare package functions `Name`, `Symbol`,
+`OwnerOf`, `TokenURI`, and `TransferFrom`, plus at least two independent state or
+collection signals from `TokenCount`, `TotalSupply`, `BalanceOf`, `Mint`, `Burn`,
+`Approve`, `GetApproved`, `SafeTransferFrom`, and `SetApprovalForAll`. `Name` and
+`Symbol` must each contain one simple return of either a direct string literal or a
+uniquely resolved static binding. Forwarded calls and expressions are not evaluated.
+
+Candidate SQL admits bounded Realms through either a recognized implementation
+import or the persisted qfunc form of the self-contained core API. Final acceptance
+always uses bounded persisted source. Marketplaces, adapters, stakers, positions,
+accessors, consumers, incomplete APIs, dynamic identities, and mixed independently
+verified GRC20/GRC721 paths fail closed.
 
 `TokenCount` is not queried in this stage. The API returns `token_count: null`; no
 count is inferred from rendering, mint history, events, arrays, or partial history.

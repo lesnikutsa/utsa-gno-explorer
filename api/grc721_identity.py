@@ -13,6 +13,11 @@ COLLECTION_SIGNALS = frozenset({
     "TokenURI", "TokenMetadata", "BalanceOf", "GetApproved", "Exists",
     "TransferFrom", "SafeTransferFrom", "Approve", "Mint", "Burn", "SetApprovalForAll",
 })
+SELF_CONTAINED_REQUIRED = frozenset({"Name", "Symbol", "OwnerOf", "TokenURI", "TransferFrom"})
+SELF_CONTAINED_EVIDENCE = frozenset({
+    "TokenCount", "TotalSupply", "BalanceOf", "Mint", "Burn", "Approve",
+    "GetApproved", "SafeTransferFrom", "SetApprovalForAll",
+})
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_]\w*$")
 
 
@@ -63,8 +68,10 @@ def inspect_grc721_candidate(files: list[dict], *, path_kind: str = "realm") -> 
     checked = _bounded_sources(files)
     if isinstance(checked, GRC721Classification):
         return checked
+    bindings, ambiguous = _static_bindings(checked)
+    self_contained = _self_contained_identity(checked, bindings, ambiguous)
     return (GRC721Classification("candidate", "implementation_import")
-            if any(_imports(source) for source in checked)
+            if any(_imports(source) for source in checked) or self_contained
             else GRC721Classification("rejected", "implementation_import_missing"))
 
 
@@ -144,10 +151,14 @@ def _argument_parts(arguments: str) -> list[str] | None:
 def _static_bindings(sources: list[str]) -> tuple[dict[str, str], set[str]]:
     values: dict[str, list[str | None]] = {}
     declaration = re.compile(r'(?m)^(?:const|var)\s+([A-Za-z_]\w*)\s*=\s*([^\n;]+)')
+    grouped = re.compile(r'(?ms)^const\s*\((.*?)^\)')
     all_declarations: dict[str, int] = {}
     for source in sources:
         for match in re.finditer(r'(?m)^\s*(?:const|var)\s+([A-Za-z_]\w*)\s*=', source):
             all_declarations[match.group(1)] = all_declarations.get(match.group(1), 0) + 1
+        for block in re.finditer(r'(?ms)^\s*const\s*\((.*?)^\s*\)', source):
+            for match in re.finditer(r'(?m)^\s*([A-Za-z_]\w*)\s*=\s*([^\n;]+)', block.group(1)):
+                all_declarations[match.group(1)] = all_declarations.get(match.group(1), 0) + 1
         for match in declaration.finditer(source):
             raw = match.group(2).strip()
             try:
@@ -155,6 +166,14 @@ def _static_bindings(sources: list[str]) -> tuple[dict[str, str], set[str]]:
             except (SyntaxError, ValueError):
                 value = None
             values.setdefault(match.group(1), []).append(value if isinstance(value, str) else None)
+        for block in grouped.finditer(source):
+            for match in re.finditer(r'(?m)^\s*([A-Za-z_]\w*)\s*=\s*([^\n;]+)', block.group(1)):
+                raw = match.group(2).strip()
+                try:
+                    value = ast.literal_eval(raw)
+                except (SyntaxError, ValueError):
+                    value = None
+                values.setdefault(match.group(1), []).append(value if isinstance(value, str) else None)
     resolved = {name: definitions[0] for name, definitions in values.items()
                 if len(definitions) == 1 and all_declarations.get(name) == 1
                 and isinstance(definitions[0], str)}
@@ -178,6 +197,52 @@ def _function_names(sources: list[str]) -> set[str]:
     return {match.group(1) for source in sources for match in pattern.finditer(source)}
 
 
+def _package_function_names(sources: list[str]) -> set[str]:
+    pattern = re.compile(r"(?m)^func\s+([A-Za-z_]\w*)\s*\(")
+    return {match.group(1) for source in sources for match in pattern.finditer(source)}
+
+
+def _static_function_return(sources: list[str], function_name: str,
+                            bindings: dict[str, str], ambiguous: set[str]) -> str | None:
+    returns: list[str | None] = []
+    start_pattern = re.compile(rf"(?m)^func\s+{re.escape(function_name)}\s*\([^\n)]*\)[^{{\n]*\{{")
+    for source in sources:
+        for match in start_pattern.finditer(source):
+            index, depth, quote = match.end(), 1, None
+            while index < len(source) and depth:
+                char = source[index]
+                if quote:
+                    if char == "\\": index += 1
+                    elif char == quote: quote = None
+                elif char in ('\"', "'"): quote = char
+                elif char == "{": depth += 1
+                elif char == "}": depth -= 1
+                index += 1
+            if depth:
+                returns.append(None)
+                continue
+            body = source[match.end():index - 1].strip()
+            result = re.fullmatch(r"return\s+(.+?)\s*;?", body, re.DOTALL)
+            returns.append(_resolve_identity_argument(result.group(1).strip(), bindings, ambiguous)
+                           if result else None)
+    return returns[0] if len(returns) == 1 and returns[0] is not None else None
+
+
+def _self_contained_identity(sources: list[str], bindings: dict[str, str],
+                             ambiguous: set[str]) -> GRC721Identity | None:
+    functions = _package_function_names(sources)
+    if not SELF_CONTAINED_REQUIRED.issubset(functions):
+        return None
+    if len(functions & SELF_CONTAINED_EVIDENCE) < 2:
+        return None
+    name = _static_function_return(sources, "Name", bindings, ambiguous)
+    symbol = _static_function_return(sources, "Symbol", bindings, ambiguous)
+    if (name is None or symbol is None or not name or name != name.strip() or len(name) > 128 or
+            not symbol or symbol != symbol.strip() or len(symbol) > 32):
+        return None
+    return GRC721Identity(name, symbol)
+
+
 def classify_grc721(files: list[dict], *, path_kind: str = "realm",
                     qfunc_names: set[str] | frozenset[str] | None = None) -> GRC721Classification:
     """Verify one constructor-backed collection solely from bounded persisted source."""
@@ -187,12 +252,15 @@ def classify_grc721(files: list[dict], *, path_kind: str = "realm",
     if isinstance(checked, GRC721Classification):
         return checked
     sources = checked
-    if not any(_imports(source) for source in sources):
-        return GRC721Classification("rejected", "implementation_import_missing")
+    bindings, ambiguous = _static_bindings(sources)
+    self_contained = _self_contained_identity(sources, bindings, ambiguous)
+    has_implementation_import = any(_imports(source) for source in sources)
+    if not has_implementation_import:
+        return (GRC721Classification("verified", "self_contained_collection", self_contained)
+                if self_contained else GRC721Classification("rejected", "implementation_import_missing"))
     functions = _function_names(sources)
     if not (functions & OWNERSHIP_READERS) or not (functions & COLLECTION_SIGNALS):
         return GRC721Classification("rejected", "collection_behavior_missing")
-    bindings, ambiguous = _static_bindings(sources)
     identities: list[tuple[str, str]] = []
     for source in sources:
         aliases = _imports(source)  # Imports are deliberately file-scoped.
@@ -209,7 +277,11 @@ def classify_grc721(files: list[dict], *, path_kind: str = "realm",
                 return GRC721Classification("rejected", "invalid_identity")
             identities.append((name, symbol))
     if len(identities) != 1:
+        if not identities and self_contained:
+            return GRC721Classification("verified", "self_contained_collection", self_contained)
         return GRC721Classification("rejected", "constructor_missing" if not identities else "ambiguous_identity")
+    if self_contained and self_contained != GRC721Identity(*identities[0]):
+        return GRC721Classification("rejected", "ambiguous_identity")
     return GRC721Classification("verified", "constructor_backed_collection", GRC721Identity(*identities[0]))
 
 
