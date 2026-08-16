@@ -6,7 +6,8 @@ from fastapi import HTTPException
 
 import api.app as module
 from api.token_supply import (TokenSupplyCache, decimal_amount, parse_total_supply,
-                              query_native_gnot_supply, token_supply_cache)
+                              parse_native_bank_supply, query_native_gnot_supply,
+                              token_supply_cache)
 
 
 PATH = "gno.land/r/demo/token"
@@ -152,7 +153,7 @@ def test_backend_constructs_only_fixed_qeval_expression():
 def test_native_supply_uses_only_fixed_bank_path_and_preserves_precision():
     raw = "184467440737095516161844674407370955161"
     with patch("api.token_supply.GnoRpcClient") as client_type:
-        client_type.return_value.__enter__.return_value.abci_query.return_value = raw
+        client_type.return_value.__enter__.return_value.abci_query.return_value = f'"{raw}"'
         assert query_native_gnot_supply(rpc_url="https://rpc.example") == raw
         client_type.return_value.__enter__.return_value.abci_query.assert_called_once_with(
             "bank/supply/ugnot", "",
@@ -163,6 +164,33 @@ def test_native_supply_uses_only_fixed_bank_path_and_preserves_precision():
     assert response.raw_total_supply == raw
     assert response.total_supply == "184467440737095516161844674407370.955161"
     assert response.base_denom == "ugnot" and response.decimals == 6
+
+
+@pytest.mark.parametrize(("value", "expected"), [
+    ('"0"', "0"),
+    ('"00021000000000000"', "21000000000000"),
+    ('"184467440737095516161844674407370955161"',
+     "184467440737095516161844674407370955161"),
+    ('"-1"', None),
+    ("1000", None),
+    ('"1.5"', None),
+    ("true", None),
+    ("false", None),
+    ("null", None),
+    ("[]", None),
+    ("{}", None),
+    ('{"supply":"1"}', None),
+    ('"1" trailing', None),
+    (' "1"', None),
+    ('"1', None),
+])
+def test_native_bank_supply_parser_is_protocol_specific_and_fails_closed(value, expected):
+    assert parse_native_bank_supply(value) == expected
+
+
+def test_native_bank_supply_parser_rejects_oversized_responses():
+    assert parse_native_bank_supply(f'"{"1" * 513}"') is None
+    assert parse_total_supply('"21000000000000"') is None
 
 
 def test_native_supply_failure_is_unavailable_safe_and_not_directory_dependent(caplog):

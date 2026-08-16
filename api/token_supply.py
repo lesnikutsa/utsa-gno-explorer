@@ -2,6 +2,7 @@
 
 from collections import OrderedDict
 from dataclasses import dataclass
+import json
 import re
 from threading import Lock
 import time
@@ -67,6 +68,20 @@ def parse_total_supply(value: object) -> str | None:
     return match.group(1) if match else None
 
 
+def parse_native_bank_supply(value: object) -> str | None:
+    """Accept only the Amino JSON quoted non-negative integer used by bank supply."""
+    if not isinstance(value, str) or value != value.strip() or len(value) > 514:
+        return None
+    try:
+        decoded = json.loads(value)
+    except (json.JSONDecodeError, RecursionError):
+        return None
+    if (not isinstance(decoded, str) or len(decoded) > 512
+            or re.fullmatch(r'"[0-9]+"', value) is None):
+        return None
+    return decoded.lstrip("0") or "0"
+
+
 def decimal_amount(raw_total_supply: str, decimals: int) -> str:
     """Place a decimal point using string arithmetic without float conversion."""
     digits = raw_total_supply.lstrip("0") or "0"
@@ -87,4 +102,4 @@ def query_total_supply(*, rpc_url: str, path: str) -> str | None:
 def query_native_gnot_supply(*, rpc_url: str) -> str | None:
     """Query only the fixed native GNOT bank supply path."""
     with GnoRpcClient(rpc_url, timeout=TOKEN_SUPPLY_RPC_TIMEOUT_SECONDS) as client:
-        return parse_total_supply(client.abci_query(f"bank/supply/{NATIVE_GNOT_DENOM}", ""))
+        return parse_native_bank_supply(client.abci_query(f"bank/supply/{NATIVE_GNOT_DENOM}", ""))

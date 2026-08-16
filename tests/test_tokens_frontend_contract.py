@@ -32,6 +32,10 @@ def test_native_and_top_24h_are_separate_api_driven_sections():
     assert "top24h.slice(0, 3)" in page and "realmDetailHref(token.path)" in page
     assert "response.top_24h" in hook and "response.items" not in hook.split("setTop24h", 1)[1].split("\n", 1)[0]
     assert "ranking is unavailable" in page and "No verified token calls" in page
+    assert "Loading token activity…" in page
+    assert "Token activity is currently unavailable." in page
+    activity_render = page.split('<section className="tokens-top"', 1)[1]
+    assert activity_render.index("loading ?") < activity_render.index("error ?") < activity_render.index("top24h === null")
     assert 'id="tokens-directory-title">GRC20 Tokens' in page
     assert "Total Supply" in page and "networkProfile.networkName" in page
     for forbidden in ("Price", "Market Cap", "TVL", "Holders", "Volume"):

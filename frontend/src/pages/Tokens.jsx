@@ -48,7 +48,9 @@ export function Tokens({ tokensPage }) {
     </section>
     <section className="tokens-top" aria-labelledby="tokens-top-title">
       <div className="tokens-top__heading"><h2 id="tokens-top-title">Top Tokens · 24H</h2><p>Verified GRC20 tokens ranked by direct calls in the last 24 hours.</p></div>
-      {top24h === null ? <div className="panel tokens-top__state">24H token ranking is unavailable until complete call coverage spans the window.</div>
+      {loading ? <div className="panel tokens-top__state">Loading token activity…</div>
+        : error ? <div className="panel tokens-top__state">Token activity is currently unavailable.</div>
+        : top24h === null ? <div className="panel tokens-top__state">24H token ranking is unavailable until complete call coverage spans the window.</div>
         : top24h.length === 0 ? <div className="panel tokens-top__state">No verified token calls in the last 24 hours.</div>
           : <div className="tokens-top__grid">{top24h.slice(0, 3).map((token) => <a className="panel tokens-top__card" href={realmDetailHref(token.path)} key={token.path}>
             <header className="tokens-top__card-header"><div className="tokens-top__identity"><h3>{token.name} <small>${token.symbol}</small></h3><p className="mono">{token.path}</p></div><StatusBadge tone="neutral">{token.application?.display_name ?? token.namespace_key} · {token.application?.category ?? 'Namespace'}</StatusBadge></header>
