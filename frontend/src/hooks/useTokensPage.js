@@ -11,6 +11,8 @@ export function useTokensPage() {
   const [topActivity, setTopActivity] = useState(null)
   const [activityWindow, setActivityWindow] = useState('24h')
   const [availableActivityWindows, setAvailableActivityWindows] = useState([])
+  const [activityLoading, setActivityLoading] = useState(false)
+  const [activityError, setActivityError] = useState(false)
   const [nativeToken, setNativeToken] = useState(null)
   const [searchInput, setSearchInput] = useState('')
   const [appliedSearch, setAppliedSearch] = useState('')
@@ -27,6 +29,8 @@ export function useTokensPage() {
   const foregroundActive = useRef(false)
   const hasData = useRef(false)
   const currentActivityWindow = useRef('24h')
+  const activityController = useRef(null)
+  const activityRequestId = useRef(0)
   const supplyCache = useRef(new Map())
   const [supplies, setSupplies] = useState({})
 
@@ -50,6 +54,7 @@ export function useTokensPage() {
       setItems((response.items ?? []).slice(0, PAGE_SIZE)); setSummary(response.summary ?? null)
       setTopActivity(Array.isArray(response.top_activity) ? response.top_activity.slice(0, 3) : null)
       setAvailableActivityWindows(Array.isArray(response.source?.available_activity_windows) ? response.source.available_activity_windows : [])
+      setActivityLoading(false); setActivityError(false)
       setNextCursor(hasNext ? { activityHeight: pagination.next_before_activity_height, path: pagination.next_before_path } : null)
       setPageIndex(request.targetIndex); if (request.history) setCursorHistory(request.history)
       failedRequest.current = null; setHealthState('healthy')
@@ -64,7 +69,7 @@ export function useTokensPage() {
   }, [])
 
   const refreshInBackground = useCallback(async () => {
-    if (foregroundActive.current || controller.current?.background) return
+    if (foregroundActive.current || controller.current?.background || activityController.current) return
     const activeController = new AbortController()
     activeController.background = true
     controller.current = activeController
@@ -83,6 +88,7 @@ export function useTokensPage() {
       setSummary(response.summary ?? null)
       setTopActivity(Array.isArray(response.top_activity) ? response.top_activity.slice(0, 3) : null)
       setAvailableActivityWindows(Array.isArray(response.source?.available_activity_windows) ? response.source.available_activity_windows : [])
+      setActivityError(false)
       if (nativeResponse !== null) setNativeToken(nativeResponse)
       setNextCursor(hasNext ? { activityHeight: pagination.next_before_activity_height, path: pagination.next_before_path } : null)
       hasData.current = true; setError(false); setHealthState('healthy')
@@ -96,13 +102,38 @@ export function useTokensPage() {
     }
   }, [appliedSearch])
 
-  const selectActivityWindow = useCallback((nextWindow) => {
-    if (!TOKEN_ACTIVITY_WINDOWS.includes(nextWindow) || nextWindow === currentActivityWindow.current) return
+  const loadActivityWindow = useCallback(async (nextWindow) => {
+    if (!TOKEN_ACTIVITY_WINDOWS.includes(nextWindow)) return
+    if (controller.current?.background) controller.current.abort()
+    activityController.current?.abort()
+    const activeController = new AbortController()
+    activityController.current = activeController
+    const id = ++activityRequestId.current
     currentActivityWindow.current = nextWindow
     setActivityWindow(nextWindow)
-    loadPage({ cursor: cursorHistory[pageIndex], targetIndex: pageIndex,
-      search: appliedSearch, activityWindow: nextWindow })
-  }, [appliedSearch, cursorHistory, loadPage, pageIndex])
+    setTopActivity(null); setActivityLoading(true); setActivityError(false)
+    try {
+      const cursor = cursorHistory[pageIndex]
+      const response = await getTokens({ limit: PAGE_SIZE, q: appliedSearch, activityWindow: nextWindow,
+        beforeActivityHeight: cursor?.activityHeight, beforePath: cursor?.path, signal: activeController.signal })
+      if (!mounted.current || id !== activityRequestId.current || currentActivityWindow.current !== nextWindow) return
+      setTopActivity(Array.isArray(response.top_activity) ? response.top_activity.slice(0, 3) : null)
+      setAvailableActivityWindows(Array.isArray(response.source?.available_activity_windows) ? response.source.available_activity_windows : [])
+    } catch (requestError) {
+      if (!mounted.current || id !== activityRequestId.current || requestError?.name === 'AbortError') return
+      setActivityError(true)
+    } finally {
+      if (id === activityRequestId.current) {
+        activityController.current = null
+        if (mounted.current) setActivityLoading(false)
+      }
+    }
+  }, [appliedSearch, cursorHistory, pageIndex])
+
+  const selectActivityWindow = useCallback((nextWindow) => {
+    if (nextWindow === currentActivityWindow.current) return
+    loadActivityWindow(nextWindow)
+  }, [loadActivityWindow])
 
   const resetAndLoad = useCallback((search) => {
     const history = [null]
@@ -128,7 +159,8 @@ export function useTokensPage() {
   useEffect(() => {
     mounted.current = true
     loadPage({ cursor: null, targetIndex: 0, history: [null], search: '', activityWindow: '24h' })
-    return () => { mounted.current = false; requestId.current += 1; controller.current?.abort() }
+    return () => { mounted.current = false; requestId.current += 1; activityRequestId.current += 1;
+      controller.current?.abort(); activityController.current?.abort() }
   }, [loadPage])
 
   useEffect(() => {
@@ -166,7 +198,9 @@ export function useTokensPage() {
   }, [items])
 
   return { items, supplies, summary, topActivity, nativeToken, activityWindow, availableActivityWindows,
+    activityLoading, activityError,
     searchInput, appliedSearch, loading, error, healthState, pageIndex,
     nextCursor, cursorHistory, setSearchInput, submitSearch, clearSearch, retry, loadOlder, loadNewer,
-    refreshInBackground, selectActivityWindow, canLoadOlder: nextCursor !== null }
+    refreshInBackground, selectActivityWindow, retryActivity: () => loadActivityWindow(currentActivityWindow.current),
+    canLoadOlder: nextCursor !== null }
 }

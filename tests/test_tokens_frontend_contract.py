@@ -36,7 +36,7 @@ def test_native_and_top_24h_are_separate_api_driven_sections():
     assert "Loading token activity…" in page
     assert "Token activity is currently unavailable." in page
     activity_render = page.split('<section className="tokens-top"', 1)[1]
-    assert activity_render.index("loading ?") < activity_render.index("error ?") < activity_render.index("topActivity === null")
+    assert activity_render.index("loading || activityLoading") < activity_render.index("error || activityError") < activity_render.index("topActivity === null")
     assert 'id="tokens-directory-title">GRC20 Tokens' in page
     assert "Total Supply" in page and "networkProfile.networkName" in page
     assert "src={networkProfile.networkIconSrc}" in page
@@ -83,6 +83,31 @@ def test_tokens_cursor_pagination_and_request_safety_contract():
     assert "selectActivityWindow" in hook
     assert "setItems([])" not in hook.split("const refreshInBackground", 1)[1].split("const resetAndLoad", 1)[0]
     assert "ChangedValue" in page
+
+
+def test_activity_window_refresh_is_scoped_to_top_tokens():
+    hook = (ROOT / "frontend/src/hooks/useTokensPage.js").read_text()
+    activity = hook.split("const loadActivityWindow", 1)[1].split("const selectActivityWindow", 1)[0]
+    for forbidden in ("setItems(", "setSummary(", "setNativeToken(", "setSupplies(",
+                      "setPageIndex(", "setAppliedSearch(", "setLoading("):
+        assert forbidden not in activity
+    assert "setActivityLoading(true)" in activity and "setActivityError(true)" in activity
+    assert "activityRequestId.current" in activity and "currentActivityWindow.current !== nextWindow" in activity
+    assert "activityController.current?.abort()" in activity
+    assert "retryActivity" in hook
+
+
+def test_token_table_uses_existing_sorting_contract_only_for_requested_columns():
+    page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
+    assert "useMemo" in page and "sortTokenDirectoryItems" in page
+    assert "useState({ key: 'last_activity_at', direction: 'descending' })" in page
+    assert "sortKey={sort.key}" in page and "sortDirection={sort.direction}" in page and "onSort=" in page
+    direct = page.split("key: 'direct_call_count'", 1)[1].split("},", 1)[0]
+    activity = page.split("key: 'last_activity_at'", 1)[1].split("},", 1)[0]
+    supply = page.split("key: 'total_supply'", 1)[1].split("},", 1)[0]
+    assert "sortable: true" in direct and "defaultSortDirection: 'descending'" in direct
+    assert "sortable: true" in activity and "defaultSortDirection: 'descending'" in activity
+    assert "sortable" not in supply
 
 
 def test_tokens_auto_refresh_matches_visibility_and_overlap_contract():

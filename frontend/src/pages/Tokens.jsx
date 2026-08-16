@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { DataTable } from '../components/DataTable'
 import { StatusBadge } from '../components/StatusBadge'
 import { ChangedValue } from '../components/ChangedValue'
@@ -7,6 +7,7 @@ import { formatSuccessRate } from '../utils/realm'
 import { relativeTime } from '../utils/time'
 import { formatTokenSupply } from '../utils/tokenSupply'
 import { networkProfile } from '../config/networkProfile'
+import { sortTokenDirectoryItems } from '../utils/tokenDirectory'
 
 const formatCount = (value) => Number.isFinite(value) ? value.toLocaleString() : '—'
 const TOKEN_WINDOW_LABELS = { '24h': '24H', '7d': '7D', '30d': '30D' }
@@ -20,8 +21,8 @@ const columns = (supplies) => [
   { key: 'application', label: 'App', render: (item) => <span className="tokens-table__app"><strong>{item.application?.display_name ?? item.namespace_key}</strong><small>{item.application?.category ?? 'Namespace'}</small></span> },
   { key: 'decimals', label: 'Decimals', render: (item) => item.decimals ?? '—' },
   { key: 'total_supply', label: 'Total Supply', render: (item) => <span className="tokens-table__supply mono">{supplies[item.path]?.available ? formatTokenSupply(supplies[item.path].total_supply) : '—'}</span> },
-  { key: 'direct_call_count', label: 'Direct Calls', render: (item) => formatCount(item.direct_call_count) },
-  { key: 'last_activity_at', label: 'Last Activity', render: (item) => item.last_activity_at ? <time dateTime={item.last_activity_at} title={item.last_activity_at}>{relativeTime(item.last_activity_at)}</time> : 'Never' },
+  { key: 'direct_call_count', label: 'Direct Calls', sortable: true, defaultSortDirection: 'descending', render: (item) => formatCount(item.direct_call_count) },
+  { key: 'last_activity_at', label: 'Last Activity', sortable: true, defaultSortDirection: 'descending', render: (item) => item.last_activity_at ? <time dateTime={item.last_activity_at} title={item.last_activity_at}>{relativeTime(item.last_activity_at)}</time> : 'Never' },
   { key: 'rpc_visible', label: 'Visibility', render: (item) => item.rpc_visible ? <StatusBadge tone="success">Visible</StatusBadge> : <StatusBadge tone="neutral">Historical</StatusBadge> },
 ]
 
@@ -29,7 +30,10 @@ export function Tokens({ tokensPage }) {
   const { items, supplies = {}, summary, topActivity, nativeToken, activityWindow, availableActivityWindows,
     selectActivityWindow, searchInput, appliedSearch, loading, error, setSearchInput, submitSearch,
     clearSearch, retry, pageIndex, canLoadOlder, loadOlder, loadNewer } = tokensPage
+  const { activityLoading, activityError, retryActivity } = tokensPage
   const [networkIconFailed, setNetworkIconFailed] = useState(false)
+  const [sort, setSort] = useState({ key: 'last_activity_at', direction: 'descending' })
+  const sortedItems = useMemo(() => sortTokenDirectoryItems(items, sort.key, sort.direction), [items, sort])
   const native = nativeToken ?? networkProfile.nativeToken
   const empty = error ? 'Tokens are currently unavailable.' : appliedSearch ? `No tokens match “${appliedSearch}”.` : 'No confirmed GRC20 tokens have been indexed yet.'
   return <section className="blocks-page tokens-page" aria-labelledby="tokens-page-title">
@@ -60,10 +64,10 @@ export function Tokens({ tokensPage }) {
       <div className="realms-applications__heading tokens-top__heading"><div><h2 id="tokens-top-title">Top Tokens</h2><p className="realms-applications__intro">Verified GRC20 tokens ranked by direct calls in {TOKEN_WINDOW_DESCRIPTIONS[activityWindow]}.</p></div>
         <div className="realms-applications__windows" aria-label="Token activity window">{Object.entries(TOKEN_WINDOW_LABELS).map(([value, label]) => <button
           className={activityWindow === value ? 'is-active' : ''} type="button" key={value}
-          aria-pressed={activityWindow === value} disabled={loading || !availableActivityWindows.includes(value)}
+          aria-pressed={activityWindow === value} disabled={loading || activityLoading || !availableActivityWindows.includes(value)}
           onClick={() => selectActivityWindow(value)}>{label}</button>)}</div></div>
-      {loading ? <div className="panel tokens-top__state">Loading token activity…</div>
-        : error ? <div className="panel tokens-top__state">Token activity is currently unavailable.</div>
+      {loading || activityLoading ? <div className="panel tokens-top__state">Loading token activity…</div>
+        : error || activityError ? <div className="panel tokens-top__state">Token activity is currently unavailable.{activityError && <button className="blocks-page__button" type="button" onClick={retryActivity}>Retry</button>}</div>
         : topActivity === null ? <div className="panel tokens-top__state">Complete token activity is not available for this period.</div>
         : topActivity.length === 0 ? <div className="panel tokens-top__state">No verified token calls in {TOKEN_WINDOW_DESCRIPTIONS[activityWindow]}.</div>
           : <div className="tokens-top__grid">{topActivity.slice(0, 3).map((token) => <a className="panel tokens-top__card" href={realmDetailHref(token.path)} key={token.path}>
@@ -78,7 +82,8 @@ export function Tokens({ tokensPage }) {
       <button className="blocks-page__button" type="submit">Search</button>
       {appliedSearch && <button className="blocks-page__button" type="button" onClick={clearSearch}>Clear</button>}
     </form>
-    <div className="panel blocks-page__table tokens-page__table"><DataTable columns={columns(supplies)} rows={items} rowKey={(item) => item.path} loading={loading} emptyMessage={empty} /></div>
+    <div className="panel blocks-page__table tokens-page__table"><DataTable columns={columns(supplies)} rows={sortedItems} rowKey={(item) => item.path} loading={loading} emptyMessage={empty}
+      sortKey={sort.key} sortDirection={sort.direction} onSort={(key, direction) => setSort({ key, direction })} /></div>
     <nav className="blocks-pagination" aria-label="Tokens pagination">
       <button className="blocks-page__button" type="button" onClick={loadNewer} disabled={loading || pageIndex === 0}>Newer entries</button>
       <span>{pageIndex === 0 ? 'Latest' : `Page ${pageIndex + 1}`}</span>
