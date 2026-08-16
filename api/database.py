@@ -303,20 +303,19 @@ SELECT c.path,c.rpc_visible,c.call_count,c.successful_call_count,c.failed_call_c
        c.last_activity_height,c.last_activity_at,m.observed_height AS metadata_observed_height,
        m.total_file_bytes,
        CASE WHEN imp.imported_path='gno.land/p/demo/tokens/grc20' THEN 'grc20' ELSE 'grc721' END AS standard,
-       ARRAY(SELECT element->>'FuncName' FROM jsonb_array_elements(m.qfuncs_payload) element) AS qfunc_names
+       CASE WHEN jsonb_typeof(m.qfuncs_payload)='array'
+         THEN ARRAY(SELECT element->>'FuncName' FROM jsonb_array_elements(m.qfuncs_payload) element)
+         ELSE ARRAY[]::text[] END AS qfunc_names
 FROM realm_catalog c
 JOIN realm_metadata m ON m.chain_id=c.chain_id AND m.path=c.path
 JOIN realm_metadata_imports imp ON imp.chain_id=c.chain_id AND imp.path=c.path
-  AND imp.imported_path IN ('gno.land/p/demo/tokens/grc20','gno.land/p/demo/tokens/grc721')
-WHERE c.chain_id=%s AND c.path_kind='realm' AND m.qfuncs_status='ok'
+WHERE c.chain_id=%s AND c.path_kind='realm'
   AND ((imp.imported_path='gno.land/p/demo/tokens/grc20'
+        AND m.qfuncs_status='ok'
         AND m.qfuncs_payload @> '[{"FuncName":"TotalSupply"}]'::jsonb
         AND m.qfuncs_payload @> '[{"FuncName":"BalanceOf"}]'::jsonb
         AND m.qfuncs_payload @> '[{"FuncName":"Transfer"}]'::jsonb)
-    OR (imp.imported_path='gno.land/p/demo/tokens/grc721'
-        AND m.qfuncs_payload @> '[{"FuncName":"BalanceOf"}]'::jsonb
-        AND m.qfuncs_payload @> '[{"FuncName":"OwnerOf"}]'::jsonb
-        AND m.qfuncs_payload @> '[{"FuncName":"TransferFrom"}]'::jsonb))
+    OR regexp_replace(imp.imported_path, '/+$', '') ~ '/(grc721|grc721v2)$')
 ORDER BY COALESCE(c.last_activity_height,-1) DESC,c.path COLLATE "C" ASC,standard ASC
 LIMIT %s
 """

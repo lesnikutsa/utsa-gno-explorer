@@ -7,46 +7,120 @@ def source(body, *, filename="main.gno"):
     return [{"filename": filename, "file_kind": "gno_source", "content": body}]
 
 
-CANONICAL = '''
-import "gno.land/p/demo/tokens/grc721"
-var collection = grc721.NewBasicNFT(0, cur, "FooNFT", "FNFT")
+def collection(import_path="gno.land/p/demo/tokens/grc721", constructor=None, alias="grc721"):
+    constructor = constructor or f'{alias}.NewBasicNFT(0, cur, "FooNFT", "FNFT")'
+    import_alias = "" if alias == import_path.rsplit("/", 1)[-1] else f"{alias} "
+    return f'''import {import_alias}"{import_path}"
+var collection = {constructor}
+func OwnerOf(id int) {{}}
+func TokenURI(id int) {{}}
 '''
 
 
-def test_official_import_and_canonical_identity_are_verified_without_token_count():
+CANONICAL = collection()
+
+
+def test_demo_and_arbitrary_implementation_paths_verify():
     assert inspect_grc721_candidate(source(CANONICAL)).status == "candidate"
-    result = classify_grc721(source(CANONICAL), qfunc_names={"BalanceOf", "OwnerOf", "TransferFrom"})
-    assert result.status == "verified" and result.identity == GRC721Identity("FooNFT", "FNFT")
+    assert classify_grc721(source(CANONICAL)).identity == GRC721Identity("FooNFT", "FNFT")
+    vendored = collection("gno.land/p/gnoswap/deps/tokens/grc721")
+    assert classify_grc721(source(vendored)).status == "verified"
+    v2 = collection("gno.land/p/publisher/grc721v2", alias="nft")
+    assert classify_grc721(source(v2)).status == "verified"
 
 
-def test_alias_is_supported_but_unrelated_import_and_import_only_fail_closed():
-    aliased = CANONICAL.replace('import "', 'import nft "').replace("grc721.New", "nft.New")
-    assert extract_grc721_identity(source(aliased)).verified
-    assert classify_grc721(source('import "gno.land/p/demo/other"')).reason == "official_import_missing"
-    assert classify_grc721(source('import "gno.land/p/demo/tokens/grc721"')).reason == "constructor_missing"
+def test_path_component_matching_rejects_substrings_and_dot_imports():
+    for path in ("gno.land/p/x/my_grc721_helper", "gno.land/p/x/grc721market", "gno.land/p/x/fakegrc721adapter"):
+        assert classify_grc721(source(collection(path))).reason == "implementation_import_missing"
+    dotted = CANONICAL.replace('import "', 'import . "')
+    assert classify_grc721(source(dotted)).reason == "implementation_import_missing"
+
+
+def test_alias_and_real_four_argument_constructor_are_supported():
+    aliased = collection("gno.land/p/vendor/grc721", alias="nft")
+    assert extract_grc721_identity(source(aliased)) == GRC721Identity("FooNFT", "FNFT")
 
 
 def test_import_aliases_are_file_scoped_and_cross_file_confusion_fails_closed():
-    files = source('import nft "gno.land/p/demo/tokens/grc721"', filename="imports.gno")
-    files += source('var nft = someOtherObject\nvar x = nft.NewBasicNFT(0, cur, "Fake", "FAKE")',
-                    filename="fake.gno")
-    result = classify_grc721(files)
-    assert result.status == "rejected" and result.reason == "constructor_missing"
+    files = source('import nft "gno.land/p/vendor/grc721"', filename="imports.gno")
+    files += source('var nft = someOtherObject\nvar x = nft.NewBasicNFT(0, cur, "Fake", "FAKE")\nfunc OwnerOf(){}\nfunc Mint(){}', filename="fake.gno")
+    assert classify_grc721(files).reason == "constructor_missing"
 
 
-def test_behavior_is_required_and_packages_are_never_collections():
-    assert classify_grc721(source(CANONICAL), qfunc_names={"BalanceOf"}).reason == "canonical_functions_missing"
+def test_metadata_constructor_resolves_unique_cross_file_static_bindings():
+    main = '''import nft "gno.land/p/vendor/grc721v2"
+var nftCollection = nft.NewNFTWithMetadata(0, cur, CollectionName, CollectionSymbol)
+func OwnerOf(id int) {}
+func TokenMetadata(id int) {}
+func Mint() {}
+'''
+    bindings = 'const CollectionName = "Metadata Art"\nvar CollectionSymbol = "MART"\n'
+    result = classify_grc721(source(main) + source(bindings, filename="identity.gno"))
+    assert result.status == "verified" and result.identity == GRC721Identity("Metadata Art", "MART")
+    literal = collection(constructor='grc721.NewNFTWithMetadata(0, cur, "Literal Art", "LART")')
+    assert classify_grc721(source(literal)).identity == GRC721Identity("Literal Art", "LART")
+
+
+def test_dynamic_and_conflicting_static_bindings_fail_closed():
+    main = collection(constructor="grc721.NewNFTWithMetadata(0, cur, CollectionName, CollectionSymbol)")
+    dynamic = 'const CollectionName = getName()\nconst CollectionSymbol = "DYN"'
+    assert classify_grc721(source(main) + source(dynamic, filename="identity.gno")).reason == "dynamic_or_malformed_identity"
+    conflicting = 'const CollectionName = "A"\nconst CollectionName = "B"\nconst CollectionSymbol = "AB"'
+    assert classify_grc721(source(main) + source(conflicting, filename="identity.gno")).reason == "dynamic_or_malformed_identity"
+
+
+def test_gnoswap_real_world_source_shape_verifies():
+    fixture = '''import "gno.land/p/gnoswap/deps/tokens/grc721"
+nft = grc721.NewBasicNFT(
+    0,
+    cur,
+    "GNOSWAP NFT",
+    "GNFT",
+)
+func TokenURI(id int) {}
+func OwnerOf(id int) {}
+func SafeTransferFrom() {}
+func TransferFrom() {}
+func Approve() {}
+func GetApproved() {}
+func Mint() {}
+func Burn() {}
+func Exists() {}
+'''
+    result = classify_grc721(source(fixture))
+    assert result.status == "verified" and result.identity == GRC721Identity("GNOSWAP NFT", "GNFT")
+
+
+def test_constructor_requires_ownership_and_an_additional_collection_signal():
+    no_owner = CANONICAL.replace("func OwnerOf(id int) {}", "func Helper() {}")
+    assert classify_grc721(source(no_owner)).reason == "collection_behavior_missing"
+    owner_only = CANONICAL.replace("func TokenURI(id int) {}", "func Helper() {}")
+    assert classify_grc721(source(owner_only)).reason == "collection_behavior_missing"
+
+
+def test_marketplace_adapter_consumer_import_only_and_package_are_rejected():
+    marketplace = 'func RegisterCollection(path string) {}\nfunc Trade() {} // grc721 marketplace'
+    assert classify_grc721(source(marketplace)).reason == "implementation_import_missing"
+    adapter = '''import "gno.land/p/vendor/grc721"
+func OwnerOf() { target.OwnerOf() }
+func TransferFrom() { target.TransferFrom() }
+'''
+    assert classify_grc721(source(adapter)).reason == "constructor_missing"
+    consumer = '''import "gno.land/p/vendor/grc721v2"
+var id grc721v2.TokenID
+func OwnerOf() {}
+func TokenURI() {}
+'''
+    assert classify_grc721(source(consumer)).reason == "constructor_missing"
+    assert classify_grc721(source('import "gno.land/p/vendor/grc721"')).reason == "collection_behavior_missing"
     assert classify_grc721(source(CANONICAL), path_kind="package").reason == "not_realm"
 
 
-def test_ambiguous_dynamic_and_malformed_identities_fail_closed():
-    duplicate = CANONICAL + '\nvar other = grc721.NewBasicNFT(owner, "Bar", "BAR")'
+def test_unqualified_ambiguous_malformed_and_bounds_fail_closed():
+    unqualified = CANONICAL.replace("grc721.NewBasicNFT", "NewBasicNFT")
+    assert classify_grc721(source(unqualified)).reason == "constructor_missing"
+    duplicate = CANONICAL + '\nvar other = grc721.NewBasicNFT(0, cur, "Bar", "BAR")'
     assert classify_grc721(source(duplicate)).reason == "ambiguous_identity"
-    assert classify_grc721(source(CANONICAL.replace('"FooNFT"', "collectionName"))).reason == "dynamic_or_malformed_identity"
     assert classify_grc721(source(CANONICAL + "\n/* unterminated")).status == "rejected"
-
-
-def test_source_and_file_bounds_fail_closed():
     assert classify_grc721(source(CANONICAL) * (MAX_TOKEN_SOURCE_FILES + 1)).reason == "file_limit"
-    oversized = CANONICAL + (" " * MAX_TOKEN_SOURCE_BYTES)
-    assert classify_grc721(source(oversized)).reason == "source_limit"
+    assert classify_grc721(source(CANONICAL + (" " * MAX_TOKEN_SOURCE_BYTES))).reason == "source_limit"

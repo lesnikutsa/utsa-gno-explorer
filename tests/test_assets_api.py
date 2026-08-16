@@ -20,7 +20,7 @@ def fixture():
         {"path": rows[0]["path"], "filename": "main.gno", "file_kind": "gno_source",
          "content": 'grc20.NewToken(owner, "Coin", "COIN", 6)'},
         {"path": rows[1]["path"], "filename": "main.gno", "file_kind": "gno_source",
-         "content": 'import "gno.land/p/demo/tokens/grc721"\nvar nft=grc721.NewBasicNFT(0, cur, "Art", "ART")'},
+         "content": 'import "gno.land/p/vendor/grc721"\nvar nft=grc721.NewBasicNFT(0, cur, "Art", "ART")\nfunc OwnerOf() {}\nfunc Mint() {}'},
     ]
     source = {"chain_id": "sapphire-1", "indexed_height": 10, "catalog_observed_height": 9,
               "metadata_observed_height": 9}
