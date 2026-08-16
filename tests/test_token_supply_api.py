@@ -11,10 +11,9 @@ from api.token_supply import TokenSupplyCache, decimal_amount, parse_total_suppl
 PATH = "gno.land/r/demo/token"
 
 
-def directory_result(path=PATH, source='grc20.NewToken("Demo", "DMT", 6, 0, cur)'):
+def exact_result(path=PATH, source='grc20.NewToken("Demo", "DMT", 6, 0, cur)'):
     return {
-        "source": {"chain_id": "sapphire-1"},
-        "candidates": [{"path": path}],
+        "candidate": {"path": path},
         "files": [{"path": path, "filename": "token.gno", "file_kind": "gno_source",
                    "content": source}],
     }
@@ -29,7 +28,7 @@ def configure():
 
 
 def call(result=None):
-    with patch.object(module.database, "fetch_token_candidates", return_value=result or directory_result()), \
+    with patch.object(module.database, "fetch_verified_token_candidate", return_value=result or exact_result()), \
          patch.object(module.database, "fetch_selected_rpc_url", return_value="https://selected.example"), \
          patch.object(module, "query_total_supply", return_value="300000000000000") as query:
         response = module.get_token_supply(PATH)
@@ -46,15 +45,16 @@ def test_verified_token_gets_fixed_runtime_total_supply():
 
 
 def test_arbitrary_or_unverified_realm_is_rejected_before_rpc():
-    with patch.object(module.database, "fetch_token_candidates", return_value=directory_result()), \
+    with patch.object(module.database, "fetch_verified_token_candidate", return_value=None) as verify, \
          patch.object(module, "query_total_supply") as query:
         with pytest.raises(HTTPException) as error:
             module.get_token_supply("gno.land/r/demo/not_a_token")
     assert error.value.status_code == 404
+    verify.assert_called_once_with(chain_id="sapphire-1", path="gno.land/r/demo/not_a_token")
     query.assert_not_called()
 
-    with patch.object(module.database, "fetch_token_candidates",
-                      return_value=directory_result(source="func TotalSupply() uint64 { return 9 }")), \
+    with patch.object(module.database, "fetch_verified_token_candidate",
+                      return_value=exact_result(source="func TotalSupply() uint64 { return 9 }")), \
          patch.object(module, "query_total_supply") as query:
         with pytest.raises(HTTPException) as error:
             module.get_token_supply(PATH)
@@ -62,8 +62,24 @@ def test_arbitrary_or_unverified_realm_is_rejected_before_rpc():
     query.assert_not_called()
 
 
+def test_package_is_rejected_before_database_or_rpc():
+    with patch.object(module.database, "fetch_verified_token_candidate") as verify, \
+         patch.object(module, "query_total_supply") as query:
+        with pytest.raises(HTTPException) as error:
+            module.get_token_supply("gno.land/p/demo/token")
+    assert error.value.status_code == 422
+    verify.assert_not_called()
+    query.assert_not_called()
+
+
+def test_supply_does_not_load_token_directory():
+    with patch.object(module.database, "fetch_token_candidates") as directory:
+        call()
+    directory.assert_not_called()
+
+
 def test_rpc_error_is_explicitly_unavailable_and_not_cached():
-    with patch.object(module.database, "fetch_token_candidates", return_value=directory_result()), \
+    with patch.object(module.database, "fetch_verified_token_candidate", return_value=exact_result()), \
          patch.object(module.database, "fetch_selected_rpc_url", return_value=None), \
          patch.object(module, "query_total_supply", side_effect=TimeoutError) as query:
         first = module.get_token_supply(PATH)
@@ -72,8 +88,21 @@ def test_rpc_error_is_explicitly_unavailable_and_not_cached():
     assert not second.available and query.call_count == 2
 
 
+def test_rpc_error_log_does_not_expose_credential_bearing_url(caplog):
+    secret_url = "https://user:VERY_SECRET@example.invalid/rpc?api_key=ALSO_SECRET"
+    with patch.object(module.database, "fetch_verified_token_candidate", return_value=exact_result()), \
+         patch.object(module.database, "fetch_selected_rpc_url", return_value=secret_url), \
+         patch.object(module, "query_total_supply",
+                      side_effect=RuntimeError(f"request failed for {secret_url}")):
+        response = module.get_token_supply(PATH)
+    assert response.available is False
+    assert "Token TotalSupply RPC query failed" in caplog.text
+    for secret in ("VERY_SECRET", "ALSO_SECRET", secret_url, "request failed for"):
+        assert secret not in caplog.text
+
+
 def test_success_cache_hit_avoids_rpc_and_cache_is_chain_path_scoped():
-    with patch.object(module.database, "fetch_token_candidates", return_value=directory_result()), \
+    with patch.object(module.database, "fetch_verified_token_candidate", return_value=exact_result()), \
          patch.object(module.database, "fetch_selected_rpc_url", return_value="https://rpc.example"), \
          patch.object(module, "query_total_supply", return_value="0") as query:
         assert module.get_token_supply(PATH).total_supply == "0"
