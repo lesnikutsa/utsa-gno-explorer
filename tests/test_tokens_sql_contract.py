@@ -1,7 +1,7 @@
 import inspect
 
 from api.database import (MAX_TOKEN_DIRECTORY_SOURCE_BYTES, TOKEN_DIRECTORY_CANDIDATES_SQL,
-                          TOKEN_DIRECTORY_ACTIVITY_24H_SQL, TOKEN_DIRECTORY_FILES_SQL, TOKEN_DIRECTORY_SOURCE_SQL,
+                          TOKEN_DIRECTORY_ACTIVITY_SQL, TOKEN_DIRECTORY_FILES_SQL, TOKEN_DIRECTORY_SOURCE_SQL,
                           TOKEN_EXACT_CANDIDATE_SQL, TOKEN_EXACT_FILES_SQL, ApiDatabase)
 
 
@@ -51,14 +51,16 @@ def test_activity_checkpoint_comes_from_call_index_through_height():
 
 
 def test_top_activity_is_one_bounded_grouped_query_with_closed_time_boundaries():
-    assert "GROUP BY call.path" in TOKEN_DIRECTORY_ACTIVITY_24H_SQL
-    assert "call.path=ANY(%s::text[])" in TOKEN_DIRECTORY_ACTIVITY_24H_SQL
-    assert "call.block_height BETWEEN %s AND %s" in TOKEN_DIRECTORY_ACTIVITY_24H_SQL
-    assert "block.time_utc >= %s" in TOKEN_DIRECTORY_ACTIVITY_24H_SQL
-    assert "block.time_utc <= %s" in TOKEN_DIRECTORY_ACTIVITY_24H_SQL
-    assert "LEFT JOIN transaction_execution_results result" in TOKEN_DIRECTORY_ACTIVITY_24H_SQL
+    assert "GROUP BY call.path" in TOKEN_DIRECTORY_ACTIVITY_SQL
+    assert "call.path=ANY(%s::text[])" in TOKEN_DIRECTORY_ACTIVITY_SQL
+    assert "call.block_height BETWEEN %s AND %s" in TOKEN_DIRECTORY_ACTIVITY_SQL
+    assert "block.time_utc >= %s" in TOKEN_DIRECTORY_ACTIVITY_SQL
+    assert "block.time_utc <= %s" in TOKEN_DIRECTORY_ACTIVITY_SQL
+    assert "LEFT JOIN transaction_execution_results result" in TOKEN_DIRECTORY_ACTIVITY_SQL
     for status in ("success", "failed"):
-        assert f"result.execution_status='{status}'" in TOKEN_DIRECTORY_ACTIVITY_24H_SQL
-    assert "result.execution_status IS NULL" in TOKEN_DIRECTORY_ACTIVITY_24H_SQL
+        assert f"result.execution_status='{status}'" in TOKEN_DIRECTORY_ACTIVITY_SQL
+    assert "result.execution_status IS NULL" in TOKEN_DIRECTORY_ACTIVITY_SQL
     method = inspect.getsource(ApiDatabase.fetch_token_candidates)
-    assert method.count("cursor.execute(TOKEN_DIRECTORY_ACTIVITY_24H_SQL") == 1
+    assert method.count("cursor.execute(TOKEN_DIRECTORY_ACTIVITY_SQL") == 1
+    assert "checkpoint - timedelta(hours=window_hours)" in method
+    assert "for hours in (24, 168, 720)" in method

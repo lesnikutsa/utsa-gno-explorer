@@ -89,7 +89,7 @@ from api.schemas import (
     TokenDirectoryResponse,
     TokenDirectorySource,
     TokenDirectorySummary,
-    TokenTop24hItem,
+    TokenTopActivityItem,
     NativeTokenResponse,
     TokenSupplyResponse,
     ValidatorListItem,
@@ -115,6 +115,7 @@ _HASH_RE = re.compile(r"^[0-9A-Fa-f]{64}$")
 CALLS_UNAVAILABLE_DETAIL = "Realm call history is not available"
 APPLICATION_WINDOW_UNAVAILABLE_DETAIL = "Realm application activity is not available for this window"
 TOKEN_CANDIDATE_LIMIT = 1000
+TOKEN_ACTIVITY_WINDOWS = {"24h": 24, "7d": 168, "30d": 720}
 
 
 def _active_token_count(source: dict, rows: list[dict]) -> int | None:
@@ -1359,16 +1360,20 @@ def get_realm_calls(
 
 @app.get("/api/tokens", response_model=TokenDirectoryResponse)
 def get_tokens(limit: int = Query(default=50, ge=1, le=100), q: str | None = Query(default=None, min_length=1, max_length=128),
+               activity_window: Literal["24h", "7d", "30d"] = Query(default="24h"),
                before_activity_height: int | None = Query(default=None, ge=-1),
                before_path: str | None = Query(default=None, min_length=1, max_length=256)) -> TokenDirectoryResponse:
     """Return confirmed GRC20 Realm tokens using persisted metadata only."""
     if (before_activity_height is None) != (before_path is None):
         raise HTTPException(status_code=422, detail="both token cursor fields are required")
+    if activity_window not in TOKEN_ACTIVITY_WINDOWS:
+        raise HTTPException(status_code=422, detail="unsupported token activity window")
     search = q.strip().casefold() if q else None
     if q is not None and not search:
         raise HTTPException(status_code=422, detail="q must not be blank")
     try:
         result = database.fetch_token_candidates(chain_id=app.state.api_config.chain_id,
+                                                   window_hours=TOKEN_ACTIVITY_WINDOWS[activity_window],
                                                    candidate_limit=TOKEN_CANDIDATE_LIMIT + 1)
         if result is None:
             raise HTTPException(status_code=404, detail="Token directory is not available yet")
@@ -1411,43 +1416,46 @@ def get_tokens(limit: int = Query(default=50, ge=1, le=100), q: str | None = Que
         items.sort(key=lambda item: (-(item.last_activity_height if item.last_activity_height is not None else -1), item.path))
         page, tail = items[:limit], (items[limit - 1] if len(items) > limit else None)
         active_count = _active_token_count(result["source"], verified_rows)
-        top_24h = None
-        if result.get("activity_24h_available") is True:
+        top_activity = None
+        if result.get("activity_available") is True:
             ranked = []
-            for activity in result.get("activity_24h", []):
+            for activity in result.get("activity", []):
                 verified = verified_by_path.get(activity["path"])
                 if verified is None:
                     continue
                 _, identity = verified
                 key = namespace_key(activity["path"])
-                successful = int(activity["successful_call_count_24h"])
-                failed = int(activity["failed_call_count_24h"])
-                unknown = int(activity["unknown_result_call_count_24h"])
-                direct = int(activity["direct_call_count_24h"])
+                successful = int(activity["successful_call_count"])
+                failed = int(activity["failed_call_count"])
+                unknown = int(activity["unknown_result_call_count"])
+                direct = int(activity["direct_call_count"])
                 if min(successful, failed, unknown) < 0 or successful + failed + unknown != direct:
-                    raise ValueError("malformed token 24H execution counts")
+                    raise ValueError("malformed token activity execution counts")
                 decided = successful + failed
-                ranked.append(TokenTop24hItem(
+                ranked.append(TokenTopActivityItem(
                     path=activity["path"], namespace_key=key,
                     application=dict(REALM_APPLICATION_REGISTRY[key]) if key in REALM_APPLICATION_REGISTRY else None,
                     name=identity.name, symbol=identity.symbol, decimals=identity.decimals,
-                    direct_call_count_24h=direct,
-                    successful_call_count_24h=successful,
-                    failed_call_count_24h=failed,
-                    unknown_result_call_count_24h=unknown,
-                    success_rate_24h=successful / decided if decided else None,
-                    last_activity_height_24h=int(activity["last_activity_height_24h"]),
-                    last_activity_at_24h=isoformat_utc_z(activity["last_activity_at_24h"])))
-            ranked.sort(key=lambda item: (-item.direct_call_count_24h,
-                                          -item.last_activity_height_24h, item.path))
-            top_24h = ranked[:3]
+                    direct_call_count=direct,
+                    successful_call_count=successful,
+                    failed_call_count=failed,
+                    unknown_result_call_count=unknown,
+                    success_rate=successful / decided if decided else None,
+                    last_activity_height=int(activity["last_activity_height"]),
+                    last_activity_at=isoformat_utc_z(activity["last_activity_at"])))
+            ranked.sort(key=lambda item: (-item.direct_call_count,
+                                          -item.last_activity_height, item.path))
+            top_activity = ranked[:3]
         source = result["source"]
+        hour_windows = {24: "24h", 168: "7d", 720: "30d"}
+        available_windows = [hour_windows[hours] for hours in source.get("available_activity_hours", ())]
         metadata_height = source.get("metadata_observed_height")
         return TokenDirectoryResponse(source=TokenDirectorySource(chain_id=source["chain_id"],
             indexed_height=source["indexed_height"], catalog_observed_height=source["catalog_observed_height"],
-            metadata_observed_height=metadata_height),
+            metadata_observed_height=metadata_height, activity_window=activity_window,
+            available_activity_windows=available_windows),
             summary=TokenDirectorySummary(token_count=len(verified_rows), active_24h_count=active_count), items=page,
-            top_24h=top_24h,
+            top_activity=top_activity,
             pagination=TokenDirectoryPagination(next_before_activity_height=(tail.last_activity_height
                 if tail and tail.last_activity_height is not None else (-1 if tail else None)),
                 next_before_path=tail.path if tail else None))

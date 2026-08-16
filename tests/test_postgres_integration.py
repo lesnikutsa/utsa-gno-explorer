@@ -31,7 +31,7 @@ from api.database import (
     REALM_APPLICATION_SOURCE_SQL,
     REALM_APPLICATION_TOP_SQL,
     TOKEN_DIRECTORY_CANDIDATES_SQL,
-    TOKEN_DIRECTORY_ACTIVITY_24H_SQL,
+    TOKEN_DIRECTORY_ACTIVITY_SQL,
     TOKEN_DIRECTORY_FILES_SQL,
     TOKEN_DIRECTORY_SOURCE_SQL,
     TOKEN_EXACT_CANDIDATE_SQL,
@@ -2710,9 +2710,10 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             cursor.execute("DELETE FROM realm_catalog WHERE path='gno.land/r/metadata_demo'")
             cursor.executemany("INSERT INTO blocks(height,block_hash_base64,block_hash_hex,time_utc,tx_count) "
                                "VALUES (%s,%s,%s,%s,0)", (
-                (1, "token-start", "B" * 64, now - timedelta(hours=25)),
+                (1, "token-start", "B" * 64, now - timedelta(days=31)),
                 (2, "token-boundary", "C" * 64, now - timedelta(hours=24)),
                 (3, "token-outside", "D" * 64, now - timedelta(hours=24, seconds=1)),
+                (4, "token-7d-boundary", "F" * 64, now - timedelta(days=7)),
                 (10, "token", "A" * 64, now),
                 (11, "token-after", "E" * 64, now + timedelta(seconds=1)),
             ))
@@ -2726,10 +2727,10 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                   VALUES ('topaz-1',%s,%s,true,true,%s)""", (path, kind, now))
             cursor.executemany("""INSERT INTO transactions(
               block_height,tx_index,raw_base64,raw_base64_length,decode_status
-            ) VALUES (%s,0,'',0,'not_attempted')""", ((2,), (3,), (10,), (11,)))
+            ) VALUES (%s,0,'',0,'not_attempted')""", ((2,), (3,), (4,), (10,), (11,)))
             cursor.executemany("""INSERT INTO realm_call_index(
               chain_id,block_height,tx_index,message_index,path
-            ) VALUES ('topaz-1',%s,0,0,'gno.land/r/tokens/valid')""", ((2,), (3,), (10,), (11,)))
+            ) VALUES ('topaz-1',%s,0,0,'gno.land/r/tokens/valid')""", ((2,), (3,), (4,), (10,), (11,)))
             cursor.executemany("""INSERT INTO transaction_execution_results(
               block_height,tx_index,execution_status,gas_wanted,gas_used,error_text
             ) VALUES (%s,0,%s,100,50,%s)""", (
@@ -2763,14 +2764,14 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             cursor.execute(TOKEN_DIRECTORY_SOURCE_SQL, ("topaz-1",))
             token_source = cursor.fetchone()
             self.assertEqual((token_source[3], token_source[4]), (1, 10))
-            self.assertEqual((token_source[5], token_source[6]), (now - timedelta(hours=25), now))
+            self.assertEqual((token_source[5], token_source[6]), (now - timedelta(days=31), now))
             cursor.execute(TOKEN_DIRECTORY_CANDIDATES_SQL, ("topaz-1", 1001))
             candidates = cursor.fetchall()
             self.assertEqual([row[0] for row in candidates], ["gno.land/r/tokens/valid"])
             cursor.execute(TOKEN_DIRECTORY_FILES_SQL, ("topaz-1", ["gno.land/r/tokens/valid"]))
             files = cursor.fetchall()
             self.assertEqual([(row[0], row[1]) for row in files], [("gno.land/r/tokens/valid", "main.gno")])
-            cursor.execute(TOKEN_DIRECTORY_ACTIVITY_24H_SQL, (
+            cursor.execute(TOKEN_DIRECTORY_ACTIVITY_SQL, (
                 "topaz-1", ["gno.land/r/tokens/valid"], 1, 10,
                 now - timedelta(hours=24), now,
             ))
@@ -2791,6 +2792,10 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         database = ApiDatabase(); database.open(ApiConfig(database_url=url, chain_id="topaz-1")); self.addCleanup(database.close)
         result = database.fetch_token_candidates(chain_id="topaz-1", candidate_limit=1001)
         self.assertEqual([row["path"] for row in result["candidates"]], ["gno.land/r/tokens/valid"])
+        self.assertEqual(result["source"]["available_activity_hours"], (24, 168, 720))
+        seven_day = database.fetch_token_candidates(chain_id="topaz-1", window_hours=168, candidate_limit=1001)
+        self.assertEqual((seven_day["activity"][0]["direct_call_count"],
+                          seven_day["activity"][0]["unknown_result_call_count"]), (4, 2))
         exact_result = database.fetch_verified_token_candidate(
             chain_id="topaz-1", path="gno.land/r/tokens/valid",
         )

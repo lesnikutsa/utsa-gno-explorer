@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { DataTable } from '../components/DataTable'
 import { StatusBadge } from '../components/StatusBadge'
 import { ChangedValue } from '../components/ChangedValue'
@@ -8,6 +9,8 @@ import { formatTokenSupply } from '../utils/tokenSupply'
 import { networkProfile } from '../config/networkProfile'
 
 const formatCount = (value) => Number.isFinite(value) ? value.toLocaleString() : '—'
+const TOKEN_WINDOW_LABELS = { '24h': '24H', '7d': '7D', '30d': '30D' }
+const TOKEN_WINDOW_DESCRIPTIONS = { '24h': 'the last 24 hours', '7d': 'the last 7 days', '30d': 'the last 30 days' }
 
 const columns = (supplies) => [
   { key: 'token', label: 'Token', render: (item) => <a className="tokens-table__token" href={realmDetailHref(item.path)}>
@@ -23,7 +26,10 @@ const columns = (supplies) => [
 ]
 
 export function Tokens({ tokensPage }) {
-  const { items, supplies = {}, summary, top24h, nativeToken, searchInput, appliedSearch, loading, error, setSearchInput, submitSearch, clearSearch, retry, pageIndex, canLoadOlder, loadOlder, loadNewer } = tokensPage
+  const { items, supplies = {}, summary, topActivity, nativeToken, activityWindow, availableActivityWindows,
+    selectActivityWindow, searchInput, appliedSearch, loading, error, setSearchInput, submitSearch,
+    clearSearch, retry, pageIndex, canLoadOlder, loadOlder, loadNewer } = tokensPage
+  const [networkIconFailed, setNetworkIconFailed] = useState(false)
   const native = nativeToken ?? networkProfile.nativeToken
   const empty = error ? 'Tokens are currently unavailable.' : appliedSearch ? `No tokens match “${appliedSearch}”.` : 'No confirmed GRC20 tokens have been indexed yet.'
   return <section className="blocks-page tokens-page" aria-labelledby="tokens-page-title">
@@ -36,7 +42,11 @@ export function Tokens({ tokensPage }) {
     <section className="tokens-native" aria-labelledby="tokens-native-title">
       <h2 id="tokens-native-title">Native Token</h2>
       <div className="panel tokens-native__card">
-        <header className="tokens-native__header"><div><h3>{native.name}</h3><p>Native currency · {networkProfile.networkName}</p></div><StatusBadge tone="neutral">{native.type}</StatusBadge></header>
+        <header className="tokens-native__header"><div className="tokens-native__identity">
+          {networkIconFailed ? <span className="tokens-native__icon-fallback" aria-hidden="true">G</span>
+            : <img className="tokens-native__icon" src={networkProfile.networkIconSrc} alt="" onError={() => setNetworkIconFailed(true)} />}
+          <div><h3>{native.name}</h3><p>Native currency · {networkProfile.networkName}</p></div>
+        </div><StatusBadge tone="neutral">{native.type}</StatusBadge></header>
         <dl className="tokens-native__metrics">
           <div><dt>Total Supply</dt><dd><ChangedValue value={native.available ? native.total_supply : null}>{native.available ? `${formatTokenSupply(native.total_supply)} GNOT` : '—'}</ChangedValue></dd></div>
           <div><dt>Base denom</dt><dd className="mono">{native.base_denom ?? native.baseDenom}</dd></div>
@@ -47,15 +57,19 @@ export function Tokens({ tokensPage }) {
       </div>
     </section>
     <section className="tokens-top" aria-labelledby="tokens-top-title">
-      <div className="tokens-top__heading"><h2 id="tokens-top-title">Top Tokens · 24H</h2><p>Verified GRC20 tokens ranked by direct calls in the last 24 hours.</p></div>
+      <div className="realms-applications__heading tokens-top__heading"><div><h2 id="tokens-top-title">Top Tokens</h2><p className="realms-applications__intro">Verified GRC20 tokens ranked by direct calls in {TOKEN_WINDOW_DESCRIPTIONS[activityWindow]}.</p></div>
+        <div className="realms-applications__windows" aria-label="Token activity window">{Object.entries(TOKEN_WINDOW_LABELS).map(([value, label]) => <button
+          className={activityWindow === value ? 'is-active' : ''} type="button" key={value}
+          aria-pressed={activityWindow === value} disabled={loading || !availableActivityWindows.includes(value)}
+          onClick={() => selectActivityWindow(value)}>{label}</button>)}</div></div>
       {loading ? <div className="panel tokens-top__state">Loading token activity…</div>
         : error ? <div className="panel tokens-top__state">Token activity is currently unavailable.</div>
-        : top24h === null ? <div className="panel tokens-top__state">24H token ranking is unavailable until complete call coverage spans the window.</div>
-        : top24h.length === 0 ? <div className="panel tokens-top__state">No verified token calls in the last 24 hours.</div>
-          : <div className="tokens-top__grid">{top24h.slice(0, 3).map((token) => <a className="panel tokens-top__card" href={realmDetailHref(token.path)} key={token.path}>
+        : topActivity === null ? <div className="panel tokens-top__state">Complete token activity is not available for this period.</div>
+        : topActivity.length === 0 ? <div className="panel tokens-top__state">No verified token calls in {TOKEN_WINDOW_DESCRIPTIONS[activityWindow]}.</div>
+          : <div className="tokens-top__grid">{topActivity.slice(0, 3).map((token) => <a className="panel tokens-top__card" href={realmDetailHref(token.path)} key={token.path}>
             <header className="tokens-top__card-header"><div className="tokens-top__identity"><h3>{token.name} <small>${token.symbol}</small></h3><p className="mono">{token.path}</p></div><StatusBadge tone="neutral">{token.application?.display_name ?? token.namespace_key} · {token.application?.category ?? 'Namespace'}</StatusBadge></header>
-            <dl className="tokens-top__primary"><div><dt>Direct Calls (24H)</dt><dd><ChangedValue value={token.direct_call_count_24h}>{formatCount(token.direct_call_count_24h)}</ChangedValue></dd></div><div><dt>Success (24H)</dt><dd><ChangedValue value={token.success_rate_24h}>{formatSuccessRate(token.success_rate_24h)}</ChangedValue></dd></div></dl>
-            <dl className="tokens-top__metrics"><div><dt className="sr-only">Last activity</dt><dd>Last activity <ChangedValue value={`${token.last_activity_at_24h}|${relativeTime(token.last_activity_at_24h)}`}><time dateTime={token.last_activity_at_24h} title={token.last_activity_at_24h}>{relativeTime(token.last_activity_at_24h)}</time></ChangedValue></dd></div></dl>
+            <dl className="tokens-top__primary"><div><dt>Direct Calls ({TOKEN_WINDOW_LABELS[activityWindow]})</dt><dd><ChangedValue value={token.direct_call_count}>{formatCount(token.direct_call_count)}</ChangedValue></dd></div><div><dt>Success ({TOKEN_WINDOW_LABELS[activityWindow]})</dt><dd><ChangedValue value={token.success_rate}>{formatSuccessRate(token.success_rate)}</ChangedValue></dd></div></dl>
+            <dl className="tokens-top__metrics"><div><dt className="sr-only">Last activity</dt><dd>Last activity <ChangedValue value={`${token.last_activity_at}|${relativeTime(token.last_activity_at)}`}><time dateTime={token.last_activity_at} title={token.last_activity_at}>{relativeTime(token.last_activity_at)}</time></ChangedValue></dd></div></dl>
           </a>)}</div>}
     </section>
     <section className="tokens-directory" aria-labelledby="tokens-directory-title"><h2 id="tokens-directory-title">GRC20 Tokens</h2>

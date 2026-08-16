@@ -3,11 +3,14 @@ import { getNativeToken, getTokens, getTokenSupply } from '../services/api'
 import { TOKENS_BACKGROUND_REQUEST_TIMEOUT_MS } from './useTokensAutoRefresh'
 
 export const PAGE_SIZE = 50
+export const TOKEN_ACTIVITY_WINDOWS = ['24h', '7d', '30d']
 
 export function useTokensPage() {
   const [items, setItems] = useState([])
   const [summary, setSummary] = useState(null)
-  const [top24h, setTop24h] = useState(null)
+  const [topActivity, setTopActivity] = useState(null)
+  const [activityWindow, setActivityWindow] = useState('24h')
+  const [availableActivityWindows, setAvailableActivityWindows] = useState([])
   const [nativeToken, setNativeToken] = useState(null)
   const [searchInput, setSearchInput] = useState('')
   const [appliedSearch, setAppliedSearch] = useState('')
@@ -23,6 +26,7 @@ export function useTokensPage() {
   const failedRequest = useRef(null)
   const foregroundActive = useRef(false)
   const hasData = useRef(false)
+  const currentActivityWindow = useRef('24h')
   const supplyCache = useRef(new Map())
   const [supplies, setSupplies] = useState({})
 
@@ -33,9 +37,10 @@ export function useTokensPage() {
     controller.current = activeController
     const id = ++requestId.current
     foregroundActive.current = true
-    setLoading(true); setItems([]); setSummary(null); setTop24h(null); setError(false)
+    setLoading(true); setItems([]); setSummary(null); setTopActivity(null); setError(false)
     try {
       const response = await getTokens({ limit: PAGE_SIZE, q: request.search,
+        activityWindow: request.activityWindow ?? currentActivityWindow.current,
         beforeActivityHeight: request.cursor?.activityHeight, beforePath: request.cursor?.path,
         signal: activeController.signal })
       if (!mounted.current || id !== requestId.current) return
@@ -43,14 +48,15 @@ export function useTokensPage() {
       const hasNext = pagination.next_before_activity_height !== null && pagination.next_before_activity_height !== undefined
         && pagination.next_before_path !== null && pagination.next_before_path !== undefined
       setItems((response.items ?? []).slice(0, PAGE_SIZE)); setSummary(response.summary ?? null)
-      setTop24h(Array.isArray(response.top_24h) ? response.top_24h.slice(0, 3) : null)
+      setTopActivity(Array.isArray(response.top_activity) ? response.top_activity.slice(0, 3) : null)
+      setAvailableActivityWindows(Array.isArray(response.source?.available_activity_windows) ? response.source.available_activity_windows : [])
       setNextCursor(hasNext ? { activityHeight: pagination.next_before_activity_height, path: pagination.next_before_path } : null)
       setPageIndex(request.targetIndex); if (request.history) setCursorHistory(request.history)
       failedRequest.current = null; setHealthState('healthy')
       hasData.current = true
     } catch (requestError) {
       if (!mounted.current || id !== requestId.current || requestError?.name === 'AbortError') return
-      failedRequest.current = attempted; setItems([]); setSummary(null); setTop24h(null); setError(true); setHealthState('error')
+      failedRequest.current = attempted; setItems([]); setSummary(null); setTopActivity(null); setError(true); setHealthState('error')
     } finally {
       if (id === requestId.current) foregroundActive.current = false
       if (mounted.current && id === requestId.current) setLoading(false)
@@ -67,7 +73,7 @@ export function useTokensPage() {
     const timeout = window.setTimeout(() => { timedOut = true; activeController.abort() }, TOKENS_BACKGROUND_REQUEST_TIMEOUT_MS)
     try {
       const [response, nativeResponse] = await Promise.all([
-        getTokens({ limit: PAGE_SIZE, q: appliedSearch, signal: activeController.signal }),
+        getTokens({ limit: PAGE_SIZE, q: appliedSearch, activityWindow: currentActivityWindow.current, signal: activeController.signal }),
         getNativeToken({ signal: activeController.signal }).catch(() => null),
       ])
       if (!mounted.current || id !== requestId.current) return
@@ -75,7 +81,8 @@ export function useTokensPage() {
       const hasNext = pagination.next_before_activity_height != null && pagination.next_before_path != null
       setItems((response.items ?? []).slice(0, PAGE_SIZE))
       setSummary(response.summary ?? null)
-      setTop24h(Array.isArray(response.top_24h) ? response.top_24h.slice(0, 3) : null)
+      setTopActivity(Array.isArray(response.top_activity) ? response.top_activity.slice(0, 3) : null)
+      setAvailableActivityWindows(Array.isArray(response.source?.available_activity_windows) ? response.source.available_activity_windows : [])
       if (nativeResponse !== null) setNativeToken(nativeResponse)
       setNextCursor(hasNext ? { activityHeight: pagination.next_before_activity_height, path: pagination.next_before_path } : null)
       hasData.current = true; setError(false); setHealthState('healthy')
@@ -89,10 +96,18 @@ export function useTokensPage() {
     }
   }, [appliedSearch])
 
+  const selectActivityWindow = useCallback((nextWindow) => {
+    if (!TOKEN_ACTIVITY_WINDOWS.includes(nextWindow) || nextWindow === currentActivityWindow.current) return
+    currentActivityWindow.current = nextWindow
+    setActivityWindow(nextWindow)
+    loadPage({ cursor: cursorHistory[pageIndex], targetIndex: pageIndex,
+      search: appliedSearch, activityWindow: nextWindow })
+  }, [appliedSearch, cursorHistory, loadPage, pageIndex])
+
   const resetAndLoad = useCallback((search) => {
     const history = [null]
     setCursorHistory(history); setPageIndex(0); setNextCursor(null)
-    loadPage({ cursor: null, targetIndex: 0, history, search })
+    loadPage({ cursor: null, targetIndex: 0, history, search, activityWindow: currentActivityWindow.current })
   }, [loadPage])
   const submitSearch = useCallback((event) => {
     event?.preventDefault(); const search = searchInput.trim()
@@ -102,17 +117,17 @@ export function useTokensPage() {
   const loadOlder = useCallback(() => {
     if (loading || !nextCursor) return
     const history = [...cursorHistory.slice(0, pageIndex + 1), nextCursor]
-    loadPage({ cursor: nextCursor, targetIndex: pageIndex + 1, history, search: appliedSearch })
+    loadPage({ cursor: nextCursor, targetIndex: pageIndex + 1, history, search: appliedSearch, activityWindow: currentActivityWindow.current })
   }, [appliedSearch, cursorHistory, loadPage, loading, nextCursor, pageIndex])
   const loadNewer = useCallback(() => {
     if (loading || pageIndex === 0) return
-    loadPage({ cursor: cursorHistory[pageIndex - 1], targetIndex: pageIndex - 1, search: appliedSearch })
+    loadPage({ cursor: cursorHistory[pageIndex - 1], targetIndex: pageIndex - 1, search: appliedSearch, activityWindow: currentActivityWindow.current })
   }, [appliedSearch, cursorHistory, loadPage, loading, pageIndex])
   const retry = useCallback(() => { if (failedRequest.current) loadPage(failedRequest.current) }, [loadPage])
 
   useEffect(() => {
     mounted.current = true
-    loadPage({ cursor: null, targetIndex: 0, history: [null], search: '' })
+    loadPage({ cursor: null, targetIndex: 0, history: [null], search: '', activityWindow: '24h' })
     return () => { mounted.current = false; requestId.current += 1; controller.current?.abort() }
   }, [loadPage])
 
@@ -150,7 +165,8 @@ export function useTokensPage() {
     return () => activeController.abort()
   }, [items])
 
-  return { items, supplies, summary, top24h, nativeToken, searchInput, appliedSearch, loading, error, healthState, pageIndex,
+  return { items, supplies, summary, topActivity, nativeToken, activityWindow, availableActivityWindows,
+    searchInput, appliedSearch, loading, error, healthState, pageIndex,
     nextCursor, cursorHistory, setSearchInput, submitSearch, clearSearch, retry, loadOlder, loadNewer,
-    refreshInBackground, canLoadOlder: nextCursor !== null }
+    refreshInBackground, selectActivityWindow, canLoadOlder: nextCursor !== null }
 }

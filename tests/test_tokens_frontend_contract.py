@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import subprocess
 
 ROOT = Path(__file__).parents[1]
@@ -26,18 +27,22 @@ def test_native_and_top_24h_are_separate_api_driven_sections():
         assert value in page + profile
     assert "realmDetailHref(networkProfile.nativeToken" not in page
     assert "getTokenSupply(networkProfile.nativeToken" not in hook
-    assert "Top Tokens · 24H" in page and "Direct Calls (24H)" in page
-    assert "Success (24H)" in page and "Last activity" in page
+    assert '>Top Tokens</h2>' in page and "Direct Calls ({TOKEN_WINDOW_LABELS[activityWindow]})" in page
+    assert "Success ({TOKEN_WINDOW_LABELS[activityWindow]})" in page and "Last activity" in page
     assert "tokens-top__rank" not in page and "#{index + 1}" not in page
-    assert "top24h.slice(0, 3)" in page and "realmDetailHref(token.path)" in page
-    assert "response.top_24h" in hook and "response.items" not in hook.split("setTop24h", 1)[1].split("\n", 1)[0]
-    assert "ranking is unavailable" in page and "No verified token calls" in page
+    assert "topActivity.slice(0, 3)" in page and "realmDetailHref(token.path)" in page
+    assert "response.top_activity" in hook and "response.items" not in hook.split("setTopActivity", 1)[1].split("\n", 1)[0]
+    assert "Complete token activity is not available" in page and "No verified token calls" in page
     assert "Loading token activity…" in page
     assert "Token activity is currently unavailable." in page
     activity_render = page.split('<section className="tokens-top"', 1)[1]
-    assert activity_render.index("loading ?") < activity_render.index("error ?") < activity_render.index("top24h === null")
+    assert activity_render.index("loading ?") < activity_render.index("error ?") < activity_render.index("topActivity === null")
     assert 'id="tokens-directory-title">GRC20 Tokens' in page
     assert "Total Supply" in page and "networkProfile.networkName" in page
+    assert "src={networkProfile.networkIconSrc}" in page
+    assert "'/assets/utsa-logo.png'" not in page
+    assert set(("24h", "7d", "30d")) == set(re.findall(r"'((?:24h|7d|30d))': '[^']+'", page))
+    assert "availableActivityWindows.includes(value)" in page
     for forbidden in ("Price", "Market Cap", "TVL", "Holders", "Volume"):
         assert forbidden not in page
 
@@ -74,6 +79,8 @@ def test_tokens_cursor_pagination_and_request_safety_contract():
     assert "Newer entries" in page and "Older entries" in page
     assert "disabled={loading || !canLoadOlder}" in page
     assert "refreshInBackground" in hook and "q: appliedSearch" in hook
+    assert "activityWindow: currentActivityWindow.current" in hook
+    assert "selectActivityWindow" in hook
     assert "setItems([])" not in hook.split("const refreshInBackground", 1)[1].split("const resetAndLoad", 1)[0]
     assert "ChangedValue" in page
 

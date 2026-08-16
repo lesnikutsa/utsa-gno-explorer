@@ -70,8 +70,9 @@ export const getRealms = ({ limit, kind, q, beforeActivityHeight, beforePath, si
   const queryString = query.toString()
   return request(`/realms${queryString ? `?${queryString}` : ''}`, { signal })
 }
-export const getTokens = ({ limit = 50, q, beforeActivityHeight, beforePath, signal } = {}) => {
+export const getTokens = ({ limit = 50, q, activityWindow = '24h', beforeActivityHeight, beforePath, signal } = {}) => {
   const query = new URLSearchParams({ limit })
+  query.set('activity_window', activityWindow)
   const trimmedQuery = typeof q === 'string' ? q.trim() : ''
   if (trimmedQuery) query.set('q', trimmedQuery)
   if (beforeActivityHeight !== undefined && beforePath) {
