@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getTokens } from '../services/api'
+import { getTokens, getTokenSupply } from '../services/api'
 
 export const PAGE_SIZE = 50
 
@@ -18,6 +18,8 @@ export function useTokensPage() {
   const requestId = useRef(0)
   const controller = useRef(null)
   const failedRequest = useRef(null)
+  const supplyCache = useRef(new Map())
+  const [supplies, setSupplies] = useState({})
 
   const loadPage = useCallback(async (request) => {
     const attempted = { ...request, history: request.history ? [...request.history] : undefined }
@@ -73,7 +75,32 @@ export function useTokensPage() {
     return () => { mounted.current = false; requestId.current += 1; controller.current?.abort() }
   }, [loadPage])
 
-  return { items, summary, searchInput, appliedSearch, loading, error, healthState, pageIndex,
+  useEffect(() => {
+    if (!items.length) return undefined
+    const activeController = new AbortController()
+    const pending = items.filter((item) => !supplyCache.current.has(item.path))
+    let cursor = 0
+    const worker = async () => {
+      while (cursor < pending.length && !activeController.signal.aborted) {
+        const item = pending[cursor++]
+        try {
+          const supply = await getTokenSupply(item.path, { signal: activeController.signal })
+          supplyCache.current.set(item.path, supply)
+          setSupplies((current) => ({ ...current, [item.path]: supply }))
+        } catch (supplyError) {
+          if (supplyError?.name === 'AbortError') return
+          setSupplies((current) => ({ ...current, [item.path]: { available: false } }))
+        }
+      }
+    }
+    Promise.all(Array.from({ length: Math.min(4, pending.length) }, worker))
+    const cached = Object.fromEntries(items.flatMap((item) => supplyCache.current.has(item.path)
+      ? [[item.path, supplyCache.current.get(item.path)]] : []))
+    if (Object.keys(cached).length) setSupplies((current) => ({ ...current, ...cached }))
+    return () => activeController.abort()
+  }, [items])
+
+  return { items, supplies, summary, searchInput, appliedSearch, loading, error, healthState, pageIndex,
     nextCursor, cursorHistory, setSearchInput, submitSearch, clearSearch, retry, loadOlder, loadNewer,
     canLoadOlder: nextCursor !== null }
 }

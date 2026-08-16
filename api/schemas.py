@@ -616,6 +616,16 @@ class TokenDirectoryResponse(BaseModel):
     items: list[TokenDirectoryItem] = Field(max_length=100)
     pagination: TokenDirectoryPagination
 
+
+class TokenSupplyResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    path: str = Field(min_length=1, max_length=256)
+    raw_total_supply: str | None = None
+    decimals: int = Field(ge=0, le=30)
+    total_supply: str | None = None
+    symbol: str = Field(min_length=1, max_length=32)
+    available: bool
+
 class RealmRankingSource(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     chain_id: str = Field(min_length=1, max_length=128)

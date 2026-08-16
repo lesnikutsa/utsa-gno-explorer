@@ -245,6 +245,23 @@ class RealmDetailFrontendContractTests(unittest.TestCase):
         self.assertIn("/blocks/${encodeURIComponent(row.block_height)}/transactions/${encodeURIComponent(row.tx_index)}", page)
         self.assertNotIn("CopyButton", page)
 
+    def test_verified_token_summary_is_progressive_and_non_tokens_stay_unchanged(self):
+        page = self.read("frontend/src/pages/RealmDetail.jsx")
+        hook = self.read("frontend/src/hooks/useTokenSupply.js")
+        self.assertIn("const tokenSupply = useTokenSupply(path)", page)
+        self.assertLess(page.index("<TokenSummary"), page.index("<Overview"))
+        self.assertLess(page.index("<Overview"), page.index("<Metadata"))
+        self.assertLess(page.index("<Metadata"), page.index("<RecentCalls"))
+        for fragment in ["Token", "GRC20", "Total Supply", "Decimals", "formatTokenSupply(data.total_supply)"]:
+            self.assertIn(fragment, page)
+        self.assertIn("if (!supply.data) return null", page)
+        self.assertIn("data.available", page)
+        self.assertIn(": '—'", page)
+        self.assertIn("requestError?.status === 404 ? 'notToken' : 'unavailable'", hook)
+        self.assertIn("!path?.startsWith('gno.land/r/')", hook)
+        self.assertIn("AbortController", hook)
+        self.assertIn("id !== requestId.current", hook)
+
 
     def test_source_status_hides_package_call_history_semantics(self):
         values = run_node(

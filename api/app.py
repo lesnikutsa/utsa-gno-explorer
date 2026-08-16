@@ -89,6 +89,7 @@ from api.schemas import (
     TokenDirectoryResponse,
     TokenDirectorySource,
     TokenDirectorySummary,
+    TokenSupplyResponse,
     ValidatorListItem,
     ValidatorSearchItem,
     ValidatorSearchResponse,
@@ -102,6 +103,7 @@ from api.schemas import (
     ValidatorsResponse,
     ValidatorUptime,
 )
+from api.token_supply import decimal_amount, query_total_supply, token_supply_cache
 
 LOGGER = logging.getLogger(__name__)
 UNAVAILABLE_DETAIL = "Explorer database is unavailable"
@@ -1417,6 +1419,52 @@ def get_tokens(limit: int = Query(default=50, ge=1, le=100), q: str | None = Que
         raise
     except Exception:
         LOGGER.exception("Explorer database token directory query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+
+
+def _verified_token_identity(path: str):
+    """Prove exact membership using the same persisted candidates and identity rules as the directory."""
+    result = database.fetch_token_candidates(chain_id=app.state.api_config.chain_id,
+                                               candidate_limit=TOKEN_CANDIDATE_LIMIT + 1)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Token directory is not available yet")
+    candidates = [row for row in result["candidates"] if row["path"] == path]
+    if len(candidates) != 1:
+        raise HTTPException(status_code=404, detail="Verified token not found")
+    files = [file for file in result["files"] if file["path"] == path]
+    identity = extract_token_identity(files)
+    if not identity.verified:
+        raise HTTPException(status_code=404, detail="Verified token not found")
+    return identity
+
+
+@app.get("/api/tokens/supply", response_model=TokenSupplyResponse)
+def get_token_supply(path: str = Query(..., min_length=1, max_length=256)) -> TokenSupplyResponse:
+    """Return runtime TotalSupply for one already verified directory token."""
+    _validate_exact_catalog_path(path, expected_kind="realm")
+    try:
+        identity = _verified_token_identity(path)
+        key = (app.state.api_config.chain_id, path)
+        raw = token_supply_cache.get(key)
+        if raw is None:
+            try:
+                rpc_url = database.fetch_selected_rpc_url(app.state.api_config.chain_id)
+                if rpc_url is None:
+                    rpc_url = next(iter(app.state.api_config.rpc_urls), None)
+                if rpc_url is not None:
+                    raw = query_total_supply(rpc_url=rpc_url, path=path)
+            except Exception:
+                LOGGER.warning("Token TotalSupply RPC query failed", exc_info=True)
+            if raw is not None:
+                token_supply_cache.put(key, raw)
+        available = raw is not None
+        return TokenSupplyResponse(path=path, raw_total_supply=raw, decimals=identity.decimals,
+            total_supply=decimal_amount(raw, identity.decimals) if available else None,
+            symbol=identity.symbol, available=available)
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.exception("Explorer database token verification query failed")
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
 
 @app.get("/api/realms", response_model=RealmCatalogResponse)
