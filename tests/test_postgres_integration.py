@@ -2712,6 +2712,10 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             for path, kind, qfuncs, _has_import, _source in cases:
                 cursor.execute("""INSERT INTO realm_catalog(chain_id,path,path_kind,seen_via_rpc,rpc_visible,last_rpc_seen_at)
                   VALUES ('topaz-1',%s,%s,true,true,%s)""", (path, kind, now))
+            # Production's operator-created API role has read-only access to the
+            # legacy/core tables. Reproduce only those grants in this disposable DB;
+            # later Realm/metadata tables must keep relying on reviewed schema grants.
+            cursor.execute("GRANT SELECT ON public.indexer_state, public.blocks TO utsa_gno_api")
             connection.commit()
         with psycopg.connect(url) as connection:
             for path, kind, qfuncs, _has_import, source in cases:
@@ -2720,6 +2724,14 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                     qfuncs=JsonCapability("ok", json.dumps(qfuncs)))
                 publish_metadata_snapshot(connection, snapshot)
         with psycopg.connect(url) as connection, connection.cursor() as cursor:
+            for table in ("indexer_state", "blocks"):
+                for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE"):
+                    cursor.execute("SELECT has_table_privilege('utsa_gno_api', %s, %s)",
+                                   (f"public.{table}", privilege))
+                    self.assertEqual(cursor.fetchone()[0], privilege == "SELECT")
+            cursor.execute("SELECT has_table_privilege('utsa_gno_api', "
+                           "'public.realm_metadata_refresh_state', 'SELECT')")
+            self.assertFalse(cursor.fetchone()[0])
             cursor.execute("SET ROLE utsa_gno_api")
             cursor.execute(TOKEN_DIRECTORY_SOURCE_SQL, ("topaz-1",)); self.assertIsNotNone(cursor.fetchone())
             cursor.execute(TOKEN_DIRECTORY_CANDIDATES_SQL, ("topaz-1", 1001))
