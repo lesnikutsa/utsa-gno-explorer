@@ -580,6 +580,8 @@ class TokenDirectorySource(BaseModel):
     catalog_observed_height: int = Field(gt=0)
     indexed_height: int = Field(ge=0)
     metadata_observed_height: int | None = Field(default=None, gt=0)
+    activity_window: Literal["24h", "7d", "30d"]
+    available_activity_windows: list[Literal["24h", "7d", "30d"]]
 
 
 class TokenDirectorySummary(BaseModel):
@@ -610,9 +612,38 @@ class TokenDirectoryPagination(BaseModel):
     next_before_path: str | None
 
 
+class TokenTopActivityItem(BaseModel):
+    path: str = Field(min_length=1, max_length=256)
+    namespace_key: str = Field(min_length=1, max_length=256)
+    application: RealmApplicationMetadata | None = None
+    name: str = Field(min_length=1, max_length=128)
+    symbol: str = Field(min_length=1, max_length=32)
+    decimals: int = Field(ge=0, le=30)
+    direct_call_count: int = Field(gt=0)
+    successful_call_count: int = Field(ge=0)
+    failed_call_count: int = Field(ge=0)
+    unknown_result_call_count: int = Field(ge=0)
+    success_rate: float | None = Field(default=None, ge=0, le=1)
+    last_activity_height: int = Field(gt=0)
+    last_activity_at: str
+
+
+class NativeTokenResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    name: Literal["GNOT"]
+    symbol: Literal["GNOT"]
+    type: Literal["Native"]
+    base_denom: Literal["ugnot"]
+    decimals: Literal[6]
+    raw_total_supply: str | None = None
+    total_supply: str | None = None
+    available: bool
+
+
 class TokenDirectoryResponse(BaseModel):
     source: TokenDirectorySource
     summary: TokenDirectorySummary
+    top_activity: list[TokenTopActivityItem] | None = Field(default=None, max_length=3)
     items: list[TokenDirectoryItem] = Field(max_length=100)
     pagination: TokenDirectoryPagination
 

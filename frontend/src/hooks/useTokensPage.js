@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getTokens, getTokenSupply } from '../services/api'
+import { getNativeToken, getTokens, getTokenSupply } from '../services/api'
+import { TOKENS_BACKGROUND_REQUEST_TIMEOUT_MS } from './useTokensAutoRefresh'
 
 export const PAGE_SIZE = 50
+export const TOKEN_ACTIVITY_WINDOWS = ['24h', '7d', '30d']
 
 export function useTokensPage() {
   const [items, setItems] = useState([])
   const [summary, setSummary] = useState(null)
+  const [topActivity, setTopActivity] = useState(null)
+  const [activityWindow, setActivityWindow] = useState('24h')
+  const [availableActivityWindows, setAvailableActivityWindows] = useState([])
+  const [activityLoading, setActivityLoading] = useState(false)
+  const [activityError, setActivityError] = useState(false)
+  const [nativeToken, setNativeToken] = useState(null)
   const [searchInput, setSearchInput] = useState('')
   const [appliedSearch, setAppliedSearch] = useState('')
   const [loading, setLoading] = useState(true)
@@ -18,6 +26,11 @@ export function useTokensPage() {
   const requestId = useRef(0)
   const controller = useRef(null)
   const failedRequest = useRef(null)
+  const foregroundActive = useRef(false)
+  const hasData = useRef(false)
+  const currentActivityWindow = useRef('24h')
+  const activityController = useRef(null)
+  const activityRequestId = useRef(0)
   const supplyCache = useRef(new Map())
   const [supplies, setSupplies] = useState({})
 
@@ -27,9 +40,11 @@ export function useTokensPage() {
     const activeController = new AbortController()
     controller.current = activeController
     const id = ++requestId.current
-    setLoading(true); setItems([]); setSummary(null); setError(false)
+    foregroundActive.current = true
+    setLoading(true); setItems([]); setSummary(null); setTopActivity(null); setError(false)
     try {
       const response = await getTokens({ limit: PAGE_SIZE, q: request.search,
+        activityWindow: request.activityWindow ?? currentActivityWindow.current,
         beforeActivityHeight: request.cursor?.activityHeight, beforePath: request.cursor?.path,
         signal: activeController.signal })
       if (!mounted.current || id !== requestId.current) return
@@ -37,21 +52,93 @@ export function useTokensPage() {
       const hasNext = pagination.next_before_activity_height !== null && pagination.next_before_activity_height !== undefined
         && pagination.next_before_path !== null && pagination.next_before_path !== undefined
       setItems((response.items ?? []).slice(0, PAGE_SIZE)); setSummary(response.summary ?? null)
+      setTopActivity(Array.isArray(response.top_activity) ? response.top_activity.slice(0, 3) : null)
+      setAvailableActivityWindows(Array.isArray(response.source?.available_activity_windows) ? response.source.available_activity_windows : [])
+      setActivityLoading(false); setActivityError(false)
       setNextCursor(hasNext ? { activityHeight: pagination.next_before_activity_height, path: pagination.next_before_path } : null)
       setPageIndex(request.targetIndex); if (request.history) setCursorHistory(request.history)
       failedRequest.current = null; setHealthState('healthy')
+      hasData.current = true
     } catch (requestError) {
       if (!mounted.current || id !== requestId.current || requestError?.name === 'AbortError') return
-      failedRequest.current = attempted; setItems([]); setSummary(null); setError(true); setHealthState('error')
+      failedRequest.current = attempted; setItems([]); setSummary(null); setTopActivity(null); setError(true); setHealthState('error')
     } finally {
+      if (id === requestId.current) foregroundActive.current = false
       if (mounted.current && id === requestId.current) setLoading(false)
     }
   }, [])
 
+  const refreshInBackground = useCallback(async () => {
+    if (foregroundActive.current || controller.current?.background || activityController.current) return
+    const activeController = new AbortController()
+    activeController.background = true
+    controller.current = activeController
+    const id = ++requestId.current
+    let timedOut = false
+    const timeout = window.setTimeout(() => { timedOut = true; activeController.abort() }, TOKENS_BACKGROUND_REQUEST_TIMEOUT_MS)
+    try {
+      const [response, nativeResponse] = await Promise.all([
+        getTokens({ limit: PAGE_SIZE, q: appliedSearch, activityWindow: currentActivityWindow.current, signal: activeController.signal }),
+        getNativeToken({ signal: activeController.signal }).catch(() => null),
+      ])
+      if (!mounted.current || id !== requestId.current) return
+      const pagination = response.pagination ?? {}
+      const hasNext = pagination.next_before_activity_height != null && pagination.next_before_path != null
+      setItems((response.items ?? []).slice(0, PAGE_SIZE))
+      setSummary(response.summary ?? null)
+      setTopActivity(Array.isArray(response.top_activity) ? response.top_activity.slice(0, 3) : null)
+      setAvailableActivityWindows(Array.isArray(response.source?.available_activity_windows) ? response.source.available_activity_windows : [])
+      setActivityError(false)
+      if (nativeResponse !== null) setNativeToken(nativeResponse)
+      setNextCursor(hasNext ? { activityHeight: pagination.next_before_activity_height, path: pagination.next_before_path } : null)
+      hasData.current = true; setError(false); setHealthState('healthy')
+    } catch (requestError) {
+      if (!mounted.current || id !== requestId.current) return
+      if (requestError?.name === 'AbortError' && !timedOut) return
+      if (hasData.current) setHealthState('degraded')
+    } finally {
+      window.clearTimeout(timeout)
+      if (id === requestId.current) controller.current = null
+    }
+  }, [appliedSearch])
+
+  const loadActivityWindow = useCallback(async (nextWindow) => {
+    if (!TOKEN_ACTIVITY_WINDOWS.includes(nextWindow)) return
+    if (controller.current?.background) controller.current.abort()
+    activityController.current?.abort()
+    const activeController = new AbortController()
+    activityController.current = activeController
+    const id = ++activityRequestId.current
+    currentActivityWindow.current = nextWindow
+    setActivityWindow(nextWindow)
+    setTopActivity(null); setActivityLoading(true); setActivityError(false)
+    try {
+      const cursor = cursorHistory[pageIndex]
+      const response = await getTokens({ limit: PAGE_SIZE, q: appliedSearch, activityWindow: nextWindow,
+        beforeActivityHeight: cursor?.activityHeight, beforePath: cursor?.path, signal: activeController.signal })
+      if (!mounted.current || id !== activityRequestId.current || currentActivityWindow.current !== nextWindow) return
+      setTopActivity(Array.isArray(response.top_activity) ? response.top_activity.slice(0, 3) : null)
+      setAvailableActivityWindows(Array.isArray(response.source?.available_activity_windows) ? response.source.available_activity_windows : [])
+    } catch (requestError) {
+      if (!mounted.current || id !== activityRequestId.current || requestError?.name === 'AbortError') return
+      setActivityError(true)
+    } finally {
+      if (id === activityRequestId.current) {
+        activityController.current = null
+        if (mounted.current) setActivityLoading(false)
+      }
+    }
+  }, [appliedSearch, cursorHistory, pageIndex])
+
+  const selectActivityWindow = useCallback((nextWindow) => {
+    if (nextWindow === currentActivityWindow.current) return
+    loadActivityWindow(nextWindow)
+  }, [loadActivityWindow])
+
   const resetAndLoad = useCallback((search) => {
     const history = [null]
     setCursorHistory(history); setPageIndex(0); setNextCursor(null)
-    loadPage({ cursor: null, targetIndex: 0, history, search })
+    loadPage({ cursor: null, targetIndex: 0, history, search, activityWindow: currentActivityWindow.current })
   }, [loadPage])
   const submitSearch = useCallback((event) => {
     event?.preventDefault(); const search = searchInput.trim()
@@ -61,19 +148,29 @@ export function useTokensPage() {
   const loadOlder = useCallback(() => {
     if (loading || !nextCursor) return
     const history = [...cursorHistory.slice(0, pageIndex + 1), nextCursor]
-    loadPage({ cursor: nextCursor, targetIndex: pageIndex + 1, history, search: appliedSearch })
+    loadPage({ cursor: nextCursor, targetIndex: pageIndex + 1, history, search: appliedSearch, activityWindow: currentActivityWindow.current })
   }, [appliedSearch, cursorHistory, loadPage, loading, nextCursor, pageIndex])
   const loadNewer = useCallback(() => {
     if (loading || pageIndex === 0) return
-    loadPage({ cursor: cursorHistory[pageIndex - 1], targetIndex: pageIndex - 1, search: appliedSearch })
+    loadPage({ cursor: cursorHistory[pageIndex - 1], targetIndex: pageIndex - 1, search: appliedSearch, activityWindow: currentActivityWindow.current })
   }, [appliedSearch, cursorHistory, loadPage, loading, pageIndex])
   const retry = useCallback(() => { if (failedRequest.current) loadPage(failedRequest.current) }, [loadPage])
 
   useEffect(() => {
     mounted.current = true
-    loadPage({ cursor: null, targetIndex: 0, history: [null], search: '' })
-    return () => { mounted.current = false; requestId.current += 1; controller.current?.abort() }
+    loadPage({ cursor: null, targetIndex: 0, history: [null], search: '', activityWindow: '24h' })
+    return () => { mounted.current = false; requestId.current += 1; activityRequestId.current += 1;
+      controller.current?.abort(); activityController.current?.abort() }
   }, [loadPage])
+
+  useEffect(() => {
+    if (!mounted.current) return undefined
+    const activeController = new AbortController()
+    getNativeToken({ signal: activeController.signal }).then(setNativeToken).catch((nativeError) => {
+      if (nativeError?.name !== 'AbortError') setNativeToken((current) => current ?? { available: false })
+    })
+    return () => activeController.abort()
+  }, [])
 
   useEffect(() => {
     if (!items.length) return undefined
@@ -100,7 +197,10 @@ export function useTokensPage() {
     return () => activeController.abort()
   }, [items])
 
-  return { items, supplies, summary, searchInput, appliedSearch, loading, error, healthState, pageIndex,
+  return { items, supplies, summary, topActivity, nativeToken, activityWindow, availableActivityWindows,
+    activityLoading, activityError,
+    searchInput, appliedSearch, loading, error, healthState, pageIndex,
     nextCursor, cursorHistory, setSearchInput, submitSearch, clearSearch, retry, loadOlder, loadNewer,
+    refreshInBackground, selectActivityWindow, retryActivity: () => loadActivityWindow(currentActivityWindow.current),
     canLoadOlder: nextCursor !== null }
 }

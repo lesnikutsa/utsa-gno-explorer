@@ -3,6 +3,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import api.app as module
+from fastapi import HTTPException
+import pytest
 
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
 
@@ -26,9 +28,10 @@ def result(**source_overrides):
     source = {"chain_id": "sapphire-1", "indexed_height": 110, "catalog_observed_height": 100,
               "metadata_observed_height": 100, "checkpoint_at": NOW, "call_index_from_height": 1,
               "call_index_through_height": 100, "call_index_coverage_started_at": NOW - timedelta(days=2),
-              "call_index_checkpoint_at": NOW}
+              "call_index_checkpoint_at": NOW, "available_activity_hours": (24,)}
     source.update(source_overrides)
-    return {"source": source, "candidates": candidates, "files": files}
+    return {"source": source, "candidates": candidates, "files": files,
+            "activity_available": True, "activity": []}
 
 
 def setup_module():
@@ -36,10 +39,10 @@ def setup_module():
 
 
 def call(mock_result=None, **kwargs):
-    defaults = {"limit": 50, "q": None, "before_activity_height": None, "before_path": None}
+    defaults = {"limit": 50, "q": None, "activity_window": "24h", "before_activity_height": None, "before_path": None}
     with patch.object(module.database, "fetch_token_candidates", return_value=mock_result or result()) as fetch:
         response = module.get_tokens(**(defaults | kwargs))
-    fetch.assert_called_once_with(chain_id="sapphire-1", candidate_limit=1001)
+    fetch.assert_called_once_with(chain_id="sapphire-1", window_hours=module.TOKEN_ACTIVITY_WINDOWS[kwargs.get("activity_window", "24h")], candidate_limit=1001)
     return response
 
 
@@ -93,3 +96,86 @@ def test_activity_after_checkpoint_and_unverified_candidates_do_not_count():
     helper = next(row for row in data["candidates"] if row["path"].endswith("helper"))
     helper["last_activity_at"] = NOW - timedelta(hours=3)
     assert call(data).summary.active_24h_count == 0
+
+
+def test_top_activity_is_verified_global_and_not_historical_order():
+    data = result()
+    paths = [row["path"] for row in data["candidates"]]
+    data["activity"] = [
+        {"path": paths[0], "direct_call_count": 2, "last_activity_height": 80,
+         "successful_call_count": 1, "failed_call_count": 0, "unknown_result_call_count": 1,
+         "last_activity_at": NOW - timedelta(hours=1)},
+        {"path": paths[1], "direct_call_count": 5, "last_activity_height": 70,
+         "successful_call_count": 3, "failed_call_count": 1, "unknown_result_call_count": 1,
+         "last_activity_at": NOW - timedelta(hours=2)},
+        {"path": paths[3], "direct_call_count": 999, "last_activity_height": 99,
+         "successful_call_count": 999, "failed_call_count": 0, "unknown_result_call_count": 0,
+         "last_activity_at": NOW},
+    ]
+    data["candidates"][0]["call_count"] = 10000
+    response = call(data, q="SOL", before_activity_height=None, before_path=None)
+    assert [item.path for item in response.top_activity] == [paths[1], paths[0]]
+    assert response.top_activity[0].successful_call_count == 3
+    assert response.top_activity[0].failed_call_count == 1
+    assert response.top_activity[0].unknown_result_call_count == 1
+    assert response.top_activity[0].success_rate == .75
+    assert [item.path for item in response.items] == [paths[0]]
+
+
+def test_top_activity_unavailable_empty_and_deterministic_ties():
+    data = result()
+    data["activity_available"] = False
+    assert call(data).top_activity is None
+    data["activity_available"] = True
+    assert call(data).top_activity == []
+    verified_paths = [row["path"] for row in data["candidates"][:3]]
+    data["activity"] = [{"path": path, "direct_call_count": 1,
+                              "last_activity_height": 50,
+                              "successful_call_count": 0, "failed_call_count": 0,
+                              "unknown_result_call_count": 1,
+                              "last_activity_at": NOW - timedelta(hours=1)}
+                             for path in reversed(verified_paths)]
+    assert [item.path for item in call(data).top_activity] == sorted(verified_paths)
+
+
+@pytest.mark.parametrize(("window", "hours"), [("24h", 24), ("7d", 168), ("30d", 720)])
+def test_supported_activity_windows_map_to_one_selected_grouped_query(window, hours):
+    data = result(available_activity_hours=(24, 168, 720))
+    response = call(data, activity_window=window, q="SOL")
+    assert response.source.activity_window == window
+    assert response.source.available_activity_windows == ["24h", "7d", "30d"]
+    assert response.top_activity == []
+
+
+def test_unsupported_activity_window_fails_closed_before_database():
+    with patch.object(module.database, "fetch_token_candidates") as fetch:
+        with pytest.raises(HTTPException) as error:
+            module.get_tokens(limit=50, q=None, activity_window="2d",
+                              before_activity_height=None, before_path=None)
+    assert error.value.status_code == 422
+    fetch.assert_not_called()
+
+
+def test_incomplete_selected_window_is_unavailable_not_partial():
+    data = result(available_activity_hours=(24,))
+    data["activity_available"] = False
+    response = call(data, activity_window="7d")
+    assert response.source.available_activity_windows == ["24h"]
+    assert response.top_activity is None
+
+
+def test_selected_window_changes_global_activity_without_directory_filtering():
+    twenty_four = result(available_activity_hours=(24, 168))
+    seven_day = result(available_activity_hours=(24, 168))
+    path = twenty_four["candidates"][0]["path"]
+    base = {"path": path, "successful_call_count": 1, "failed_call_count": 0,
+            "unknown_result_call_count": 0, "last_activity_height": 90,
+            "last_activity_at": NOW - timedelta(hours=1)}
+    twenty_four["activity"] = [{**base, "direct_call_count": 1}]
+    seven_day["activity"] = [{**base, "direct_call_count": 8,
+                               "successful_call_count": 7, "failed_call_count": 1}]
+    short = call(twenty_four, activity_window="24h", q="UNKNOWN")
+    long = call(seven_day, activity_window="7d", q="UNKNOWN")
+    assert short.items[0].symbol == long.items[0].symbol == "UNK"
+    assert short.top_activity[0].path == long.top_activity[0].path == path
+    assert (short.top_activity[0].direct_call_count, long.top_activity[0].direct_call_count) == (1, 8)

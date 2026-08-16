@@ -13,7 +13,8 @@ export function DataTable({ columns, rows, rowKey, rowClassName, emptyMessage, l
           return (
             <th key={column.key} aria-sort={ariaSort}>
               {column.sortable && onSort ? (
-                <button className={`data-table__sort ${active ? 'is-active' : ''}`} type="button" onClick={() => onSort(column.key, nextDirection)} aria-label={sortLabel} title={column.headerTitle}>
+                <button className={`data-table__sort ${active ? 'is-active' : ''}`} type="button" disabled={column.sortDisabled === true}
+                  onClick={() => onSort(column.key, nextDirection)} aria-label={sortLabel} title={column.headerTitle}>
                   <span>{column.label}</span>
                   <span className="data-table__sort-arrow" aria-hidden="true">{active ? (sortDirection === 'ascending' ? '↑' : '↓') : '↕'}</span>
                 </button>

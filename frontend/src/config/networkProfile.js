@@ -23,6 +23,13 @@ export const networkProfile = Object.freeze({
     import.meta.env.VITE_NATIVE_DENOM,
     'ugnot',
   ),
+  nativeToken: {
+    name: 'GNOT',
+    symbol: 'GNOT',
+    type: 'Native',
+    baseDenom: publicValue(import.meta.env.VITE_NATIVE_DENOM, 'ugnot'),
+    decimals: 6,
+  },
   description: publicValue(
     import.meta.env.VITE_PROJECT_DESCRIPTION,
     'Gno.land is a smart-contract platform built around interpreted Go and transparent on-chain applications. Sapphire is the current public test network tracked by UTSA Explorer.',

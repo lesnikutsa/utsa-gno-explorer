@@ -31,6 +31,7 @@ from api.database import (
     REALM_APPLICATION_SOURCE_SQL,
     REALM_APPLICATION_TOP_SQL,
     TOKEN_DIRECTORY_CANDIDATES_SQL,
+    TOKEN_DIRECTORY_ACTIVITY_SQL,
     TOKEN_DIRECTORY_FILES_SQL,
     TOKEN_DIRECTORY_SOURCE_SQL,
     TOKEN_EXACT_CANDIDATE_SQL,
@@ -2709,8 +2710,12 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             cursor.execute("DELETE FROM realm_catalog WHERE path='gno.land/r/metadata_demo'")
             cursor.executemany("INSERT INTO blocks(height,block_hash_base64,block_hash_hex,time_utc,tx_count) "
                                "VALUES (%s,%s,%s,%s,0)", (
-                (1, "token-start", "B" * 64, now - timedelta(hours=25)),
+                (1, "token-start", "B" * 64, now - timedelta(days=31)),
+                (2, "token-boundary", "C" * 64, now - timedelta(hours=24)),
+                (3, "token-outside", "D" * 64, now - timedelta(hours=24, seconds=1)),
+                (4, "token-7d-boundary", "F" * 64, now - timedelta(days=7)),
                 (10, "token", "A" * 64, now),
+                (11, "token-after", "E" * 64, now + timedelta(seconds=1)),
             ))
             cursor.execute("INSERT INTO indexer_state(state_key,chain_id,last_finalized_height) VALUES ('default','topaz-1',10)")
             cursor.execute("""INSERT INTO realm_catalog_state(chain_id,observed_height,rpc_path_count,refreshed_at)
@@ -2720,6 +2725,18 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             for path, kind, qfuncs, _has_import, _source in cases:
                 cursor.execute("""INSERT INTO realm_catalog(chain_id,path,path_kind,seen_via_rpc,rpc_visible,last_rpc_seen_at)
                   VALUES ('topaz-1',%s,%s,true,true,%s)""", (path, kind, now))
+            cursor.executemany("""INSERT INTO transactions(
+              block_height,tx_index,raw_base64,raw_base64_length,decode_status
+            ) VALUES (%s,0,'',0,'not_attempted')""", ((2,), (3,), (4,), (10,), (11,)))
+            cursor.executemany("""INSERT INTO realm_call_index(
+              chain_id,block_height,tx_index,message_index,path
+            ) VALUES ('topaz-1',%s,0,0,'gno.land/r/tokens/valid')""", ((2,), (3,), (4,), (10,), (11,)))
+            cursor.executemany("""INSERT INTO transaction_execution_results(
+              block_height,tx_index,execution_status,gas_wanted,gas_used,error_text
+            ) VALUES (%s,0,%s,100,50,%s)""", (
+                (2, "success", None),
+                (10, "failed", "synthetic token integration failure"),
+            ))
             # Production's operator-created API role has read-only access to the
             # legacy/core tables. Reproduce only those grants in this disposable DB;
             # later Realm/metadata tables must keep relying on reviewed schema grants.
@@ -2747,13 +2764,20 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             cursor.execute(TOKEN_DIRECTORY_SOURCE_SQL, ("topaz-1",))
             token_source = cursor.fetchone()
             self.assertEqual((token_source[3], token_source[4]), (1, 10))
-            self.assertEqual((token_source[5], token_source[6]), (now - timedelta(hours=25), now))
+            self.assertEqual((token_source[5], token_source[6]), (now - timedelta(days=31), now))
             cursor.execute(TOKEN_DIRECTORY_CANDIDATES_SQL, ("topaz-1", 1001))
             candidates = cursor.fetchall()
             self.assertEqual([row[0] for row in candidates], ["gno.land/r/tokens/valid"])
             cursor.execute(TOKEN_DIRECTORY_FILES_SQL, ("topaz-1", ["gno.land/r/tokens/valid"]))
             files = cursor.fetchall()
             self.assertEqual([(row[0], row[1]) for row in files], [("gno.land/r/tokens/valid", "main.gno")])
+            cursor.execute(TOKEN_DIRECTORY_ACTIVITY_SQL, (
+                "topaz-1", ["gno.land/r/tokens/valid"], 1, 10,
+                now - timedelta(hours=24), now,
+            ))
+            activity = cursor.fetchall()
+            self.assertEqual(activity[0][:6],
+                             ("gno.land/r/tokens/valid", 2, 1, 1, 0, 10))
             cursor.execute(TOKEN_EXACT_CANDIDATE_SQL, ("topaz-1", "gno.land/r/tokens/valid"))
             exact = cursor.fetchone()
             self.assertEqual((exact[0], exact[1]), ("gno.land/r/tokens/valid", 1))
@@ -2768,6 +2792,10 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         database = ApiDatabase(); database.open(ApiConfig(database_url=url, chain_id="topaz-1")); self.addCleanup(database.close)
         result = database.fetch_token_candidates(chain_id="topaz-1", candidate_limit=1001)
         self.assertEqual([row["path"] for row in result["candidates"]], ["gno.land/r/tokens/valid"])
+        self.assertEqual(result["source"]["available_activity_hours"], (24, 168, 720))
+        seven_day = database.fetch_token_candidates(chain_id="topaz-1", window_hours=168, candidate_limit=1001)
+        self.assertEqual((seven_day["activity"][0]["direct_call_count"],
+                          seven_day["activity"][0]["unknown_result_call_count"]), (4, 2))
         exact_result = database.fetch_verified_token_candidate(
             chain_id="topaz-1", path="gno.land/r/tokens/valid",
         )
