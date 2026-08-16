@@ -89,7 +89,7 @@ def classify_grc721(files: list[dict], *, path_kind: str = "realm",
         return GRC721Classification("rejected", "not_realm")
     if len(files) > MAX_TOKEN_SOURCE_FILES:
         return GRC721Classification("rejected", "file_limit")
-    total, sources, aliases = 0, [], set()
+    total, sources = 0, []
     for file in files:
         if file.get("file_kind") != "gno_source" or not str(file.get("filename", "")).endswith(".gno"):
             continue
@@ -99,16 +99,15 @@ def classify_grc721(files: list[dict], *, path_kind: str = "realm",
         total += len(content.encode("utf-8"))
         if total > MAX_TOKEN_SOURCE_BYTES:
             return GRC721Classification("rejected", "source_limit")
-        sources.append(content)
         if content and not _strip_comments(content):
             return GRC721Classification("rejected", "malformed_source")
-        aliases.update(_imports(content))
-    if not aliases:
+        sources.append((content, _imports(content)))
+    if not any(aliases for _, aliases in sources):
         return GRC721Classification("rejected", "official_import_missing")
     if not REQUIRED_FUNCTIONS.issubset(qfunc_names):
         return GRC721Classification("rejected", "canonical_functions_missing")
     identities: list[tuple[str, str]] = []
-    for source in sources:
+    for source, aliases in sources:
         for call in _constructor_calls(source, aliases):
             arguments = _literal_arguments(call)
             if arguments is None or len(arguments) < 2:

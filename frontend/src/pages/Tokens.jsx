@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { DataTable } from '../components/DataTable'
 import { StatusBadge } from '../components/StatusBadge'
 import { ChangedValue } from '../components/ChangedValue'
@@ -59,9 +59,16 @@ export function Tokens({ tokensPage }) {
   const [networkIconFailed, setNetworkIconFailed] = useState(false)
   const [sort, setSort] = useState({ key: 'last_activity_at', direction: 'descending' })
   const suppliesSettled = items.filter((item) => item.standard === 'grc20').every((item) => Object.hasOwn(supplies, item.path))
-  const effectiveSortKey = sort.key === 'total_supply' && !suppliesSettled ? null : sort.key
-  const sortedItems = useMemo(() => sortTokenDirectoryItems(items, effectiveSortKey, sort.direction, supplies),
-    [effectiveSortKey, items, sort.direction, supplies])
+  const supportedSortKeys = assetFilter === 'grc20'
+    ? new Set(['total_supply', 'direct_call_count', 'last_activity_at'])
+    : new Set(['direct_call_count', 'last_activity_at'])
+  const viewSort = supportedSortKeys.has(sort.key) ? sort : { key: 'last_activity_at', direction: 'descending' }
+  const effectiveSortKey = viewSort.key === 'total_supply' && !suppliesSettled ? null : viewSort.key
+  const sortedItems = useMemo(() => sortTokenDirectoryItems(items, effectiveSortKey, viewSort.direction, supplies),
+    [effectiveSortKey, items, supplies, viewSort.direction])
+  useEffect(() => {
+    if (!supportedSortKeys.has(sort.key)) setSort({ key: 'last_activity_at', direction: 'descending' })
+  }, [assetFilter, sort.key])
   const native = nativeToken ?? networkProfile.nativeToken
   const tableColumns = assetFilter === 'grc20' ? grc20Columns(supplies, suppliesSettled) : assetFilter === 'grc721' ? nftColumns : commonColumns
   const empty = error ? 'Assets are currently unavailable.' : appliedSearch ? `No assets match “${appliedSearch}”.` : 'No verified contract assets have been indexed yet.'
@@ -117,7 +124,7 @@ export function Tokens({ tokensPage }) {
       {appliedSearch && <button className="blocks-page__button" type="button" onClick={clearSearch}>Clear</button>}
     </form>
     <div className="panel blocks-page__table tokens-page__table"><DataTable columns={tableColumns} rows={sortedItems} rowKey={(item) => item.path} loading={loading} emptyMessage={empty}
-      sortKey={sort.key} sortDirection={sort.direction} onSort={(key, direction) => setSort({ key, direction })} /></div>
+      sortKey={viewSort.key} sortDirection={viewSort.direction} onSort={(key, direction) => setSort({ key, direction })} /></div>
     <nav className="blocks-pagination" aria-label="Tokens pagination">
       <button className="blocks-page__button" type="button" onClick={loadNewer} disabled={loading || pageIndex === 0}>Newer entries</button>
       <span>{pageIndex === 0 ? 'Latest' : `Page ${pageIndex + 1}`}</span>

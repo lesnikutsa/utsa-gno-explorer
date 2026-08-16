@@ -674,8 +674,15 @@ class AssetDirectorySummary(BaseModel):
     grc721_count: int = Field(ge=0)
 
 
+class AssetDirectorySource(BaseModel):
+    chain_id: str = Field(min_length=1, max_length=128)
+    catalog_observed_height: int = Field(gt=0)
+    indexed_height: int = Field(ge=0)
+    metadata_observed_height: int | None = Field(default=None, gt=0)
+
+
 class AssetDirectoryResponse(BaseModel):
-    source: TokenDirectorySource
+    source: AssetDirectorySource
     summary: AssetDirectorySummary
     items: list[AssetDirectoryItem] = Field(max_length=100)
     pagination: TokenDirectoryPagination

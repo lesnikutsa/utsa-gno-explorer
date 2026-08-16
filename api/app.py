@@ -95,6 +95,7 @@ from api.schemas import (
     TokenSupplyResponse,
     AssetDirectoryItem,
     AssetDirectoryResponse,
+    AssetDirectorySource,
     AssetDirectorySummary,
     ValidatorListItem,
     ValidatorSearchItem,
@@ -1547,10 +1548,9 @@ def get_assets(limit: int = Query(default=50, ge=1, le=100),
         tail = page[-1] if len(visible) > limit else None
         source = result["source"]
         return AssetDirectoryResponse(
-            source=TokenDirectorySource(chain_id=source["chain_id"], indexed_height=source["indexed_height"],
+            source=AssetDirectorySource(chain_id=source["chain_id"], indexed_height=source["indexed_height"],
                 catalog_observed_height=source["catalog_observed_height"],
-                metadata_observed_height=source.get("metadata_observed_height"), activity_window="24h",
-                available_activity_windows=[]),
+                metadata_observed_height=source.get("metadata_observed_height")),
             summary=AssetDirectorySummary(asset_count=counts["grc20"] + counts["grc721"],
                 grc20_count=counts["grc20"], grc721_count=counts["grc721"]),
             items=page, pagination=TokenDirectoryPagination(

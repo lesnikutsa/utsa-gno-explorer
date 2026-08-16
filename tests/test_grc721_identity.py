@@ -9,7 +9,7 @@ def source(body, *, filename="main.gno"):
 
 CANONICAL = '''
 import "gno.land/p/demo/tokens/grc721"
-var collection = grc721.NewBasicNFT(owner, "FooNFT", "FNFT")
+var collection = grc721.NewBasicNFT(0, cur, "FooNFT", "FNFT")
 '''
 
 
@@ -24,6 +24,14 @@ def test_alias_is_supported_but_unrelated_import_and_import_only_fail_closed():
     assert extract_grc721_identity(source(aliased)).verified
     assert classify_grc721(source('import "gno.land/p/demo/other"')).reason == "official_import_missing"
     assert classify_grc721(source('import "gno.land/p/demo/tokens/grc721"')).reason == "constructor_missing"
+
+
+def test_import_aliases_are_file_scoped_and_cross_file_confusion_fails_closed():
+    files = source('import nft "gno.land/p/demo/tokens/grc721"', filename="imports.gno")
+    files += source('var nft = someOtherObject\nvar x = nft.NewBasicNFT(0, cur, "Fake", "FAKE")',
+                    filename="fake.gno")
+    result = classify_grc721(files)
+    assert result.status == "rejected" and result.reason == "constructor_missing"
 
 
 def test_behavior_is_required_and_packages_are_never_collections():

@@ -101,7 +101,7 @@ def test_token_table_uses_existing_sorting_contract_only_for_requested_columns()
     page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
     assert "useMemo" in page and "sortTokenDirectoryItems" in page
     assert "useState({ key: 'last_activity_at', direction: 'descending' })" in page
-    assert "sortKey={sort.key}" in page and "sortDirection={sort.direction}" in page and "onSort=" in page
+    assert "sortKey={viewSort.key}" in page and "sortDirection={viewSort.direction}" in page and "onSort=" in page
     direct = page.split("key: 'direct_call_count'", 1)[1].split("},", 1)[0]
     activity = page.split("key: 'last_activity_at'", 1)[1].split("},", 1)[0]
     supply = page.split("key: 'total_supply'", 1)[1].split("},", 1)[0]
@@ -117,7 +117,7 @@ def test_total_supply_sort_waits_for_terminal_visible_supply_states():
     hook = (ROOT / "frontend/src/hooks/useTokensPage.js").read_text()
     sorter = (ROOT / "frontend/src/utils/tokenDirectory.js").read_text()
     assert "items.filter((item) => item.standard === 'grc20').every((item) => Object.hasOwn(supplies, item.path))" in page
-    assert "sort.key === 'total_supply' && !suppliesSettled ? null : sort.key" in page
+    assert "viewSort.key === 'total_supply' && !suppliesSettled ? null : viewSort.key" in page
     assert "disabled={column.sortDisabled === true}" in table
     assert "BigInt(supply.raw_total_supply)" in sorter and "10n **" in sorter
     total_sort = sorter.split("const exactSupply", 1)[1]
@@ -162,7 +162,7 @@ def test_directory_feedback_does_not_change_polling_supply_or_sorting():
     background = hook.split("const refreshInBackground", 1)[1].split("const resetAndLoad", 1)[0]
     assert "getTokenSupply" not in background
     assert "useState({ key: 'last_activity_at', direction: 'descending' })" in page
-    assert "sortTokenDirectoryItems(items, effectiveSortKey, sort.direction, supplies)" in page
+    assert "sortTokenDirectoryItems(items, effectiveSortKey, viewSort.direction, supplies)" in page
     total_supply = page.split("key: 'total_supply'", 1)[1].split("},", 1)[0]
     assert "ChangedValue" not in total_supply
 
@@ -188,3 +188,14 @@ def test_unified_asset_tabs_and_tables_preserve_navigation_contract():
     assert "token_count', label: 'Total Supply'" not in page
     assert "standard: currentAssetFilter.current" in hook
     assert sidebar.count("label: 'Tokens'") == 1 and "label: 'NFTs'" not in sidebar
+
+
+def test_asset_tabs_clear_hidden_total_supply_sort_but_keep_common_sorts():
+    page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
+    assert "assetFilter === 'grc20'" in page
+    assert "new Set(['total_supply', 'direct_call_count', 'last_activity_at'])" in page
+    assert "new Set(['direct_call_count', 'last_activity_at'])" in page
+    fallback = "{ key: 'last_activity_at', direction: 'descending' }"
+    assert f"supportedSortKeys.has(sort.key) ? sort : {fallback}" in page
+    assert f"if (!supportedSortKeys.has(sort.key)) setSort({fallback})" in page
+    assert "sortKey={viewSort.key} sortDirection={viewSort.direction}" in page

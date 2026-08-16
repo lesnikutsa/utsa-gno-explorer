@@ -20,7 +20,7 @@ def fixture():
         {"path": rows[0]["path"], "filename": "main.gno", "file_kind": "gno_source",
          "content": 'grc20.NewToken(owner, "Coin", "COIN", 6)'},
         {"path": rows[1]["path"], "filename": "main.gno", "file_kind": "gno_source",
-         "content": 'import "gno.land/p/demo/tokens/grc721"\nvar nft=grc721.NewBasicNFT(owner, "Art", "ART")'},
+         "content": 'import "gno.land/p/demo/tokens/grc721"\nvar nft=grc721.NewBasicNFT(0, cur, "Art", "ART")'},
     ]
     source = {"chain_id": "sapphire-1", "indexed_height": 10, "catalog_observed_height": 9,
               "metadata_observed_height": 9}
@@ -43,6 +43,14 @@ def test_all_and_standard_filters_are_verified_and_native_is_absent():
     assert [item.standard for item in call(standard="grc20").items] == ["grc20"]
     nft = call(standard="grc721").items[0]
     assert nft.standard == "grc721" and nft.token_count is None and nft.decimals is None
+
+
+def test_asset_source_has_no_fabricated_activity_window():
+    payload = call().model_dump()
+    assert payload["source"] == {"chain_id": "sapphire-1", "indexed_height": 10,
+                                 "catalog_observed_height": 9, "metadata_observed_height": 9}
+    assert "activity_window" not in payload["source"]
+    assert "available_activity_windows" not in payload["source"]
 
 
 def test_search_is_scoped_and_ordering_is_deterministic():
