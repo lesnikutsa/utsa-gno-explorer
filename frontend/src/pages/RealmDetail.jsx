@@ -8,6 +8,8 @@ import { formatSuccessRate, realmDetailHref } from '../utils/realm'
 import { getRealmDetailViewModel, getRealmSourceStatusParts, realmCallsPageLabel, realmCallsPathForDetail } from '../utils/realmDetail'
 import { useRealmCalls } from '../hooks/useRealmCalls'
 import { useRealmMetadata } from '../hooks/useRealmMetadata'
+import { useTokenSupply } from '../hooks/useTokenSupply'
+import { formatTokenSupply } from '../utils/tokenSupply'
 
 const formatCount = (value) => typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString() : value == null ? '—' : String(value)
 const formatBlock = (value) => value == null ? '—' : <a className="accent-value mono" href={`/blocks/${encodeURIComponent(value)}`} aria-label={`Open block ${value}`}>#{formatCount(value)}</a>
@@ -60,6 +62,21 @@ function Overview({ item, source }) {
     field('Indexed height', formatBlock(source.indexed_height)),
   ].filter(Boolean)
   return <section className="panel realm-detail__section" aria-labelledby="realm-overview-title"><div className="panel__heading"><h2 id="realm-overview-title">Overview</h2></div><dl className="realm-detail__overview">{metrics}</dl></section>
+}
+
+function TokenSummary({ supply }) {
+  if (!supply.data) return null
+  const data = supply.data
+  const totalSupply = data.available
+    ? `${formatTokenSupply(data.total_supply)} ${data.symbol}`
+    : '—'
+  return <section className="panel realm-detail__section realm-detail__token" aria-labelledby="realm-token-title">
+    <div className="panel__heading"><h2 id="realm-token-title">Token</h2><StatusBadge tone="neutral">GRC20</StatusBadge></div>
+    <dl className="realm-detail__overview">
+      {field('Total Supply', <span className="mono">{totalSupply}</span>)}
+      {field('Decimals', data.decimals)}
+    </dl>
+  </section>
 }
 
 const callColumns = [
@@ -133,6 +150,7 @@ function Metadata({ metadata }) {
 
 export function RealmDetail({ path, detailState }) {
   const metadata = useRealmMetadata(path)
+  const tokenSupply = useTokenSupply(path)
   if (!path) return <StatePanel title="Invalid Realm or Package path" message="The path query parameter is required and must be a canonical gno.land/r/... or gno.land/p/... path." />
   if (detailState.loading) return <StatePanel title="Loading Realm or Package details…" />
   if (detailState.notFound) return <StatePanel title="Realm or Package not found" message="This path has not been indexed." />
@@ -153,6 +171,7 @@ export function RealmDetail({ path, detailState }) {
         <h1 id="realm-detail-title" className="mono">{item.path}</h1>
         {item.kind === 'realm' && namespaceKey && <p className="realm-detail__namespace mono">Namespace: {namespaceKey}</p>}
       </header>
+      <TokenSummary supply={tokenSupply} />
       <Overview item={item} source={source} />
       <SourceStatus source={source} item={item} />
       <Metadata metadata={metadata} />

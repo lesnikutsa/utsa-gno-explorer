@@ -49,8 +49,8 @@ def test_tokens_cursor_pagination_and_request_safety_contract():
 
 def test_total_supply_formatting_uses_strings_without_precision_loss():
     script = """import { formatTokenSupply } from './frontend/src/utils/tokenSupply.js';
-const values = ['300000000', '102569491.938420', '184467440737095516161844674407370955161', null];
+const values = ['0', '300000000', '102569491.938420', '184467440737095516161844674407370955161', null];
 console.log(JSON.stringify(values.map(formatTokenSupply)));"""
     result = subprocess.run(["node", "--input-type=module", "--eval", script], cwd=ROOT,
                             check=True, capture_output=True, text=True)
-    assert result.stdout.strip() == '["300,000,000","102,569,491.93842","184,467,440,737,095,516,161,844,674,407,370,955,161","—"]'
+    assert result.stdout.strip() == '["0","300,000,000","102,569,491.93842","184,467,440,737,095,516,161,844,674,407,370,955,161","—"]'
