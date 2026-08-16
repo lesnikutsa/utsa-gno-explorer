@@ -104,7 +104,8 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         hook = self.read("frontend/src/hooks/useTransactionsPage.js")
         self.assertIn("export const TRANSACTIONS_POLL_MS = 5_000", hook)
         self.assertIn("window.setTimeout", hook)
-        self.assertIn("}, TRANSACTIONS_POLL_MS)", hook)
+        self.assertIn("setNextRefreshAt(Date.now() + TRANSACTIONS_POLL_MS)", hook)
+        self.assertIn("Math.max(0, nextRefreshAt - Date.now())", hook)
         self.assertNotIn("setInterval", hook)
         self.assertIn("pageIndexRef.current !== 0", hook)
         self.assertIn("pageIndexRef.current === 0", hook)
@@ -115,7 +116,25 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         self.assertIn("inFlight.current = true", hook)
         self.assertIn("inFlight.current = false", hook)
         finally_section = hook.split("} finally {", 1)[1]
-        self.assertIn("setTimeout", finally_section)
+        self.assertIn("scheduleRefresh()", finally_section)
+
+    def test_latest_refresh_exposes_only_a_scheduled_countdown(self):
+        hook = self.read("frontend/src/hooks/useTransactionsPage.js")
+        app = self.read("frontend/src/App.jsx")
+        self.assertIn("const [nextRefreshAt, setNextRefreshAt] = useState(null)", hook)
+        self.assertIn("setNextRefreshAt(Date.now() + TRANSACTIONS_POLL_MS)", hook)
+        clear_timer = hook.split("const clearRefreshTimer", 1)[1].split("const scheduleRefresh", 1)[0]
+        self.assertIn("setNextRefreshAt(null)", clear_timer)
+        schedule = hook.split("const scheduleRefresh", 1)[1].split("const refreshLatestInBackground", 1)[0]
+        self.assertIn("pageIndexRef.current !== 0", schedule)
+        self.assertIn("document.visibilityState === 'hidden'", schedule)
+        visibility = hook.split("const handleVisibilityChange", 1)[1].split("document.addEventListener", 1)[0]
+        self.assertIn("clearRefreshTimer()", visibility)
+        self.assertIn("nextRefreshAt,", hook.split("return {", 1)[1])
+        transactions_page = app.split("function TransactionsPage", 1)[1].split("function RealmsPage", 1)[0]
+        self.assertIn("transactionsPage.pageIndex === 0 && Boolean(transactionsPage.nextRefreshAt)", transactions_page)
+        self.assertIn("nextFastRefreshAt={transactionsPage.nextRefreshAt}", transactions_page)
+        self.assertIn("showRefreshCountdown={showRefreshCountdown}", transactions_page)
 
     def test_background_and_manual_refresh_preserve_latest_rows_and_cursor_state(self):
         hook = self.read("frontend/src/hooks/useTransactionsPage.js")

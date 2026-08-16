@@ -26,6 +26,7 @@ export function useTransactionsPage() {
   const [nextCursor, setNextCursor] = useState(null)
   const [cursorHistory, setCursorHistory] = useState([null])
   const [pageIndex, setPageIndex] = useState(0)
+  const [nextRefreshAt, setNextRefreshAt] = useState(null)
   const mounted = useRef(false)
   const inFlight = useRef(false)
   const requestId = useRef(0)
@@ -37,6 +38,12 @@ export function useTransactionsPage() {
   const clearRefreshTimer = useCallback(() => {
     if (timerId.current !== null) window.clearTimeout(timerId.current)
     timerId.current = null
+    if (mounted.current) setNextRefreshAt(null)
+  }, [])
+
+  const scheduleRefresh = useCallback(() => {
+    if (!mounted.current || pageIndexRef.current !== 0 || document.visibilityState === 'hidden') return
+    setNextRefreshAt(Date.now() + TRANSACTIONS_POLL_MS)
   }, [])
 
   const refreshLatestInBackground = useCallback(async ({ manual = false } = {}) => {
@@ -69,15 +76,10 @@ export function useTransactionsPage() {
         setBackgroundRefreshing(false)
         setManualRefreshing(false)
         inFlight.current = false
-        if (pageIndexRef.current === 0 && document.visibilityState !== 'hidden') {
-          timerId.current = window.setTimeout(() => {
-            timerId.current = null
-            refreshLatestInBackground()
-          }, TRANSACTIONS_POLL_MS)
-        }
+        scheduleRefresh()
       }
     }
-  }, [clearRefreshTimer])
+  }, [clearRefreshTimer, scheduleRefresh])
 
   const loadPage = useCallback(async (cursor, targetIndex, history) => {
     if (inFlight.current) return false
@@ -117,15 +119,10 @@ export function useTransactionsPage() {
       if (mounted.current && id === requestId.current) {
         setLoading(false)
         inFlight.current = false
-        if (pageIndexRef.current === 0 && document.visibilityState !== 'hidden') {
-          timerId.current = window.setTimeout(() => {
-            timerId.current = null
-            refreshLatestInBackground()
-          }, TRANSACTIONS_POLL_MS)
-        }
+        scheduleRefresh()
       }
     }
-  }, [clearRefreshTimer, refreshLatestInBackground])
+  }, [clearRefreshTimer, refreshLatestInBackground, scheduleRefresh])
 
   const retry = useCallback(() => {
     const request = failedRequest.current
@@ -162,6 +159,18 @@ export function useTransactionsPage() {
     }
   }, [clearRefreshTimer, loadPage, refreshLatestInBackground])
 
+  useEffect(() => {
+    if (!nextRefreshAt || pageIndex !== 0) return undefined
+    timerId.current = window.setTimeout(() => {
+      timerId.current = null
+      refreshLatestInBackground()
+    }, Math.max(0, nextRefreshAt - Date.now()))
+    return () => {
+      if (timerId.current !== null) window.clearTimeout(timerId.current)
+      timerId.current = null
+    }
+  }, [nextRefreshAt, pageIndex, refreshLatestInBackground])
+
   return {
     transactions,
     loading,
@@ -170,6 +179,7 @@ export function useTransactionsPage() {
     error,
     healthState,
     pageIndex,
+    nextRefreshAt,
     canLoadOlder: nextCursor !== null,
     retry,
     refresh,
