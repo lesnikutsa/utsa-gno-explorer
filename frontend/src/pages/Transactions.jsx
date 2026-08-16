@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { DataTable } from '../components/DataTable'
 import { TransactionTypeBadge } from '../components/TransactionTypeBadge'
 import { AdditionalMessageBadge } from '../components/AdditionalMessageBadge'
@@ -58,8 +59,39 @@ const columns = [
 ]
 
 export function Transactions({ transactionsPage }) {
-  const { transactions, loading, error, pageIndex, canLoadOlder, retry, loadOlder, loadNewer } = transactionsPage
+  const previousTransactionIds = useRef(null)
+  const [newTransactionIds, setNewTransactionIds] = useState(new Set())
+  const { transactions, loading, manualRefreshing, error, pageIndex, canLoadOlder, retry, refresh, loadOlder, loadNewer } = transactionsPage
   const emptyMessage = error ? 'Transactions are currently unavailable.' : 'No transactions indexed yet.'
+  const latestMode = pageIndex === 0
+
+  useEffect(() => {
+    if (!latestMode || loading) {
+      previousTransactionIds.current = null
+      setNewTransactionIds(new Set())
+      return undefined
+    }
+    if (error) {
+      setNewTransactionIds(new Set())
+      return undefined
+    }
+
+    const currentIds = transactions.map((transaction) => `${transaction.block_height}:${transaction.index}`)
+    let animationTimer
+    if (previousTransactionIds.current !== null) {
+      const previousIds = new Set(previousTransactionIds.current)
+      const firstExistingIndex = currentIds.findIndex((id) => previousIds.has(id))
+      const leadingIds = currentIds.slice(0, firstExistingIndex === -1 ? currentIds.length : firstExistingIndex)
+      if (leadingIds.length) {
+        setNewTransactionIds(new Set(leadingIds))
+        animationTimer = window.setTimeout(() => setNewTransactionIds(new Set()), 900)
+      }
+    }
+    previousTransactionIds.current = currentIds
+    return () => {
+      if (animationTimer !== undefined) window.clearTimeout(animationTimer)
+    }
+  }, [error, latestMode, loading, transactions])
 
   return (
     <section className="blocks-page transactions-page" aria-labelledby="transactions-page-title">
@@ -67,17 +99,25 @@ export function Transactions({ transactionsPage }) {
         <div>
           <h1 id="transactions-page-title">Transactions</h1>
         </div>
-        {error && <button className="blocks-page__button blocks-page__button--accent" type="button" onClick={retry} disabled={loading}>Retry</button>}
+        {error && transactions.length === 0 ? (
+          <button className="blocks-page__button blocks-page__button--accent" type="button" onClick={retry} disabled={loading}>Retry</button>
+        ) : latestMode ? (
+          <button className="blocks-page__button blocks-page__button--accent" type="button" onClick={refresh} disabled={loading || manualRefreshing}>
+            {manualRefreshing ? 'Refreshing…' : 'Refresh'}
+          </button>
+        ) : null}
       </header>
 
       <div className="panel blocks-page__table transactions-page__table">
-        <DataTable columns={columns} rows={transactions} rowKey={(transaction) => `${transaction.block_height}:${transaction.index}`} loading={loading} emptyMessage={emptyMessage} />
+        <DataTable columns={columns} rows={transactions} rowKey={(transaction) => `${transaction.block_height}:${transaction.index}`}
+          rowClassName={(transaction) => newTransactionIds.size === 0 ? '' : newTransactionIds.has(`${transaction.block_height}:${transaction.index}`) ? 'is-new-row' : 'is-settling-row'}
+          loading={loading} emptyMessage={emptyMessage} />
       </div>
 
       <nav className="blocks-pagination" aria-label="Transactions pagination">
-        <button className="blocks-page__button" type="button" onClick={loadNewer} disabled={loading || pageIndex === 0}>Newer transactions</button>
+        <button className="blocks-page__button" type="button" onClick={loadNewer} disabled={loading || manualRefreshing || pageIndex === 0}>Newer transactions</button>
         <span>{pageIndex === 0 ? 'Latest' : `Page ${pageIndex + 1}`}</span>
-        <button className="blocks-page__button" type="button" onClick={loadOlder} disabled={loading || !canLoadOlder}>Older transactions</button>
+        <button className="blocks-page__button" type="button" onClick={loadOlder} disabled={loading || manualRefreshing || !canLoadOlder}>Older transactions</button>
       </nav>
     </section>
   )

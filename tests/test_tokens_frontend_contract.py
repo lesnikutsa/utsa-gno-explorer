@@ -137,6 +137,36 @@ def test_tokens_auto_refresh_matches_visibility_and_overlap_contract():
     assert "tokensPage.pageIndex === 0" in app
 
 
+def test_directory_metrics_use_existing_changed_value_feedback():
+    page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
+    direct = page.split("key: 'direct_call_count'", 1)[1].split("},", 1)[0]
+    activity = page.split("key: 'last_activity_at'", 1)[1].split("},", 1)[0]
+    assert "<ChangedValue value={item.direct_call_count}>" in direct
+    assert "<LastActivityValue timestamp={item.last_activity_at} />" in activity
+    helper = page.split("const lastActivityChangeValue", 1)[1].split("const TOKEN_WINDOW_LABELS", 1)[0]
+    assert "`${timestamp ?? 'never'}|${label}`" in helper
+    assert "timestamp ? relativeTime(timestamp) : 'Never'" in helper
+    assert "value={lastActivityChangeValue(timestamp, label)}" in helper
+    for existing_value in ("summary?.token_count", "summary?.active_24h_count", "native.available ? native.total_supply : null",
+                           "token.direct_call_count", "token.success_rate"):
+        assert f"value={{{existing_value}}}" in page
+
+
+def test_directory_feedback_does_not_change_polling_supply_or_sorting():
+    page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
+    hook = (ROOT / "frontend/src/hooks/useTokensPage.js").read_text()
+    auto = (ROOT / "frontend/src/hooks/useTokensAutoRefresh.js").read_text()
+    assert "export const TOKENS_POLL_MS = 30_000" in auto
+    assert "setTimeout(runCycle, TOKENS_POLL_MS)" in auto
+    assert "setInterval" not in auto
+    background = hook.split("const refreshInBackground", 1)[1].split("const resetAndLoad", 1)[0]
+    assert "getTokenSupply" not in background
+    assert "useState({ key: 'last_activity_at', direction: 'descending' })" in page
+    assert "sortTokenDirectoryItems(items, effectiveSortKey, sort.direction, supplies)" in page
+    total_supply = page.split("key: 'total_supply'", 1)[1].split("},", 1)[0]
+    assert "ChangedValue" not in total_supply
+
+
 def test_total_supply_formatting_uses_strings_without_precision_loss():
     script = """import { formatTokenSupply } from './frontend/src/utils/tokenSupply.js';
 const values = ['0', '300000000', '102569491.938420', '184467440737095516161844674407370955161', null];

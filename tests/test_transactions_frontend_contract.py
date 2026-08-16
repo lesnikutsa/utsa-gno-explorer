@@ -100,6 +100,67 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         self.assertIn("loadPage(request.cursor, request.targetIndex, request.history)", hook)
         self.assertIn("failedRequest.current = null", hook)
 
+    def test_latest_live_refresh_is_visibility_safe_and_non_overlapping(self):
+        hook = self.read("frontend/src/hooks/useTransactionsPage.js")
+        self.assertIn("export const TRANSACTIONS_POLL_MS = 5_000", hook)
+        self.assertIn("window.setTimeout", hook)
+        self.assertIn("setNextRefreshAt(Date.now() + TRANSACTIONS_POLL_MS)", hook)
+        self.assertIn("Math.max(0, nextRefreshAt - Date.now())", hook)
+        self.assertNotIn("setInterval", hook)
+        self.assertIn("pageIndexRef.current !== 0", hook)
+        self.assertIn("pageIndexRef.current === 0", hook)
+        self.assertIn("document.visibilityState === 'hidden'", hook)
+        self.assertIn("document.visibilityState !== 'hidden'", hook)
+        self.assertIn("visibilitychange", hook)
+        self.assertIn("if (inFlight.current", hook)
+        self.assertIn("inFlight.current = true", hook)
+        self.assertIn("inFlight.current = false", hook)
+        finally_section = hook.split("} finally {", 1)[1]
+        self.assertIn("scheduleRefresh()", finally_section)
+
+    def test_latest_refresh_exposes_only_a_scheduled_countdown(self):
+        hook = self.read("frontend/src/hooks/useTransactionsPage.js")
+        app = self.read("frontend/src/App.jsx")
+        self.assertIn("const [nextRefreshAt, setNextRefreshAt] = useState(null)", hook)
+        self.assertIn("setNextRefreshAt(Date.now() + TRANSACTIONS_POLL_MS)", hook)
+        clear_timer = hook.split("const clearRefreshTimer", 1)[1].split("const scheduleRefresh", 1)[0]
+        self.assertIn("setNextRefreshAt(null)", clear_timer)
+        schedule = hook.split("const scheduleRefresh", 1)[1].split("const refreshLatestInBackground", 1)[0]
+        self.assertIn("pageIndexRef.current !== 0", schedule)
+        self.assertIn("document.visibilityState === 'hidden'", schedule)
+        visibility = hook.split("const handleVisibilityChange", 1)[1].split("document.addEventListener", 1)[0]
+        self.assertIn("clearRefreshTimer()", visibility)
+        self.assertIn("nextRefreshAt,", hook.split("return {", 1)[1])
+        transactions_page = app.split("function TransactionsPage", 1)[1].split("function RealmsPage", 1)[0]
+        self.assertIn("transactionsPage.pageIndex === 0 && Boolean(transactionsPage.nextRefreshAt)", transactions_page)
+        self.assertIn("nextFastRefreshAt={transactionsPage.nextRefreshAt}", transactions_page)
+        self.assertIn("showRefreshCountdown={showRefreshCountdown}", transactions_page)
+
+    def test_background_and_manual_refresh_preserve_latest_rows_and_cursor_state(self):
+        hook = self.read("frontend/src/hooks/useTransactionsPage.js")
+        background = hook.split("const refreshLatestInBackground", 1)[1].split("const loadPage", 1)[0]
+        self.assertIn("getTransactions({ limit: PAGE_SIZE })", background)
+        self.assertIn("setTransactions(rows)", background)
+        self.assertIn("setNextCursor(cursorFromResponse(response))", background)
+        for forbidden in ("setTransactions([])", "setLoading(true)", "setPageIndex(", "setCursorHistory("):
+            self.assertNotIn(forbidden, background)
+        self.assertIn("setHealthState(transactionsRef.current.length ? 'degraded' : 'error')", background)
+        self.assertIn("setHealthState('healthy')", background)
+        self.assertIn("refreshLatestInBackground({ manual: true })", hook)
+        self.assertIn("setManualRefreshing(manual)", background)
+
+    def test_latest_refresh_controls_and_multiple_row_highlights(self):
+        page = self.read("frontend/src/pages/Transactions.jsx")
+        self.assertIn("latestMode ? (", page)
+        self.assertIn("manualRefreshing ? 'Refreshing…' : 'Refresh'", page)
+        self.assertIn("error && transactions.length === 0", page)
+        self.assertIn("previousTransactionIds = useRef(null)", page)
+        self.assertIn("const leadingIds = currentIds.slice", page)
+        self.assertIn("new Set(leadingIds)", page)
+        self.assertIn("'is-new-row' : 'is-settling-row'", page)
+        self.assertIn("if (!latestMode || loading)", page)
+        self.assertIn("previousTransactionIds.current = null", page)
+
     def test_six_column_transaction_table_and_links(self):
         page = self.read("frontend/src/pages/Transactions.jsx")
         labels = ("label: 'Type'", "label: 'TX Hash'", "label: 'Time'", "label: 'Block'", "label: 'Status'", "label: 'Gas Used'")
@@ -131,8 +192,8 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         badge = self.read("frontend/src/components/TransactionTypeBadge.jsx")
         for text in ("Loading", "No transactions indexed yet.", "Transactions are currently unavailable.", "Retry", "Newer transactions", "Older transactions"):
             self.assertIn(text, page + self.read("frontend/src/components/DataTable.jsx"))
-        self.assertIn("disabled={loading || pageIndex === 0}", page)
-        self.assertIn("disabled={loading || !canLoadOlder}", page)
+        self.assertIn("disabled={loading || manualRefreshing || pageIndex === 0}", page)
+        self.assertIn("disabled={loading || manualRefreshing || !canLoadOlder}", page)
         self.assertIn("pageIndex === 0 ? 'Latest' : `Page ${pageIndex + 1}`", page)
         transactions_rules = styles[styles.index(".transactions-page {"):styles.index(".transaction-type-badge")]
         self.assertIn(".table-scroll { overflow-x: auto; }", styles)

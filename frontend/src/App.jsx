@@ -90,9 +90,10 @@ function TransactionDetailPage({ height, index }) {
 
 function TransactionsPage() {
   const transactionsPage = useTransactionsPage()
+  const showRefreshCountdown = transactionsPage.pageIndex === 0 && Boolean(transactionsPage.nextRefreshAt)
 
   return (
-    <ExplorerLayout healthState={transactionsPage.healthState} showRefreshCountdown={false}>
+    <ExplorerLayout healthState={transactionsPage.healthState} nextFastRefreshAt={transactionsPage.nextRefreshAt} showRefreshCountdown={showRefreshCountdown}>
       <Transactions transactionsPage={transactionsPage} />
     </ExplorerLayout>
   )
