@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getNativeToken, getTokens, getTokenSupply } from '../services/api'
+import { getAssets, getNativeToken, getTokens, getTokenSupply } from '../services/api'
 import { TOKENS_BACKGROUND_REQUEST_TIMEOUT_MS } from './useTokensAutoRefresh'
 
 export const PAGE_SIZE = 50
@@ -7,6 +7,8 @@ export const TOKEN_ACTIVITY_WINDOWS = ['24h', '7d', '30d']
 
 export function useTokensPage() {
   const [items, setItems] = useState([])
+  const [assetFilter, setAssetFilter] = useState('all')
+  const currentAssetFilter = useRef('all')
   const [summary, setSummary] = useState(null)
   const [topActivity, setTopActivity] = useState(null)
   const [activityWindow, setActivityWindow] = useState('24h')
@@ -43,17 +45,20 @@ export function useTokensPage() {
     foregroundActive.current = true
     setLoading(true); setItems([]); setSummary(null); setTopActivity(null); setError(false)
     try {
-      const response = await getTokens({ limit: PAGE_SIZE, q: request.search,
-        activityWindow: request.activityWindow ?? currentActivityWindow.current,
-        beforeActivityHeight: request.cursor?.activityHeight, beforePath: request.cursor?.path,
-        signal: activeController.signal })
+      const [response, tokenResponse] = await Promise.all([
+        getAssets({ limit: PAGE_SIZE, q: request.search, standard: request.standard ?? currentAssetFilter.current,
+          beforeActivityHeight: request.cursor?.activityHeight, beforePath: request.cursor?.path,
+          signal: activeController.signal }),
+        getTokens({ limit: 3, activityWindow: request.activityWindow ?? currentActivityWindow.current,
+          signal: activeController.signal }),
+      ])
       if (!mounted.current || id !== requestId.current) return
       const pagination = response.pagination ?? {}
       const hasNext = pagination.next_before_activity_height !== null && pagination.next_before_activity_height !== undefined
         && pagination.next_before_path !== null && pagination.next_before_path !== undefined
       setItems((response.items ?? []).slice(0, PAGE_SIZE)); setSummary(response.summary ?? null)
-      setTopActivity(Array.isArray(response.top_activity) ? response.top_activity.slice(0, 3) : null)
-      setAvailableActivityWindows(Array.isArray(response.source?.available_activity_windows) ? response.source.available_activity_windows : [])
+      setTopActivity(Array.isArray(tokenResponse.top_activity) ? tokenResponse.top_activity.slice(0, 3) : null)
+      setAvailableActivityWindows(Array.isArray(tokenResponse.source?.available_activity_windows) ? tokenResponse.source.available_activity_windows : [])
       setActivityLoading(false); setActivityError(false)
       setNextCursor(hasNext ? { activityHeight: pagination.next_before_activity_height, path: pagination.next_before_path } : null)
       setPageIndex(request.targetIndex); if (request.history) setCursorHistory(request.history)
@@ -77,8 +82,9 @@ export function useTokensPage() {
     let timedOut = false
     const timeout = window.setTimeout(() => { timedOut = true; activeController.abort() }, TOKENS_BACKGROUND_REQUEST_TIMEOUT_MS)
     try {
-      const [response, nativeResponse] = await Promise.all([
-        getTokens({ limit: PAGE_SIZE, q: appliedSearch, activityWindow: currentActivityWindow.current, signal: activeController.signal }),
+      const [response, tokenResponse, nativeResponse] = await Promise.all([
+        getAssets({ limit: PAGE_SIZE, q: appliedSearch, standard: currentAssetFilter.current, signal: activeController.signal }),
+        getTokens({ limit: 3, activityWindow: currentActivityWindow.current, signal: activeController.signal }),
         getNativeToken({ signal: activeController.signal }).catch(() => null),
       ])
       if (!mounted.current || id !== requestId.current) return
@@ -86,8 +92,8 @@ export function useTokensPage() {
       const hasNext = pagination.next_before_activity_height != null && pagination.next_before_path != null
       setItems((response.items ?? []).slice(0, PAGE_SIZE))
       setSummary(response.summary ?? null)
-      setTopActivity(Array.isArray(response.top_activity) ? response.top_activity.slice(0, 3) : null)
-      setAvailableActivityWindows(Array.isArray(response.source?.available_activity_windows) ? response.source.available_activity_windows : [])
+      setTopActivity(Array.isArray(tokenResponse.top_activity) ? tokenResponse.top_activity.slice(0, 3) : null)
+      setAvailableActivityWindows(Array.isArray(tokenResponse.source?.available_activity_windows) ? tokenResponse.source.available_activity_windows : [])
       setActivityError(false)
       if (nativeResponse !== null) setNativeToken(nativeResponse)
       setNextCursor(hasNext ? { activityHeight: pagination.next_before_activity_height, path: pagination.next_before_path } : null)
@@ -135,16 +141,20 @@ export function useTokensPage() {
     loadActivityWindow(nextWindow)
   }, [loadActivityWindow])
 
-  const resetAndLoad = useCallback((search) => {
+  const resetAndLoad = useCallback((search, standard = currentAssetFilter.current) => {
     const history = [null]
     setCursorHistory(history); setPageIndex(0); setNextCursor(null)
-    loadPage({ cursor: null, targetIndex: 0, history, search, activityWindow: currentActivityWindow.current })
+    loadPage({ cursor: null, targetIndex: 0, history, search, standard, activityWindow: currentActivityWindow.current })
   }, [loadPage])
   const submitSearch = useCallback((event) => {
     event?.preventDefault(); const search = searchInput.trim()
     setSearchInput(search); setAppliedSearch(search); resetAndLoad(search)
   }, [resetAndLoad, searchInput])
   const clearSearch = useCallback(() => { setSearchInput(''); setAppliedSearch(''); resetAndLoad('') }, [resetAndLoad])
+  const selectAssetFilter = useCallback((standard) => {
+    if (!['all', 'grc20', 'grc721'].includes(standard) || standard === currentAssetFilter.current) return
+    currentAssetFilter.current = standard; setAssetFilter(standard); resetAndLoad(appliedSearch, standard)
+  }, [appliedSearch, resetAndLoad])
   const loadOlder = useCallback(() => {
     if (loading || !nextCursor) return
     const history = [...cursorHistory.slice(0, pageIndex + 1), nextCursor]
@@ -175,7 +185,7 @@ export function useTokensPage() {
   useEffect(() => {
     if (!items.length) return undefined
     const activeController = new AbortController()
-    const pending = items.filter((item) => !supplyCache.current.has(item.path))
+    const pending = items.filter((item) => item.standard === 'grc20' && !supplyCache.current.has(item.path))
     let cursor = 0
     const worker = async () => {
       while (cursor < pending.length && !activeController.signal.aborted) {
@@ -197,7 +207,7 @@ export function useTokensPage() {
     return () => activeController.abort()
   }, [items])
 
-  return { items, supplies, summary, topActivity, nativeToken, activityWindow, availableActivityWindows,
+  return { items, supplies, summary, topActivity, nativeToken, activityWindow, availableActivityWindows, assetFilter, selectAssetFilter,
     activityLoading, activityError,
     searchInput, appliedSearch, loading, error, healthState, pageIndex,
     nextCursor, cursorHistory, setSearchInput, submitSearch, clearSearch, retry, loadOlder, loadNewer,

@@ -21,7 +21,7 @@ function LastActivityValue({ timestamp }) {
 const TOKEN_WINDOW_LABELS = { '24h': '24H', '7d': '7D', '30d': '30D' }
 const TOKEN_WINDOW_DESCRIPTIONS = { '24h': 'the last 24 hours', '7d': 'the last 7 days', '30d': 'the last 30 days' }
 
-const columns = (supplies, suppliesSettled) => [
+const grc20Columns = (supplies, suppliesSettled) => [
   { key: 'token', label: 'Token', render: (item) => <a className="tokens-table__token" href={realmDetailHref(item.path)}>
     <span className="tokens-table__identity">{item.identity_verified ? item.name : item.path.split('/').at(-1)}
       {item.identity_verified && item.symbol ? <small>${item.symbol}</small> : null}</span>
@@ -36,25 +36,41 @@ const columns = (supplies, suppliesSettled) => [
   { key: 'rpc_visible', label: 'Visibility', render: (item) => item.rpc_visible ? <StatusBadge tone="success">Visible</StatusBadge> : <StatusBadge tone="neutral">Historical</StatusBadge> },
 ]
 
+const assetIdentity = (item, label = 'tokens-table__token') => <a className={label} href={realmDetailHref(item.path)}>
+  <span className="tokens-table__identity">{item.name}<small>${item.symbol}</small></span>
+  <span className="tokens-table__path mono">{item.path}</span></a>
+const commonColumns = [
+  { key: 'asset', label: 'Asset', render: (item) => assetIdentity(item) },
+  { key: 'standard', label: 'Standard', render: (item) => <StatusBadge tone="neutral">{item.standard.toUpperCase()}</StatusBadge> },
+  { key: 'application', label: 'App', render: (item) => <span className="tokens-table__app"><strong>{item.application?.display_name ?? item.namespace_key}</strong><small>{item.application?.category ?? 'Namespace'}</small></span> },
+  { key: 'direct_call_count', label: 'Direct Calls', sortable: true, defaultSortDirection: 'descending', render: (item) => <ChangedValue value={item.direct_call_count}>{formatCount(item.direct_call_count)}</ChangedValue> },
+  { key: 'last_activity_at', label: 'Last Activity', sortable: true, defaultSortDirection: 'descending', render: (item) => <LastActivityValue timestamp={item.last_activity_at} /> },
+  { key: 'rpc_visible', label: 'Visibility', render: (item) => item.rpc_visible ? <StatusBadge tone="success">Visible</StatusBadge> : <StatusBadge tone="neutral">Historical</StatusBadge> },
+]
+const nftColumns = commonColumns.filter((column) => column.key !== 'standard').map((column) =>
+  column.key === 'asset' ? { ...column, key: 'collection', label: 'Collection' } : column)
+nftColumns.splice(2, 0, { key: 'token_count', label: 'NFTs', render: (item) => item.token_count ?? '—' })
+
 export function Tokens({ tokensPage }) {
   const { items, supplies = {}, summary, topActivity, nativeToken, activityWindow, availableActivityWindows,
     selectActivityWindow, searchInput, appliedSearch, loading, error, setSearchInput, submitSearch,
-    clearSearch, retry, pageIndex, canLoadOlder, loadOlder, loadNewer } = tokensPage
+    clearSearch, retry, pageIndex, canLoadOlder, loadOlder, loadNewer, assetFilter, selectAssetFilter } = tokensPage
   const { activityLoading, activityError, retryActivity } = tokensPage
   const [networkIconFailed, setNetworkIconFailed] = useState(false)
   const [sort, setSort] = useState({ key: 'last_activity_at', direction: 'descending' })
-  const suppliesSettled = items.every((item) => Object.hasOwn(supplies, item.path))
+  const suppliesSettled = items.filter((item) => item.standard === 'grc20').every((item) => Object.hasOwn(supplies, item.path))
   const effectiveSortKey = sort.key === 'total_supply' && !suppliesSettled ? null : sort.key
   const sortedItems = useMemo(() => sortTokenDirectoryItems(items, effectiveSortKey, sort.direction, supplies),
     [effectiveSortKey, items, sort.direction, supplies])
   const native = nativeToken ?? networkProfile.nativeToken
-  const empty = error ? 'Tokens are currently unavailable.' : appliedSearch ? `No tokens match “${appliedSearch}”.` : 'No confirmed GRC20 tokens have been indexed yet.'
+  const tableColumns = assetFilter === 'grc20' ? grc20Columns(supplies, suppliesSettled) : assetFilter === 'grc721' ? nftColumns : commonColumns
+  const empty = error ? 'Assets are currently unavailable.' : appliedSearch ? `No assets match “${appliedSearch}”.` : 'No verified contract assets have been indexed yet.'
   return <section className="blocks-page tokens-page" aria-labelledby="tokens-page-title">
     <header className="blocks-page__header tokens-page__header"><h1 id="tokens-page-title">Tokens</h1>
       {error && <button className="blocks-page__button blocks-page__button--accent" onClick={retry}>Retry</button>}</header>
     <div className="status-grid tokens-page__summary">
-      <div className="panel tokens-page__metric"><span>GRC20 Tokens</span><strong><ChangedValue value={summary?.token_count}>{formatCount(summary?.token_count)}</ChangedValue></strong></div>
-      <div className="panel tokens-page__metric"><span>Active 24H</span><strong><ChangedValue value={summary?.active_24h_count}>{formatCount(summary?.active_24h_count)}</ChangedValue></strong></div>
+      <div className="panel tokens-page__metric"><span>GRC20 Tokens</span><strong><ChangedValue value={summary?.grc20_count}>{formatCount(summary?.grc20_count)}</ChangedValue></strong></div>
+      <div className="panel tokens-page__metric"><span>NFT Collections</span><strong><ChangedValue value={summary?.grc721_count}>{formatCount(summary?.grc721_count)}</ChangedValue></strong></div>
     </div>
     <section className="tokens-native" aria-labelledby="tokens-native-title">
       <h2 id="tokens-native-title">Native Token</h2>
@@ -89,13 +105,18 @@ export function Tokens({ tokensPage }) {
             <dl className="tokens-top__metrics"><div><dt className="sr-only">Last activity</dt><dd>Last activity <ChangedValue value={`${token.last_activity_at}|${relativeTime(token.last_activity_at)}`}><time dateTime={token.last_activity_at} title={token.last_activity_at}>{relativeTime(token.last_activity_at)}</time></ChangedValue></dd></div></dl>
           </a>)}</div>}
     </section>
-    <section className="tokens-directory" aria-labelledby="tokens-directory-title"><h2 id="tokens-directory-title">GRC20 Tokens</h2>
+    <section className="tokens-directory" aria-labelledby="tokens-directory-title"><h2 id="tokens-directory-title">Contract Assets</h2>
+    <div className="realms-page__filters" aria-label="Asset standard filters">
+      {[['all', 'All', summary?.asset_count], ['grc20', 'GRC20 Tokens', summary?.grc20_count], ['grc721', 'NFTs', summary?.grc721_count]].map(([value, label, count]) => <button
+        className={`realms-page__filter ${assetFilter === value ? 'is-active' : ''}`} type="button" key={value}
+        aria-pressed={assetFilter === value} onClick={() => selectAssetFilter(value)}>{label}<small>{formatCount(count)}</small></button>)}
+    </div>
     <form className="tokens-page__search" onSubmit={submitSearch}>
-      <input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search token name, symbol or realm path..." aria-label="Search tokens" />
+      <input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search asset name, symbol or realm path..." aria-label="Search assets" />
       <button className="blocks-page__button" type="submit">Search</button>
       {appliedSearch && <button className="blocks-page__button" type="button" onClick={clearSearch}>Clear</button>}
     </form>
-    <div className="panel blocks-page__table tokens-page__table"><DataTable columns={columns(supplies, suppliesSettled)} rows={sortedItems} rowKey={(item) => item.path} loading={loading} emptyMessage={empty}
+    <div className="panel blocks-page__table tokens-page__table"><DataTable columns={tableColumns} rows={sortedItems} rowKey={(item) => item.path} loading={loading} emptyMessage={empty}
       sortKey={sort.key} sortDirection={sort.direction} onSort={(key, direction) => setSort({ key, direction })} /></div>
     <nav className="blocks-pagination" aria-label="Tokens pagination">
       <button className="blocks-page__button" type="button" onClick={loadNewer} disabled={loading || pageIndex === 0}>Newer entries</button>

@@ -1,8 +1,16 @@
 import inspect
 
-from api.database import (MAX_TOKEN_DIRECTORY_SOURCE_BYTES, TOKEN_DIRECTORY_CANDIDATES_SQL,
+from api.database import (ASSET_DIRECTORY_CANDIDATES_SQL, MAX_TOKEN_DIRECTORY_SOURCE_BYTES, TOKEN_DIRECTORY_CANDIDATES_SQL,
                           TOKEN_DIRECTORY_ACTIVITY_SQL, TOKEN_DIRECTORY_FILES_SQL, TOKEN_DIRECTORY_SOURCE_SQL,
                           TOKEN_EXACT_CANDIDATE_SQL, TOKEN_EXACT_FILES_SQL, ApiDatabase)
+
+
+def test_asset_discovery_adds_strict_grc721_without_changing_grc20_contract():
+    assert "gno.land/p/demo/tokens/grc721" in ASSET_DIRECTORY_CANDIDATES_SQL
+    for name in ("BalanceOf", "OwnerOf", "TransferFrom"):
+        assert f'[{chr(123)}"FuncName":"{name}"{chr(125)}]' in ASSET_DIRECTORY_CANDIDATES_SQL
+    assert "TokenCount" not in ASSET_DIRECTORY_CANDIDATES_SQL
+    assert "path_kind='realm'" in ASSET_DIRECTORY_CANDIDATES_SQL
 
 
 def test_discovery_sql_remains_conservative():

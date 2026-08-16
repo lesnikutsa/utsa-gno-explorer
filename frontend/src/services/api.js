@@ -81,6 +81,16 @@ export const getTokens = ({ limit = 50, q, activityWindow = '24h', beforeActivit
   }
   return request(`/tokens?${query.toString()}`, { signal })
 }
+export const getAssets = ({ limit = 50, q, standard = 'all', beforeActivityHeight, beforePath, signal } = {}) => {
+  const query = new URLSearchParams({ limit, standard })
+  const trimmedQuery = typeof q === 'string' ? q.trim() : ''
+  if (trimmedQuery) query.set('q', trimmedQuery)
+  if (beforeActivityHeight !== undefined && beforePath) {
+    query.set('before_activity_height', beforeActivityHeight)
+    query.set('before_path', beforePath)
+  }
+  return request(`/assets?${query.toString()}`, { signal })
+}
 export const getTokenSupply = (path, { signal } = {}) => {
   const query = new URLSearchParams({ path })
   return request(`/tokens/supply?${query.toString()}`, { signal })

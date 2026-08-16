@@ -298,6 +298,28 @@ WHERE chain_id=%s AND path=ANY(%s::text[])
   AND file_kind='gno_source' AND filename LIKE '%%.gno'
 ORDER BY path COLLATE "C" ASC,filename COLLATE "C" ASC
 """
+ASSET_DIRECTORY_CANDIDATES_SQL = """
+SELECT c.path,c.rpc_visible,c.call_count,c.successful_call_count,c.failed_call_count,
+       c.last_activity_height,c.last_activity_at,m.observed_height AS metadata_observed_height,
+       m.total_file_bytes,
+       CASE WHEN imp.imported_path='gno.land/p/demo/tokens/grc20' THEN 'grc20' ELSE 'grc721' END AS standard,
+       ARRAY(SELECT element->>'FuncName' FROM jsonb_array_elements(m.qfuncs_payload) element) AS qfunc_names
+FROM realm_catalog c
+JOIN realm_metadata m ON m.chain_id=c.chain_id AND m.path=c.path
+JOIN realm_metadata_imports imp ON imp.chain_id=c.chain_id AND imp.path=c.path
+  AND imp.imported_path IN ('gno.land/p/demo/tokens/grc20','gno.land/p/demo/tokens/grc721')
+WHERE c.chain_id=%s AND c.path_kind='realm' AND m.qfuncs_status='ok'
+  AND ((imp.imported_path='gno.land/p/demo/tokens/grc20'
+        AND m.qfuncs_payload @> '[{"FuncName":"TotalSupply"}]'::jsonb
+        AND m.qfuncs_payload @> '[{"FuncName":"BalanceOf"}]'::jsonb
+        AND m.qfuncs_payload @> '[{"FuncName":"Transfer"}]'::jsonb)
+    OR (imp.imported_path='gno.land/p/demo/tokens/grc721'
+        AND m.qfuncs_payload @> '[{"FuncName":"BalanceOf"}]'::jsonb
+        AND m.qfuncs_payload @> '[{"FuncName":"OwnerOf"}]'::jsonb
+        AND m.qfuncs_payload @> '[{"FuncName":"TransferFrom"}]'::jsonb))
+ORDER BY COALESCE(c.last_activity_height,-1) DESC,c.path COLLATE "C" ASC,standard ASC
+LIMIT %s
+"""
 TOKEN_DIRECTORY_ACTIVITY_SQL = """
 SELECT call.path,
        count(*)::bigint AS direct_call_count,
@@ -1230,6 +1252,29 @@ class ApiDatabase:
                 activity = [dict(row) for row in cursor.fetchall()]
         return {"source": dict(source), "candidates": candidates, "files": files,
                 "activity": activity, "activity_available": coverage_available}
+
+    def fetch_asset_candidates(self, *, chain_id: str, candidate_limit: int = 2001) -> dict[str, Any] | None:
+        """Read bounded persisted candidates for the unified contract asset catalog."""
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection, connection.transaction(), connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            cursor.execute(TOKEN_DIRECTORY_SOURCE_SQL, (chain_id,))
+            source = cursor.fetchone()
+            if source is None:
+                return None
+            cursor.execute(ASSET_DIRECTORY_CANDIDATES_SQL, (chain_id, candidate_limit))
+            candidates = [dict(row) for row in cursor.fetchall()]
+            if len(candidates) >= candidate_limit:
+                raise ValueError("asset candidate count bound exceeded")
+            if sum(int(row["total_file_bytes"]) for row in candidates) > MAX_TOKEN_DIRECTORY_SOURCE_BYTES:
+                raise ValueError("asset directory source byte bound exceeded")
+            paths = sorted({row["path"] for row in candidates})
+            files = []
+            if paths:
+                cursor.execute(TOKEN_DIRECTORY_FILES_SQL, (chain_id, paths))
+                files = [dict(row) for row in cursor.fetchall()]
+        return {"source": dict(source), "candidates": candidates, "files": files}
 
     def fetch_verified_token_candidate(self, *, chain_id: str, path: str) -> dict[str, Any] | None:
         """Read bounded persisted source for one exact conservative token candidate."""
