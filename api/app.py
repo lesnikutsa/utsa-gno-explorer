@@ -89,6 +89,7 @@ from api.schemas import (
     TokenDirectoryResponse,
     TokenDirectorySource,
     TokenDirectorySummary,
+    TokenTop24hItem,
     TokenSupplyResponse,
     ValidatorListItem,
     ValidatorSearchItem,
@@ -1378,11 +1379,13 @@ def get_tokens(limit: int = Query(default=50, ge=1, le=100), q: str | None = Que
             raise ValueError("confirmed token candidate bound exceeded")
         items = []
         verified_rows = []
+        verified_by_path = {}
         for row in grouped.values():
             identity = extract_token_identity(row["files"])
             if not identity.verified:
                 continue
             verified_rows.append(row)
+            verified_by_path[row["path"]] = (row, identity)
             key = namespace_key(row["path"])
             decided = int(row["successful_call_count"]) + int(row["failed_call_count"])
             item = TokenDirectoryItem(path=row["path"], namespace_key=key,
@@ -1406,12 +1409,32 @@ def get_tokens(limit: int = Query(default=50, ge=1, le=100), q: str | None = Que
         items.sort(key=lambda item: (-(item.last_activity_height if item.last_activity_height is not None else -1), item.path))
         page, tail = items[:limit], (items[limit - 1] if len(items) > limit else None)
         active_count = _active_token_count(result["source"], verified_rows)
+        top_24h = None
+        if result.get("activity_24h_available") is True:
+            ranked = []
+            for activity in result.get("activity_24h", []):
+                verified = verified_by_path.get(activity["path"])
+                if verified is None:
+                    continue
+                _, identity = verified
+                key = namespace_key(activity["path"])
+                ranked.append(TokenTop24hItem(
+                    path=activity["path"], namespace_key=key,
+                    application=dict(REALM_APPLICATION_REGISTRY[key]) if key in REALM_APPLICATION_REGISTRY else None,
+                    name=identity.name, symbol=identity.symbol, decimals=identity.decimals,
+                    direct_call_count_24h=int(activity["direct_call_count_24h"]),
+                    last_activity_height_24h=int(activity["last_activity_height_24h"]),
+                    last_activity_at_24h=isoformat_utc_z(activity["last_activity_at_24h"])))
+            ranked.sort(key=lambda item: (-item.direct_call_count_24h,
+                                          -item.last_activity_height_24h, item.path))
+            top_24h = ranked[:3]
         source = result["source"]
         metadata_height = source.get("metadata_observed_height")
         return TokenDirectoryResponse(source=TokenDirectorySource(chain_id=source["chain_id"],
             indexed_height=source["indexed_height"], catalog_observed_height=source["catalog_observed_height"],
             metadata_observed_height=metadata_height),
             summary=TokenDirectorySummary(token_count=len(verified_rows), active_24h_count=active_count), items=page,
+            top_24h=top_24h,
             pagination=TokenDirectoryPagination(next_before_activity_height=(tail.last_activity_height
                 if tail and tail.last_activity_height is not None else (-1 if tail else None)),
                 next_before_path=tail.path if tail else None))

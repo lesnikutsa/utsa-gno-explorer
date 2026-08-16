@@ -31,6 +31,7 @@ from api.database import (
     REALM_APPLICATION_SOURCE_SQL,
     REALM_APPLICATION_TOP_SQL,
     TOKEN_DIRECTORY_CANDIDATES_SQL,
+    TOKEN_DIRECTORY_ACTIVITY_24H_SQL,
     TOKEN_DIRECTORY_FILES_SQL,
     TOKEN_DIRECTORY_SOURCE_SQL,
     TOKEN_EXACT_CANDIDATE_SQL,
@@ -2710,7 +2711,10 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             cursor.executemany("INSERT INTO blocks(height,block_hash_base64,block_hash_hex,time_utc,tx_count) "
                                "VALUES (%s,%s,%s,%s,0)", (
                 (1, "token-start", "B" * 64, now - timedelta(hours=25)),
+                (2, "token-boundary", "C" * 64, now - timedelta(hours=24)),
+                (3, "token-outside", "D" * 64, now - timedelta(hours=24, seconds=1)),
                 (10, "token", "A" * 64, now),
+                (11, "token-after", "E" * 64, now + timedelta(seconds=1)),
             ))
             cursor.execute("INSERT INTO indexer_state(state_key,chain_id,last_finalized_height) VALUES ('default','topaz-1',10)")
             cursor.execute("""INSERT INTO realm_catalog_state(chain_id,observed_height,rpc_path_count,refreshed_at)
@@ -2720,6 +2724,12 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             for path, kind, qfuncs, _has_import, _source in cases:
                 cursor.execute("""INSERT INTO realm_catalog(chain_id,path,path_kind,seen_via_rpc,rpc_visible,last_rpc_seen_at)
                   VALUES ('topaz-1',%s,%s,true,true,%s)""", (path, kind, now))
+            cursor.executemany("""INSERT INTO transactions(
+              block_height,tx_index,raw_base64,raw_base64_length,decode_status
+            ) VALUES (%s,0,'',0,'not_attempted')""", ((2,), (3,), (10,), (11,)))
+            cursor.executemany("""INSERT INTO realm_call_index(
+              chain_id,block_height,tx_index,message_index,path
+            ) VALUES ('topaz-1',%s,0,0,'gno.land/r/tokens/valid')""", ((2,), (3,), (10,), (11,)))
             # Production's operator-created API role has read-only access to the
             # legacy/core tables. Reproduce only those grants in this disposable DB;
             # later Realm/metadata tables must keep relying on reviewed schema grants.
@@ -2754,6 +2764,13 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             cursor.execute(TOKEN_DIRECTORY_FILES_SQL, ("topaz-1", ["gno.land/r/tokens/valid"]))
             files = cursor.fetchall()
             self.assertEqual([(row[0], row[1]) for row in files], [("gno.land/r/tokens/valid", "main.gno")])
+            cursor.execute(TOKEN_DIRECTORY_ACTIVITY_24H_SQL, (
+                "topaz-1", ["gno.land/r/tokens/valid"], 1, 10,
+                now - timedelta(hours=24), now,
+            ))
+            activity = cursor.fetchall()
+            self.assertEqual((activity[0][0], activity[0][1], activity[0][2]),
+                             ("gno.land/r/tokens/valid", 2, 10))
             cursor.execute(TOKEN_EXACT_CANDIDATE_SQL, ("topaz-1", "gno.land/r/tokens/valid"))
             exact = cursor.fetchone()
             self.assertEqual((exact[0], exact[1]), ("gno.land/r/tokens/valid", 1))

@@ -1,7 +1,7 @@
 import inspect
 
 from api.database import (MAX_TOKEN_DIRECTORY_SOURCE_BYTES, TOKEN_DIRECTORY_CANDIDATES_SQL,
-                          TOKEN_DIRECTORY_FILES_SQL, TOKEN_DIRECTORY_SOURCE_SQL,
+                          TOKEN_DIRECTORY_ACTIVITY_24H_SQL, TOKEN_DIRECTORY_FILES_SQL, TOKEN_DIRECTORY_SOURCE_SQL,
                           TOKEN_EXACT_CANDIDATE_SQL, TOKEN_EXACT_FILES_SQL, ApiDatabase)
 
 
@@ -48,3 +48,13 @@ def test_activity_checkpoint_comes_from_call_index_through_height():
     assert "call_checkpoint.time_utc AS call_index_checkpoint_at" in TOKEN_DIRECTORY_SOURCE_SQL
     assert "call_checkpoint.height=call_state.through_height" in TOKEN_DIRECTORY_SOURCE_SQL
     assert "realm_call_index_state call_state" in TOKEN_DIRECTORY_SOURCE_SQL
+
+
+def test_top_activity_is_one_bounded_grouped_query_with_closed_time_boundaries():
+    assert "GROUP BY call.path" in TOKEN_DIRECTORY_ACTIVITY_24H_SQL
+    assert "call.path=ANY(%s::text[])" in TOKEN_DIRECTORY_ACTIVITY_24H_SQL
+    assert "call.block_height BETWEEN %s AND %s" in TOKEN_DIRECTORY_ACTIVITY_24H_SQL
+    assert "block.time_utc >= %s" in TOKEN_DIRECTORY_ACTIVITY_24H_SQL
+    assert "block.time_utc <= %s" in TOKEN_DIRECTORY_ACTIVITY_24H_SQL
+    method = inspect.getsource(ApiDatabase.fetch_token_candidates)
+    assert method.count("cursor.execute(TOKEN_DIRECTORY_ACTIVITY_24H_SQL") == 1

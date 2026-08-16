@@ -6,6 +6,7 @@ export const PAGE_SIZE = 50
 export function useTokensPage() {
   const [items, setItems] = useState([])
   const [summary, setSummary] = useState(null)
+  const [top24h, setTop24h] = useState(null)
   const [searchInput, setSearchInput] = useState('')
   const [appliedSearch, setAppliedSearch] = useState('')
   const [loading, setLoading] = useState(true)
@@ -27,7 +28,7 @@ export function useTokensPage() {
     const activeController = new AbortController()
     controller.current = activeController
     const id = ++requestId.current
-    setLoading(true); setItems([]); setSummary(null); setError(false)
+    setLoading(true); setItems([]); setSummary(null); setTop24h(null); setError(false)
     try {
       const response = await getTokens({ limit: PAGE_SIZE, q: request.search,
         beforeActivityHeight: request.cursor?.activityHeight, beforePath: request.cursor?.path,
@@ -37,12 +38,13 @@ export function useTokensPage() {
       const hasNext = pagination.next_before_activity_height !== null && pagination.next_before_activity_height !== undefined
         && pagination.next_before_path !== null && pagination.next_before_path !== undefined
       setItems((response.items ?? []).slice(0, PAGE_SIZE)); setSummary(response.summary ?? null)
+      setTop24h(Array.isArray(response.top_24h) ? response.top_24h.slice(0, 3) : null)
       setNextCursor(hasNext ? { activityHeight: pagination.next_before_activity_height, path: pagination.next_before_path } : null)
       setPageIndex(request.targetIndex); if (request.history) setCursorHistory(request.history)
       failedRequest.current = null; setHealthState('healthy')
     } catch (requestError) {
       if (!mounted.current || id !== requestId.current || requestError?.name === 'AbortError') return
-      failedRequest.current = attempted; setItems([]); setSummary(null); setError(true); setHealthState('error')
+      failedRequest.current = attempted; setItems([]); setSummary(null); setTop24h(null); setError(true); setHealthState('error')
     } finally {
       if (mounted.current && id === requestId.current) setLoading(false)
     }
@@ -100,7 +102,7 @@ export function useTokensPage() {
     return () => activeController.abort()
   }, [items])
 
-  return { items, supplies, summary, searchInput, appliedSearch, loading, error, healthState, pageIndex,
+  return { items, supplies, summary, top24h, searchInput, appliedSearch, loading, error, healthState, pageIndex,
     nextCursor, cursorHistory, setSearchInput, submitSearch, clearSearch, retry, loadOlder, loadNewer,
     canLoadOlder: nextCursor !== null }
 }

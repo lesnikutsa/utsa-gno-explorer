@@ -28,7 +28,8 @@ def result(**source_overrides):
               "call_index_through_height": 100, "call_index_coverage_started_at": NOW - timedelta(days=2),
               "call_index_checkpoint_at": NOW}
     source.update(source_overrides)
-    return {"source": source, "candidates": candidates, "files": files}
+    return {"source": source, "candidates": candidates, "files": files,
+            "activity_24h_available": True, "activity_24h": []}
 
 
 def setup_module():
@@ -93,3 +94,34 @@ def test_activity_after_checkpoint_and_unverified_candidates_do_not_count():
     helper = next(row for row in data["candidates"] if row["path"].endswith("helper"))
     helper["last_activity_at"] = NOW - timedelta(hours=3)
     assert call(data).summary.active_24h_count == 0
+
+
+def test_top_24h_is_verified_global_and_not_historical_order():
+    data = result()
+    paths = [row["path"] for row in data["candidates"]]
+    data["activity_24h"] = [
+        {"path": paths[0], "direct_call_count_24h": 2, "last_activity_height_24h": 80,
+         "last_activity_at_24h": NOW - timedelta(hours=1)},
+        {"path": paths[1], "direct_call_count_24h": 5, "last_activity_height_24h": 70,
+         "last_activity_at_24h": NOW - timedelta(hours=2)},
+        {"path": paths[3], "direct_call_count_24h": 999, "last_activity_height_24h": 99,
+         "last_activity_at_24h": NOW},
+    ]
+    data["candidates"][0]["call_count"] = 10000
+    response = call(data, q="SOL", before_activity_height=None, before_path=None)
+    assert [item.path for item in response.top_24h] == [paths[1], paths[0]]
+    assert [item.path for item in response.items] == [paths[0]]
+
+
+def test_top_24h_unavailable_empty_and_deterministic_ties():
+    data = result()
+    data["activity_24h_available"] = False
+    assert call(data).top_24h is None
+    data["activity_24h_available"] = True
+    assert call(data).top_24h == []
+    verified_paths = [row["path"] for row in data["candidates"][:3]]
+    data["activity_24h"] = [{"path": path, "direct_call_count_24h": 1,
+                              "last_activity_height_24h": 50,
+                              "last_activity_at_24h": NOW - timedelta(hours=1)}
+                             for path in reversed(verified_paths)]
+    assert [item.path for item in call(data).top_24h] == sorted(verified_paths)

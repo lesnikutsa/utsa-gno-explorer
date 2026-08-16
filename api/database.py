@@ -298,6 +298,20 @@ WHERE chain_id=%s AND path=ANY(%s::text[])
   AND file_kind='gno_source' AND filename LIKE '%%.gno'
 ORDER BY path COLLATE "C" ASC,filename COLLATE "C" ASC
 """
+TOKEN_DIRECTORY_ACTIVITY_24H_SQL = """
+SELECT call.path,
+       count(*)::bigint AS direct_call_count_24h,
+       max(call.block_height)::bigint AS last_activity_height_24h,
+       max(block.time_utc) AS last_activity_at_24h
+FROM realm_call_index call
+JOIN blocks block ON block.height=call.block_height
+WHERE call.chain_id=%s
+  AND call.path=ANY(%s::text[])
+  AND call.block_height BETWEEN %s AND %s
+  AND block.time_utc >= %s
+  AND block.time_utc <= %s
+GROUP BY call.path
+"""
 
 TOKEN_EXACT_CANDIDATE_SQL = """
 SELECT c.path,
@@ -1180,10 +1194,32 @@ class ApiDatabase:
                 raise ValueError("token directory source byte bound exceeded")
             paths = [row["path"] for row in candidates]
             files = []
+            activity_24h = []
+            coverage_available = False
             if paths:
                 cursor.execute(TOKEN_DIRECTORY_FILES_SQL, (chain_id, paths))
                 files = [dict(row) for row in cursor.fetchall()]
-        return {"source": dict(source), "candidates": candidates, "files": files}
+            checkpoint = source["call_index_checkpoint_at"]
+            coverage_start = source["call_index_coverage_started_at"]
+            from_height = source["call_index_from_height"]
+            through_height = source["call_index_through_height"]
+            indexed_height = source["indexed_height"]
+            coverage_available = (
+                isinstance(checkpoint, datetime) and checkpoint.tzinfo is not None
+                and isinstance(coverage_start, datetime) and coverage_start.tzinfo is not None
+                and type(from_height) is int and from_height > 0
+                and type(through_height) is int and through_height >= from_height
+                and type(indexed_height) is int and through_height <= indexed_height
+                and coverage_start <= checkpoint - timedelta(hours=24)
+            )
+            if coverage_available and paths:
+                cursor.execute(TOKEN_DIRECTORY_ACTIVITY_24H_SQL, (
+                    chain_id, paths, from_height, through_height,
+                    checkpoint - timedelta(hours=24), checkpoint,
+                ))
+                activity_24h = [dict(row) for row in cursor.fetchall()]
+        return {"source": dict(source), "candidates": candidates, "files": files,
+                "activity_24h": activity_24h, "activity_24h_available": coverage_available}
 
     def fetch_verified_token_candidate(self, *, chain_id: str, path: str) -> dict[str, Any] | None:
         """Read bounded persisted source for one exact conservative token candidate."""

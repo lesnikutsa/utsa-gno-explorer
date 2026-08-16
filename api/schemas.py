@@ -610,9 +610,22 @@ class TokenDirectoryPagination(BaseModel):
     next_before_path: str | None
 
 
+class TokenTop24hItem(BaseModel):
+    path: str = Field(min_length=1, max_length=256)
+    namespace_key: str = Field(min_length=1, max_length=256)
+    application: RealmApplicationMetadata | None = None
+    name: str = Field(min_length=1, max_length=128)
+    symbol: str = Field(min_length=1, max_length=32)
+    decimals: int = Field(ge=0, le=30)
+    direct_call_count_24h: int = Field(gt=0)
+    last_activity_height_24h: int = Field(gt=0)
+    last_activity_at_24h: str
+
+
 class TokenDirectoryResponse(BaseModel):
     source: TokenDirectorySource
     summary: TokenDirectorySummary
+    top_24h: list[TokenTop24hItem] | None = Field(default=None, max_length=3)
     items: list[TokenDirectoryItem] = Field(max_length=100)
     pagination: TokenDirectoryPagination
 

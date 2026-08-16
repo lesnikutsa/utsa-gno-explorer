@@ -18,6 +18,22 @@ def test_tokens_route_navigation_and_page_contract():
     assert all(term not in page for term in ("Price", "Market Cap", "TVL", "NFT"))
 
 
+def test_native_and_top_24h_are_separate_api_driven_sections():
+    page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
+    hook = (ROOT / "frontend/src/hooks/useTokensPage.js").read_text()
+    profile = (ROOT / "frontend/src/config/networkProfile.js").read_text()
+    for value in ("Native Token", "GNOT", "Native", "ugnot", "decimals: 6"):
+        assert value in page + profile
+    assert "realmDetailHref(networkProfile.nativeToken" not in page
+    assert "getTokenSupply(networkProfile.nativeToken" not in hook
+    assert "Top Tokens · 24H" in page and "Direct Calls (24H)" in page
+    assert "top24h.slice(0, 3)" in page and "realmDetailHref(token.path)" in page
+    assert "response.top_24h" in hook and "response.items" not in hook.split("setTop24h", 1)[1].split("\n", 1)[0]
+    assert "ranking is unavailable" in page and "No verified token calls" in page
+    for forbidden in ("Price", "Market Cap", "TVL", "Holders", "Volume"):
+        assert forbidden not in page
+
+
 def test_tokens_styles_are_scoped():
     css = (ROOT / "frontend/src/styles/app.css").read_text()
     token_rules = "\n".join(line for line in css.splitlines() if "tokens" in line)
