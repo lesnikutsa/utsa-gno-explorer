@@ -262,12 +262,14 @@ SELECT state.chain_id, state.last_finalized_height AS indexed_height,
        catalog.observed_height AS catalog_observed_height,
        catalog.activity_from_height,catalog.activity_through_height,
        coverage_start.time_utc AS activity_coverage_started_at,
+       activity_checkpoint.time_utc AS activity_checkpoint_at,
        NULL::bigint AS metadata_observed_height,
        checkpoint.time_utc AS checkpoint_at
 FROM indexer_state state
 JOIN realm_catalog_state catalog ON catalog.chain_id=state.chain_id
 JOIN blocks checkpoint ON checkpoint.height=state.last_finalized_height
 LEFT JOIN blocks coverage_start ON coverage_start.height=catalog.activity_from_height
+LEFT JOIN blocks activity_checkpoint ON activity_checkpoint.height=catalog.activity_through_height
 WHERE state.state_key='default' AND state.chain_id=%s
 """
 TOKEN_DIRECTORY_CANDIDATES_SQL = """

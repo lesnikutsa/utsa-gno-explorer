@@ -113,14 +113,17 @@ TOKEN_CANDIDATE_LIMIT = 1000
 
 
 def _active_token_count(source: dict, rows: list[dict]) -> int | None:
-    checkpoint = source.get("checkpoint_at")
+    checkpoint = source.get("activity_checkpoint_at")
     coverage_start = source.get("activity_coverage_started_at")
     indexed_height = source.get("indexed_height")
+    activity_from = source.get("activity_from_height")
+    activity_through = source.get("activity_through_height")
     if (not isinstance(checkpoint, datetime) or checkpoint.tzinfo is None
             or not isinstance(coverage_start, datetime) or coverage_start.tzinfo is None
             or type(indexed_height) is not int
-            or type(source.get("activity_from_height")) is not int
-            or source.get("activity_through_height") != indexed_height
+            or type(activity_from) is not int or activity_from <= 0
+            or type(activity_through) is not int or activity_through <= 0
+            or activity_from > activity_through or activity_through > indexed_height
             or coverage_start > checkpoint - timedelta(hours=24)):
         return None
     window_start = checkpoint - timedelta(hours=24)
@@ -1372,8 +1375,12 @@ def get_tokens(limit: int = Query(default=50, ge=1, le=100), q: str | None = Que
         if len(grouped) > TOKEN_CANDIDATE_LIMIT:
             raise ValueError("confirmed token candidate bound exceeded")
         items = []
+        verified_rows = []
         for row in grouped.values():
             identity = extract_token_identity(row["files"])
+            if not identity.verified:
+                continue
+            verified_rows.append(row)
             key = namespace_key(row["path"])
             decided = int(row["successful_call_count"]) + int(row["failed_call_count"])
             item = TokenDirectoryItem(path=row["path"], namespace_key=key,
@@ -1396,14 +1403,13 @@ def get_tokens(limit: int = Query(default=50, ge=1, le=100), q: str | None = Que
             items.append(item)
         items.sort(key=lambda item: (-(item.last_activity_height if item.last_activity_height is not None else -1), item.path))
         page, tail = items[:limit], (items[limit - 1] if len(items) > limit else None)
-        rows = list(grouped.values())
-        active_count = _active_token_count(result["source"], rows)
+        active_count = _active_token_count(result["source"], verified_rows)
         source = result["source"]
         metadata_height = source.get("metadata_observed_height")
         return TokenDirectoryResponse(source=TokenDirectorySource(chain_id=source["chain_id"],
             indexed_height=source["indexed_height"], catalog_observed_height=source["catalog_observed_height"],
             metadata_observed_height=metadata_height),
-            summary=TokenDirectorySummary(token_count=len(grouped), active_24h_count=active_count), items=page,
+            summary=TokenDirectorySummary(token_count=len(verified_rows), active_24h_count=active_count), items=page,
             pagination=TokenDirectoryPagination(next_before_activity_height=(tail.last_activity_height
                 if tail and tail.last_activity_height is not None else (-1 if tail else None)),
                 next_before_path=tail.path if tail else None))

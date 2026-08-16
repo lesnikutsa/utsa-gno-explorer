@@ -27,3 +27,8 @@ def test_source_sql_uses_truthful_metadata_and_activity_coverage():
     assert "activity_from_height" in TOKEN_DIRECTORY_SOURCE_SQL
     assert "activity_through_height" in TOKEN_DIRECTORY_SOURCE_SQL
     assert "coverage_start.time_utc" in TOKEN_DIRECTORY_SOURCE_SQL
+
+
+def test_activity_checkpoint_comes_from_catalog_through_height():
+    assert "activity_checkpoint.time_utc AS activity_checkpoint_at" in TOKEN_DIRECTORY_SOURCE_SQL
+    assert "activity_checkpoint.height=catalog.activity_through_height" in TOKEN_DIRECTORY_SOURCE_SQL
