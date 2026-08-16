@@ -2731,8 +2731,11 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
               chain_id,block_height,tx_index,message_index,path
             ) VALUES ('topaz-1',%s,0,0,'gno.land/r/tokens/valid')""", ((2,), (3,), (10,), (11,)))
             cursor.executemany("""INSERT INTO transaction_execution_results(
-              block_height,tx_index,execution_status,gas_wanted,gas_used
-            ) VALUES (%s,0,%s,100,50)""", ((2, "success"), (10, "failed")))
+              block_height,tx_index,execution_status,gas_wanted,gas_used,error_text
+            ) VALUES (%s,0,%s,100,50,%s)""", (
+                (2, "success", None),
+                (10, "failed", "synthetic token integration failure"),
+            ))
             # Production's operator-created API role has read-only access to the
             # legacy/core tables. Reproduce only those grants in this disposable DB;
             # later Realm/metadata tables must keep relying on reviewed schema grants.
