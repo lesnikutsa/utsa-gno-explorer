@@ -7,6 +7,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 from api.config import ApiConfig
+from api.token_identity import MAX_TOKEN_SOURCE_BYTES, MAX_TOKEN_SOURCE_FILES
 
 HEALTH_SQL = """
 SELECT
@@ -296,6 +297,35 @@ FROM realm_metadata_files
 WHERE chain_id=%s AND path=ANY(%s::text[])
   AND file_kind='gno_source' AND filename LIKE '%%.gno'
 ORDER BY path COLLATE "C" ASC,filename COLLATE "C" ASC
+"""
+
+TOKEN_EXACT_CANDIDATE_SQL = """
+SELECT c.path,
+       count(f.filename) FILTER (
+         WHERE f.file_kind='gno_source' AND f.filename LIKE '%%.gno'
+       ) AS source_file_count,
+       COALESCE(sum(f.byte_count) FILTER (
+         WHERE f.file_kind='gno_source' AND f.filename LIKE '%%.gno'
+       ),0) AS source_file_bytes
+FROM realm_catalog c
+JOIN realm_metadata m ON m.chain_id=c.chain_id AND m.path=c.path
+LEFT JOIN realm_metadata_files f ON f.chain_id=c.chain_id AND f.path=c.path
+WHERE c.chain_id=%s AND c.path=%s AND c.path_kind='realm'
+  AND m.qfuncs_status='ok'
+  AND m.qfuncs_payload @> '[{"FuncName":"TotalSupply"}]'::jsonb
+  AND m.qfuncs_payload @> '[{"FuncName":"BalanceOf"}]'::jsonb
+  AND m.qfuncs_payload @> '[{"FuncName":"Transfer"}]'::jsonb
+  AND EXISTS (SELECT 1 FROM realm_metadata_imports imp
+    WHERE imp.chain_id=c.chain_id AND imp.path=c.path
+      AND imp.imported_path='gno.land/p/demo/tokens/grc20')
+GROUP BY c.path
+"""
+TOKEN_EXACT_FILES_SQL = """
+SELECT path,filename,file_kind,byte_count,content
+FROM realm_metadata_files
+WHERE chain_id=%s AND path=%s
+  AND file_kind='gno_source' AND filename LIKE '%%.gno'
+ORDER BY filename COLLATE "C" ASC
 """
 
 MAX_TOKEN_DIRECTORY_SOURCE_BYTES = 32 * 1024 * 1024
@@ -1154,6 +1184,24 @@ class ApiDatabase:
                 cursor.execute(TOKEN_DIRECTORY_FILES_SQL, (chain_id, paths))
                 files = [dict(row) for row in cursor.fetchall()]
         return {"source": dict(source), "candidates": candidates, "files": files}
+
+    def fetch_verified_token_candidate(self, *, chain_id: str, path: str) -> dict[str, Any] | None:
+        """Read bounded persisted source for one exact conservative token candidate."""
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection, connection.transaction(), connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            cursor.execute(TOKEN_EXACT_CANDIDATE_SQL, (chain_id, path))
+            candidate = cursor.fetchone()
+            if candidate is None:
+                return None
+            candidate = dict(candidate)
+            if (int(candidate["source_file_count"]) > MAX_TOKEN_SOURCE_FILES or
+                    int(candidate["source_file_bytes"]) > MAX_TOKEN_SOURCE_BYTES):
+                return None
+            cursor.execute(TOKEN_EXACT_FILES_SQL, (chain_id, path))
+            files = [dict(row) for row in cursor.fetchall()]
+        return {"candidate": candidate, "files": files}
 
     def fetch_realm_calls(self, *, chain_id: str, path: str, limit: int,
                           before_height: int | None, before_tx_index: int | None,

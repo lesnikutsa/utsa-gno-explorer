@@ -1,7 +1,8 @@
 import inspect
 
 from api.database import (MAX_TOKEN_DIRECTORY_SOURCE_BYTES, TOKEN_DIRECTORY_CANDIDATES_SQL,
-                          TOKEN_DIRECTORY_FILES_SQL, TOKEN_DIRECTORY_SOURCE_SQL, ApiDatabase)
+                          TOKEN_DIRECTORY_FILES_SQL, TOKEN_DIRECTORY_SOURCE_SQL,
+                          TOKEN_EXACT_CANDIDATE_SQL, TOKEN_EXACT_FILES_SQL, ApiDatabase)
 
 
 def test_discovery_sql_remains_conservative():
@@ -19,6 +20,20 @@ def test_source_query_is_separate_and_global_bound_precedes_content_fetch():
     method = inspect.getsource(ApiDatabase.fetch_token_candidates)
     assert method.index("MAX_TOKEN_DIRECTORY_SOURCE_BYTES") < method.index("cursor.execute(TOKEN_DIRECTORY_FILES_SQL")
     assert MAX_TOKEN_DIRECTORY_SOURCE_BYTES == 32 * 1024 * 1024
+
+
+def test_exact_token_queries_are_conservative_and_path_bounded():
+    assert "c.chain_id=%s AND c.path=%s" in TOKEN_EXACT_CANDIDATE_SQL
+    assert "c.path_kind='realm'" in TOKEN_EXACT_CANDIDATE_SQL
+    assert "m.qfuncs_status='ok'" in TOKEN_EXACT_CANDIDATE_SQL
+    assert "imp.imported_path='gno.land/p/demo/tokens/grc20'" in TOKEN_EXACT_CANDIDATE_SQL
+    for name in ("TotalSupply", "BalanceOf", "Transfer"):
+        assert f'[{chr(123)}"FuncName":"{name}"{chr(125)}]' in TOKEN_EXACT_CANDIDATE_SQL
+    assert "content" not in TOKEN_EXACT_CANDIDATE_SQL.lower()
+    assert "chain_id=%s AND path=%s" in TOKEN_EXACT_FILES_SQL
+    assert "file_kind='gno_source'" in TOKEN_EXACT_FILES_SQL
+    method = inspect.getsource(ApiDatabase.fetch_verified_token_candidate)
+    assert method.index("MAX_TOKEN_SOURCE_BYTES") < method.index("cursor.execute(TOKEN_EXACT_FILES_SQL")
 
 
 def test_source_sql_uses_truthful_metadata_and_activity_coverage():

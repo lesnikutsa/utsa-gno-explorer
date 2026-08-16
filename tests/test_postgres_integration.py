@@ -33,6 +33,8 @@ from api.database import (
     TOKEN_DIRECTORY_CANDIDATES_SQL,
     TOKEN_DIRECTORY_FILES_SQL,
     TOKEN_DIRECTORY_SOURCE_SQL,
+    TOKEN_EXACT_CANDIDATE_SQL,
+    TOKEN_EXACT_FILES_SQL,
     VALIDATOR_IDENTITY_SQL,
     ApiDatabase,
     MissingIndexerStateError,
@@ -2752,10 +2754,26 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             cursor.execute(TOKEN_DIRECTORY_FILES_SQL, ("topaz-1", ["gno.land/r/tokens/valid"]))
             files = cursor.fetchall()
             self.assertEqual([(row[0], row[1]) for row in files], [("gno.land/r/tokens/valid", "main.gno")])
+            cursor.execute(TOKEN_EXACT_CANDIDATE_SQL, ("topaz-1", "gno.land/r/tokens/valid"))
+            exact = cursor.fetchone()
+            self.assertEqual((exact[0], exact[1]), ("gno.land/r/tokens/valid", 1))
+            cursor.execute(TOKEN_EXACT_FILES_SQL, ("topaz-1", "gno.land/r/tokens/valid"))
+            self.assertEqual([(row[0], row[1]) for row in cursor.fetchall()],
+                             [("gno.land/r/tokens/valid", "main.gno")])
+            cursor.execute(TOKEN_EXACT_CANDIDATE_SQL, ("topaz-1", "gno.land/r/tokens/import_only"))
+            self.assertIsNone(cursor.fetchone())
+            cursor.execute(TOKEN_EXACT_CANDIDATE_SQL, ("topaz-1", "gno.land/p/tokens/package"))
+            self.assertIsNone(cursor.fetchone())
             cursor.execute("RESET ROLE")
         database = ApiDatabase(); database.open(ApiConfig(database_url=url, chain_id="topaz-1")); self.addCleanup(database.close)
         result = database.fetch_token_candidates(chain_id="topaz-1", candidate_limit=1001)
         self.assertEqual([row["path"] for row in result["candidates"]], ["gno.land/r/tokens/valid"])
+        exact_result = database.fetch_verified_token_candidate(
+            chain_id="topaz-1", path="gno.land/r/tokens/valid",
+        )
+        self.assertEqual(exact_result["candidate"]["path"], "gno.land/r/tokens/valid")
+        self.assertEqual([row["path"] for row in exact_result["files"]],
+                         ["gno.land/r/tokens/valid"])
 
     def test_metadata_upgrade_with_production_writer_ownership(self):
         name = f"utsa_metadata_writer_owner_{os.getpid()}"
