@@ -10,6 +10,14 @@ import { networkProfile } from '../config/networkProfile'
 import { sortTokenDirectoryItems } from '../utils/tokenDirectory'
 
 const formatCount = (value) => Number.isFinite(value) ? value.toLocaleString() : '—'
+const lastActivityChangeValue = (timestamp, label) => `${timestamp ?? 'never'}|${label}`
+
+function LastActivityValue({ timestamp }) {
+  const label = timestamp ? relativeTime(timestamp) : 'Never'
+  return <ChangedValue value={lastActivityChangeValue(timestamp, label)}>
+    {timestamp ? <time dateTime={timestamp} title={timestamp}>{label}</time> : label}
+  </ChangedValue>
+}
 const TOKEN_WINDOW_LABELS = { '24h': '24H', '7d': '7D', '30d': '30D' }
 const TOKEN_WINDOW_DESCRIPTIONS = { '24h': 'the last 24 hours', '7d': 'the last 7 days', '30d': 'the last 30 days' }
 
@@ -23,8 +31,8 @@ const columns = (supplies, suppliesSettled) => [
   { key: 'total_supply', label: 'Total Supply', sortable: true, sortDisabled: !suppliesSettled,
     defaultSortDirection: 'descending', headerTitle: suppliesSettled ? undefined : 'Total Supply sorting is available after visible supplies settle.',
     render: (item) => <span className="tokens-table__supply mono">{supplies[item.path]?.available ? formatTokenSupply(supplies[item.path].total_supply) : '—'}</span> },
-  { key: 'direct_call_count', label: 'Direct Calls', sortable: true, defaultSortDirection: 'descending', render: (item) => formatCount(item.direct_call_count) },
-  { key: 'last_activity_at', label: 'Last Activity', sortable: true, defaultSortDirection: 'descending', render: (item) => item.last_activity_at ? <time dateTime={item.last_activity_at} title={item.last_activity_at}>{relativeTime(item.last_activity_at)}</time> : 'Never' },
+  { key: 'direct_call_count', label: 'Direct Calls', sortable: true, defaultSortDirection: 'descending', render: (item) => <ChangedValue value={item.direct_call_count}>{formatCount(item.direct_call_count)}</ChangedValue> },
+  { key: 'last_activity_at', label: 'Last Activity', sortable: true, defaultSortDirection: 'descending', render: (item) => <LastActivityValue timestamp={item.last_activity_at} /> },
   { key: 'rpc_visible', label: 'Visibility', render: (item) => item.rpc_visible ? <StatusBadge tone="success">Visible</StatusBadge> : <StatusBadge tone="neutral">Historical</StatusBadge> },
 ]
 
