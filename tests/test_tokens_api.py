@@ -24,9 +24,9 @@ def result(**source_overrides):
         files.append({"path": path, "filename": "main.gno", "file_kind": "gno_source",
                       "byte_count": len(content), "content": content})
     source = {"chain_id": "sapphire-1", "indexed_height": 110, "catalog_observed_height": 100,
-              "metadata_observed_height": 100, "checkpoint_at": NOW, "activity_from_height": 1,
-              "activity_through_height": 100, "activity_coverage_started_at": NOW - timedelta(days=2),
-              "activity_checkpoint_at": NOW}
+              "metadata_observed_height": 100, "checkpoint_at": NOW, "call_index_from_height": 1,
+              "call_index_through_height": 100, "call_index_coverage_started_at": NOW - timedelta(days=2),
+              "call_index_checkpoint_at": NOW}
     source.update(source_overrides)
     return {"source": source, "candidates": candidates, "files": files}
 
@@ -65,22 +65,30 @@ def test_verified_identity_search_and_deterministic_cursor():
     assert all(item.path > response.items[-1].path for item in older.items)
 
 
-def test_active_24h_uses_completed_catalog_activity_checkpoint():
-    # A complete catalog checkpoint may trail the continuously advancing indexer.
+def test_active_24h_uses_completed_call_index_checkpoint():
+    # A complete call-index checkpoint may trail the continuously advancing indexer.
     assert call().summary.active_24h_count == 3
-    assert call(result(activity_through_height=110)).summary.active_24h_count == 3
+    assert call(result(call_index_through_height=110)).summary.active_24h_count == 3
+    assert call(result(activity_from_height=None, activity_through_height=None)).summary.active_24h_count == 3
     for overrides in (
-        {"activity_coverage_started_at": NOW - timedelta(hours=12)},
-        {"activity_through_height": 111},
-        {"activity_from_height": None, "activity_coverage_started_at": None},
-        {"activity_checkpoint_at": None},
+        {"call_index_coverage_started_at": NOW - timedelta(hours=12)},
+        {"call_index_through_height": 111},
+        {"call_index_from_height": None, "call_index_coverage_started_at": None},
+        {"call_index_from_height": 101, "call_index_through_height": 100},
+        {"call_index_checkpoint_at": None},
     ):
         assert call(result(**overrides)).summary.active_24h_count is None
 
 
+def test_active_24h_closed_window_includes_exact_start_boundary():
+    data = result()
+    data["candidates"][0]["last_activity_at"] = NOW - timedelta(hours=24)
+    assert call(data).summary.active_24h_count == 3
+
+
 def test_activity_after_checkpoint_and_unverified_candidates_do_not_count():
-    data = result(activity_checkpoint_at=NOW - timedelta(hours=3))
-    # All verified fixture activity is after this completed activity checkpoint.
+    data = result(call_index_checkpoint_at=NOW - timedelta(hours=3))
+    # All verified fixture activity is after this completed call-index checkpoint.
     assert call(data).summary.active_24h_count == 0
     helper = next(row for row in data["candidates"] if row["path"].endswith("helper"))
     helper["last_activity_at"] = NOW - timedelta(hours=3)

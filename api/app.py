@@ -113,11 +113,11 @@ TOKEN_CANDIDATE_LIMIT = 1000
 
 
 def _active_token_count(source: dict, rows: list[dict]) -> int | None:
-    checkpoint = source.get("activity_checkpoint_at")
-    coverage_start = source.get("activity_coverage_started_at")
+    checkpoint = source.get("call_index_checkpoint_at")
+    coverage_start = source.get("call_index_coverage_started_at")
     indexed_height = source.get("indexed_height")
-    activity_from = source.get("activity_from_height")
-    activity_through = source.get("activity_through_height")
+    activity_from = source.get("call_index_from_height")
+    activity_through = source.get("call_index_through_height")
     if (not isinstance(checkpoint, datetime) or checkpoint.tzinfo is None
             or not isinstance(coverage_start, datetime) or coverage_start.tzinfo is None
             or type(indexed_height) is not int

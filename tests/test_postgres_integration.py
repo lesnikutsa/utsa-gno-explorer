@@ -2705,10 +2705,16 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         )
         with psycopg.connect(url) as connection, connection.cursor() as cursor:
             cursor.execute("DELETE FROM realm_catalog WHERE path='gno.land/r/metadata_demo'")
-            cursor.execute("INSERT INTO blocks(height,block_hash_base64,block_hash_hex,time_utc,tx_count) VALUES (10,'token',repeat('A',64),%s,0)", (now,))
+            cursor.executemany("INSERT INTO blocks(height,block_hash_base64,block_hash_hex,time_utc,tx_count) "
+                               "VALUES (%s,%s,%s,%s,0)", (
+                (1, "token-start", "B" * 64, now - timedelta(hours=25)),
+                (10, "token", "A" * 64, now),
+            ))
             cursor.execute("INSERT INTO indexer_state(state_key,chain_id,last_finalized_height) VALUES ('default','topaz-1',10)")
-            cursor.execute("""INSERT INTO realm_catalog_state(chain_id,observed_height,rpc_path_count,refreshed_at,
-              activity_from_height,activity_through_height) VALUES ('topaz-1',10,5,%s,10,10)""", (now,))
+            cursor.execute("""INSERT INTO realm_catalog_state(chain_id,observed_height,rpc_path_count,refreshed_at)
+              VALUES ('topaz-1',10,5,%s)""", (now,))
+            cursor.execute("INSERT INTO realm_call_index_state(chain_id,from_height,through_height) "
+                           "VALUES ('topaz-1',1,10)")
             for path, kind, qfuncs, _has_import, _source in cases:
                 cursor.execute("""INSERT INTO realm_catalog(chain_id,path,path_kind,seen_via_rpc,rpc_visible,last_rpc_seen_at)
                   VALUES ('topaz-1',%s,%s,true,true,%s)""", (path, kind, now))
@@ -2732,8 +2738,14 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             cursor.execute("SELECT has_table_privilege('utsa_gno_api', "
                            "'public.realm_metadata_refresh_state', 'SELECT')")
             self.assertFalse(cursor.fetchone()[0])
+            cursor.execute("SELECT activity_from_height,activity_through_height FROM realm_catalog_state "
+                           "WHERE chain_id='topaz-1'")
+            self.assertEqual(cursor.fetchone(), (None, None))
             cursor.execute("SET ROLE utsa_gno_api")
-            cursor.execute(TOKEN_DIRECTORY_SOURCE_SQL, ("topaz-1",)); self.assertIsNotNone(cursor.fetchone())
+            cursor.execute(TOKEN_DIRECTORY_SOURCE_SQL, ("topaz-1",))
+            token_source = cursor.fetchone()
+            self.assertEqual((token_source[3], token_source[4]), (1, 10))
+            self.assertEqual((token_source[5], token_source[6]), (now - timedelta(hours=25), now))
             cursor.execute(TOKEN_DIRECTORY_CANDIDATES_SQL, ("topaz-1", 1001))
             candidates = cursor.fetchall()
             self.assertEqual([row[0] for row in candidates], ["gno.land/r/tokens/valid"])

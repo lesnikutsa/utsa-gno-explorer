@@ -24,11 +24,12 @@ def test_source_query_is_separate_and_global_bound_precedes_content_fetch():
 def test_source_sql_uses_truthful_metadata_and_activity_coverage():
     assert "realm_metadata_refresh_state" not in TOKEN_DIRECTORY_SOURCE_SQL
     assert "NULL::bigint AS metadata_observed_height" in TOKEN_DIRECTORY_SOURCE_SQL
-    assert "activity_from_height" in TOKEN_DIRECTORY_SOURCE_SQL
-    assert "activity_through_height" in TOKEN_DIRECTORY_SOURCE_SQL
-    assert "coverage_start.time_utc" in TOKEN_DIRECTORY_SOURCE_SQL
+    assert "call_state.from_height AS call_index_from_height" in TOKEN_DIRECTORY_SOURCE_SQL
+    assert "call_state.through_height AS call_index_through_height" in TOKEN_DIRECTORY_SOURCE_SQL
+    assert "coverage_start.time_utc AS call_index_coverage_started_at" in TOKEN_DIRECTORY_SOURCE_SQL
 
 
-def test_activity_checkpoint_comes_from_catalog_through_height():
-    assert "activity_checkpoint.time_utc AS activity_checkpoint_at" in TOKEN_DIRECTORY_SOURCE_SQL
-    assert "activity_checkpoint.height=catalog.activity_through_height" in TOKEN_DIRECTORY_SOURCE_SQL
+def test_activity_checkpoint_comes_from_call_index_through_height():
+    assert "call_checkpoint.time_utc AS call_index_checkpoint_at" in TOKEN_DIRECTORY_SOURCE_SQL
+    assert "call_checkpoint.height=call_state.through_height" in TOKEN_DIRECTORY_SOURCE_SQL
+    assert "realm_call_index_state call_state" in TOKEN_DIRECTORY_SOURCE_SQL
