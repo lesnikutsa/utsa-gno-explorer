@@ -107,7 +107,23 @@ def test_token_table_uses_existing_sorting_contract_only_for_requested_columns()
     supply = page.split("key: 'total_supply'", 1)[1].split("},", 1)[0]
     assert "sortable: true" in direct and "defaultSortDirection: 'descending'" in direct
     assert "sortable: true" in activity and "defaultSortDirection: 'descending'" in activity
-    assert "sortable" not in supply
+    assert "sortable: true" in supply and "defaultSortDirection: 'descending'" in supply
+    assert "sortDisabled: !suppliesSettled" in supply
+
+
+def test_total_supply_sort_waits_for_terminal_visible_supply_states():
+    page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
+    table = (ROOT / "frontend/src/components/DataTable.jsx").read_text()
+    hook = (ROOT / "frontend/src/hooks/useTokensPage.js").read_text()
+    sorter = (ROOT / "frontend/src/utils/tokenDirectory.js").read_text()
+    assert "items.every((item) => Object.hasOwn(supplies, item.path))" in page
+    assert "sort.key === 'total_supply' && !suppliesSettled ? null : sort.key" in page
+    assert "disabled={column.sortDisabled === true}" in table
+    assert "BigInt(supply.raw_total_supply)" in sorter and "10n **" in sorter
+    total_sort = sorter.split("const exactSupply", 1)[1]
+    assert "parseFloat(" not in total_sort and "Number(" not in total_sort
+    assert "getTokenSupply" not in sorter
+    assert "Math.min(4, pending.length)" in hook
 
 
 def test_tokens_auto_refresh_matches_visibility_and_overlap_contract():

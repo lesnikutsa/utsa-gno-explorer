@@ -13,14 +13,16 @@ const formatCount = (value) => Number.isFinite(value) ? value.toLocaleString() :
 const TOKEN_WINDOW_LABELS = { '24h': '24H', '7d': '7D', '30d': '30D' }
 const TOKEN_WINDOW_DESCRIPTIONS = { '24h': 'the last 24 hours', '7d': 'the last 7 days', '30d': 'the last 30 days' }
 
-const columns = (supplies) => [
+const columns = (supplies, suppliesSettled) => [
   { key: 'token', label: 'Token', render: (item) => <a className="tokens-table__token" href={realmDetailHref(item.path)}>
     <span className="tokens-table__identity">{item.identity_verified ? item.name : item.path.split('/').at(-1)}
       {item.identity_verified && item.symbol ? <small>${item.symbol}</small> : null}</span>
     <span className="tokens-table__path mono">{item.path}</span></a> },
   { key: 'application', label: 'App', render: (item) => <span className="tokens-table__app"><strong>{item.application?.display_name ?? item.namespace_key}</strong><small>{item.application?.category ?? 'Namespace'}</small></span> },
   { key: 'decimals', label: 'Decimals', render: (item) => item.decimals ?? '—' },
-  { key: 'total_supply', label: 'Total Supply', render: (item) => <span className="tokens-table__supply mono">{supplies[item.path]?.available ? formatTokenSupply(supplies[item.path].total_supply) : '—'}</span> },
+  { key: 'total_supply', label: 'Total Supply', sortable: true, sortDisabled: !suppliesSettled,
+    defaultSortDirection: 'descending', headerTitle: suppliesSettled ? undefined : 'Total Supply sorting is available after visible supplies settle.',
+    render: (item) => <span className="tokens-table__supply mono">{supplies[item.path]?.available ? formatTokenSupply(supplies[item.path].total_supply) : '—'}</span> },
   { key: 'direct_call_count', label: 'Direct Calls', sortable: true, defaultSortDirection: 'descending', render: (item) => formatCount(item.direct_call_count) },
   { key: 'last_activity_at', label: 'Last Activity', sortable: true, defaultSortDirection: 'descending', render: (item) => item.last_activity_at ? <time dateTime={item.last_activity_at} title={item.last_activity_at}>{relativeTime(item.last_activity_at)}</time> : 'Never' },
   { key: 'rpc_visible', label: 'Visibility', render: (item) => item.rpc_visible ? <StatusBadge tone="success">Visible</StatusBadge> : <StatusBadge tone="neutral">Historical</StatusBadge> },
@@ -33,7 +35,10 @@ export function Tokens({ tokensPage }) {
   const { activityLoading, activityError, retryActivity } = tokensPage
   const [networkIconFailed, setNetworkIconFailed] = useState(false)
   const [sort, setSort] = useState({ key: 'last_activity_at', direction: 'descending' })
-  const sortedItems = useMemo(() => sortTokenDirectoryItems(items, sort.key, sort.direction), [items, sort])
+  const suppliesSettled = items.every((item) => Object.hasOwn(supplies, item.path))
+  const effectiveSortKey = sort.key === 'total_supply' && !suppliesSettled ? null : sort.key
+  const sortedItems = useMemo(() => sortTokenDirectoryItems(items, effectiveSortKey, sort.direction, supplies),
+    [effectiveSortKey, items, sort.direction, supplies])
   const native = nativeToken ?? networkProfile.nativeToken
   const empty = error ? 'Tokens are currently unavailable.' : appliedSearch ? `No tokens match “${appliedSearch}”.` : 'No confirmed GRC20 tokens have been indexed yet.'
   return <section className="blocks-page tokens-page" aria-labelledby="tokens-page-title">
@@ -82,7 +87,7 @@ export function Tokens({ tokensPage }) {
       <button className="blocks-page__button" type="submit">Search</button>
       {appliedSearch && <button className="blocks-page__button" type="button" onClick={clearSearch}>Clear</button>}
     </form>
-    <div className="panel blocks-page__table tokens-page__table"><DataTable columns={columns(supplies)} rows={sortedItems} rowKey={(item) => item.path} loading={loading} emptyMessage={empty}
+    <div className="panel blocks-page__table tokens-page__table"><DataTable columns={columns(supplies, suppliesSettled)} rows={sortedItems} rowKey={(item) => item.path} loading={loading} emptyMessage={empty}
       sortKey={sort.key} sortDirection={sort.direction} onSort={(key, direction) => setSort({ key, direction })} /></div>
     <nav className="blocks-pagination" aria-label="Tokens pagination">
       <button className="blocks-page__button" type="button" onClick={loadNewer} disabled={loading || pageIndex === 0}>Newer entries</button>

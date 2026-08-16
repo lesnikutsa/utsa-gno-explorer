@@ -24,3 +24,42 @@ test('last activity sorts chronologically with null last and canonical path ties
   assert.deepEqual(sortTokenDirectoryItems(items, 'last_activity_at', 'ascending').map((item) => item.path),
     ['gno.land/r/c', 'gno.land/r/a', 'gno.land/r/b', 'gno.land/r/z'])
 })
+
+test('total supply compares exact human units across decimals and unsafe integers', () => {
+  const tokens = [
+    { path: 'gno.land/r/one', decimals: 6 },
+    { path: 'gno.land/r/two', decimals: 0 },
+    { path: 'gno.land/r/huge', decimals: 18 },
+  ]
+  const supplies = {
+    'gno.land/r/one': { available: true, raw_total_supply: '1000000' },
+    'gno.land/r/two': { available: true, raw_total_supply: '200' },
+    'gno.land/r/huge': { available: true, raw_total_supply: '900719925474099312345678901234567890' },
+  }
+  const tokensBefore = structuredClone(tokens)
+  const suppliesBefore = structuredClone(supplies)
+  assert.deepEqual(sortTokenDirectoryItems(tokens, 'total_supply', 'descending', supplies).map((item) => item.path),
+    ['gno.land/r/huge', 'gno.land/r/two', 'gno.land/r/one'])
+  assert.deepEqual(sortTokenDirectoryItems(tokens, 'total_supply', 'ascending', supplies).map((item) => item.path),
+    ['gno.land/r/one', 'gno.land/r/two', 'gno.land/r/huge'])
+  assert.deepEqual(tokens, tokensBefore)
+  assert.deepEqual(supplies, suppliesBefore)
+})
+
+test('equal and unavailable supplies use canonical paths with unavailable last both ways', () => {
+  const tokens = [
+    { path: 'gno.land/r/missing-b', decimals: 6 },
+    { path: 'gno.land/r/equal-b', decimals: 0 },
+    { path: 'gno.land/r/equal-a', decimals: 6 },
+    { path: 'gno.land/r/missing-a', decimals: 6 },
+  ]
+  const supplies = {
+    'gno.land/r/missing-b': { available: false },
+    'gno.land/r/equal-b': { available: true, raw_total_supply: '1' },
+    'gno.land/r/equal-a': { available: true, raw_total_supply: '1000000' },
+    'gno.land/r/missing-a': { available: false },
+  }
+  const expected = ['gno.land/r/equal-a', 'gno.land/r/equal-b', 'gno.land/r/missing-a', 'gno.land/r/missing-b']
+  assert.deepEqual(sortTokenDirectoryItems(tokens, 'total_supply', 'descending', supplies).map((item) => item.path), expected)
+  assert.deepEqual(sortTokenDirectoryItems(tokens, 'total_supply', 'ascending', supplies).map((item) => item.path), expected)
+})
