@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { UtsaLogo } from './UtsaLogo'
-import { BlocksIcon, ChainIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, GovernanceIcon, HomeIcon, RealmsIcon, TransactionsIcon, ValidatorsIcon } from './Icons'
+import { BlocksIcon, ChainIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, GovernanceIcon, HomeIcon, RealmsIcon, TokensIcon, TransactionsIcon, ValidatorsIcon } from './Icons'
 import { networkProfile } from '../config/networkProfile'
 
 const items = [
@@ -8,6 +8,7 @@ const items = [
   { label: 'Blocks', Icon: BlocksIcon, href: '/blocks' },
   { label: 'Transactions', Icon: TransactionsIcon, href: '/transactions' },
   { label: 'Realms', Icon: RealmsIcon, href: '/realms' },
+  { label: 'Tokens', Icon: TokensIcon, href: '/tokens' },
   { label: 'Validators', Icon: ValidatorsIcon, href: '/validators' },
   { label: 'Governance', Icon: GovernanceIcon, href: '/governance' },
 ]

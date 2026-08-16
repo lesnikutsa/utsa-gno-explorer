@@ -1,0 +1,79 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { getTokens } from '../services/api'
+
+export const PAGE_SIZE = 50
+
+export function useTokensPage() {
+  const [items, setItems] = useState([])
+  const [summary, setSummary] = useState(null)
+  const [searchInput, setSearchInput] = useState('')
+  const [appliedSearch, setAppliedSearch] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
+  const [healthState, setHealthState] = useState('loading')
+  const [pageIndex, setPageIndex] = useState(0)
+  const [nextCursor, setNextCursor] = useState(null)
+  const [cursorHistory, setCursorHistory] = useState([null])
+  const mounted = useRef(false)
+  const requestId = useRef(0)
+  const controller = useRef(null)
+  const failedRequest = useRef(null)
+
+  const loadPage = useCallback(async (request) => {
+    const attempted = { ...request, history: request.history ? [...request.history] : undefined }
+    controller.current?.abort()
+    const activeController = new AbortController()
+    controller.current = activeController
+    const id = ++requestId.current
+    setLoading(true); setItems([]); setSummary(null); setError(false)
+    try {
+      const response = await getTokens({ limit: PAGE_SIZE, q: request.search,
+        beforeActivityHeight: request.cursor?.activityHeight, beforePath: request.cursor?.path,
+        signal: activeController.signal })
+      if (!mounted.current || id !== requestId.current) return
+      const pagination = response.pagination ?? {}
+      const hasNext = pagination.next_before_activity_height !== null && pagination.next_before_activity_height !== undefined
+        && pagination.next_before_path !== null && pagination.next_before_path !== undefined
+      setItems((response.items ?? []).slice(0, PAGE_SIZE)); setSummary(response.summary ?? null)
+      setNextCursor(hasNext ? { activityHeight: pagination.next_before_activity_height, path: pagination.next_before_path } : null)
+      setPageIndex(request.targetIndex); if (request.history) setCursorHistory(request.history)
+      failedRequest.current = null; setHealthState('healthy')
+    } catch (requestError) {
+      if (!mounted.current || id !== requestId.current || requestError?.name === 'AbortError') return
+      failedRequest.current = attempted; setItems([]); setSummary(null); setError(true); setHealthState('error')
+    } finally {
+      if (mounted.current && id === requestId.current) setLoading(false)
+    }
+  }, [])
+
+  const resetAndLoad = useCallback((search) => {
+    const history = [null]
+    setCursorHistory(history); setPageIndex(0); setNextCursor(null)
+    loadPage({ cursor: null, targetIndex: 0, history, search })
+  }, [loadPage])
+  const submitSearch = useCallback((event) => {
+    event?.preventDefault(); const search = searchInput.trim()
+    setSearchInput(search); setAppliedSearch(search); resetAndLoad(search)
+  }, [resetAndLoad, searchInput])
+  const clearSearch = useCallback(() => { setSearchInput(''); setAppliedSearch(''); resetAndLoad('') }, [resetAndLoad])
+  const loadOlder = useCallback(() => {
+    if (loading || !nextCursor) return
+    const history = [...cursorHistory.slice(0, pageIndex + 1), nextCursor]
+    loadPage({ cursor: nextCursor, targetIndex: pageIndex + 1, history, search: appliedSearch })
+  }, [appliedSearch, cursorHistory, loadPage, loading, nextCursor, pageIndex])
+  const loadNewer = useCallback(() => {
+    if (loading || pageIndex === 0) return
+    loadPage({ cursor: cursorHistory[pageIndex - 1], targetIndex: pageIndex - 1, search: appliedSearch })
+  }, [appliedSearch, cursorHistory, loadPage, loading, pageIndex])
+  const retry = useCallback(() => { if (failedRequest.current) loadPage(failedRequest.current) }, [loadPage])
+
+  useEffect(() => {
+    mounted.current = true
+    loadPage({ cursor: null, targetIndex: 0, history: [null], search: '' })
+    return () => { mounted.current = false; requestId.current += 1; controller.current?.abort() }
+  }, [loadPage])
+
+  return { items, summary, searchInput, appliedSearch, loading, error, healthState, pageIndex,
+    nextCursor, cursorHistory, setSearchInput, submitSearch, clearSearch, retry, loadOlder, loadNewer,
+    canLoadOlder: nextCursor !== null }
+}
