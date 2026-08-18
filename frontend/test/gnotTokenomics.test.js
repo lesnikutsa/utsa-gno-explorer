@@ -9,6 +9,7 @@ test('official GNOT allocation is centralized and internally exact', () => {
   assert.equal(GNOT_TOKENOMICS.total, 1_333_000_000)
   assert.deepEqual(GNOT_TOKENOMICS.allocations.map((item) => item.percentage),
     ['26.26%', '24.91%', '22.51%', '17.33%', '4.50%', '3.00%', '1.50%'])
+  assert.equal(GNOT_TOKENOMICS.allocations[1].label, 'NewTendermint LLC')
   assert.equal(GNOT_TOKENOMICS.sourceUrl, 'https://sale.gno.land/')
 })
 

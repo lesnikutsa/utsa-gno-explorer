@@ -10,7 +10,7 @@ export const GNOT_TOKENOMICS = Object.freeze({
   }),
   allocations: Object.freeze([
     Object.freeze({ label: 'Cosmos Airdrop', amount: 350_000_000, percentage: '26.26%', color: '#5b8ff9' }),
-    Object.freeze({ label: 'NewTendermint', amount: 332_000_000, percentage: '24.91%', color: '#61d9a7' }),
+    Object.freeze({ label: 'NewTendermint LLC', amount: 332_000_000, percentage: '24.91%', color: '#61d9a7' }),
     Object.freeze({ label: 'Investors', amount: 300_000_000, percentage: '22.51%', color: '#f6bd16' }),
     Object.freeze({ label: 'AtomOne Airdrop', amount: 231_000_000, percentage: '17.33%', color: '#e868a2' }),
     Object.freeze({ label: 'Ecosystem Treasury', amount: 60_000_000, percentage: '4.50%', color: '#6dc8ec' }),

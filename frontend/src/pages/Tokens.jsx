@@ -94,10 +94,6 @@ export function Tokens({ tokensPage }) {
   return <section className="blocks-page tokens-page" aria-labelledby="tokens-page-title">
     <header className="blocks-page__header tokens-page__header"><h1 id="tokens-page-title">Tokens</h1>
       {error && <button className="blocks-page__button blocks-page__button--accent" onClick={retry}>Retry</button>}</header>
-    <div className="status-grid tokens-page__summary">
-      <div className="panel tokens-page__metric"><span>GRC20 Tokens</span><strong><ChangedValue value={summary?.grc20_count}>{formatCount(summary?.grc20_count)}</ChangedValue></strong></div>
-      <div className="panel tokens-page__metric"><span>NFT Collections</span><strong><ChangedValue value={summary?.grc721_count}>{formatCount(summary?.grc721_count)}</ChangedValue></strong></div>
-    </div>
     <section className="tokens-native" aria-labelledby="tokens-native-title">
       <h2 id="tokens-native-title">Native Token</h2>
       <div className="panel tokens-native__card">
