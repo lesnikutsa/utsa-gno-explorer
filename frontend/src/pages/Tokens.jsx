@@ -126,6 +126,11 @@ export function Tokens({ tokensPage }) {
     if (!supportedSortKeys.has(sort.key)) setSort({ key: 'last_activity_at', direction: 'descending' })
   }, [assetFilter, sort.key])
   useEffect(() => {
+    setNftExpansion((current) => current.context === expansionContext
+      ? current
+      : { context: expansionContext, keys: new Set() })
+  }, [expansionContext])
+  useEffect(() => {
     const available = new Set(nftGroups.filter((group) => group.rowType === 'family').map((group) => group.groupKey))
     setNftExpansion((current) => {
       if (current.context !== expansionContext) return current

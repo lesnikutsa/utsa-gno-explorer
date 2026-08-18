@@ -18,7 +18,7 @@ test('groups only exact name and symbol identities and leaves singles alone', ()
   assert.equal(groupNftCollections([item('r/only')])[0].rowType, 'single')
 })
 
-test('calculates family aggregates, application state, and deterministic child order', () => {
+test('calculates family aggregates and application state', () => {
   const family = groupNftCollections([
     item('r/z/2', 'Same', 'S', { direct_call_count: 4, last_activity_at: '2026-02-01T00:00:00Z', rpc_visible: false }),
     item('r/a/1', 'Same', 'S', { direct_call_count: 3, last_activity_at: '2026-03-01T00:00:00Z', namespace_key: 'a' }),
@@ -32,6 +32,27 @@ test('calculates family aggregates, application state, and deterministic child o
   assert.equal(groupNftCollections([item('a'), item('b')])[0].visibility, 'Visible')
   assert.equal(groupNftCollections([item('a'), item('b')])[0].applicationMode, 'single')
   assert.equal(groupNftCollections([item('a', 'H', 'H', { rpc_visible: false }), item('b', 'H', 'H', { rpc_visible: false })])[0].visibility, 'Historical')
+})
+
+test('orders family children by activity, calls, then canonical path', () => {
+  const family = groupNftCollections([
+    item('r/family/g1', 'Same', 'S', { direct_call_count: 999, last_activity_at: null }),
+    item('r/family/g10', 'Same', 'S', { direct_call_count: 3, last_activity_at: '2026-03-01T00:00:00Z' }),
+    item('r/family/g2', 'Same', 'S', { direct_call_count: 8, last_activity_at: '2026-03-01T00:00:00Z' }),
+    item('r/family/a', 'Same', 'S', { direct_call_count: 8, last_activity_at: '2026-03-01T00:00:00Z' }),
+    item('r/family/newest', 'Same', 'S', { direct_call_count: null, last_activity_at: '2026-04-01T00:00:00Z' }),
+    item('r/family/missing-calls', 'Same', 'S', { direct_call_count: null, last_activity_at: '2026-03-01T00:00:00Z' }),
+    item('r/family/invalid', 'Same', 'S', { direct_call_count: 1000, last_activity_at: 'not-a-date' }),
+  ])[0]
+  assert.deepEqual(family.members.map(({ path }) => path), [
+    'r/family/newest',
+    'r/family/a',
+    'r/family/g2',
+    'r/family/g10',
+    'r/family/missing-calls',
+    'r/family/invalid',
+    'r/family/g1',
+  ])
 })
 
 test('sorts top-level collections, calls, and activity in either direction', () => {

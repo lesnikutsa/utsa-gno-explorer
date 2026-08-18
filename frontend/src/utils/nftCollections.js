@@ -3,6 +3,21 @@ import { applicationPresentation } from './namespaceDisplay.js'
 const lexicalCompare = (left, right) => left < right ? -1 : left > right ? 1 : 0
 const canonicalPath = (item) => typeof item?.path === 'string' ? item.path : ''
 
+const compareNftCollectionMembers = (left, right) => {
+  const leftActivity = Date.parse(left?.last_activity_at)
+  const rightActivity = Date.parse(right?.last_activity_at)
+  const leftHasActivity = Number.isFinite(leftActivity)
+  const rightHasActivity = Number.isFinite(rightActivity)
+  if (leftHasActivity !== rightHasActivity) return leftHasActivity ? -1 : 1
+  if (leftHasActivity && leftActivity !== rightActivity) return rightActivity - leftActivity
+
+  const leftCalls = Number.isFinite(left?.direct_call_count) ? left.direct_call_count : null
+  const rightCalls = Number.isFinite(right?.direct_call_count) ? right.direct_call_count : null
+  if ((leftCalls !== null) !== (rightCalls !== null)) return leftCalls !== null ? -1 : 1
+  if (leftCalls !== null && leftCalls !== rightCalls) return rightCalls - leftCalls
+  return lexicalCompare(canonicalPath(left), canonicalPath(right))
+}
+
 export function nftCollectionGroupKey(item) {
   return JSON.stringify([item?.name ?? '', item?.symbol ?? ''])
 }
@@ -26,7 +41,7 @@ export function groupNftCollections(items, paginationState = {}) {
   }
 
   return [...buckets.entries()].map(([groupKey, bucket]) => {
-    const members = [...bucket].sort((left, right) => lexicalCompare(canonicalPath(left), canonicalPath(right)))
+    const members = [...bucket].sort(compareNftCollectionMembers)
     if (members.length === 1) return { ...members[0], rowType: 'single', groupKey, members }
 
     const validActivity = members.map((item) => ({ value: item.last_activity_at, timestamp: Date.parse(item.last_activity_at) }))
