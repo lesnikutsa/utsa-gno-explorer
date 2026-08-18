@@ -11,6 +11,9 @@ def test_tokens_route_navigation_and_page_contract():
     page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
     assert "path === '/tokens'" in app
     assert "label: 'Tokens'" in sidebar and "href: '/tokens'" in sidebar
+    assert '<h1 className="sr-only" id="tokens-page-title">Tokens</h1>' in page
+    assert '<h1 id="tokens-page-title">Tokens</h1>' not in page
+    assert "tokens-page__header" not in page
     for heading in ("Token", "App", "Decimals", "Total Supply", "Direct Calls", "Last Activity", "Visibility"):
         assert f"label: '{heading}'" in page
     assert page.index("label: 'Decimals'") < page.index("label: 'Total Supply'") < page.index("label: 'Direct Calls'")
@@ -54,8 +57,48 @@ def test_tokens_styles_are_scoped():
     assert "var(--color-card)" in token_rules and "var(--color-text-bright)" in token_rules
     assert "linear-gradient(135deg, var(--color-accent-soft), var(--color-card))" in token_rules
     assert ".tokens-native__card { width: 100%" in css
+    assert ".tokens-page__header" not in css
+    assert ".tokens-page > .tokens-native { margin-top: 0; }" in css
     assert "max-width: 430px" not in token_rules
     assert ".tokens-top__metrics > div:last-child { margin-left: auto; text-align: right; }" in css
+
+
+def test_native_card_separates_live_supply_from_mainnet_distribution():
+    page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
+    css = (ROOT / "frontend/src/styles/app.css").read_text()
+    tokenomics = (ROOT / "frontend/src/config/gnotTokenomics.js").read_text()
+    native_card = page.split('<div className="panel tokens-native__card">', 1)[1].split('</section>\n    <section className="tokens-top"', 1)[0]
+    for visible_text in ("On-chain Supply", "Live RPC", "bank/supply/", "Mainnet Token Distribution",
+                         "Official allocation", "Cosmos Airdrop", "Official tokenomics"):
+        assert visible_text in page + (ROOT / "frontend/src/config/gnotTokenomics.js").read_text()
+    assert "aria-label={`Mainnet GNOT token distribution" in page
+    assert "GNOT_TOKENOMICS.allocations.map" in page
+    assert 'className="panel' not in native_card
+    assert "grid-template-columns: minmax(0, 1.35fr) minmax(340px, 1fr)" in css
+    assert re.search(r"@media \(max-width: 760px\)[\s\S]*?\.tokens-native__content \{ grid-template-columns: 1fr; \}", css)
+    assert re.search(r"@media \(max-width: 760px\)[\s\S]*?\.tokens-native__tokenomics \{[^}]*border-top: 1px solid var\(--color-border-soft\)", css)
+    assert "Official allocation · {GNOT_TOKENOMICS.totalDisplay}" in page
+    assert "On-chain Supply · {GNOT_TOKENOMICS.totalDisplay}" not in page
+    assert "Circulating Supply · {GNOT_TOKENOMICS.totalDisplay}" not in page
+    assert "font-size: clamp(18px, 1.8vw, 24px)" in css
+    assert "clamp(19px, 2.25vw, 28px)" not in css
+    assert "NewTendermint LLC" in tokenomics
+
+
+def test_duplicate_asset_summary_cards_are_removed_but_filter_counts_remain():
+    page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
+    css = (ROOT / "frontend/src/styles/app.css").read_text()
+    before_native = page.split('<section className="tokens-native"', 1)[0]
+    directory = page.split('<section className="tokens-directory"', 1)[1]
+    assert "tokens-page__summary" not in page
+    assert "tokens-page__metric" not in page
+    assert "GRC20 Tokens" not in before_native
+    assert "NFT Collections" not in before_native
+    assert "tokens-page__summary" not in css
+    assert "tokens-page__metric" not in css
+    for label, count in (("All", "summary?.asset_count"), ("GRC20 Tokens", "summary?.grc20_count"), ("NFTs", "summary?.grc721_count")):
+        assert f"'{label}'" in directory
+        assert count in directory
 
 
 def test_tokens_cursor_pagination_and_request_safety_contract():
@@ -148,8 +191,7 @@ def test_directory_metrics_use_existing_changed_value_feedback():
     assert "`${timestamp ?? 'never'}|${label}`" in helper
     assert "timestamp ? relativeTime(timestamp) : 'Never'" in helper
     assert "value={lastActivityChangeValue(timestamp, label)}" in helper
-    for existing_value in ("summary?.grc20_count", "summary?.grc721_count", "native.available ? native.total_supply : null",
-                           "token.direct_call_count", "token.success_rate"):
+    for existing_value in ("native.available ? native.total_supply : null", "token.direct_call_count", "token.success_rate"):
         assert f"value={{{existing_value}}}" in page
 
 

@@ -31,6 +31,7 @@ import { useGovernancePage } from './hooks/useGovernancePage'
 import { useGovernanceDetail } from './hooks/useGovernanceDetail'
 import { useAccountDetail } from './hooks/useAccountDetail'
 import { useRealmDetail } from './hooks/useRealmDetail'
+import { usePathname } from './utils/navigation'
 
 const NETWORK_MASCOT_SRC = '/assets/network-mascot.png?v=1'
 
@@ -187,7 +188,7 @@ function GovernanceDetailPage({ proposalId }) {
 }
 
 export default function App() {
-  const path = window.location.pathname
+  const path = usePathname()
 
   useEffect(() => {
     document.title = `${networkProfile.projectName} Explorer`

@@ -58,6 +58,9 @@ class RealmsFrontendContractTests(unittest.TestCase):
 
     def test_presentation_contract(self):
         page = self.read("frontend/src/pages/Realms.jsx")
+        self.assertIn('<h2 id="realms-applications-title">Top Applications</h2>', page)
+        self.assertNotIn('<h2 id="realms-applications-title">Applications</h2>', page)
+        self.assertIn("Realm applications ranked by direct calls in ${APPLICATION_WINDOW_DESCRIPTIONS[window]}.", page)
         labels = ["label: 'Path'", "label: 'Type'", "label: 'Direct Calls'", "label: 'Success Rate'", "label: 'Last Activity'", "label: 'Visibility'"]
         self.assertEqual(page.count("label: '"), 6)
         self.assertEqual([page.index(label) for label in labels], sorted(page.index(label) for label in labels))

@@ -75,7 +75,7 @@ function RealmApplications({ applications }) {
     <section className="realms-applications" aria-labelledby="realms-applications-title">
       <div className="realms-applications__heading">
         <div>
-          <h2 id="realms-applications-title">Applications</h2>
+          <h2 id="realms-applications-title">Top Applications</h2>
           <p className="realms-applications__intro">{intro}</p>
         </div>
         <div className="realms-applications__actions">

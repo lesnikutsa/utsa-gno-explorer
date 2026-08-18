@@ -5,8 +5,9 @@ import { ChangedValue } from '../components/ChangedValue'
 import { realmDetailHref } from '../utils/realm'
 import { formatSuccessRate } from '../utils/realm'
 import { relativeTime } from '../utils/time'
-import { formatTokenSupply } from '../utils/tokenSupply'
+import { formatNativeSupply, formatTokenSupply } from '../utils/tokenSupply'
 import { networkProfile } from '../config/networkProfile'
+import { GNOT_TOKENOMICS } from '../config/gnotTokenomics'
 import { sortTokenDirectoryItems } from '../utils/tokenDirectory'
 import { applicationPresentation } from '../utils/namespaceDisplay'
 
@@ -83,15 +84,16 @@ export function Tokens({ tokensPage }) {
     if (!supportedSortKeys.has(sort.key)) setSort({ key: 'last_activity_at', direction: 'descending' })
   }, [assetFilter, sort.key])
   const native = nativeToken ?? networkProfile.nativeToken
+  const nativeBaseDenom = native.base_denom ?? native.baseDenom
+  const nativeSupply = formatNativeSupply(native.total_supply)
+  const donutRadius = 42
+  const donutCircumference = 2 * Math.PI * donutRadius
+  let donutOffset = 0
   const tableColumns = assetFilter === 'grc20' ? grc20Columns(supplies, suppliesSettled) : assetFilter === 'grc721' ? nftColumns : commonColumns
   const empty = error ? 'Assets are currently unavailable.' : appliedSearch ? `No assets match “${appliedSearch}”.` : 'No verified contract assets have been indexed yet.'
   return <section className="blocks-page tokens-page" aria-labelledby="tokens-page-title">
-    <header className="blocks-page__header tokens-page__header"><h1 id="tokens-page-title">Tokens</h1>
-      {error && <button className="blocks-page__button blocks-page__button--accent" onClick={retry}>Retry</button>}</header>
-    <div className="status-grid tokens-page__summary">
-      <div className="panel tokens-page__metric"><span>GRC20 Tokens</span><strong><ChangedValue value={summary?.grc20_count}>{formatCount(summary?.grc20_count)}</ChangedValue></strong></div>
-      <div className="panel tokens-page__metric"><span>NFT Collections</span><strong><ChangedValue value={summary?.grc721_count}>{formatCount(summary?.grc721_count)}</ChangedValue></strong></div>
-    </div>
+    <h1 className="sr-only" id="tokens-page-title">Tokens</h1>
+    {error && <button className="blocks-page__button blocks-page__button--accent" onClick={retry}>Retry</button>}
     <section className="tokens-native" aria-labelledby="tokens-native-title">
       <h2 id="tokens-native-title">Native Token</h2>
       <div className="panel tokens-native__card">
@@ -100,13 +102,38 @@ export function Tokens({ tokensPage }) {
             : <img className="tokens-native__icon" src={networkProfile.networkIconSrc} alt="" onError={() => setNetworkIconFailed(true)} />}
           <div><h3>{native.name}</h3><p>Native currency · {networkProfile.networkName}</p></div>
         </div><StatusBadge tone="neutral">{native.type}</StatusBadge></header>
-        <dl className="tokens-native__metrics">
-          <div><dt>Total Supply</dt><dd><ChangedValue value={native.available ? native.total_supply : null}>{native.available ? `${formatTokenSupply(native.total_supply)} GNOT` : '—'}</ChangedValue></dd></div>
-          <div><dt>Base denom</dt><dd className="mono">{native.base_denom ?? native.baseDenom}</dd></div>
-          <div><dt>Decimals</dt><dd>{native.decimals}</dd></div>
-          <div><dt>Network</dt><dd>{networkProfile.networkName}</dd></div>
-        </dl>
-        <p className="tokens-native__conversion">1 GNOT = 1,000,000 ugnot</p>
+        <div className="tokens-native__content">
+          <section className="tokens-native__live" aria-labelledby="tokens-native-live-title">
+            <div className="tokens-native__section-heading"><h4 id="tokens-native-live-title">Live {networkProfile.networkName}</h4><span>Live RPC</span></div>
+            <dl className="tokens-native__supply"><div><dt>On-chain Supply</dt><dd title={native.available ? `Exact on-chain value: ${nativeSupply.exact} GNOT` : undefined}><ChangedValue value={native.available ? native.total_supply : null}>{native.available ? `${nativeSupply.display} GNOT` : '—'}</ChangedValue></dd></div></dl>
+            <p className="tokens-native__provenance">{networkProfile.networkName} bank supply · Live RPC<br /><span className="mono">bank/supply/{nativeBaseDenom}</span></p>
+            <p className="tokens-native__semantic">Network state — not circulating supply or Mainnet allocation.</p>
+            {native.available && <details className="tokens-native__exact"><summary>Exact value</summary><span>Exact on-chain value<br /><strong className="mono">{nativeSupply.exact} GNOT</strong></span></details>}
+            <dl className="tokens-native__metrics">
+              <div><dt>Base denom</dt><dd className="mono">{nativeBaseDenom}</dd></div>
+              <div><dt>Decimals</dt><dd>{native.decimals}</dd></div>
+              <div><dt>Network</dt><dd>{networkProfile.networkName}</dd></div>
+            </dl>
+            <p className="tokens-native__conversion">1 GNOT = 1,000,000 {nativeBaseDenom}</p>
+          </section>
+          <section className="tokens-native__tokenomics" aria-labelledby="tokens-native-tokenomics-title">
+            <div className="tokens-native__tokenomics-heading"><h4 id="tokens-native-tokenomics-title">Mainnet Token Distribution</h4><p>Official allocation · {GNOT_TOKENOMICS.totalDisplay}</p></div>
+            <div className="tokens-native__distribution">
+              <svg className="tokens-native__donut" viewBox="0 0 100 100" role="img" aria-label={`Mainnet GNOT token distribution, total ${GNOT_TOKENOMICS.accessibleTotal}`}>
+                <circle className="tokens-native__donut-track" cx="50" cy="50" r={donutRadius} />
+                {GNOT_TOKENOMICS.allocations.map((allocation) => {
+                  const length = allocation.amount / GNOT_TOKENOMICS.total * donutCircumference
+                  const segment = <circle key={allocation.label} className="tokens-native__donut-segment" cx="50" cy="50" r={donutRadius} stroke={allocation.color} strokeDasharray={`${length} ${donutCircumference - length}`} strokeDashoffset={-donutOffset} />
+                  donutOffset += length
+                  return segment
+                })}
+                <text x="50" y="48">1.333B</text><text className="tokens-native__donut-unit" x="50" y="58">GNOT</text>
+              </svg>
+              <ul className="tokens-native__legend">{GNOT_TOKENOMICS.allocations.map((allocation) => <li key={allocation.label}><span className="tokens-native__legend-dot" style={{ backgroundColor: allocation.color }} aria-hidden="true" /><span>{allocation.label}</span><strong>{allocation.percentage}</strong></li>)}</ul>
+            </div>
+            <div className="tokens-native__tokenomics-footer"><p><span>Circulating at TGE</span><strong>{GNOT_TOKENOMICS.circulatingAtTge.display} · {GNOT_TOKENOMICS.circulatingAtTge.percentage}</strong></p><a href={GNOT_TOKENOMICS.sourceUrl} target="_blank" rel="noreferrer">Official tokenomics ↗</a></div>
+          </section>
+        </div>
       </div>
     </section>
     <section className="tokens-top" aria-labelledby="tokens-top-title">
