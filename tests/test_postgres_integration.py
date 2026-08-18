@@ -2810,6 +2810,7 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         url = self.prepare_metadata_database(f"utsa_nft_activity_{os.getpid()}")
         now = datetime(2026, 8, 18, tzinfo=timezone.utc)
         path = "gno.land/r/example/nft"
+        unknown_path = "gno.land/r/example/nft-unknown-result"
         blocks = [
             (1, now - timedelta(days=2)),
             (10, now - timedelta(hours=24)),
@@ -2817,7 +2818,7 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             (20, now - timedelta(hours=20)), (30, now - timedelta(hours=18)),
             (40, now - timedelta(hours=16)), (50, now - timedelta(hours=14)),
             (90, now - timedelta(hours=1)), (91, now - timedelta(minutes=30)),
-            (92, now - timedelta(minutes=20)), (100, now),
+            (92, now - timedelta(minutes=20)), (93, now - timedelta(minutes=10)), (100, now),
             (101, now + timedelta(microseconds=1)),
         ]
         calls = [
@@ -2854,10 +2855,15 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                                "VALUES ('topaz-1',%s,%s,%s,%s,%s)",
                                [(height, tx_index, message_index, path, function)
                                 for message_index, (height, tx_index, function) in enumerate(calls)])
+            cursor.execute("INSERT INTO transactions(block_height,tx_index,raw_base64,raw_base64_length,decode_status) "
+                           "VALUES (93,0,'',0,'not_attempted')")
+            cursor.execute("INSERT INTO realm_call_index(chain_id,block_height,tx_index,message_index,path,function_name) "
+                           "VALUES ('topaz-1',93,0,0,%s,'Mint')", (unknown_path,))
             cursor.execute(NFT_ACTIVITY_SQL, (list(NFT_ACTION_BY_FUNCTION),
-                list(NFT_ACTION_BY_FUNCTION.values()), "topaz-1", [path], 1, 100))
-            row = cursor.fetchone()
-        self.assertEqual(row, (path, "burn", "Burn", now - timedelta(hours=1), 90, 0, 6))
+                list(NFT_ACTION_BY_FUNCTION.values()), "topaz-1", [path, unknown_path], 1, 100))
+            rows = cursor.fetchall()
+        self.assertEqual(rows[0], (path, False, "burn", "Burn", now - timedelta(hours=1), 90, 0, 6))
+        self.assertEqual(rows[1], (unknown_path, True, None, None, None, None, None, None))
 
     def test_metadata_upgrade_with_production_writer_ownership(self):
         name = f"utsa_metadata_writer_owner_{os.getpid()}"

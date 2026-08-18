@@ -380,20 +380,30 @@ GROUP BY call.path
 NFT_ACTIVITY_SQL = """
 WITH mapping AS (
  SELECT * FROM unnest(%s::text[],%s::text[]) AS action(function_name,action)
-)
-SELECT DISTINCT ON (call.path)
- call.path,mapping.action AS last_action,call.function_name AS last_action_function,
- block.time_utc AS last_action_at,call.block_height AS last_action_height,
- call.tx_index AS last_action_tx_index,call.message_index AS last_action_message_index
+), recognized AS MATERIALIZED (
+ SELECT call.path,mapping.action,call.function_name,block.time_utc,call.block_height,
+        call.tx_index,call.message_index,result.execution_status
  FROM realm_call_index call
  JOIN mapping ON mapping.function_name=call.function_name
  JOIN blocks block ON block.height=call.block_height
- JOIN transaction_execution_results result
+ LEFT JOIN transaction_execution_results result
    ON (result.block_height,result.tx_index)=(call.block_height,call.tx_index)
  WHERE call.chain_id=%s AND call.path=ANY(%s::text[])
    AND call.block_height BETWEEN %s AND %s
-   AND result.execution_status='success'
- ORDER BY call.path,call.block_height DESC,call.tx_index DESC,call.message_index DESC
+), status_by_path AS (
+ SELECT path,bool_or(execution_status IS NULL) AS execution_unknown
+ FROM recognized GROUP BY path
+), latest_success AS (
+ SELECT DISTINCT ON (path) path,action,function_name,time_utc,block_height,tx_index,message_index
+ FROM recognized WHERE execution_status='success'
+ ORDER BY path,block_height DESC,tx_index DESC,message_index DESC
+)
+SELECT status.path,status.execution_unknown,
+ latest.action AS last_action,latest.function_name AS last_action_function,
+ latest.time_utc AS last_action_at,latest.block_height AS last_action_height,
+ latest.tx_index AS last_action_tx_index,latest.message_index AS last_action_message_index
+FROM status_by_path status LEFT JOIN latest_success latest USING (path)
+ORDER BY status.path COLLATE "C"
 """
 
 TOKEN_EXACT_CANDIDATE_SQL = """

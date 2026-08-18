@@ -699,6 +699,11 @@ class NftActivityItem(BaseModel):
     last_action_message_index: int | None = Field(default=None, ge=0)
 
 
+class NftActivityRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    paths: list[str] = Field(min_length=1, max_length=50)
+
+
 class NftActivityResponse(BaseModel):
     checkpoint_at: str | None
     items: list[NftActivityItem] = Field(max_length=50)

@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -42,7 +43,7 @@ def call_activity(*, candidates=None, files=None, activity=None):
          patch.object(app_module.database, "fetch_asset_candidate_files", return_value=files) as fetch_files, \
          patch.object(app_module.database, "fetch_nft_activity",
                       return_value=activity_result() if activity is None else activity) as fetch_activity:
-        response = app_module.get_nft_activity(paths=[PATH])
+        response = app_module.get_nft_activity(request=app_module.NftActivityRequest(paths=[PATH]))
     return response, fetch_files, fetch_activity
 
 
@@ -64,11 +65,12 @@ def test_exact_case_sensitive_nft_action_classification():
 
 def test_nft_activity_sql_is_success_only_bounded_and_uses_no_rpc():
     from api.database import NFT_ACTIVITY_SQL
-    assert "result.execution_status='success'" in NFT_ACTIVITY_SQL
+    assert "WHERE execution_status='success'" in NFT_ACTIVITY_SQL
     assert "call.block_height BETWEEN %s AND %s" in NFT_ACTIVITY_SQL
     assert "JOIN mapping ON mapping.function_name=call.function_name" in NFT_ACTIVITY_SQL
-    assert "SELECT DISTINCT ON (call.path)" in NFT_ACTIVITY_SQL
-    assert "ORDER BY call.path,call.block_height DESC,call.tx_index DESC,call.message_index DESC" in NFT_ACTIVITY_SQL
+    assert "SELECT DISTINCT ON (path)" in NFT_ACTIVITY_SQL
+    assert "ORDER BY path,block_height DESC,tx_index DESC,message_index DESC" in NFT_ACTIVITY_SQL
+    assert "bool_or(execution_status IS NULL)" in NFT_ACTIVITY_SQL
     assert "count(" not in NFT_ACTIVITY_SQL.casefold()
     assert "rpc" not in NFT_ACTIVITY_SQL.casefold()
 
@@ -116,6 +118,14 @@ def test_api_returns_available_empty_item_when_no_action_is_recognized():
     assert item.available is True and item.last_action is None
 
 
+def test_missing_execution_result_makes_path_activity_unavailable():
+    result = activity_result()
+    result["items"][0]["execution_unknown"] = True
+    response, _, _ = call_activity(activity=result)
+    item = response.items[0]
+    assert item.available is False and item.last_action is None
+
+
 def test_warm_matching_revision_skips_source_fetch_and_reuses_verified_cache():
     key = ("test-chain", PATH, "grc721", 10)
     asset_classification_cache.put(key, StaticAssetClassification(True, "Art", "ART", None, "verified"))
@@ -142,7 +152,7 @@ def test_rejected_cache_is_reused_without_source_fetch():
                       return_value={"source": {}, "candidates": [candidate()]}), \
          patch.object(app_module.database, "fetch_asset_candidate_files") as fetch_files, \
          pytest.raises(HTTPException) as error:
-        app_module.get_nft_activity(paths=[PATH])
+        app_module.get_nft_activity(request=app_module.NftActivityRequest(paths=[PATH]))
     assert error.value.status_code == 404
     fetch_files.assert_not_called()
 
@@ -153,7 +163,7 @@ def test_cold_rejection_is_cached_and_reused():
          patch.object(app_module.database, "fetch_asset_candidate_files",
                       return_value=[source_file(verified=False)]) as cold_fetch, \
          pytest.raises(HTTPException):
-        app_module.get_nft_activity(paths=[PATH])
+        app_module.get_nft_activity(request=app_module.NftActivityRequest(paths=[PATH]))
     cold_fetch.assert_called_once_with(chain_id="test-chain", paths=[PATH])
     cached = asset_classification_cache.get(("test-chain", PATH, "grc721", 10))
     assert cached is not None and cached.verified is False
@@ -161,7 +171,7 @@ def test_cold_rejection_is_cached_and_reused():
                       return_value={"source": {}, "candidates": [candidate()]}), \
          patch.object(app_module.database, "fetch_asset_candidate_files") as warm_fetch, \
          pytest.raises(HTTPException):
-        app_module.get_nft_activity(paths=[PATH])
+        app_module.get_nft_activity(request=app_module.NftActivityRequest(paths=[PATH]))
     warm_fetch.assert_not_called()
 
 
@@ -170,27 +180,33 @@ def test_stale_source_revision_is_never_cached_as_current():
                       return_value={"source": {}, "candidates": [candidate(11)]}), \
          patch.object(app_module.database, "fetch_asset_candidate_files", return_value=[source_file(10)]), \
          pytest.raises(HTTPException) as error:
-        app_module.get_nft_activity(paths=[PATH])
+        app_module.get_nft_activity(request=app_module.NftActivityRequest(paths=[PATH]))
     assert error.value.status_code == 404
     assert asset_classification_cache.get(("test-chain", PATH, "grc721", 11)) is None
 
 
 def test_activity_path_validation_and_identity_rejection():
     with pytest.raises(HTTPException) as duplicate:
-        app_module.get_nft_activity(paths=[PATH, PATH])
+        app_module.get_nft_activity(request=app_module.NftActivityRequest(paths=[PATH, PATH]))
     assert duplicate.value.status_code == 422
-    with pytest.raises(HTTPException) as too_many:
-        app_module.get_nft_activity(paths=[f"gno.land/r/example/{index}" for index in range(51)])
-    assert too_many.value.status_code == 422
+    with pytest.raises(ValidationError):
+        app_module.NftActivityRequest(paths=[f"gno.land/r/example/{index}" for index in range(51)])
     with pytest.raises(HTTPException) as package:
-        app_module.get_nft_activity(paths=["gno.land/p/example/package"])
+        app_module.get_nft_activity(request=app_module.NftActivityRequest(paths=["gno.land/p/example/package"]))
     assert package.value.status_code == 422
     with patch.object(app_module.database, "fetch_asset_candidates",
                       return_value={"source": {}, "candidates": []}), \
          patch.object(app_module.database, "fetch_asset_candidate_files", return_value=[]), \
          pytest.raises(HTTPException) as unverified:
-        app_module.get_nft_activity(paths=[PATH])
+        app_module.get_nft_activity(request=app_module.NftActivityRequest(paths=[PATH]))
     assert unverified.value.status_code == 404
+
+
+def test_frontend_uses_bounded_post_body_not_a_query_string():
+    source = open("frontend/src/services/api.js").read()
+    helper = source.split("export const getNftActivity", 1)[1].split("export const", 1)[0]
+    assert "method: 'POST'" in helper and "JSON.stringify({ paths })" in helper
+    assert "URLSearchParams" not in helper and "?" not in helper
 
 
 def test_ambiguous_grc20_grc721_path_is_rejected_without_classification():
@@ -199,6 +215,6 @@ def test_ambiguous_grc20_grc721_path_is_rejected_without_classification():
                       return_value={"source": {}, "candidates": ambiguous}), \
          patch.object(app_module.database, "fetch_asset_candidate_files") as fetch_files, \
          pytest.raises(HTTPException) as error:
-        app_module.get_nft_activity(paths=[PATH])
+        app_module.get_nft_activity(request=app_module.NftActivityRequest(paths=[PATH]))
     assert error.value.status_code == 404
     fetch_files.assert_not_called()

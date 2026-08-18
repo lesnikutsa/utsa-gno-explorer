@@ -100,6 +100,7 @@ from api.schemas import (
     AssetDirectorySource,
     AssetDirectorySummary,
     NftActivityItem,
+    NftActivityRequest,
     NftActivityResponse,
     ValidatorListItem,
     ValidatorSearchItem,
@@ -1602,10 +1603,11 @@ def get_assets(limit: int = Query(default=50, ge=1, le=100),
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
 
 
-@app.get("/api/assets/nft-activity", response_model=NftActivityResponse)
-def get_nft_activity(paths: list[str] = Query(..., min_length=1, max_length=256)) -> NftActivityResponse:
+@app.post("/api/assets/nft-activity", response_model=NftActivityResponse)
+def get_nft_activity(request: NftActivityRequest) -> NftActivityResponse:
     """Return the latest recognized successful GRC721 call in indexed coverage."""
-    if not 1 <= len(paths) <= 50 or len(paths) != len(set(paths)):
+    paths = request.paths
+    if len(paths) != len(set(paths)):
         raise HTTPException(status_code=422, detail="paths must be unique and limited to 50")
     for path in paths:
         _validate_exact_catalog_path(path, expected_kind="realm")
@@ -1634,13 +1636,15 @@ def get_nft_activity(paths: list[str] = Query(..., min_length=1, max_length=256)
         items = []
         for path in requested:
             row = rows.get(path) if result["available"] else None
-            items.append(NftActivityItem(path=path, available=result["available"],
-                last_action=row.get("last_action") if row else None,
-                last_action_function=row.get("last_action_function") if row else None,
-                last_action_at=isoformat_utc_z(row["last_action_at"]) if row and row.get("last_action_at") else None,
-                last_action_height=int(row["last_action_height"]) if row and row.get("last_action_height") else None,
-                last_action_tx_index=int(row["last_action_tx_index"]) if row and row.get("last_action_tx_index") is not None else None,
-                last_action_message_index=int(row["last_action_message_index"]) if row and row.get("last_action_message_index") is not None else None))
+            available = result["available"] and not (row and row.get("execution_unknown") is True)
+            action_row = row if available else None
+            items.append(NftActivityItem(path=path, available=available,
+                last_action=action_row.get("last_action") if action_row else None,
+                last_action_function=action_row.get("last_action_function") if action_row else None,
+                last_action_at=isoformat_utc_z(action_row["last_action_at"]) if action_row and action_row.get("last_action_at") else None,
+                last_action_height=int(action_row["last_action_height"]) if action_row and action_row.get("last_action_height") else None,
+                last_action_tx_index=int(action_row["last_action_tx_index"]) if action_row and action_row.get("last_action_tx_index") is not None else None,
+                last_action_message_index=int(action_row["last_action_message_index"]) if action_row and action_row.get("last_action_message_index") is not None else None))
         checkpoint = result["source"].get("call_index_checkpoint_at")
         return NftActivityResponse(checkpoint_at=isoformat_utc_z(checkpoint)
             if isinstance(checkpoint, datetime) else None, items=items)

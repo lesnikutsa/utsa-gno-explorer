@@ -4,7 +4,10 @@ export async function request(path, options = {}) {
   let response
   try {
     response = await fetch(`${API_ROOT}${path}`, {
-      headers: { Accept: 'application/json' },
+      headers: { Accept: 'application/json',
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}) },
+      method: options.method ?? 'GET',
+      body: options.body,
       signal: options.signal,
     })
   } catch (cause) {
@@ -92,9 +95,7 @@ export const getAssets = ({ limit = 50, q, standard = 'all', beforeActivityHeigh
   return request(`/assets?${query.toString()}`, { signal })
 }
 export const getNftActivity = (paths, { signal } = {}) => {
-  const query = new URLSearchParams()
-  for (const path of paths) query.append('paths', path)
-  return request(`/assets/nft-activity?${query.toString()}`, { signal })
+  return request('/assets/nft-activity', { signal, method: 'POST', body: JSON.stringify({ paths }) })
 }
 export const getTokenSupply = (path, { signal } = {}) => {
   const query = new URLSearchParams({ path })
