@@ -74,6 +74,15 @@ const nftApplication = (item) => item.rowType === 'family' && item.applicationMo
   ? <span className="tokens-table__app"><strong>Multiple</strong><small>{item.namespaceCount} {item.namespaceCount === 1 ? 'namespace' : 'namespaces'}</small></span>
   : applicationLabel(item.rowType === 'family' ? item.applicationItem : item)
 
+const nftActivityValue = (item) => {
+  const activity = item.nft_activity
+  if (!activity?.available) return <span className="tokens-table__activity"><strong>—</strong><small>24H activity unavailable</small></span>
+  const categories = [['Mint', activity.mint_count], ['Transfer', activity.transfer_count],
+    ['Approval', activity.approval_count], ['Burn', activity.burn_count]].filter(([, count]) => count > 0)
+  return <span className="tokens-table__activity"><strong><ChangedValue value={activity.action_count}>{formatCount(activity.action_count)}</ChangedValue></strong>
+    <small>{categories.length ? categories.map(([label, count]) => `${label} ${formatCount(count)}`).join(' · ') : 'No recognized NFT actions'}</small></span>
+}
+
 const nftColumns = (expandedGroupKeys, toggleGroup) => [
   { key: 'collection', label: 'Collection', sortable: true, render: (item) => {
     if (item.rowType === 'family') return <div className="nft-family__identity">
@@ -87,13 +96,13 @@ const nftColumns = (expandedGroupKeys, toggleGroup) => [
     return assetIdentity(item)
   } },
   { key: 'application', label: 'App', render: nftApplication },
-  { key: 'direct_call_count', label: 'Direct Calls', sortable: true, defaultSortDirection: 'descending', render: (item) => <ChangedValue value={item.direct_call_count}>{formatCount(item.direct_call_count)}</ChangedValue> },
+  { key: 'nft_action_count', label: 'NFT Actions (24H)', sortable: true, defaultSortDirection: 'descending', render: nftActivityValue },
   { key: 'last_activity_at', label: 'Last Activity', sortable: true, defaultSortDirection: 'descending', render: (item) => <LastActivityValue timestamp={item.last_activity_at} /> },
   { key: 'rpc_visible', label: 'Visibility', render: nftVisibility },
 ]
 
 export function Tokens({ tokensPage }) {
-  const { items, supplies = {}, summary, topActivity, nativeToken, activityWindow, availableActivityWindows,
+  const { items, supplies = {}, nftActivity = {}, summary, topActivity, nativeToken, activityWindow, availableActivityWindows,
     selectActivityWindow, searchInput, appliedSearch, loading, error, setSearchInput, submitSearch,
     clearSearch, retry, pageIndex, canLoadOlder, loadOlder, loadNewer, assetFilter, selectAssetFilter } = tokensPage
   const { activityLoading, activityError, retryActivity } = tokensPage
@@ -106,13 +115,13 @@ export function Tokens({ tokensPage }) {
   const supportedSortKeys = assetFilter === 'grc20'
     ? new Set(['total_supply', 'direct_call_count', 'last_activity_at'])
     : assetFilter === 'grc721'
-      ? new Set(['collection', 'direct_call_count', 'last_activity_at'])
+      ? new Set(['collection', 'nft_action_count', 'last_activity_at'])
       : new Set(['direct_call_count', 'last_activity_at'])
   const viewSort = supportedSortKeys.has(sort.key) ? sort : { key: 'last_activity_at', direction: 'descending' }
   const effectiveSortKey = viewSort.key === 'total_supply' && !suppliesSettled ? null : viewSort.key
   const sortedItems = useMemo(() => sortTokenDirectoryItems(items, effectiveSortKey, viewSort.direction, supplies),
     [effectiveSortKey, items, supplies, viewSort.direction])
-  const nftGroups = useMemo(() => groupNftCollections(items, { pageIndex, canLoadOlder }), [items, pageIndex, canLoadOlder])
+  const nftGroups = useMemo(() => groupNftCollections(items, { pageIndex, canLoadOlder }, nftActivity), [items, pageIndex, canLoadOlder, nftActivity])
   const nftRows = useMemo(() => flattenNftCollectionGroups(
     sortNftCollectionGroups(nftGroups, viewSort.key, viewSort.direction), expandedNftGroups,
   ), [expandedNftGroups, nftGroups, viewSort.direction, viewSort.key])

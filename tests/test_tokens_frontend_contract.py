@@ -238,7 +238,7 @@ def test_asset_tabs_clear_hidden_total_supply_sort_but_keep_common_sorts():
     assert "assetFilter === 'grc20'" in page
     assert "new Set(['total_supply', 'direct_call_count', 'last_activity_at'])" in page
     assert "new Set(['direct_call_count', 'last_activity_at'])" in page
-    assert "new Set(['collection', 'direct_call_count', 'last_activity_at'])" in page
+    assert "new Set(['collection', 'nft_action_count', 'last_activity_at'])" in page
     fallback = "{ key: 'last_activity_at', direction: 'descending' }"
     assert f"supportedSortKeys.has(sort.key) ? sort : {fallback}" in page
     assert f"if (!supportedSortKeys.has(sort.key)) setSort({fallback})" in page
@@ -281,7 +281,7 @@ def test_nft_families_are_presentation_only_accessible_and_keep_real_realm_links
     assert "aria-expanded={expandedGroupKeys.has(item.groupKey)}" in nft_table
     assert "href={realmDetailHref(item.path)}" in nft_table
     assert "rowType === 'family-child'" in page
-    assert "groupNftCollections(items, { pageIndex, canLoadOlder })" in page
+    assert "groupNftCollections(items, { pageIndex, canLoadOlder }, nftActivity)" in page
     assert "assetFilter === 'grc721' ? nftRows : sortedItems" in page
     assert "summary?.grc721_count" in page
     assert "token_count" not in page
@@ -290,3 +290,17 @@ def test_nft_families_are_presentation_only_accessible_and_keep_real_realm_links
     assert "JSON.stringify([item?.name ?? '', item?.symbol ?? ''])" in grouping
     for forbidden in ("Gems", "GnoSwap", "GnoBuilders", "TokenCount", "TotalSupply"):
         assert forbidden not in grouping + nft_table
+
+
+def test_nft_actions_are_scoped_rendered_aggregated_and_sortable():
+    page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
+    grouping = (ROOT / "frontend/src/utils/nftCollections.js").read_text()
+    nft_table = page.split("const nftColumns", 1)[1].split("export function Tokens", 1)[0]
+    assert "label: 'NFT Actions (24H)'" in nft_table
+    assert "label: 'Direct Calls'" not in nft_table
+    assert page.count("label: 'Direct Calls'") >= 2
+    for text in ("No recognized NFT actions", "24H activity unavailable", "Mint", "Transfer", "Approval", "Burn"):
+        assert text in page
+    assert ".filter(([, count]) => count > 0)" in page
+    assert "members.reduce" in grouping and "nft_activity" in grouping
+    assert "new Set(['collection', 'nft_action_count', 'last_activity_at'])" in page

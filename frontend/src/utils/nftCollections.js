@@ -32,7 +32,7 @@ export function nftCollectionCountLabel(count, paginationState = {}) {
   return `${count} Realm collections${suffix}`
 }
 
-export function groupNftCollections(items, paginationState = {}) {
+export function groupNftCollections(items, paginationState = {}, activityByPath = {}) {
   const buckets = new Map()
   for (const item of Array.isArray(items) ? items : []) {
     const key = nftCollectionGroupKey(item)
@@ -41,7 +41,8 @@ export function groupNftCollections(items, paginationState = {}) {
   }
 
   return [...buckets.entries()].map(([groupKey, bucket]) => {
-    const members = [...bucket].sort(compareNftCollectionMembers)
+    const members = bucket.map((item) => ({ ...item, nft_activity: activityByPath[item.path] ?? { available: false } }))
+      .sort(compareNftCollectionMembers)
     if (members.length === 1) return { ...members[0], rowType: 'single', groupKey, members }
 
     const validActivity = members.map((item) => ({ value: item.last_activity_at, timestamp: Date.parse(item.last_activity_at) }))
@@ -55,6 +56,14 @@ export function groupNftCollections(items, paginationState = {}) {
       rowType: 'family', groupKey, name: members[0].name, symbol: members[0].symbol, members,
       path: canonicalPath(members[0]),
       direct_call_count: members.reduce((sum, item) => sum + (Number.isFinite(item.direct_call_count) ? item.direct_call_count : 0), 0),
+      nft_activity: {
+        available: members.every((item) => item.nft_activity.available === true),
+        action_count: members.reduce((sum, item) => sum + (item.nft_activity.action_count ?? 0), 0),
+        mint_count: members.reduce((sum, item) => sum + (item.nft_activity.mint_count ?? 0), 0),
+        transfer_count: members.reduce((sum, item) => sum + (item.nft_activity.transfer_count ?? 0), 0),
+        approval_count: members.reduce((sum, item) => sum + (item.nft_activity.approval_count ?? 0), 0),
+        burn_count: members.reduce((sum, item) => sum + (item.nft_activity.burn_count ?? 0), 0),
+      },
       last_activity_at: validActivity?.value ?? null,
       visibility: allVisible ? 'Visible' : allHistorical ? 'Historical' : 'Mixed',
       applicationMode: applicationKeys.size === 1 ? 'single' : 'multiple',
@@ -72,9 +81,9 @@ export function sortNftCollectionGroups(groups, sortKey, sortDirection) {
       comparison = lexicalCompare(left.name ?? '', right.name ?? '')
       if (comparison === 0) comparison = lexicalCompare(left.symbol ?? '', right.symbol ?? '')
       if (comparison === 0) comparison = lexicalCompare(left.rowType === 'family' ? left.groupKey : canonicalPath(left), right.rowType === 'family' ? right.groupKey : canonicalPath(right))
-    } else if (sortKey === 'direct_call_count') {
-      const leftCalls = Number.isFinite(left.direct_call_count) ? left.direct_call_count : null
-      const rightCalls = Number.isFinite(right.direct_call_count) ? right.direct_call_count : null
+    } else if (sortKey === 'nft_action_count') {
+      const leftCalls = left.nft_activity?.available && Number.isFinite(left.nft_activity.action_count) ? left.nft_activity.action_count : null
+      const rightCalls = right.nft_activity?.available && Number.isFinite(right.nft_activity.action_count) ? right.nft_activity.action_count : null
       if (leftCalls === null && rightCalls !== null) return 1
       if (leftCalls !== null && rightCalls === null) return -1
       comparison = leftCalls - rightCalls

@@ -99,6 +99,8 @@ from api.schemas import (
     AssetDirectoryResponse,
     AssetDirectorySource,
     AssetDirectorySummary,
+    NftActivityItem,
+    NftActivityResponse,
     ValidatorListItem,
     ValidatorSearchItem,
     ValidatorSearchResponse,
@@ -1588,6 +1590,71 @@ def get_assets(limit: int = Query(default=50, ge=1, le=100),
         raise
     except Exception:
         LOGGER.exception("Explorer database asset directory query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+
+
+@app.get("/api/assets/nft-activity", response_model=NftActivityResponse)
+def get_nft_activity(paths: list[str] = Query(..., min_length=1, max_length=256),
+                     window: Literal["24h"] = Query(default="24h")) -> NftActivityResponse:
+    """Return recognized successful GRC721 calls in a complete indexed 24H window."""
+    if not 1 <= len(paths) <= 50 or len(paths) != len(set(paths)):
+        raise HTTPException(status_code=422, detail="paths must be unique and limited to 50")
+    for path in paths:
+        _validate_exact_catalog_path(path, expected_kind="realm")
+    requested = sorted(paths)
+    try:
+        chain_id = app.state.api_config.chain_id
+        candidates_result = database.fetch_asset_candidates(
+            chain_id=chain_id, candidate_limit=ASSET_CANDIDATE_LIMIT + 1)
+        if candidates_result is None:
+            raise HTTPException(status_code=404, detail="Asset directory is not available yet")
+        candidates = [row for row in candidates_result["candidates"]
+                      if row["path"] in requested and row["standard"] == "grc721"]
+        standards = {}
+        for row in candidates_result["candidates"]:
+            if row["path"] in requested:
+                standards.setdefault(row["path"], set()).add(row["standard"])
+        candidate_by_path = {row["path"]: row for row in candidates
+                             if standards.get(row["path"]) == {"grc721"}}
+        files_by_path: dict[str, list[dict]] = {}
+        for file in database.fetch_asset_candidate_files(chain_id=chain_id, paths=requested):
+            files_by_path.setdefault(file["path"], []).append(file)
+        verified = []
+        for path in requested:
+            row = candidate_by_path.get(path)
+            files = files_by_path.get(path, [])
+            if row is None or not files or any(int(file["metadata_observed_height"]) != int(row["metadata_observed_height"])
+                                                for file in files):
+                continue
+            classified = classify_grc721(files, qfunc_names=set(row.get("qfunc_names") or ()))
+            if classified.status == "verified":
+                verified.append(path)
+        if verified != requested:
+            raise HTTPException(status_code=404, detail="Verified GRC721 collection not found")
+        result = database.fetch_nft_activity(chain_id=chain_id, paths=requested)
+        if result is None:
+            raise HTTPException(status_code=404, detail="NFT activity is not available yet")
+        rows = {row["path"]: row for row in result["items"]}
+        items = []
+        for path in requested:
+            row = rows.get(path) if result["available"] else None
+            counts = {key: int(row[key]) if row else 0 for key in
+                      ("action_count", "mint_count", "transfer_count", "approval_count", "burn_count")}
+            if counts["action_count"] != sum(counts[key] for key in
+                    ("mint_count", "transfer_count", "approval_count", "burn_count")):
+                raise ValueError("malformed NFT activity category counts")
+            items.append(NftActivityItem(path=path, available=result["available"], **counts,
+                last_action=row.get("last_action") if row else None,
+                last_action_function=row.get("last_action_function") if row else None,
+                last_action_at=isoformat_utc_z(row["last_action_at"]) if row and row.get("last_action_at") else None,
+                last_action_height=int(row["last_action_height"]) if row and row.get("last_action_height") else None))
+        checkpoint = result["source"].get("call_index_checkpoint_at")
+        return NftActivityResponse(window=window,
+            checkpoint_at=isoformat_utc_z(checkpoint) if isinstance(checkpoint, datetime) else None, items=items)
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.exception("Explorer database NFT activity query failed")
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
 
 

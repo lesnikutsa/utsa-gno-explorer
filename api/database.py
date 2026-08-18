@@ -262,6 +262,7 @@ TOKEN_DIRECTORY_SOURCE_SQL = """
 SELECT state.chain_id, state.last_finalized_height AS indexed_height,
        catalog.observed_height AS catalog_observed_height,
        call_state.from_height AS call_index_from_height,
+       call_state.chain_id AS call_chain_id,
        call_state.through_height AS call_index_through_height,
        coverage_start.time_utc AS call_index_coverage_started_at,
        call_checkpoint.time_utc AS call_index_checkpoint_at,
@@ -374,6 +375,37 @@ WHERE call.chain_id=%s
   AND block.time_utc >= %s
   AND block.time_utc <= %s
 GROUP BY call.path
+"""
+
+NFT_ACTIVITY_SQL = """
+WITH mapping AS (
+ SELECT * FROM unnest(%s::text[],%s::text[]) AS action(function_name,action)
+), recognized AS (
+ SELECT call.path,call.function_name,call.block_height,call.tx_index,call.message_index,
+        block.time_utc,mapping.action
+ FROM realm_call_index call
+ JOIN mapping ON mapping.function_name=call.function_name
+ JOIN blocks block ON block.height=call.block_height
+ JOIN transaction_execution_results result
+   ON (result.block_height,result.tx_index)=(call.block_height,call.tx_index)
+ WHERE call.chain_id=%s AND call.path=ANY(%s::text[])
+   AND call.block_height BETWEEN %s AND %s
+   AND block.time_utc >= %s AND block.time_utc <= %s
+   AND result.execution_status='success'
+), ranked AS (
+ SELECT *,row_number() OVER (PARTITION BY path ORDER BY block_height DESC,tx_index DESC,message_index DESC) AS newest
+ FROM recognized
+)
+SELECT path,count(*)::bigint AS action_count,
+ count(*) FILTER (WHERE action='mint')::bigint AS mint_count,
+ count(*) FILTER (WHERE action='transfer')::bigint AS transfer_count,
+ count(*) FILTER (WHERE action='approval')::bigint AS approval_count,
+ count(*) FILTER (WHERE action='burn')::bigint AS burn_count,
+ max(action) FILTER (WHERE newest=1) AS last_action,
+ max(function_name) FILTER (WHERE newest=1) AS last_action_function,
+ max(time_utc) FILTER (WHERE newest=1) AS last_action_at,
+ max(block_height) FILTER (WHERE newest=1) AS last_action_height
+FROM ranked GROUP BY path ORDER BY path COLLATE "C"
 """
 
 TOKEN_EXACT_CANDIDATE_SQL = """
@@ -1321,6 +1353,33 @@ class ApiDatabase:
             cursor.execute(ASSET_DIRECTORY_FILES_SQL, (chain_id, paths))
             files = [dict(row) for row in cursor.fetchall()]
         return files
+
+    def fetch_nft_activity(self, *, chain_id: str, paths: list[str]) -> dict[str, Any] | None:
+        """Aggregate one complete checkpoint-relative 24H window for bounded paths."""
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        if not paths or len(paths) > 50 or paths != sorted(set(paths)):
+            raise ValueError("NFT activity paths must be sorted, unique, non-empty, and bounded")
+        with self.pool.connection(timeout=2.0) as connection, connection.transaction(), connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            cursor.execute(TOKEN_DIRECTORY_SOURCE_SQL, (chain_id,))
+            source = cursor.fetchone()
+            if source is None:
+                return None
+            source = dict(source)
+            bounds = complete_realm_call_coverage_bounds(source, chain_id)
+            checkpoint = source.get("call_index_checkpoint_at")
+            coverage_start = source.get("call_index_coverage_started_at")
+            available = (bounds is not None and isinstance(checkpoint, datetime) and checkpoint.tzinfo is not None
+                         and isinstance(coverage_start, datetime) and coverage_start.tzinfo is not None
+                         and coverage_start <= checkpoint - timedelta(hours=24))
+            rows = []
+            if available:
+                from api.nft_actions import NFT_ACTION_BY_FUNCTION
+                cursor.execute(NFT_ACTIVITY_SQL, (list(NFT_ACTION_BY_FUNCTION), list(NFT_ACTION_BY_FUNCTION.values()),
+                    chain_id, paths, bounds[0], bounds[1], checkpoint - timedelta(hours=24), checkpoint))
+                rows = [dict(row) for row in cursor.fetchall()]
+        return {"source": source, "available": available, "items": rows}
 
     def fetch_verified_token_candidate(self, *, chain_id: str, path: str) -> dict[str, Any] | None:
         """Read bounded persisted source for one exact conservative token candidate."""
