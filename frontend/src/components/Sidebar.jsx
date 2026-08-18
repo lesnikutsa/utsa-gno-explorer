@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { UtsaLogo } from './UtsaLogo'
 import { BlocksIcon, ChainIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, GovernanceIcon, HomeIcon, RealmsIcon, TokensIcon, TransactionsIcon, ValidatorsIcon } from './Icons'
 import { networkProfile } from '../config/networkProfile'
+import { isInterceptableNavigation, navigateInternal, usePathname } from '../utils/navigation'
 
 const items = [
   { label: 'Overview', Icon: HomeIcon, href: '/' },
@@ -15,7 +16,7 @@ const items = [
 
 export function Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed }) {
   const [networkIconFailed, setNetworkIconFailed] = useState(false)
-  const pathname = window.location.pathname
+  const pathname = usePathname()
   const isTransactionDetail = /^\/blocks\/[^/]+\/transactions\/[^/]+\/?$/.test(pathname)
   const chainLabel = chainId ? `${networkProfile.projectName} · ${chainId}` : `${networkProfile.projectName} network`
   const isActive = (href) => {
@@ -23,6 +24,12 @@ export function Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed }
     if (href === '/transactions' && isTransactionDetail) return true
     if (href === '/blocks' && isTransactionDetail) return false
     return pathname === href || pathname.startsWith(`${href}/`)
+  }
+  const handleNavigation = (event, href) => {
+    if (!isInterceptableNavigation(event, href, event.currentTarget.target)) return
+    event.preventDefault()
+    navigateInternal(href)
+    onClose()
   }
 
   return (
@@ -52,7 +59,7 @@ export function Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed }
         <nav className="sidebar__nav" aria-label="Explorer navigation">
           {items.map(({ label, Icon, href }) => {
             const active = isActive(href)
-            return <a key={label} className={`nav-item ${active ? 'is-active' : ''}`} href={href} onClick={onClose} aria-current={active ? 'page' : undefined} data-sidebar-tooltip={collapsed && !active ? label : undefined}><Icon /><span className="nav-item__label">{label}</span></a>
+            return <a key={label} className={`nav-item ${active ? 'is-active' : ''}`} href={href} onClick={(event) => handleNavigation(event, href)} aria-current={active ? 'page' : undefined} data-sidebar-tooltip={collapsed && !active ? label : undefined}><Icon /><span className="nav-item__label">{label}</span></a>
           })}
         </nav>
         <button

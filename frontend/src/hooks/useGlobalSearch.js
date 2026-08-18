@@ -12,6 +12,7 @@ import {
   resolveAccountAddressDestination,
   shouldSearchValidators,
 } from '../utils/globalSearch'
+import { navigateInternal } from '../utils/navigation'
 
 const messages = {
   searching: 'Searching…',
@@ -91,7 +92,7 @@ export function useGlobalSearch() {
     if (!validator?.address) return
     requestId.current += 1
     setDropdownOpen(false)
-    window.location.assign(`/validators/${encodeURIComponent(validator.address)}`)
+    navigateInternal(`/validators/${encodeURIComponent(validator.address)}`)
   }, [])
 
   const closeDropdown = useCallback(() => {
@@ -114,7 +115,7 @@ export function useGlobalSearch() {
     if (!trimmed) return
     if (isPositiveBlockHeight(trimmed)) {
       requestId.current += 1
-      window.location.assign(`/blocks/${trimmed}`)
+      navigateInternal(`/blocks/${trimmed}`)
       return
     }
     if (isExactTransactionHash(trimmed)) {
@@ -130,8 +131,8 @@ export function useGlobalSearch() {
       const blockLookupValid = blockResult.status === 'fulfilled' && isValidBlockHashLookupResponse(blockResponse)
       const block = blockLookupValid ? blockResponse.items[0] : null
       if (transaction) {
-        window.location.assign(`/blocks/${transaction.block_height}/transactions/${transaction.index}`)
-      } else if (block) window.location.assign(`/blocks/${block.height}`)
+        navigateInternal(`/blocks/${transaction.block_height}/transactions/${transaction.index}`)
+      } else if (block) navigateInternal(`/blocks/${block.height}`)
       else {
         const transactionNotFound = transactionResult.status === 'rejected' && transactionResult.reason?.status === 404
         const transactionFailed = (transactionResult.status === 'rejected' && !transactionNotFound)
@@ -150,7 +151,7 @@ export function useGlobalSearch() {
         if (!Array.isArray(response?.items)) throw new Error('Unexpected block search response')
         const block = response.items[0]
         if (!block) setStatus('hashNotFound')
-        else window.location.assign(`/blocks/${block.height}`)
+        else navigateInternal(`/blocks/${block.height}`)
       } catch {
         if (mounted.current && id === requestId.current) setStatus('error')
       }
@@ -169,7 +170,7 @@ export function useGlobalSearch() {
         if (!mounted.current || id !== requestId.current) return
       }
       if (!mounted.current || id !== requestId.current) return
-      window.location.assign(resolveAccountAddressDestination(trimmed, items))
+      navigateInternal(resolveAccountAddressDestination(trimmed, items))
       return
     }
     if (!shouldSearchValidators(trimmed)) {

@@ -15,6 +15,8 @@ class GlobalSearchFrontendContractTests(unittest.TestCase):
         cls.transactions = (ROOT / "frontend/src/pages/Transactions.jsx").read_text()
         cls.blocks = (ROOT / "frontend/src/pages/Blocks.jsx").read_text()
         cls.validators = (ROOT / "frontend/src/pages/Validators.jsx").read_text()
+        cls.navigation = (ROOT / "frontend/src/utils/navigation.js").read_text()
+        cls.sidebar = (ROOT / "frontend/src/components/Sidebar.jsx").read_text()
 
     def test_labels_and_encoded_api_path(self):
         self.assertIn('placeholder="Search blocks, transactions, accounts, or validators..."', self.topbar)
@@ -41,7 +43,7 @@ class GlobalSearchFrontendContractTests(unittest.TestCase):
         self.assertGreaterEqual(account_branch.count("id !== requestId.current"), 3)
         self.assertIn("setStatus('searching')", account_branch)
         self.assertIn("catch {", account_branch)
-        self.assertIn("window.location.assign(resolveAccountAddressDestination(trimmed, items))", account_branch)
+        self.assertIn("navigateInternal(resolveAccountAddressDestination(trimmed, items))", account_branch)
 
     def test_account_validation_is_strict_and_excluded_from_autocomplete(self):
         for fragment in (
@@ -92,7 +94,8 @@ class GlobalSearchFrontendContractTests(unittest.TestCase):
         self.assertIn("}, 250)", self.hook)
 
     def test_existing_behavior_and_scope_remain(self):
-        self.assertIn("window.location.assign(`/blocks/${trimmed}`)", self.hook)
+        self.assertIn("navigateInternal(`/blocks/${trimmed}`)", self.hook)
+        self.assertNotIn("window.location.assign", self.hook)
         self.assertIn("event.key !== '/'", self.topbar)
         self.assertIn("event.key === 'Escape'", self.topbar)
         self.assertIn("ArrowDown", self.topbar)
@@ -102,6 +105,22 @@ class GlobalSearchFrontendContractTests(unittest.TestCase):
         self.assertNotIn('className="blocks-search"', self.blocks)
         self.assertNotIn('type="search"', self.blocks)
         self.assertIn('placeholder="Search by moniker or signing address"', self.validators)
+
+    def test_internal_navigation_is_reactive_and_preserves_native_link_behavior(self):
+        self.assertIn("const path = usePathname()", self.app)
+        self.assertNotIn("const path = window.location.pathname", self.app)
+        for fragment in (
+            "window.history.pushState", "window.addEventListener('popstate', updatePathname)",
+            "window.removeEventListener('popstate', updatePathname)", "window.scrollTo(0, 0)",
+            "event.defaultPrevented", "event.button !== 0", "event.metaKey", "event.ctrlKey",
+            "event.shiftKey", "event.altKey", "url.origin === window.location.origin",
+        ):
+            self.assertIn(fragment, self.navigation)
+        self.assertIn("const pathname = usePathname()", self.sidebar)
+        self.assertIn("href={href}", self.sidebar)
+        self.assertIn("event.preventDefault()", self.sidebar)
+        self.assertIn("navigateInternal(href)", self.sidebar)
+        self.assertIn("aria-current={active ? 'page' : undefined}", self.sidebar)
 
     def test_blocks_refresh_countdown_has_no_local_search_dependency(self):
         blocks_hook = (ROOT / "frontend/src/hooks/useBlocksPage.js").read_text()
