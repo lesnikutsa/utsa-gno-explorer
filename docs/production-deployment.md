@@ -1124,9 +1124,17 @@ sudo ./scripts/deploy_frontend.sh
 
 ### Final HTTPS installation
 
-1. Build and deploy the frontend static files with the release flow above.
+The certificate bootstrap procedure above is mandatory on a fresh server. Complete it before
+this section so the certificate files referenced by the final configuration exist. For an
+existing-server migration or restore where those certificate files already exist, the tracked
+final configuration may be installed directly by following steps 2 and 3.
 
-2. Replace the bootstrap configuration with the tracked HTTPS configuration:
+1. Build and deploy the frontend static files with the release flow above. On a fresh server,
+   first complete all certificate bootstrap steps above.
+
+2. Replace the bootstrap configuration with the tracked HTTPS configuration. The repository
+   file is the source of truth for fresh installations and server migrations; do not recreate
+   its API method policy manually:
 
    ```bash
    sudo install -o root -g root -m 0644 deploy/nginx/exp.gno.utsa.tech.conf /etc/nginx/sites-available/exp.gno.utsa.tech.conf
@@ -1148,7 +1156,7 @@ sudo ./scripts/deploy_frontend.sh
 
    The socket output must show `127.0.0.1:18180`, never a wildcard or public address. The UFW output must contain no rule allowing port `18180`; do not add one.
 
-5. Run public HTTPS smoke tests. Replace the height and validator address placeholders with known public values:
+5. Run public HTTPS smoke tests. Replace the height and validator address placeholders with known public values. Query the asset catalog for one currently verified GRC721 asset, copy `items[0].path` from the response, and replace `REPLACE_WITH_VERIFIED_GRC721_PATH` with that exact path. The POST must return an application response rather than an Nginx `403`:
 
    ```bash
    curl --fail --show-error https://exp.gno.utsa.tech/
@@ -1158,6 +1166,12 @@ sudo ./scripts/deploy_frontend.sh
    curl --fail --show-error https://exp.gno.utsa.tech/api/blocks/REPLACE_WITH_HEIGHT
    curl --fail --show-error https://exp.gno.utsa.tech/api/validators
    curl --fail --show-error https://exp.gno.utsa.tech/api/validators/REPLACE_WITH_ADDRESS
+   curl --fail --show-error \
+     'https://exp.gno.utsa.tech/api/assets?standard=grc721&limit=1'
+   curl --fail --show-error \
+     --header 'Content-Type: application/json' \
+     --data '{"paths":["REPLACE_WITH_VERIFIED_GRC721_PATH"]}' \
+     https://exp.gno.utsa.tech/api/assets/nft-activity
    ```
 
 6. Verify the public boundary, read-only policy, and SPA fallback:
@@ -1168,7 +1182,12 @@ sudo ./scripts/deploy_frontend.sh
    curl --output /dev/null --write-out '%{http_code}\n' https://exp.gno.utsa.tech/__client_side_route_smoke_test__
    ```
 
-   The POST must be rejected, direct public access to port `18180` must be unavailable, and the client-side route request must return the SPA HTML rather than an Nginx `404`. `OPTIONS` requests are forwarded to FastAPI; Nginx does not synthesize CORS responses.
+   The POST to `/api/health` must be rejected by the application because that route does not
+   implement POST. Nginx permits POST as read-only API transport for the bounded NFT activity
+   query while continuing to reject methods outside `GET POST OPTIONS`. Direct public access to
+   port `18180` must be unavailable, and the client-side route request must return the SPA HTML
+   rather than an Nginx `404`. `OPTIONS` requests are forwarded to FastAPI; Nginx does not
+   synthesize CORS responses.
 
 ## Upgrade procedure
 

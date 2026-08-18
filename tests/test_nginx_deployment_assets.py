@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BOOTSTRAP_PATH = ROOT / "deploy/nginx/exp.gno.utsa.tech.bootstrap.conf"
 FINAL_PATH = ROOT / "deploy/nginx/exp.gno.utsa.tech.conf"
 DOCS_PATH = ROOT / "docs/production-deployment.md"
+INSTALL_DOCS_PATH = ROOT / "docs/install.md"
 FRONTEND_DEPLOY_SCRIPT_PATH = ROOT / "scripts/deploy_frontend.sh"
 
 
@@ -16,6 +17,7 @@ class NginxDeploymentAssetsTests(unittest.TestCase):
         cls.bootstrap = BOOTSTRAP_PATH.read_text(encoding="utf-8")
         cls.final = FINAL_PATH.read_text(encoding="utf-8")
         cls.docs = DOCS_PATH.read_text(encoding="utf-8")
+        cls.install_docs = INSTALL_DOCS_PATH.read_text(encoding="utf-8")
         cls.frontend_deploy_script = FRONTEND_DEPLOY_SCRIPT_PATH.read_text(encoding="utf-8")
 
     def test_assets_exist(self):
@@ -85,8 +87,9 @@ class NginxDeploymentAssetsTests(unittest.TestCase):
             ),
         )
 
-    def test_final_does_not_reference_vite_preview_port(self):
-        self.assertNotIn("4174", self.final)
+    def test_final_does_not_reference_vite_or_review_ports(self):
+        for port in ("4173", "4174", "5173"):
+            self.assertNotIn(port, self.final)
 
     def test_proxy_headers_and_timeouts_are_complete(self):
         directives = (
@@ -104,8 +107,14 @@ class NginxDeploymentAssetsTests(unittest.TestCase):
         for directive in directives:
             self.assertIn(directive, self.final)
 
-    def test_proxy_is_read_only_without_policy_expansion(self):
-        self.assertRegex(self.final, r"limit_except\s+GET\s+OPTIONS\s*\{")
+    def test_proxy_allows_read_only_api_transport_methods_only(self):
+        policies = re.findall(r"limit_except\s+([^\{]+)\s*\{", self.final)
+        self.assertEqual([policy.split() for policy in policies], [["GET", "POST", "OPTIONS"]])
+        for method in ("GET", "POST", "OPTIONS"):
+            self.assertIn(method, policies[0].split())
+        for method in ("PUT", "PATCH", "DELETE"):
+            self.assertNotIn(method, policies[0].split())
+        self.assertRegex(self.final, r"limit_except\s+GET\s+POST\s+OPTIONS\s*\{\s*deny all;\s*\}")
         self.assertNotIn("proxy_buffering off", self.final)
         self.assertNotIn("proxy_request_buffering off", self.final)
         self.assertNotIn("add_header Access-Control-", self.final)
@@ -145,6 +154,30 @@ class NginxDeploymentAssetsTests(unittest.TestCase):
         self.assertNotRegex(self.docs, r"(?i)ufw\s+allow\s+18180")
         self.assertNotIn("BEGIN PRIVATE KEY", self.docs)
         self.assertNotRegex(self.docs, r"postgres(?:ql)?://[^\s/:]+:[^\s/@]+@")
+
+    def test_documentation_installs_tracked_final_config_and_smoke_tests_post(self):
+        install_command = (
+            "sudo install -o root -g root -m 0644 deploy/nginx/exp.gno.utsa.tech.conf "
+            "/etc/nginx/sites-available/exp.gno.utsa.tech.conf"
+        )
+        for docs in (self.docs, self.install_docs):
+            self.assertIn("source of truth", docs)
+            self.assertIn(install_command, docs)
+            self.assertIn("/api/assets?standard=grc721&limit=1", docs)
+            self.assertIn("items[0].path", docs)
+            self.assertIn("REPLACE_WITH_VERIFIED_GRC721_PATH", docs)
+            self.assertIn("https://exp.gno.utsa.tech/api/assets/nft-activity", docs)
+            self.assertNotIn("gno.land/r/demo/nft", docs)
+
+    def test_fresh_install_bootstraps_certificate_before_final_https_config(self):
+        bootstrap_install = "deploy/nginx/exp.gno.utsa.tech.bootstrap.conf /etc/nginx/sites-available/exp.gno.utsa.tech.conf"
+        final_install = "deploy/nginx/exp.gno.utsa.tech.conf /etc/nginx/sites-available/exp.gno.utsa.tech.conf"
+        certbot = "sudo certbot certonly --webroot"
+        for docs in (self.docs, self.install_docs):
+            self.assertLess(docs.index(bootstrap_install), docs.index(certbot))
+            self.assertLess(docs.index(certbot), docs.index(final_install))
+            final_section = docs[docs.index(final_install):]
+            self.assertLess(final_section.index("sudo nginx -t"), final_section.index("sudo systemctl reload nginx"))
 
     def test_frontend_deploy_script_is_safe_and_repeatable(self):
         script = self.frontend_deploy_script

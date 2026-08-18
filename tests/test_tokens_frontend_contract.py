@@ -326,6 +326,11 @@ def test_all_view_loads_only_nfts_and_renders_compact_standard_activity():
     assert "Activity unavailable" not in page.split("const AssetStandardCell", 1)[1].split("const commonColumns", 1)[0]
     assert "assetFilter === 'grc721' ? nftRows : sortedItems" in page
     assert ".tokens-table__standard > small" in styles and "font-size: 10px" in styles
+    standard_rule = re.search(r"\.tokens-table__standard\s*\{([^}]+)\}", styles).group(1)
+    assert "display: grid" in standard_rule
+    assert "width: 100%" in standard_rule
+    assert "justify-items: center" in standard_rule
+    assert "text-align: center" in standard_rule
 
 
 def test_contract_standard_badges_have_distinct_tones_without_changing_neutral():
