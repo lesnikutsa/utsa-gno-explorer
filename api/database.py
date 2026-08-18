@@ -357,6 +357,9 @@ SELECT * FROM candidates
 ORDER BY COALESCE(last_activity_height,-1) DESC,path COLLATE "C" ASC,standard ASC
 LIMIT %s
 """
+ASSET_PATH_CANDIDATES_SQL = ASSET_DIRECTORY_CANDIDATES_SQL.replace(
+    "SELECT * FROM candidates\n", "SELECT * FROM candidates WHERE path=ANY(%s::text[])\n"
+)
 TOKEN_DIRECTORY_ACTIVITY_SQL = """
 SELECT call.path,
        count(*)::bigint AS direct_call_count,
@@ -1351,6 +1354,20 @@ class ApiDatabase:
             cursor.execute(ASSET_DIRECTORY_FILES_SQL, (chain_id, paths))
             files = [dict(row) for row in cursor.fetchall()]
         return files
+
+    def fetch_asset_candidates_for_paths(self, *, chain_id: str, paths: list[str]) -> list[dict[str, Any]]:
+        """Resolve a bounded, unique path set with the asset directory candidate rules."""
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        if not paths or len(paths) > 100 or paths != sorted(set(paths)):
+            raise ValueError("transaction asset paths must be sorted, unique, non-empty, and bounded")
+        with self.pool.connection(timeout=2.0) as connection, connection.transaction(), connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION READ ONLY")
+            cursor.execute(ASSET_PATH_CANDIDATES_SQL, (chain_id, chain_id, paths, 201))
+            candidates = [dict(row) for row in cursor.fetchall()]
+        if len(candidates) > 200:
+            raise ValueError("transaction asset candidate count bound exceeded")
+        return candidates
 
     def fetch_nft_activity(self, *, chain_id: str, paths: list[str]) -> dict[str, Any] | None:
         """Read the latest recognized successful call in complete indexed coverage."""

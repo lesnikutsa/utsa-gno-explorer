@@ -5,7 +5,9 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from api.config import ApiConfig
+from api.asset_classification import asset_classification_cache
 from api.database import TRANSACTIONS_SQL
+from api.transaction_semantics import semantic_transaction_operation
 
 
 DATABASE_URL = "postgresql://api:secret@database/explorer"
@@ -23,6 +25,18 @@ def summary(tx_type="gno.bank.MsgSend", message_count=1):
         "primary": primary,
         "messages": [{**primary, "sender": "g1sender", "internal_error": "secret"}],
         "decoder_error": "secret",
+    }
+
+
+def call_summary(path, function, *, later_messages=()):
+    primary = {"type": "gno.vm.MsgCall", "category": "vm", "action": "call", "label": "Contract Call"}
+    first = {**primary, "package_path": path, "function": function, "args_count": 1,
+             "arguments": ["private"], "source": "private source"}
+    messages = [first, *later_messages]
+    return {
+        "schema_version": 1, "chain_family": "gno", "parse_status": "parsed",
+        "message_count": len(messages), "messages_truncated": False,
+        "primary": primary, "messages": messages,
     }
 
 
@@ -52,6 +66,10 @@ class FakeDatabase:
         self.calls = []
         self.error = None
         self.details = {}
+        self.asset_candidates = []
+        self.asset_files = []
+        self.asset_path_calls = []
+        self.asset_file_calls = []
 
     def open(self, config):
         pass
@@ -74,8 +92,59 @@ class FakeDatabase:
     def fetch_transaction_detail(self, height, index):
         return self.details.get((height, index))
 
+    def fetch_asset_candidates_for_paths(self, *, chain_id, paths):
+        self.asset_path_calls.append((chain_id, paths))
+        return [row for row in self.asset_candidates if row["path"] in paths]
+
+    def fetch_asset_candidate_files(self, *, chain_id, paths):
+        self.asset_file_calls.append((chain_id, paths))
+        return [row for row in self.asset_files if row["path"] in paths]
+
+
+class TransactionSemanticClassifierTests(unittest.TestCase):
+    def test_exact_semantic_mapping(self):
+        base = {
+            "gno.bank.MsgSend": "Transfer",
+            "gno.vm.MsgAddPackage": "Deployment",
+            "gno.vm.MsgRun": "Package Run",
+        }
+        for raw_type, expected in base.items():
+            self.assertEqual(semantic_transaction_operation(raw_type, "old"), expected)
+        mappings = {
+            "grc721": {
+                "Mint": "NFT Mint", "TransferFrom": "NFT Transfer",
+                "SafeTransferFrom": "NFT Transfer", "Approve": "NFT Approval",
+                "SetApprovalForAll": "NFT Approval", "Burn": "NFT Burn",
+            },
+            "grc20": {
+                "Transfer": "Token Transfer", "TransferFrom": "Token Transfer",
+                "Approve": "Token Approval",
+            },
+        }
+        for standard, functions in mappings.items():
+            for function, expected in functions.items():
+                self.assertEqual(semantic_transaction_operation(
+                    "gno.vm.MsgCall", "Call", "gno.land/r/demo/asset", function, standard,
+                ), expected)
+
+    def test_unverified_and_inexact_calls_fail_closed(self):
+        cases = [
+            (None, "Mint"), ("grc20", "Mint"), ("grc721", "Transfer"),
+            ("grc721", "mint"), ("grc721", "MintSpecial"), ("grc20", "Burn"),
+        ]
+        for standard, function in cases:
+            self.assertEqual(semantic_transaction_operation(
+                "gno.vm.MsgCall", "Call", "gno.land/r/demo/asset", function, standard,
+            ), "Contract Call")
+        self.assertEqual(semantic_transaction_operation(
+            "gno.vm.MsgCall", "Call", None, "Mint", "grc721",
+        ), "Contract Call")
+
 
 class ApiTransactionsTests(unittest.TestCase):
+    def setUp(self):
+        asset_classification_cache.clear()
+
     def make_client(self, database):
         from api import app as app_module
 
@@ -104,6 +173,49 @@ class ApiTransactionsTests(unittest.TestCase):
         self.assertEqual(fake.calls, [(20, None, None)])
         # Like Blocks API, the backend default stays 20; UI page size is client-controlled.
         self.assertEqual(data["pagination"]["limit"], 20)
+
+    def test_verified_failed_nft_mint_is_batched_and_private_data_stays_hidden(self):
+        path = "gno.land/r/demo/art"
+        fake = FakeDatabase([
+            transaction_row(10, 1, payload_summary=call_summary(path, "Mint"), execution_status="failed"),
+            transaction_row(10, 0, payload_summary=call_summary(path, "Burn")),
+        ])
+        fake.asset_candidates = [{
+            "path": path, "standard": "grc721", "metadata_observed_height": 9,
+            "qfunc_names": ["OwnerOf", "TransferFrom", "Mint", "Burn"],
+        }]
+        fake.asset_files = [{
+            "path": path, "filename": "main.gno", "file_kind": "gno_source",
+            "metadata_observed_height": 9,
+            "content": 'import "gno.land/p/vendor/grc721"\nvar nft=grc721.NewBasicNFT(0, cur, "Art", "ART")\nfunc OwnerOf() {}\nfunc Mint() {}',
+        }]
+        with self.make_client(fake) as client:
+            response = client.get("/api/transactions")
+        self.assertEqual(response.status_code, 200)
+        items = response.json()["items"]
+        self.assertEqual((items[0]["type"], items[0]["operation"], items[0]["execution_status"]),
+                         ("gno.vm.MsgCall", "NFT Mint", "failed"))
+        self.assertEqual(items[1]["operation"], "NFT Burn")
+        self.assertEqual(fake.asset_path_calls, [("sapphire-1", [path])])
+        self.assertEqual(fake.asset_file_calls, [("sapphire-1", [path])])
+        for private in ("payload_summary", "arguments", "source", "private source"):
+            self.assertNotIn(private, response.text)
+
+    def test_primary_message_only_and_classification_failure_fall_back(self):
+        path = "gno.land/r/demo/art"
+        later = {"type": "gno.vm.MsgCall", "category": "vm", "action": "call",
+                 "label": "Contract Call", "package_path": path, "function": "Mint"}
+        payload = summary(message_count=2)
+        payload["messages"].append(later)
+        fake = FakeDatabase([transaction_row(10, 1, payload_summary=payload),
+                             transaction_row(10, 0, payload_summary=call_summary(path, "Mint"))])
+        fake.asset_candidates = [{"path": path, "standard": "grc721",
+                                  "metadata_observed_height": 9, "qfunc_names": []}]
+        fake.fetch_asset_candidate_files = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("source failure"))
+        with self.make_client(fake) as client:
+            items = client.get("/api/transactions").json()["items"]
+        self.assertEqual(items[0]["operation"], "Transfer")
+        self.assertEqual(items[1]["operation"], "Contract Call")
 
     def test_composite_cursor_has_no_duplicates_or_gaps(self):
         fake = FakeDatabase([
@@ -162,7 +274,7 @@ class ApiTransactionsTests(unittest.TestCase):
             "tx_hash": None,
             "block_time": "2026-07-25T12:30:45Z",
             "type": "gno.bank.MsgSend",
-            "operation": "Send Tokens",
+            "operation": "Transfer",
             "message_count": 1,
             "execution_status": None,
             "gas_wanted": None,

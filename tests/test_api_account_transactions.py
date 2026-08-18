@@ -67,6 +67,7 @@ def test_newest_first_empty_and_single_database_query():
     response = request(FakeDatabase([row(12, 1, [{"message_index": 0, "role": "sender"}]), row(11, 0, [{"message_index": 0, "role": "sender"}])]))
     assert response.status_code == 200
     assert [(item["block_height"], item["index"]) for item in response.json()["items"]] == [(12, 1), (11, 0)]
+    assert all(item["operation"] == "Transfer" for item in response.json()["items"])
     empty = FakeDatabase()
     assert request(empty).json()["items"] == []
     assert empty.calls == [(ADDRESS, 20, None, None)]
@@ -104,7 +105,7 @@ def test_directions_matching_message_amount_counterparty_and_contract_send():
     messages = [message(sender=OTHER, recipient=OTHER, label="Ignored"), message(label="Call", amount=None, send="7ugnot", tx_type="gno.vm.MsgCall")]
     payload = summary(messages)
     data = request(FakeDatabase([row(5, 0, [{"message_index": 1, "role": "sender"}], payload)])).json()["items"][0]
-    assert (data["operation"], data["amount"]) == ("Call", "7ugnot")
+    assert (data["operation"], data["amount"]) == ("Transfer", "7ugnot")
     messages[1]["amount"] = "3ugnot"
     data = request(FakeDatabase([row(5, 0, [{"message_index": 1, "role": "sender"}], summary(messages))])).json()["items"][0]
     assert data["amount"] == "3ugnot"

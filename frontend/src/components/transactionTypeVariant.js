@@ -1,8 +1,14 @@
 const transactionTypeVariants = {
   'Contract Call': 'contract-call',
-  'Add Package': 'add-package',
-  'Run Package': 'run-package',
-  'Send Tokens': 'send-tokens',
+  'NFT Mint': 'nft',
+  'NFT Transfer': 'nft',
+  'NFT Approval': 'nft',
+  'NFT Burn': 'nft',
+  'Token Transfer': 'token',
+  'Token Approval': 'token',
+  'Transfer': 'transfer',
+  'Deployment': 'deployment',
+  'Package Run': 'package-run',
 }
 
 export function transactionTypeVariant(label) {
