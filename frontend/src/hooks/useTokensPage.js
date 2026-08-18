@@ -13,7 +13,7 @@ export function useTokensPage() {
   const [topActivity, setTopActivity] = useState(null)
   const [activityWindow, setActivityWindow] = useState('24h')
   const [availableActivityWindows, setAvailableActivityWindows] = useState([])
-  const [activityLoading, setActivityLoading] = useState(false)
+  const [activityLoading, setActivityLoading] = useState(true)
   const [activityError, setActivityError] = useState(false)
   const [nativeToken, setNativeToken] = useState(null)
   const [searchInput, setSearchInput] = useState('')
@@ -43,30 +43,24 @@ export function useTokensPage() {
     controller.current = activeController
     const id = ++requestId.current
     foregroundActive.current = true
-    setLoading(true); setItems([]); setSummary(null); setTopActivity(null); setError(false)
+    setLoading(true); setError(false)
     try {
-      const [response, tokenResponse] = await Promise.all([
-        getAssets({ limit: PAGE_SIZE, q: request.search, standard: request.standard ?? currentAssetFilter.current,
-          beforeActivityHeight: request.cursor?.activityHeight, beforePath: request.cursor?.path,
-          signal: activeController.signal }),
-        getTokens({ limit: 3, activityWindow: request.activityWindow ?? currentActivityWindow.current,
-          signal: activeController.signal }),
-      ])
+      const response = await getAssets({ limit: PAGE_SIZE, q: request.search,
+        standard: request.standard ?? currentAssetFilter.current,
+        beforeActivityHeight: request.cursor?.activityHeight, beforePath: request.cursor?.path,
+        signal: activeController.signal })
       if (!mounted.current || id !== requestId.current) return
       const pagination = response.pagination ?? {}
       const hasNext = pagination.next_before_activity_height !== null && pagination.next_before_activity_height !== undefined
         && pagination.next_before_path !== null && pagination.next_before_path !== undefined
       setItems((response.items ?? []).slice(0, PAGE_SIZE)); setSummary(response.summary ?? null)
-      setTopActivity(Array.isArray(tokenResponse.top_activity) ? tokenResponse.top_activity.slice(0, 3) : null)
-      setAvailableActivityWindows(Array.isArray(tokenResponse.source?.available_activity_windows) ? tokenResponse.source.available_activity_windows : [])
-      setActivityLoading(false); setActivityError(false)
       setNextCursor(hasNext ? { activityHeight: pagination.next_before_activity_height, path: pagination.next_before_path } : null)
       setPageIndex(request.targetIndex); if (request.history) setCursorHistory(request.history)
       failedRequest.current = null; setHealthState('healthy')
       hasData.current = true
     } catch (requestError) {
       if (!mounted.current || id !== requestId.current || requestError?.name === 'AbortError') return
-      failedRequest.current = attempted; setItems([]); setSummary(null); setTopActivity(null); setError(true); setHealthState('error')
+      failedRequest.current = attempted; setError(true); setHealthState('error')
     } finally {
       if (id === requestId.current) foregroundActive.current = false
       if (mounted.current && id === requestId.current) setLoading(false)
@@ -168,7 +162,8 @@ export function useTokensPage() {
 
   useEffect(() => {
     mounted.current = true
-    loadPage({ cursor: null, targetIndex: 0, history: [null], search: '', activityWindow: '24h' })
+    loadPage({ cursor: null, targetIndex: 0, history: [null], search: '' })
+    loadActivityWindow('24h')
     return () => { mounted.current = false; requestId.current += 1; activityRequestId.current += 1;
       controller.current?.abort(); activityController.current?.abort() }
   }, [loadPage])

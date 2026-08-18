@@ -100,10 +100,10 @@ export function Tokens({ tokensPage }) {
       <div className="realms-applications__heading tokens-top__heading"><div><h2 id="tokens-top-title">Top Tokens</h2><p className="realms-applications__intro">Verified GRC20 tokens ranked by direct calls in {TOKEN_WINDOW_DESCRIPTIONS[activityWindow]}.</p></div>
         <div className="realms-applications__windows" aria-label="Token activity window">{Object.entries(TOKEN_WINDOW_LABELS).map(([value, label]) => <button
           className={activityWindow === value ? 'is-active' : ''} type="button" key={value}
-          aria-pressed={activityWindow === value} disabled={loading || activityLoading || !availableActivityWindows.includes(value)}
+          aria-pressed={activityWindow === value} disabled={activityLoading || !availableActivityWindows.includes(value)}
           onClick={() => selectActivityWindow(value)}>{label}</button>)}</div></div>
-      {loading || activityLoading ? <div className="panel tokens-top__state">Loading token activity…</div>
-        : error || activityError ? <div className="panel tokens-top__state">Token activity is currently unavailable.{activityError && <button className="blocks-page__button" type="button" onClick={retryActivity}>Retry</button>}</div>
+      {activityLoading ? <div className="panel tokens-top__state">Loading token activity…</div>
+        : activityError ? <div className="panel tokens-top__state">Token activity is currently unavailable.<button className="blocks-page__button" type="button" onClick={retryActivity}>Retry</button></div>
         : topActivity === null ? <div className="panel tokens-top__state">Complete token activity is not available for this period.</div>
         : topActivity.length === 0 ? <div className="panel tokens-top__state">No verified token calls in {TOKEN_WINDOW_DESCRIPTIONS[activityWindow]}.</div>
           : <div className="tokens-top__grid">{topActivity.slice(0, 3).map((token) => <a className="panel tokens-top__card" href={realmDetailHref(token.path)} key={token.path}>

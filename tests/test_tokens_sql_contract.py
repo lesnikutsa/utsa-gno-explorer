@@ -21,6 +21,15 @@ def test_asset_discovery_adds_strict_grc721_without_changing_grc20_contract():
     assert "gno.land/p/demo/tokens/grc20" in grc20_branch
 
 
+def test_asset_candidate_metadata_and_cache_miss_source_reads_are_split():
+    candidate_method = inspect.getsource(ApiDatabase.fetch_asset_candidates)
+    source_method = inspect.getsource(ApiDatabase.fetch_asset_candidate_files)
+    assert "ASSET_DIRECTORY_FILES_SQL" not in candidate_method
+    assert "fetch_asset_candidate_files" not in candidate_method
+    assert source_method.count("cursor.execute(ASSET_DIRECTORY_FILES_SQL") == 1
+    assert "paths != sorted(set(paths))" in source_method
+
+
 def test_discovery_sql_remains_conservative():
     assert "c.path_kind='realm'" in TOKEN_DIRECTORY_CANDIDATES_SQL
     assert "m.qfuncs_status='ok'" in TOKEN_DIRECTORY_CANDIDATES_SQL

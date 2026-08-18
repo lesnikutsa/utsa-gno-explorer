@@ -298,6 +298,15 @@ WHERE chain_id=%s AND path=ANY(%s::text[])
   AND file_kind='gno_source' AND filename LIKE '%%.gno'
 ORDER BY path COLLATE "C" ASC,filename COLLATE "C" ASC
 """
+ASSET_DIRECTORY_FILES_SQL = """
+SELECT f.path,f.filename,f.file_kind,f.byte_count,f.content,
+       m.observed_height AS metadata_observed_height
+FROM realm_metadata_files f
+JOIN realm_metadata m ON m.chain_id=f.chain_id AND m.path=f.path
+WHERE f.chain_id=%s AND f.path=ANY(%s::text[])
+  AND f.file_kind='gno_source' AND f.filename LIKE '%%.gno'
+ORDER BY f.path COLLATE "C" ASC,f.filename COLLATE "C" ASC
+"""
 ASSET_DIRECTORY_CANDIDATES_SQL = """
 WITH candidates AS (
 SELECT c.path,c.rpc_visible,c.call_count,c.successful_call_count,c.failed_call_count,
@@ -1281,7 +1290,7 @@ class ApiDatabase:
                 "activity": activity, "activity_available": coverage_available}
 
     def fetch_asset_candidates(self, *, chain_id: str, candidate_limit: int = 2001) -> dict[str, Any] | None:
-        """Read bounded persisted candidates for the unified contract asset catalog."""
+        """Read lightweight bounded candidate metadata without source content."""
         if self.pool is None:
             raise RuntimeError("Database pool is not open")
         with self.pool.connection(timeout=2.0) as connection, connection.transaction(), connection.cursor() as cursor:
@@ -1297,12 +1306,21 @@ class ApiDatabase:
             source_bytes_by_path = {row["path"]: int(row["total_file_bytes"]) for row in candidates}
             if sum(source_bytes_by_path.values()) > MAX_TOKEN_DIRECTORY_SOURCE_BYTES:
                 raise ValueError("asset directory source byte bound exceeded")
-            paths = sorted({row["path"] for row in candidates})
-            files = []
-            if paths:
-                cursor.execute(TOKEN_DIRECTORY_FILES_SQL, (chain_id, paths))
-                files = [dict(row) for row in cursor.fetchall()]
-        return {"source": dict(source), "candidates": candidates, "files": files}
+        return {"source": dict(source), "candidates": candidates}
+
+    def fetch_asset_candidate_files(self, *, chain_id: str, paths: list[str]) -> list[dict[str, Any]]:
+        """Fetch all source for a bounded cache-miss path set in one query."""
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        if not paths:
+            return []
+        if len(paths) > 2000 or paths != sorted(set(paths)):
+            raise ValueError("asset source paths must be sorted, unique, and bounded")
+        with self.pool.connection(timeout=2.0) as connection, connection.transaction(), connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION READ ONLY")
+            cursor.execute(ASSET_DIRECTORY_FILES_SQL, (chain_id, paths))
+            files = [dict(row) for row in cursor.fetchall()]
+        return files
 
     def fetch_verified_token_candidate(self, *, chain_id: str, path: str) -> dict[str, Any] | None:
         """Read bounded persisted source for one exact conservative token candidate."""

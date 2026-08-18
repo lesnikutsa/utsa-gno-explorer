@@ -58,3 +58,17 @@ count is inferred from rendering, mint history, events, arrays, or partial histo
 `inspect_grc721_candidate` and `classify_grc721` expose stable candidate, verified,
 and rejected reasons for tests and read-only diagnostics. Public catalog results
 contain verified collections only.
+
+## Classification cache
+
+Static classification is cached in-process by `(chain_id, path, standard,
+metadata_observed_height)`. Both verified and rejected outcomes are retained in a
+bounded LRU cache. Candidate activity and visibility are always read from the
+current catalog rows and are never part of the cache.
+
+The database first returns lightweight candidate metadata. Source content is then
+loaded in one bounded query only for paths whose revision-scoped classification is
+missing. A new Realm or a changed metadata height therefore triggers automatic
+classification, while unchanged Realms avoid source reads and parsing. A source row
+whose observed revision does not match its candidate is not cached and is retried by
+the next request.

@@ -36,7 +36,8 @@ def test_native_and_top_24h_are_separate_api_driven_sections():
     assert "Loading token activity…" in page
     assert "Token activity is currently unavailable." in page
     activity_render = page.split('<section className="tokens-top"', 1)[1]
-    assert activity_render.index("loading || activityLoading") < activity_render.index("error || activityError") < activity_render.index("topActivity === null")
+    assert activity_render.index("activityLoading") < activity_render.index("activityError") < activity_render.index("topActivity === null")
+    assert "loading || activityLoading" not in activity_render and "error || activityError" not in activity_render
     assert 'id="tokens-directory-title">Contract Assets' in page
     assert "Total Supply" in page and "networkProfile.networkName" in page
     assert "src={networkProfile.networkIconSrc}" in page
@@ -71,7 +72,7 @@ def test_tokens_cursor_pagination_and_request_safety_contract():
     assert "id !== requestId.current" in hook
     assert "id === requestId.current" in hook
     assert "mounted.current" in hook and "AbortController" in hook
-    assert "setSummary(null)" in hook
+    assert "setSummary(null)" not in hook
     assert "getTokenSupply(item.path" in hook
     assert "Math.min(4, pending.length)" in hook
     assert "supplyCache.current" in hook
@@ -199,3 +200,18 @@ def test_asset_tabs_clear_hidden_total_supply_sort_but_keep_common_sorts():
     assert f"supportedSortKeys.has(sort.key) ? sort : {fallback}" in page
     assert f"if (!supportedSortKeys.has(sort.key)) setSort({fallback})" in page
     assert "sortKey={viewSort.key} sortDirection={viewSort.direction}" in page
+
+
+def test_asset_filter_loading_is_isolated_from_top_tokens_and_preserves_content():
+    hook = (ROOT / "frontend/src/hooks/useTokensPage.js").read_text()
+    page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
+    load_page = hook.split("const loadPage", 1)[1].split("const refreshInBackground", 1)[0]
+    assert "getAssets(" in load_page and "getTokens(" not in load_page
+    for forbidden in ("setItems([])", "setSummary(null)", "setTopActivity(null)"):
+        assert forbidden not in load_page
+    select_filter = hook.split("const selectAssetFilter", 1)[1].split("const loadOlder", 1)[0]
+    assert "setAssetFilter(standard)" in select_filter and "resetAndLoad(appliedSearch, standard)" in select_filter
+    assert "getTokens(" not in select_filter and "setTopActivity" not in select_filter
+    activity_section = page.split('<section className="tokens-top"', 1)[1].split('</section>', 1)[0]
+    assert "loading || activityLoading" not in activity_section
+    assert "error || activityError" not in activity_section

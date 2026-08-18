@@ -19,6 +19,8 @@ from api.network_profile import gno_profile, validate_account_address
 from api.transaction_argument_decoder import decode_transaction_arguments
 from api.token_identity import extract_token_identity
 from api.grc721_identity import classify_grc721
+from api.asset_classification import (StaticAssetClassification,
+                                      asset_classification_cache)
 from indexer.realm_catalog import namespace_key, path_kind as realm_path_kind
 from api.realm_application_registry import CURATED_NAMESPACE_KEYS, REALM_APPLICATION_REGISTRY
 from api.database import (
@@ -1489,14 +1491,50 @@ def get_assets(limit: int = Query(default=50, ge=1, le=100),
                                                    candidate_limit=ASSET_CANDIDATE_LIMIT + 1)
         if result is None:
             raise HTTPException(status_code=404, detail="Asset directory is not available yet")
-        files_by_path: dict[str, list[dict]] = {}
-        for file in result["files"]:
-            files_by_path.setdefault(file["path"], []).append(file)
         verified: list[AssetDirectoryItem] = []
         seen: set[tuple[str, str]] = set()
         standards_by_path: dict[str, set[str]] = {}
         for candidate in result["candidates"]:
             standards_by_path.setdefault(candidate["path"], set()).add(candidate["standard"])
+        chain_id = app.state.api_config.chain_id
+        cache_keys: dict[tuple[str, str], tuple[str, str, str, int]] = {}
+        static_results: dict[tuple[str, str], StaticAssetClassification] = {}
+        misses: dict[tuple[str, str], dict] = {}
+        for row in result["candidates"]:
+            pair = (row["path"], row["standard"])
+            if pair in cache_keys or len(standards_by_path[row["path"]]) != 1:
+                continue
+            key = (chain_id, row["path"], row["standard"], int(row["metadata_observed_height"]))
+            cache_keys[pair] = key
+            cached = asset_classification_cache.get(key)
+            if cached is None:
+                misses[pair] = row
+            else:
+                static_results[pair] = cached
+        files_by_path: dict[str, list[dict]] = {}
+        if misses:
+            miss_paths = sorted({path for path, _ in misses})
+            for file in database.fetch_asset_candidate_files(chain_id=chain_id, paths=miss_paths):
+                files_by_path.setdefault(file["path"], []).append(file)
+            for pair, row in misses.items():
+                files = files_by_path.get(row["path"], [])
+                revision = int(row["metadata_observed_height"])
+                # A concurrent metadata refresh is retried on the next request, never cached under a stale revision.
+                if files and any(int(file["metadata_observed_height"]) != revision for file in files):
+                    continue
+                if row["standard"] == "grc20":
+                    identity = extract_token_identity(files)
+                    classification = StaticAssetClassification(identity.verified, identity.name, identity.symbol,
+                        identity.decimals, "verified" if identity.verified else "identity_unverified")
+                elif row["standard"] == "grc721":
+                    result_classification = classify_grc721(files, qfunc_names=set(row.get("qfunc_names") or ()))
+                    identity = result_classification.identity
+                    classification = StaticAssetClassification(result_classification.status == "verified",
+                        identity.name, identity.symbol, None, result_classification.reason)
+                else:
+                    raise ValueError("unknown asset standard")
+                static_results[pair] = classification
+                asset_classification_cache.put(cache_keys[pair], classification)
         for row in result["candidates"]:
             if len(standards_by_path[row["path"]]) != 1:
                 continue
@@ -1504,20 +1542,10 @@ def get_assets(limit: int = Query(default=50, ge=1, le=100),
             if key_tuple in seen:
                 continue
             seen.add(key_tuple)
-            files = files_by_path.get(row["path"], [])
-            if row["standard"] == "grc20":
-                identity = extract_token_identity(files)
-                if not identity.verified:
-                    continue
-                name, symbol, decimals = identity.name, identity.symbol, identity.decimals
-            elif row["standard"] == "grc721":
-                classification = classify_grc721(files, qfunc_names=set(row.get("qfunc_names") or ()))
-                if classification.status != "verified":
-                    continue
-                name, symbol = classification.identity.name, classification.identity.symbol
-                decimals = None
-            else:
-                raise ValueError("unknown asset standard")
+            classification = static_results.get(key_tuple)
+            if classification is None or not classification.verified:
+                continue
+            name, symbol, decimals = classification.name, classification.symbol, classification.decimals
             namespace = namespace_key(row["path"])
             decided = int(row["successful_call_count"]) + int(row["failed_call_count"])
             verified.append(AssetDirectoryItem(
