@@ -54,7 +54,7 @@ func OwnerOf(id int) {}
 func TokenMetadata(id int) {}
 func Mint() {}
 '''
-    bindings = 'const CollectionName = "Metadata Art"\nvar CollectionSymbol = "MART"\n'
+    bindings = 'const CollectionName = "Metadata Art"\nconst CollectionSymbol = "MART"\n'
     result = classify_grc721(source(main) + source(bindings, filename="identity.gno"))
     assert result.status == "verified" and result.identity == GRC721Identity("Metadata Art", "MART")
     literal = collection(constructor='grc721.NewNFTWithMetadata(0, cur, "Literal Art", "LART")')
@@ -86,6 +86,22 @@ CollectionName = "B"
 CollectionSymbol = getSymbol()
 )'''
     assert classify_grc721(source(main) + source(grouped_conflict, filename="grouped.gno")).reason == "dynamic_or_malformed_identity"
+
+
+def test_mutable_var_identity_is_never_statically_verified():
+    mutable = 'var CollectionName = "Mutable"\nvar CollectionSymbol = "MUT"'
+    main = collection(constructor="grc721.NewNFTWithMetadata(0, cur, CollectionName, CollectionSymbol)")
+    assert classify_grc721(source(main) + source(mutable, filename="mutable.gno")).reason == "dynamic_or_malformed_identity"
+    self_contained = mutable + '''
+func Name() string { return CollectionName }
+func Symbol() string { return CollectionSymbol }
+func OwnerOf() {}
+func TokenURI() {}
+func TransferFrom() {}
+func BalanceOf() {}
+func Mint() {}
+'''
+    assert classify_grc721(source(self_contained)).status == "rejected"
 
 
 def test_self_contained_collection_resolves_grouped_constants():

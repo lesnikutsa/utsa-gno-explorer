@@ -25,10 +25,11 @@ requires exactly one `NewBasicNFT` or `NewNFTWithMetadata` call qualified by an
 implementation alias imported in the same source file.
 
 The final constructor arguments resolve to the collection name and symbol. They may be direct string
-literals or identifiers with exactly one simple package-scope `const` or `var`
+literals or identifiers with exactly one immutable package-scope `const`
 string-literal binding across the Realm source set. Ordinary package-scope grouped
 `const (...)` string declarations are supported. Expressions, missing bindings,
 local or conflicting declarations, and ambiguous constructors fail closed.
+Package-level `var` bindings are mutable and never establish verified identity.
 
 Source must additionally declare `OwnerOf` and at least one of `TokenURI`,
 `TokenMetadata`, `BalanceOf`, `GetApproved`, `Exists`, `TransferFrom`,

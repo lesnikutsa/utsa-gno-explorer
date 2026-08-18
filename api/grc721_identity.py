@@ -150,7 +150,7 @@ def _argument_parts(arguments: str) -> list[str] | None:
 
 def _static_bindings(sources: list[str]) -> tuple[dict[str, str], set[str]]:
     values: dict[str, list[str | None]] = {}
-    declaration = re.compile(r'(?m)^(?:const|var)\s+([A-Za-z_]\w*)\s*=\s*([^\n;]+)')
+    declaration = re.compile(r'(?m)^const\s+([A-Za-z_]\w*)\s*=\s*([^\n;]+)')
     grouped = re.compile(r'(?ms)^const\s*\((.*?)^\)')
     all_declarations: dict[str, int] = {}
     for source in sources:

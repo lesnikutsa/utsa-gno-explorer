@@ -1,5 +1,6 @@
 import inspect
 
+from api.grc721_identity import SELF_CONTAINED_EVIDENCE
 from api.database import (ASSET_DIRECTORY_CANDIDATES_SQL, MAX_TOKEN_DIRECTORY_SOURCE_BYTES, TOKEN_DIRECTORY_CANDIDATES_SQL,
                           TOKEN_DIRECTORY_ACTIVITY_SQL, TOKEN_DIRECTORY_FILES_SQL, TOKEN_DIRECTORY_SOURCE_SQL,
                           TOKEN_EXACT_CANDIDATE_SQL, TOKEN_EXACT_FILES_SQL, ApiDatabase)
@@ -10,6 +11,8 @@ def test_asset_discovery_adds_strict_grc721_without_changing_grc20_contract():
     assert "UNION ALL" in ASSET_DIRECTORY_CANDIDATES_SQL
     grc20_branch, grc721_branch = ASSET_DIRECTORY_CANDIDATES_SQL.split("UNION ALL", 1)
     for name in ("Name", "Symbol", "OwnerOf", "TokenURI", "TransferFrom"):
+        assert f'[{chr(123)}"FuncName":"{name}"{chr(125)}]' in grc721_branch
+    for name in SELF_CONTAINED_EVIDENCE:
         assert f'[{chr(123)}"FuncName":"{name}"{chr(125)}]' in grc721_branch
     assert "m.total_file_bytes > 0" in grc721_branch
     assert "path_kind='realm'" in ASSET_DIRECTORY_CANDIDATES_SQL

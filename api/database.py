@@ -334,7 +334,12 @@ WHERE c.chain_id=%s AND c.path_kind='realm' AND m.total_file_bytes > 0
        AND m.qfuncs_payload @> '[{"FuncName":"TokenURI"}]'::jsonb
        AND m.qfuncs_payload @> '[{"FuncName":"TransferFrom"}]'::jsonb
        AND (m.qfuncs_payload @> '[{"FuncName":"BalanceOf"}]'::jsonb
+         OR m.qfuncs_payload @> '[{"FuncName":"Mint"}]'::jsonb
+         OR m.qfuncs_payload @> '[{"FuncName":"Burn"}]'::jsonb
          OR m.qfuncs_payload @> '[{"FuncName":"Approve"}]'::jsonb
+         OR m.qfuncs_payload @> '[{"FuncName":"GetApproved"}]'::jsonb
+         OR m.qfuncs_payload @> '[{"FuncName":"SafeTransferFrom"}]'::jsonb
+         OR m.qfuncs_payload @> '[{"FuncName":"SetApprovalForAll"}]'::jsonb
          OR m.qfuncs_payload @> '[{"FuncName":"TotalSupply"}]'::jsonb
          OR m.qfuncs_payload @> '[{"FuncName":"TokenCount"}]'::jsonb)))
 )
