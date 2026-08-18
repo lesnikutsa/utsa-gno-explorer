@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BOOTSTRAP_PATH = ROOT / "deploy/nginx/exp.gno.utsa.tech.bootstrap.conf"
 FINAL_PATH = ROOT / "deploy/nginx/exp.gno.utsa.tech.conf"
 DOCS_PATH = ROOT / "docs/production-deployment.md"
+INSTALL_DOCS_PATH = ROOT / "docs/install.md"
 FRONTEND_DEPLOY_SCRIPT_PATH = ROOT / "scripts/deploy_frontend.sh"
 
 
@@ -16,6 +17,7 @@ class NginxDeploymentAssetsTests(unittest.TestCase):
         cls.bootstrap = BOOTSTRAP_PATH.read_text(encoding="utf-8")
         cls.final = FINAL_PATH.read_text(encoding="utf-8")
         cls.docs = DOCS_PATH.read_text(encoding="utf-8")
+        cls.install_docs = INSTALL_DOCS_PATH.read_text(encoding="utf-8")
         cls.frontend_deploy_script = FRONTEND_DEPLOY_SCRIPT_PATH.read_text(encoding="utf-8")
 
     def test_assets_exist(self):
@@ -158,10 +160,24 @@ class NginxDeploymentAssetsTests(unittest.TestCase):
             "sudo install -o root -g root -m 0644 deploy/nginx/exp.gno.utsa.tech.conf "
             "/etc/nginx/sites-available/exp.gno.utsa.tech.conf"
         )
-        self.assertIn("source of truth", self.docs)
-        self.assertIn(install_command, self.docs)
-        self.assertIn("https://exp.gno.utsa.tech/api/assets/nft-activity", self.docs)
-        self.assertRegex(self.docs, r"--data '\{\"paths\":\[\"[^\"]+\"\]\}'")
+        for docs in (self.docs, self.install_docs):
+            self.assertIn("source of truth", docs)
+            self.assertIn(install_command, docs)
+            self.assertIn("/api/assets?standard=grc721&limit=1", docs)
+            self.assertIn("items[0].path", docs)
+            self.assertIn("REPLACE_WITH_VERIFIED_GRC721_PATH", docs)
+            self.assertIn("https://exp.gno.utsa.tech/api/assets/nft-activity", docs)
+            self.assertNotIn("gno.land/r/demo/nft", docs)
+
+    def test_fresh_install_bootstraps_certificate_before_final_https_config(self):
+        bootstrap_install = "deploy/nginx/exp.gno.utsa.tech.bootstrap.conf /etc/nginx/sites-available/exp.gno.utsa.tech.conf"
+        final_install = "deploy/nginx/exp.gno.utsa.tech.conf /etc/nginx/sites-available/exp.gno.utsa.tech.conf"
+        certbot = "sudo certbot certonly --webroot"
+        for docs in (self.docs, self.install_docs):
+            self.assertLess(docs.index(bootstrap_install), docs.index(certbot))
+            self.assertLess(docs.index(certbot), docs.index(final_install))
+            final_section = docs[docs.index(final_install):]
+            self.assertLess(final_section.index("sudo nginx -t"), final_section.index("sudo systemctl reload nginx"))
 
     def test_frontend_deploy_script_is_safe_and_repeatable(self):
         script = self.frontend_deploy_script

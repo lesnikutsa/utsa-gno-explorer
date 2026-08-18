@@ -157,26 +157,54 @@ the previous valid dump.
 
 ## 8. Publish the frontend and configure Nginx
 
+On a fresh server, publish the frontend, then preserve the HTTP bootstrap flow until the TLS
+certificate exists:
+
 ```bash
 sudo install -d -o root -g root -m 0755 /var/www/utsa-gno-explorer
 sudo /opt/utsa-gno-explorer/scripts/deploy_frontend.sh
 cd /opt/utsa-gno-explorer
+sudo install -d -o root -g root -m 0755 /var/www/letsencrypt/.well-known/acme-challenge
+sudo install -o root -g root -m 0644 deploy/nginx/exp.gno.utsa.tech.bootstrap.conf /etc/nginx/sites-available/exp.gno.utsa.tech.conf
+sudo ln -s /etc/nginx/sites-available/exp.gno.utsa.tech.conf /etc/nginx/sites-enabled/exp.gno.utsa.tech.conf
+sudo nginx -t
+sudo systemctl reload nginx
+sudo certbot certonly --webroot \
+  -w /var/www/letsencrypt \
+  -d exp.gno.utsa.tech \
+  --deploy-hook 'nginx -t && systemctl reload nginx'
 sudo install -o root -g root -m 0644 deploy/nginx/exp.gno.utsa.tech.conf /etc/nginx/sites-available/exp.gno.utsa.tech.conf
 sudo nginx -t
 sudo systemctl reload nginx
 ```
 
 The script publishes `frontend/dist` to `/var/www/utsa-gno-explorer`, validates Nginx, and
-reloads it. The tracked final HTTPS configuration is the source of truth for fresh installations
-and migrations, including the read-only API transport policy (`GET POST OPTIONS`). Site
-activation, DNS, and TLS certificate issuance remain operator-owned external configuration.
-Never commit private keys or certificate contents. After deployment, smoke-test the bounded
-read-only POST query through public HTTPS with a known GRC721 path:
+reloads it. The bootstrap configuration must remain active while Certbot obtains the first
+certificate. Install the tracked final HTTPS configuration only after certificate acquisition;
+it is the production source of truth for fresh installations and migrations, including the
+read-only API transport policy (`GET POST OPTIONS`). DNS and site activation remain
+operator-owned external configuration. Never commit private keys or certificate contents.
+
+For an existing-server migration or restore where the certificate files already exist, install
+the tracked final configuration directly, validate it, and reload Nginx:
+
+```bash
+cd /opt/utsa-gno-explorer
+sudo install -o root -g root -m 0644 deploy/nginx/exp.gno.utsa.tech.conf /etc/nginx/sites-available/exp.gno.utsa.tech.conf
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+After either flow, first query the verified asset catalog and copy `items[0].path` from the
+response. Substitute that exact value for `REPLACE_WITH_VERIFIED_GRC721_PATH` in the POST smoke
+test; a successful application response proves that public Nginx did not reject POST with `403`:
 
 ```bash
 curl --fail --show-error \
+  'https://exp.gno.utsa.tech/api/assets?standard=grc721&limit=1'
+curl --fail --show-error \
   --header 'Content-Type: application/json' \
-  --data '{"paths":["gno.land/r/demo/nft"]}' \
+  --data '{"paths":["REPLACE_WITH_VERIFIED_GRC721_PATH"]}' \
   https://exp.gno.utsa.tech/api/assets/nft-activity
 ```
 
