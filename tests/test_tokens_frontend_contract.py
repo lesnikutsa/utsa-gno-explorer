@@ -215,3 +215,17 @@ def test_asset_filter_loading_is_isolated_from_top_tokens_and_preserves_content(
     activity_section = page.split('<section className="tokens-top"', 1)[1].split('</section>', 1)[0]
     assert "loading || activityLoading" not in activity_section
     assert "error || activityError" not in activity_section
+
+
+def test_long_fallback_namespaces_are_compact_without_changing_asset_columns():
+    page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
+    helper = (ROOT / "frontend/src/utils/namespaceDisplay.js").read_text()
+    assert "applicationPresentation(item)" in page
+    assert "title={presentation.title}" in page
+    assert "item?.application?.display_name" in helper
+    assert "return { label: curated, title: undefined }" in helper
+    assert "value.slice(0, NAMESPACE_HEAD_LENGTH)" in helper
+    assert "value.slice(-NAMESPACE_TAIL_LENGTH)" in helper
+    assert "item.name" in page and "item.symbol" in page and "item.path" in page
+    for heading in ("Asset", "Standard", "App", "Direct Calls", "Last Activity", "Visibility"):
+        assert f"label: '{heading}'" in page

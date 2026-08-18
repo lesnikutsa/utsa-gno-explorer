@@ -8,6 +8,7 @@ import { relativeTime } from '../utils/time'
 import { formatTokenSupply } from '../utils/tokenSupply'
 import { networkProfile } from '../config/networkProfile'
 import { sortTokenDirectoryItems } from '../utils/tokenDirectory'
+import { applicationPresentation } from '../utils/namespaceDisplay'
 
 const formatCount = (value) => Number.isFinite(value) ? value.toLocaleString() : '—'
 const lastActivityChangeValue = (timestamp, label) => `${timestamp ?? 'never'}|${label}`
@@ -21,12 +22,24 @@ function LastActivityValue({ timestamp }) {
 const TOKEN_WINDOW_LABELS = { '24h': '24H', '7d': '7D', '30d': '30D' }
 const TOKEN_WINDOW_DESCRIPTIONS = { '24h': 'the last 24 hours', '7d': 'the last 7 days', '30d': 'the last 30 days' }
 
+const applicationLabel = (item) => {
+  const presentation = applicationPresentation(item)
+  return <span className="tokens-table__app"><strong title={presentation.title} aria-label={presentation.title}>{presentation.label}</strong>
+    <small>{item.application?.category ?? 'Namespace'}</small></span>
+}
+const topApplicationBadge = (item) => {
+  const presentation = applicationPresentation(item)
+  return <StatusBadge tone="neutral" title={presentation.title} aria-label={presentation.title}>
+    {presentation.label} · {item.application?.category ?? 'Namespace'}
+  </StatusBadge>
+}
+
 const grc20Columns = (supplies, suppliesSettled) => [
   { key: 'token', label: 'Token', render: (item) => <a className="tokens-table__token" href={realmDetailHref(item.path)}>
     <span className="tokens-table__identity">{item.identity_verified ? item.name : item.path.split('/').at(-1)}
       {item.identity_verified && item.symbol ? <small>${item.symbol}</small> : null}</span>
     <span className="tokens-table__path mono">{item.path}</span></a> },
-  { key: 'application', label: 'App', render: (item) => <span className="tokens-table__app"><strong>{item.application?.display_name ?? item.namespace_key}</strong><small>{item.application?.category ?? 'Namespace'}</small></span> },
+  { key: 'application', label: 'App', render: applicationLabel },
   { key: 'decimals', label: 'Decimals', render: (item) => item.decimals ?? '—' },
   { key: 'total_supply', label: 'Total Supply', sortable: true, sortDisabled: !suppliesSettled,
     defaultSortDirection: 'descending', headerTitle: suppliesSettled ? undefined : 'Total Supply sorting is available after visible supplies settle.',
@@ -42,7 +55,7 @@ const assetIdentity = (item, label = 'tokens-table__token') => <a className={lab
 const commonColumns = [
   { key: 'asset', label: 'Asset', render: (item) => assetIdentity(item) },
   { key: 'standard', label: 'Standard', render: (item) => <StatusBadge tone="neutral">{item.standard.toUpperCase()}</StatusBadge> },
-  { key: 'application', label: 'App', render: (item) => <span className="tokens-table__app"><strong>{item.application?.display_name ?? item.namespace_key}</strong><small>{item.application?.category ?? 'Namespace'}</small></span> },
+  { key: 'application', label: 'App', render: applicationLabel },
   { key: 'direct_call_count', label: 'Direct Calls', sortable: true, defaultSortDirection: 'descending', render: (item) => <ChangedValue value={item.direct_call_count}>{formatCount(item.direct_call_count)}</ChangedValue> },
   { key: 'last_activity_at', label: 'Last Activity', sortable: true, defaultSortDirection: 'descending', render: (item) => <LastActivityValue timestamp={item.last_activity_at} /> },
   { key: 'rpc_visible', label: 'Visibility', render: (item) => item.rpc_visible ? <StatusBadge tone="success">Visible</StatusBadge> : <StatusBadge tone="neutral">Historical</StatusBadge> },
@@ -107,7 +120,7 @@ export function Tokens({ tokensPage }) {
         : topActivity === null ? <div className="panel tokens-top__state">Complete token activity is not available for this period.</div>
         : topActivity.length === 0 ? <div className="panel tokens-top__state">No verified token calls in {TOKEN_WINDOW_DESCRIPTIONS[activityWindow]}.</div>
           : <div className="tokens-top__grid">{topActivity.slice(0, 3).map((token) => <a className="panel tokens-top__card" href={realmDetailHref(token.path)} key={token.path}>
-            <header className="tokens-top__card-header"><div className="tokens-top__identity"><h3>{token.name} <small>${token.symbol}</small></h3><p className="mono">{token.path}</p></div><StatusBadge tone="neutral">{token.application?.display_name ?? token.namespace_key} · {token.application?.category ?? 'Namespace'}</StatusBadge></header>
+            <header className="tokens-top__card-header"><div className="tokens-top__identity"><h3>{token.name} <small>${token.symbol}</small></h3><p className="mono">{token.path}</p></div>{topApplicationBadge(token)}</header>
             <dl className="tokens-top__primary"><div><dt>Direct Calls ({TOKEN_WINDOW_LABELS[activityWindow]})</dt><dd><ChangedValue value={token.direct_call_count}>{formatCount(token.direct_call_count)}</ChangedValue></dd></div><div><dt>Success ({TOKEN_WINDOW_LABELS[activityWindow]})</dt><dd><ChangedValue value={token.success_rate}>{formatSuccessRate(token.success_rate)}</ChangedValue></dd></div></dl>
             <dl className="tokens-top__metrics"><div><dt className="sr-only">Last activity</dt><dd>Last activity <ChangedValue value={`${token.last_activity_at}|${relativeTime(token.last_activity_at)}`}><time dateTime={token.last_activity_at} title={token.last_activity_at}>{relativeTime(token.last_activity_at)}</time></ChangedValue></dd></div></dl>
           </a>)}</div>}
