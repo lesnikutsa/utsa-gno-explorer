@@ -38,13 +38,15 @@ export function useTokensPage() {
   const [nftActivity, setNftActivity] = useState({})
 
   const loadNftActivity = useCallback(async (assetItems, standard, signal) => {
-    if (standard !== 'grc721' || !assetItems.length) return {}
+    const nftItems = standard === 'grc721' ? assetItems
+      : standard === 'all' ? assetItems.filter((item) => item.standard === 'grc721') : []
+    if (!nftItems.length) return {}
     try {
-      const response = await getNftActivity(assetItems.map((item) => item.path), { signal })
+      const response = await getNftActivity(nftItems.map((item) => item.path), { signal })
       return Object.fromEntries((response.items ?? []).map((item) => [item.path, item]))
     } catch (error) {
       if (error?.name === 'AbortError') throw error
-      return Object.fromEntries(assetItems.map((item) => [item.path, { path: item.path, available: false }]))
+      return Object.fromEntries(nftItems.map((item) => [item.path, { path: item.path, available: false }]))
     }
   }, [])
 

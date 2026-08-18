@@ -55,9 +55,17 @@ const grc20Columns = (supplies, suppliesSettled) => [
 const assetIdentity = (item, label = 'tokens-table__token') => <a className={label} href={realmDetailHref(item.path)}>
   <span className="tokens-table__identity">{item.name}<small>${item.symbol}</small></span>
   <span className="tokens-table__path mono">{item.path}</span></a>
-const commonColumns = [
+const actionLabel = (action) => action ? action[0].toUpperCase() + action.slice(1) : null
+const AssetStandardCell = ({ item, activity }) => {
+  const recognized = item.standard === 'grc721' && activity?.available && activity.last_action
+  return <span className="tokens-table__standard">
+    <StatusBadge tone={item.standard}>{item.standard.toUpperCase()}</StatusBadge>
+    {recognized ? <small>{actionLabel(activity.last_action)} · {relativeTime(activity.last_action_at)}</small> : null}
+  </span>
+}
+const commonColumns = (nftActivity) => [
   { key: 'asset', label: 'Asset', render: (item) => assetIdentity(item) },
-  { key: 'standard', label: 'Standard', render: (item) => <StatusBadge tone="neutral">{item.standard.toUpperCase()}</StatusBadge> },
+  { key: 'standard', label: 'Standard', render: (item) => <AssetStandardCell item={item} activity={nftActivity[item.path]} /> },
   { key: 'application', label: 'App', render: applicationLabel },
   { key: 'direct_call_count', label: 'Direct Calls', sortable: true, defaultSortDirection: 'descending', render: (item) => <ChangedValue value={item.direct_call_count}>{formatCount(item.direct_call_count)}</ChangedValue> },
   { key: 'last_activity_at', label: 'Last Activity', sortable: true, defaultSortDirection: 'descending', render: (item) => <LastActivityValue timestamp={item.last_activity_at} /> },
@@ -78,7 +86,7 @@ const nftActivityValue = (item) => {
   const activity = item.nft_activity
   if (!activity?.available) return <span className="tokens-table__activity"><strong>—</strong><small>Activity unavailable</small></span>
   if (!activity.last_action) return <span className="tokens-table__activity"><strong>—</strong><small>No recognized NFT action</small></span>
-  const label = activity.last_action[0].toUpperCase() + activity.last_action.slice(1)
+  const label = actionLabel(activity.last_action)
   return <span className="tokens-table__activity"><strong><ChangedValue value={`${activity.last_action}|${activity.last_action_height}|${activity.last_action_tx_index}|${activity.last_action_message_index}`}>{label}</ChangedValue></strong>
     <small><LastActivityValue timestamp={activity.last_action_at} /></small></span>
 }
@@ -153,7 +161,7 @@ export function Tokens({ tokensPage }) {
   const donutRadius = 42
   const donutCircumference = 2 * Math.PI * donutRadius
   let donutOffset = 0
-  const tableColumns = assetFilter === 'grc20' ? grc20Columns(supplies, suppliesSettled) : assetFilter === 'grc721' ? nftColumns(expandedNftGroups, toggleNftGroup) : commonColumns
+  const tableColumns = assetFilter === 'grc20' ? grc20Columns(supplies, suppliesSettled) : assetFilter === 'grc721' ? nftColumns(expandedNftGroups, toggleNftGroup) : commonColumns(nftActivity)
   const tableRows = assetFilter === 'grc721' ? nftRows : sortedItems
   const empty = error ? 'Assets are currently unavailable.' : appliedSearch ? `No assets match “${appliedSearch}”.` : 'No verified contract assets have been indexed yet.'
   return <section className="blocks-page tokens-page" aria-labelledby="tokens-page-title">
