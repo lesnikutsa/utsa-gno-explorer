@@ -319,6 +319,9 @@ def test_all_view_loads_only_nfts_and_renders_compact_standard_activity():
     assert "commonColumns(nftActivity)" in page
     assert "<AssetStandardCell item={item} activity={nftActivity[item.path]} />" in page
     assert "item.standard === 'grc721' && activity?.available && activity.last_action" in page
+    standard_cell = page.split("const AssetStandardCell", 1)[1].split("const commonColumns", 1)[0]
+    assert "actionLabel(activity.last_action)" in standard_cell
+    assert "relativeTime" not in standard_cell and "last_action_at" not in standard_cell
     assert "No recognized NFT action" not in page.split("const AssetStandardCell", 1)[1].split("const commonColumns", 1)[0]
     assert "Activity unavailable" not in page.split("const AssetStandardCell", 1)[1].split("const commonColumns", 1)[0]
     assert "assetFilter === 'grc721' ? nftRows : sortedItems" in page

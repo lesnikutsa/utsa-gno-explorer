@@ -60,7 +60,7 @@ const AssetStandardCell = ({ item, activity }) => {
   const recognized = item.standard === 'grc721' && activity?.available && activity.last_action
   return <span className="tokens-table__standard">
     <StatusBadge tone={item.standard}>{item.standard.toUpperCase()}</StatusBadge>
-    {recognized ? <small>{actionLabel(activity.last_action)} · {relativeTime(activity.last_action_at)}</small> : null}
+    {recognized ? <small>{actionLabel(activity.last_action)}</small> : null}
   </span>
 }
 const commonColumns = (nftActivity) => [
