@@ -23,15 +23,17 @@ test('calculates family aggregates and application state', () => {
     item('r/z/2', 'Same', 'S', { direct_call_count: 4, last_activity_at: '2026-02-01T00:00:00Z', rpc_visible: false }),
     item('r/a/1', 'Same', 'S', { direct_call_count: 3, last_activity_at: '2026-03-01T00:00:00Z', namespace_key: 'a' }),
   ], {}, {
-    'r/z/2': { available: true, action_count: 4, mint_count: 1, transfer_count: 3, approval_count: 0, burn_count: 0 },
-    'r/a/1': { available: true, action_count: 2, mint_count: 0, transfer_count: 1, approval_count: 1, burn_count: 0 },
+    'r/z/2': { available: true, last_action: 'transfer', last_action_height: 20, last_action_tx_index: 0, last_action_message_index: 1 },
+    'r/a/1': { available: true, last_action: 'mint', last_action_height: 30, last_action_tx_index: 0, last_action_message_index: 0 },
   })[0]
   assert.equal(family.direct_call_count, 7)
   assert.equal(family.last_activity_at, '2026-03-01T00:00:00Z')
   assert.equal(family.visibility, 'Mixed')
   assert.equal(family.applicationMode, 'multiple')
   assert.equal(family.namespaceCount, 2)
-  assert.deepEqual(family.nft_activity, { available: true, action_count: 6, mint_count: 1, transfer_count: 4, approval_count: 1, burn_count: 0 })
+  assert.equal(family.nft_activity.last_action, 'mint')
+  assert.equal(family.nft_activity.last_action_height, 30)
+  assert.equal(family.members.find(({ path }) => path === 'r/z/2').nft_activity.last_action, 'transfer')
   assert.deepEqual(family.members.map(({ path }) => path), ['r/a/1', 'r/z/2'])
   assert.equal(groupNftCollections([item('a'), item('b')])[0].visibility, 'Visible')
   assert.equal(groupNftCollections([item('a'), item('b')])[0].applicationMode, 'single')
@@ -64,12 +66,12 @@ test('sorts top-level collections, NFT actions, and activity in either direction
     item('r/b', 'Beta', 'B', { direct_call_count: 2, last_activity_at: '2026-02-01T00:00:00Z' }),
     item('r/a', 'Alpha', 'A', { direct_call_count: 8, last_activity_at: '2026-01-01T00:00:00Z' }),
   ], {}, {
-    'r/b': { available: true, action_count: 2 },
-    'r/a': { available: true, action_count: 8 },
+    'r/b': { available: true, last_action: 'transfer', last_action_height: 2, last_action_tx_index: 0, last_action_message_index: 0 },
+    'r/a': { available: true, last_action: 'mint', last_action_height: 8, last_action_tx_index: 0, last_action_message_index: 0 },
   })
   assert.deepEqual(sortNftCollectionGroups(groups, 'collection', 'ascending').map(({ name }) => name), ['Alpha', 'Beta'])
   assert.deepEqual(sortNftCollectionGroups(groups, 'collection', 'descending').map(({ name }) => name), ['Beta', 'Alpha'])
-  assert.deepEqual(sortNftCollectionGroups(groups, 'nft_action_count', 'descending').map(({ name }) => name), ['Alpha', 'Beta'])
+  assert.deepEqual(sortNftCollectionGroups(groups, 'nft_activity', 'descending').map(({ name }) => name), ['Alpha', 'Beta'])
   assert.deepEqual(sortNftCollectionGroups(groups, 'last_activity_at', 'descending').map(({ name }) => name), ['Beta', 'Alpha'])
 })
 

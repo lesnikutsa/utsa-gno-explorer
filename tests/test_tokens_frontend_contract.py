@@ -238,7 +238,7 @@ def test_asset_tabs_clear_hidden_total_supply_sort_but_keep_common_sorts():
     assert "assetFilter === 'grc20'" in page
     assert "new Set(['total_supply', 'direct_call_count', 'last_activity_at'])" in page
     assert "new Set(['direct_call_count', 'last_activity_at'])" in page
-    assert "new Set(['collection', 'nft_action_count', 'last_activity_at'])" in page
+    assert "new Set(['collection', 'nft_activity', 'last_activity_at'])" in page
     fallback = "{ key: 'last_activity_at', direction: 'descending' }"
     assert f"supportedSortKeys.has(sort.key) ? sort : {fallback}" in page
     assert f"if (!supportedSortKeys.has(sort.key)) setSort({fallback})" in page
@@ -292,15 +292,17 @@ def test_nft_families_are_presentation_only_accessible_and_keep_real_realm_links
         assert forbidden not in grouping + nft_table
 
 
-def test_nft_actions_are_scoped_rendered_aggregated_and_sortable():
+def test_nft_activity_is_scoped_rendered_and_sortable():
     page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
     grouping = (ROOT / "frontend/src/utils/nftCollections.js").read_text()
     nft_table = page.split("const nftColumns", 1)[1].split("export function Tokens", 1)[0]
-    assert "label: 'NFT Actions (24H)'" in nft_table
+    assert "label: 'NFT Activity'" in nft_table
+    assert "NFT Actions (24H)" not in page
     assert "label: 'Direct Calls'" not in nft_table
     assert page.count("label: 'Direct Calls'") >= 2
-    for text in ("No recognized NFT actions", "24H activity unavailable", "Mint", "Transfer", "Approval", "Burn"):
+    for text in ("No recognized NFT action", "Activity unavailable", "LastActivityValue timestamp={activity.last_action_at}"):
         assert text in page
-    assert ".filter(([, count]) => count > 0)" in page
+    for removed in ("mint_count", "transfer_count", "approval_count", "burn_count", "action_count"):
+        assert removed not in page
     assert "members.reduce" in grouping and "nft_activity" in grouping
-    assert "new Set(['collection', 'nft_action_count', 'last_activity_at'])" in page
+    assert "new Set(['collection', 'nft_activity', 'last_activity_at'])" in page

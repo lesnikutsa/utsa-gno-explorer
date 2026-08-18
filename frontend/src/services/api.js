@@ -92,7 +92,7 @@ export const getAssets = ({ limit = 50, q, standard = 'all', beforeActivityHeigh
   return request(`/assets?${query.toString()}`, { signal })
 }
 export const getNftActivity = (paths, { signal } = {}) => {
-  const query = new URLSearchParams({ window: '24h' })
+  const query = new URLSearchParams()
   for (const path of paths) query.append('paths', path)
   return request(`/assets/nft-activity?${query.toString()}`, { signal })
 }

@@ -2804,8 +2804,8 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         self.assertEqual([row["path"] for row in exact_result["files"]],
                          ["gno.land/r/tokens/valid"])
 
-    def test_nft_activity_aggregate_exact_success_boundary_and_latest_behavior(self):
-        """Execute the bounded aggregate against successful, failed, and unrelated indexed calls."""
+    def test_nft_activity_latest_exact_success_and_position_behavior(self):
+        """Select the latest recognized successful call from bounded indexed coverage."""
         from api.nft_actions import NFT_ACTION_BY_FUNCTION
         url = self.prepare_metadata_database(f"utsa_nft_activity_{os.getpid()}")
         now = datetime(2026, 8, 18, tzinfo=timezone.utc)
@@ -2821,8 +2821,8 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
             (101, now + timedelta(microseconds=1)),
         ]
         calls = [
-            (10, 0, "Mint"),                 # exact lower boundary, included
-            (11, 0, "Mint"),                 # just before boundary, excluded
+            (10, 0, "Mint"),
+            (11, 0, "Mint"),
             (20, 0, "TransferFrom"),
             (30, 0, "SafeTransferFrom"),
             (40, 0, "Approve"),
@@ -2855,11 +2855,9 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
                                [(height, tx_index, message_index, path, function)
                                 for message_index, (height, tx_index, function) in enumerate(calls)])
             cursor.execute(NFT_ACTIVITY_SQL, (list(NFT_ACTION_BY_FUNCTION),
-                list(NFT_ACTION_BY_FUNCTION.values()), "topaz-1", [path], 1, 100,
-                now - timedelta(hours=24), now))
+                list(NFT_ACTION_BY_FUNCTION.values()), "topaz-1", [path], 1, 100))
             row = cursor.fetchone()
-        self.assertEqual(row[:6], (path, 6, 1, 2, 2, 1))
-        self.assertEqual(row[6:], ("burn", "Burn", now - timedelta(hours=1), 90))
+        self.assertEqual(row, (path, "burn", "Burn", now - timedelta(hours=1), 90, 0, 6))
 
     def test_metadata_upgrade_with_production_writer_ownership(self):
         name = f"utsa_metadata_writer_owner_{os.getpid()}"

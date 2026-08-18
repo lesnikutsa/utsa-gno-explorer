@@ -76,11 +76,11 @@ const nftApplication = (item) => item.rowType === 'family' && item.applicationMo
 
 const nftActivityValue = (item) => {
   const activity = item.nft_activity
-  if (!activity?.available) return <span className="tokens-table__activity"><strong>—</strong><small>24H activity unavailable</small></span>
-  const categories = [['Mint', activity.mint_count], ['Transfer', activity.transfer_count],
-    ['Approval', activity.approval_count], ['Burn', activity.burn_count]].filter(([, count]) => count > 0)
-  return <span className="tokens-table__activity"><strong><ChangedValue value={activity.action_count}>{formatCount(activity.action_count)}</ChangedValue></strong>
-    <small>{categories.length ? categories.map(([label, count]) => `${label} ${formatCount(count)}`).join(' · ') : 'No recognized NFT actions'}</small></span>
+  if (!activity?.available) return <span className="tokens-table__activity"><strong>—</strong><small>Activity unavailable</small></span>
+  if (!activity.last_action) return <span className="tokens-table__activity"><strong>—</strong><small>No recognized NFT action</small></span>
+  const label = activity.last_action[0].toUpperCase() + activity.last_action.slice(1)
+  return <span className="tokens-table__activity"><strong><ChangedValue value={`${activity.last_action}|${activity.last_action_height}|${activity.last_action_tx_index}|${activity.last_action_message_index}`}>{label}</ChangedValue></strong>
+    <small><LastActivityValue timestamp={activity.last_action_at} /></small></span>
 }
 
 const nftColumns = (expandedGroupKeys, toggleGroup) => [
@@ -96,7 +96,7 @@ const nftColumns = (expandedGroupKeys, toggleGroup) => [
     return assetIdentity(item)
   } },
   { key: 'application', label: 'App', render: nftApplication },
-  { key: 'nft_action_count', label: 'NFT Actions (24H)', sortable: true, defaultSortDirection: 'descending', render: nftActivityValue },
+  { key: 'nft_activity', label: 'NFT Activity', sortable: true, defaultSortDirection: 'descending', render: nftActivityValue },
   { key: 'last_activity_at', label: 'Last Activity', sortable: true, defaultSortDirection: 'descending', render: (item) => <LastActivityValue timestamp={item.last_activity_at} /> },
   { key: 'rpc_visible', label: 'Visibility', render: nftVisibility },
 ]
@@ -115,7 +115,7 @@ export function Tokens({ tokensPage }) {
   const supportedSortKeys = assetFilter === 'grc20'
     ? new Set(['total_supply', 'direct_call_count', 'last_activity_at'])
     : assetFilter === 'grc721'
-      ? new Set(['collection', 'nft_action_count', 'last_activity_at'])
+      ? new Set(['collection', 'nft_activity', 'last_activity_at'])
       : new Set(['direct_call_count', 'last_activity_at'])
   const viewSort = supportedSortKeys.has(sort.key) ? sort : { key: 'last_activity_at', direction: 'descending' }
   const effectiveSortKey = viewSort.key === 'total_supply' && !suppliesSettled ? null : viewSort.key
