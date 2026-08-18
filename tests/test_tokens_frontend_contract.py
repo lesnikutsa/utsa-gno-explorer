@@ -238,7 +238,7 @@ def test_asset_tabs_clear_hidden_total_supply_sort_but_keep_common_sorts():
     assert "assetFilter === 'grc20'" in page
     assert "new Set(['total_supply', 'direct_call_count', 'last_activity_at'])" in page
     assert "new Set(['direct_call_count', 'last_activity_at'])" in page
-    assert "new Set(['collection', 'direct_call_count', 'last_activity_at'])" in page
+    assert "new Set(['collection', 'nft_activity', 'last_activity_at'])" in page
     fallback = "{ key: 'last_activity_at', direction: 'descending' }"
     assert f"supportedSortKeys.has(sort.key) ? sort : {fallback}" in page
     assert f"if (!supportedSortKeys.has(sort.key)) setSort({fallback})" in page
@@ -281,7 +281,7 @@ def test_nft_families_are_presentation_only_accessible_and_keep_real_realm_links
     assert "aria-expanded={expandedGroupKeys.has(item.groupKey)}" in nft_table
     assert "href={realmDetailHref(item.path)}" in nft_table
     assert "rowType === 'family-child'" in page
-    assert "groupNftCollections(items, { pageIndex, canLoadOlder })" in page
+    assert "groupNftCollections(items, { pageIndex, canLoadOlder }, nftActivity)" in page
     assert "assetFilter === 'grc721' ? nftRows : sortedItems" in page
     assert "summary?.grc721_count" in page
     assert "token_count" not in page
@@ -290,3 +290,52 @@ def test_nft_families_are_presentation_only_accessible_and_keep_real_realm_links
     assert "JSON.stringify([item?.name ?? '', item?.symbol ?? ''])" in grouping
     for forbidden in ("Gems", "GnoSwap", "GnoBuilders", "TokenCount", "TotalSupply"):
         assert forbidden not in grouping + nft_table
+
+
+def test_nft_activity_is_scoped_rendered_and_sortable():
+    page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
+    grouping = (ROOT / "frontend/src/utils/nftCollections.js").read_text()
+    nft_table = page.split("const nftColumns", 1)[1].split("export function Tokens", 1)[0]
+    assert "label: 'NFT Activity'" in nft_table
+    assert "NFT Actions (24H)" not in page
+    assert "label: 'Direct Calls'" not in nft_table
+    assert page.count("label: 'Direct Calls'") >= 2
+    for text in ("No recognized NFT action", "Activity unavailable", "LastActivityValue timestamp={activity.last_action_at}"):
+        assert text in page
+    for removed in ("mint_count", "transfer_count", "approval_count", "burn_count", "action_count"):
+        assert removed not in page
+    assert "members.reduce" in grouping and "nft_activity" in grouping
+    assert "new Set(['collection', 'nft_activity', 'last_activity_at'])" in page
+
+
+def test_all_view_loads_only_nfts_and_renders_compact_standard_activity():
+    page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
+    hook = (ROOT / "frontend/src/hooks/useTokensPage.js").read_text()
+    styles = (ROOT / "frontend/src/styles/app.css").read_text()
+    assert "standard === 'all' ? assetItems.filter((item) => item.standard === 'grc721') : []" in hook
+    assert "if (!nftItems.length) return {}" in hook
+    assert "getNftActivity(nftItems.map((item) => item.path)" in hook
+    assert "const commonColumns = (nftActivity) =>" in page
+    assert "commonColumns(nftActivity)" in page
+    assert "<AssetStandardCell item={item} activity={nftActivity[item.path]} />" in page
+    assert "item.standard === 'grc721' && activity?.available && activity.last_action" in page
+    standard_cell = page.split("const AssetStandardCell", 1)[1].split("const commonColumns", 1)[0]
+    assert "actionLabel(activity.last_action)" in standard_cell
+    assert "relativeTime" not in standard_cell and "last_action_at" not in standard_cell
+    assert "No recognized NFT action" not in page.split("const AssetStandardCell", 1)[1].split("const commonColumns", 1)[0]
+    assert "Activity unavailable" not in page.split("const AssetStandardCell", 1)[1].split("const commonColumns", 1)[0]
+    assert "assetFilter === 'grc721' ? nftRows : sortedItems" in page
+    assert ".tokens-table__standard > small" in styles and "font-size: 10px" in styles
+
+
+def test_contract_standard_badges_have_distinct_tones_without_changing_neutral():
+    page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
+    badge = (ROOT / "frontend/src/components/StatusBadge.jsx").read_text()
+    styles = (ROOT / "frontend/src/styles/app.css").read_text()
+    assert "<StatusBadge tone={item.standard}>" in page
+    assert ".status-badge--grc20" in styles and ".status-badge--grc721" in styles
+    assert ':root[data-theme="light"] .status-badge--grc20' in styles
+    assert ':root[data-theme="light"] .status-badge--grc721' in styles
+    assert "tone = 'neutral'" in badge
+    assert ".status-badge--neutral" in styles
+    assert ".tokens-table__activity > strong { color: var(--color-text-bright); font-size: 13px; }" in styles

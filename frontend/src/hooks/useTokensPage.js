@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getAssets, getNativeToken, getTokens, getTokenSupply } from '../services/api'
+import { getAssets, getNativeToken, getNftActivity, getTokens, getTokenSupply } from '../services/api'
 import { TOKENS_BACKGROUND_REQUEST_TIMEOUT_MS } from './useTokensAutoRefresh'
 
 export const PAGE_SIZE = 50
@@ -35,6 +35,20 @@ export function useTokensPage() {
   const activityRequestId = useRef(0)
   const supplyCache = useRef(new Map())
   const [supplies, setSupplies] = useState({})
+  const [nftActivity, setNftActivity] = useState({})
+
+  const loadNftActivity = useCallback(async (assetItems, standard, signal) => {
+    const nftItems = standard === 'grc721' ? assetItems
+      : standard === 'all' ? assetItems.filter((item) => item.standard === 'grc721') : []
+    if (!nftItems.length) return {}
+    try {
+      const response = await getNftActivity(nftItems.map((item) => item.path), { signal })
+      return Object.fromEntries((response.items ?? []).map((item) => [item.path, item]))
+    } catch (error) {
+      if (error?.name === 'AbortError') throw error
+      return Object.fromEntries(nftItems.map((item) => [item.path, { path: item.path, available: false }]))
+    }
+  }, [])
 
   const loadPage = useCallback(async (request) => {
     const attempted = { ...request, history: request.history ? [...request.history] : undefined }
@@ -49,11 +63,13 @@ export function useTokensPage() {
         standard: request.standard ?? currentAssetFilter.current,
         beforeActivityHeight: request.cursor?.activityHeight, beforePath: request.cursor?.path,
         signal: activeController.signal })
+      const pageItems = (response.items ?? []).slice(0, PAGE_SIZE)
+      const nextNftActivity = await loadNftActivity(pageItems, request.standard ?? currentAssetFilter.current, activeController.signal)
       if (!mounted.current || id !== requestId.current) return
       const pagination = response.pagination ?? {}
       const hasNext = pagination.next_before_activity_height !== null && pagination.next_before_activity_height !== undefined
         && pagination.next_before_path !== null && pagination.next_before_path !== undefined
-      setItems((response.items ?? []).slice(0, PAGE_SIZE)); setSummary(response.summary ?? null)
+      setItems(pageItems); setNftActivity(nextNftActivity); setSummary(response.summary ?? null)
       setNextCursor(hasNext ? { activityHeight: pagination.next_before_activity_height, path: pagination.next_before_path } : null)
       setPageIndex(request.targetIndex); if (request.history) setCursorHistory(request.history)
       failedRequest.current = null; setHealthState('healthy')
@@ -65,7 +81,7 @@ export function useTokensPage() {
       if (id === requestId.current) foregroundActive.current = false
       if (mounted.current && id === requestId.current) setLoading(false)
     }
-  }, [])
+  }, [loadNftActivity])
 
   const refreshInBackground = useCallback(async () => {
     if (foregroundActive.current || controller.current?.background || activityController.current) return
@@ -81,10 +97,13 @@ export function useTokensPage() {
         getTokens({ limit: 3, activityWindow: currentActivityWindow.current, signal: activeController.signal }),
         getNativeToken({ signal: activeController.signal }).catch(() => null),
       ])
+      const pageItems = (response.items ?? []).slice(0, PAGE_SIZE)
+      const nextNftActivity = await loadNftActivity(pageItems, currentAssetFilter.current, activeController.signal)
       if (!mounted.current || id !== requestId.current) return
       const pagination = response.pagination ?? {}
       const hasNext = pagination.next_before_activity_height != null && pagination.next_before_path != null
-      setItems((response.items ?? []).slice(0, PAGE_SIZE))
+      setItems(pageItems)
+      setNftActivity(nextNftActivity)
       setSummary(response.summary ?? null)
       setTopActivity(Array.isArray(tokenResponse.top_activity) ? tokenResponse.top_activity.slice(0, 3) : null)
       setAvailableActivityWindows(Array.isArray(tokenResponse.source?.available_activity_windows) ? tokenResponse.source.available_activity_windows : [])
@@ -100,7 +119,7 @@ export function useTokensPage() {
       window.clearTimeout(timeout)
       if (id === requestId.current) controller.current = null
     }
-  }, [appliedSearch])
+  }, [appliedSearch, loadNftActivity])
 
   const loadActivityWindow = useCallback(async (nextWindow) => {
     if (!TOKEN_ACTIVITY_WINDOWS.includes(nextWindow)) return
@@ -202,7 +221,7 @@ export function useTokensPage() {
     return () => activeController.abort()
   }, [items])
 
-  return { items, supplies, summary, topActivity, nativeToken, activityWindow, availableActivityWindows, assetFilter, selectAssetFilter,
+  return { items, supplies, nftActivity, summary, topActivity, nativeToken, activityWindow, availableActivityWindows, assetFilter, selectAssetFilter,
     activityLoading, activityError,
     searchInput, appliedSearch, loading, error, healthState, pageIndex,
     nextCursor, cursorHistory, setSearchInput, submitSearch, clearSearch, retry, loadOlder, loadNewer,

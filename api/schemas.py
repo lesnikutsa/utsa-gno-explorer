@@ -688,6 +688,27 @@ class AssetDirectoryResponse(BaseModel):
     pagination: TokenDirectoryPagination
 
 
+class NftActivityItem(BaseModel):
+    path: str = Field(min_length=1, max_length=256)
+    available: bool
+    last_action: Literal["mint", "transfer", "approval", "burn"] | None = None
+    last_action_function: str | None = Field(default=None, max_length=64)
+    last_action_at: str | None = None
+    last_action_height: int | None = Field(default=None, gt=0)
+    last_action_tx_index: int | None = Field(default=None, ge=0)
+    last_action_message_index: int | None = Field(default=None, ge=0)
+
+
+class NftActivityRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    paths: list[str] = Field(min_length=1, max_length=50)
+
+
+class NftActivityResponse(BaseModel):
+    checkpoint_at: str | None
+    items: list[NftActivityItem] = Field(max_length=50)
+
+
 class TokenSupplyResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     path: str = Field(min_length=1, max_length=256)

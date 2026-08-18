@@ -262,6 +262,7 @@ TOKEN_DIRECTORY_SOURCE_SQL = """
 SELECT state.chain_id, state.last_finalized_height AS indexed_height,
        catalog.observed_height AS catalog_observed_height,
        call_state.from_height AS call_index_from_height,
+       call_state.chain_id AS call_chain_id,
        call_state.through_height AS call_index_through_height,
        coverage_start.time_utc AS call_index_coverage_started_at,
        call_checkpoint.time_utc AS call_index_checkpoint_at,
@@ -374,6 +375,35 @@ WHERE call.chain_id=%s
   AND block.time_utc >= %s
   AND block.time_utc <= %s
 GROUP BY call.path
+"""
+
+NFT_ACTIVITY_SQL = """
+WITH mapping AS (
+ SELECT * FROM unnest(%s::text[],%s::text[]) AS action(function_name,action)
+), recognized AS MATERIALIZED (
+ SELECT call.path,mapping.action,call.function_name,block.time_utc,call.block_height,
+        call.tx_index,call.message_index,result.execution_status
+ FROM realm_call_index call
+ JOIN mapping ON mapping.function_name=call.function_name
+ JOIN blocks block ON block.height=call.block_height
+ LEFT JOIN transaction_execution_results result
+   ON (result.block_height,result.tx_index)=(call.block_height,call.tx_index)
+ WHERE call.chain_id=%s AND call.path=ANY(%s::text[])
+   AND call.block_height BETWEEN %s AND %s
+), status_by_path AS (
+ SELECT path,bool_or(execution_status IS NULL) AS execution_unknown
+ FROM recognized GROUP BY path
+), latest_success AS (
+ SELECT DISTINCT ON (path) path,action,function_name,time_utc,block_height,tx_index,message_index
+ FROM recognized WHERE execution_status='success'
+ ORDER BY path,block_height DESC,tx_index DESC,message_index DESC
+)
+SELECT status.path,status.execution_unknown,
+ latest.action AS last_action,latest.function_name AS last_action_function,
+ latest.time_utc AS last_action_at,latest.block_height AS last_action_height,
+ latest.tx_index AS last_action_tx_index,latest.message_index AS last_action_message_index
+FROM status_by_path status LEFT JOIN latest_success latest USING (path)
+ORDER BY status.path COLLATE "C"
 """
 
 TOKEN_EXACT_CANDIDATE_SQL = """
@@ -1321,6 +1351,29 @@ class ApiDatabase:
             cursor.execute(ASSET_DIRECTORY_FILES_SQL, (chain_id, paths))
             files = [dict(row) for row in cursor.fetchall()]
         return files
+
+    def fetch_nft_activity(self, *, chain_id: str, paths: list[str]) -> dict[str, Any] | None:
+        """Read the latest recognized successful call in complete indexed coverage."""
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        if not paths or len(paths) > 50 or paths != sorted(set(paths)):
+            raise ValueError("NFT activity paths must be sorted, unique, non-empty, and bounded")
+        with self.pool.connection(timeout=2.0) as connection, connection.transaction(), connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            cursor.execute(TOKEN_DIRECTORY_SOURCE_SQL, (chain_id,))
+            source = cursor.fetchone()
+            if source is None:
+                return None
+            source = dict(source)
+            bounds = complete_realm_call_coverage_bounds(source, chain_id)
+            available = bounds is not None
+            rows = []
+            if available:
+                from api.nft_actions import NFT_ACTION_BY_FUNCTION
+                cursor.execute(NFT_ACTIVITY_SQL, (list(NFT_ACTION_BY_FUNCTION), list(NFT_ACTION_BY_FUNCTION.values()),
+                    chain_id, paths, bounds[0], bounds[1]))
+                rows = [dict(row) for row in cursor.fetchall()]
+        return {"source": source, "available": available, "items": rows}
 
     def fetch_verified_token_candidate(self, *, chain_id: str, path: str) -> dict[str, Any] | None:
         """Read bounded persisted source for one exact conservative token candidate."""

@@ -23,6 +23,7 @@ from api.database import (
     ACTIVE_VALIDATORS_SQL,
     NETWORK_DISTRIBUTION_SQL,
     NETWORK_SQL,
+    NFT_ACTIVITY_SQL,
     REALM_CATALOG_SUMMARY_SQL,
     REALM_CALLS_PAGE_SQL,
     REALM_DETAIL_ITEM_SQL,
@@ -2802,6 +2803,67 @@ class PostgresSchemaIntegrationTests(unittest.TestCase):
         self.assertEqual(exact_result["candidate"]["path"], "gno.land/r/tokens/valid")
         self.assertEqual([row["path"] for row in exact_result["files"]],
                          ["gno.land/r/tokens/valid"])
+
+    def test_nft_activity_latest_exact_success_and_position_behavior(self):
+        """Select the latest recognized successful call from bounded indexed coverage."""
+        from api.nft_actions import NFT_ACTION_BY_FUNCTION
+        url = self.prepare_metadata_database(f"utsa_nft_activity_{os.getpid()}")
+        now = datetime(2026, 8, 18, tzinfo=timezone.utc)
+        path = "gno.land/r/example/nft"
+        unknown_path = "gno.land/r/example/nft-unknown-result"
+        blocks = [
+            (1, now - timedelta(days=2)),
+            (10, now - timedelta(hours=24)),
+            (11, now - timedelta(hours=24, microseconds=1)),
+            (20, now - timedelta(hours=20)), (30, now - timedelta(hours=18)),
+            (40, now - timedelta(hours=16)), (50, now - timedelta(hours=14)),
+            (90, now - timedelta(hours=1)), (91, now - timedelta(minutes=30)),
+            (92, now - timedelta(minutes=20)), (93, now - timedelta(minutes=10)), (100, now),
+            (101, now + timedelta(microseconds=1)),
+        ]
+        calls = [
+            (10, 0, "Mint"),
+            (11, 0, "Mint"),
+            (20, 0, "TransferFrom"),
+            (30, 0, "SafeTransferFrom"),
+            (40, 0, "Approve"),
+            (50, 0, "SetApprovalForAll"),
+            (90, 0, "Burn"),                 # newest recognized successful action
+            (91, 0, "OwnerOf"),              # newer unrelated call
+            (92, 0, "Mint"),                 # newer failed recognized call
+            (20, 1, "Render"), (20, 2, "Name"), (20, 3, "MintSpecial"),
+            (20, 4, "Transfer"), (20, 5, "mint"), (20, 6, "burn"),
+            (20, 7, "transferFrom"),
+            (101, 0, "Burn"),                # after checkpoint, excluded
+        ]
+        with psycopg.connect(url) as connection, connection.cursor() as cursor:
+            cursor.executemany("INSERT INTO blocks(height,block_hash_base64,block_hash_hex,time_utc,tx_count) "
+                               "VALUES (%s,%s,%s,%s,1)",
+                               [(height, f"nft-{height}", f"{height:064x}", timestamp) for height, timestamp in blocks])
+            cursor.execute("INSERT INTO indexer_state(state_key,chain_id,last_finalized_height) VALUES ('default','topaz-1',100)")
+            cursor.execute("INSERT INTO realm_call_index_state(chain_id,from_height,through_height) VALUES ('topaz-1',1,100)")
+            cursor.execute("INSERT INTO realm_catalog_state(chain_id,observed_height,rpc_path_count,refreshed_at) "
+                           "VALUES ('topaz-1',100,1,%s)", (now,))
+            tx_positions = sorted({(height, tx_index) for height, tx_index, _ in calls})
+            cursor.executemany("INSERT INTO transactions(block_height,tx_index,raw_base64,raw_base64_length,decode_status) "
+                               "VALUES (%s,%s,'',0,'not_attempted')", tx_positions)
+            cursor.executemany("INSERT INTO transaction_execution_results(block_height,tx_index,execution_status,gas_wanted,gas_used) "
+                               "VALUES (%s,%s,%s,1,1)",
+                               [(height, tx_index, "failed" if height == 92 else "success")
+                                for height, tx_index in tx_positions])
+            cursor.executemany("INSERT INTO realm_call_index(chain_id,block_height,tx_index,message_index,path,function_name) "
+                               "VALUES ('topaz-1',%s,%s,%s,%s,%s)",
+                               [(height, tx_index, message_index, path, function)
+                                for message_index, (height, tx_index, function) in enumerate(calls)])
+            cursor.execute("INSERT INTO transactions(block_height,tx_index,raw_base64,raw_base64_length,decode_status) "
+                           "VALUES (93,0,'',0,'not_attempted')")
+            cursor.execute("INSERT INTO realm_call_index(chain_id,block_height,tx_index,message_index,path,function_name) "
+                           "VALUES ('topaz-1',93,0,0,%s,'Mint')", (unknown_path,))
+            cursor.execute(NFT_ACTIVITY_SQL, (list(NFT_ACTION_BY_FUNCTION),
+                list(NFT_ACTION_BY_FUNCTION.values()), "topaz-1", [path, unknown_path], 1, 100))
+            rows = cursor.fetchall()
+        self.assertEqual(rows[0], (path, False, "burn", "Burn", now - timedelta(hours=1), 90, 0, 6))
+        self.assertEqual(rows[1], (unknown_path, True, None, None, None, None, None, None))
 
     def test_metadata_upgrade_with_production_writer_ownership(self):
         name = f"utsa_metadata_writer_owner_{os.getpid()}"

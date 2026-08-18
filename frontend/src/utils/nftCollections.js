@@ -2,6 +2,18 @@ import { applicationPresentation } from './namespaceDisplay.js'
 
 const lexicalCompare = (left, right) => left < right ? -1 : left > right ? 1 : 0
 const canonicalPath = (item) => typeof item?.path === 'string' ? item.path : ''
+const nftActivityPosition = (item) => {
+  const activity = item?.nft_activity
+  return activity?.available && activity.last_action && Number.isInteger(activity.last_action_height)
+    ? [activity.last_action_height, activity.last_action_tx_index ?? -1, activity.last_action_message_index ?? -1]
+    : null
+}
+const comparePositions = (left, right) => {
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return left[index] - right[index]
+  }
+  return 0
+}
 
 const compareNftCollectionMembers = (left, right) => {
   const leftActivity = Date.parse(left?.last_activity_at)
@@ -32,7 +44,7 @@ export function nftCollectionCountLabel(count, paginationState = {}) {
   return `${count} Realm collections${suffix}`
 }
 
-export function groupNftCollections(items, paginationState = {}) {
+export function groupNftCollections(items, paginationState = {}, activityByPath = {}) {
   const buckets = new Map()
   for (const item of Array.isArray(items) ? items : []) {
     const key = nftCollectionGroupKey(item)
@@ -41,7 +53,8 @@ export function groupNftCollections(items, paginationState = {}) {
   }
 
   return [...buckets.entries()].map(([groupKey, bucket]) => {
-    const members = [...bucket].sort(compareNftCollectionMembers)
+    const members = bucket.map((item) => ({ ...item, nft_activity: activityByPath[item.path] ?? { available: false } }))
+      .sort(compareNftCollectionMembers)
     if (members.length === 1) return { ...members[0], rowType: 'single', groupKey, members }
 
     const validActivity = members.map((item) => ({ value: item.last_activity_at, timestamp: Date.parse(item.last_activity_at) }))
@@ -51,10 +64,15 @@ export function groupNftCollections(items, paginationState = {}) {
     const namespaces = new Set(members.map((item) => item?.namespace_key ?? ''))
     const allVisible = members.every((item) => item.rpc_visible === true)
     const allHistorical = members.every((item) => item.rpc_visible === false)
+    const newestNftMember = members.filter((item) => nftActivityPosition(item) !== null)
+      .sort((left, right) => comparePositions(nftActivityPosition(right), nftActivityPosition(left)) || lexicalCompare(canonicalPath(left), canonicalPath(right)))[0]
     return {
       rowType: 'family', groupKey, name: members[0].name, symbol: members[0].symbol, members,
       path: canonicalPath(members[0]),
       direct_call_count: members.reduce((sum, item) => sum + (Number.isFinite(item.direct_call_count) ? item.direct_call_count : 0), 0),
+      nft_activity: members.some((item) => item.nft_activity.available !== true)
+        ? { available: false }
+        : newestNftMember?.nft_activity ?? { available: true, last_action: null },
       last_activity_at: validActivity?.value ?? null,
       visibility: allVisible ? 'Visible' : allHistorical ? 'Historical' : 'Mixed',
       applicationMode: applicationKeys.size === 1 ? 'single' : 'multiple',
@@ -72,12 +90,12 @@ export function sortNftCollectionGroups(groups, sortKey, sortDirection) {
       comparison = lexicalCompare(left.name ?? '', right.name ?? '')
       if (comparison === 0) comparison = lexicalCompare(left.symbol ?? '', right.symbol ?? '')
       if (comparison === 0) comparison = lexicalCompare(left.rowType === 'family' ? left.groupKey : canonicalPath(left), right.rowType === 'family' ? right.groupKey : canonicalPath(right))
-    } else if (sortKey === 'direct_call_count') {
-      const leftCalls = Number.isFinite(left.direct_call_count) ? left.direct_call_count : null
-      const rightCalls = Number.isFinite(right.direct_call_count) ? right.direct_call_count : null
-      if (leftCalls === null && rightCalls !== null) return 1
-      if (leftCalls !== null && rightCalls === null) return -1
-      comparison = leftCalls - rightCalls
+    } else if (sortKey === 'nft_activity') {
+      const leftPosition = nftActivityPosition(left)
+      const rightPosition = nftActivityPosition(right)
+      if (leftPosition === null && rightPosition !== null) return 1
+      if (leftPosition !== null && rightPosition === null) return -1
+      comparison = leftPosition === null ? 0 : comparePositions(leftPosition, rightPosition)
     } else if (sortKey === 'last_activity_at') {
       const leftTime = Date.parse(left.last_activity_at)
       const rightTime = Date.parse(right.last_activity_at)

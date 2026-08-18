@@ -99,6 +99,9 @@ from api.schemas import (
     AssetDirectoryResponse,
     AssetDirectorySource,
     AssetDirectorySummary,
+    NftActivityItem,
+    NftActivityRequest,
+    NftActivityResponse,
     ValidatorListItem,
     ValidatorSearchItem,
     ValidatorSearchResponse,
@@ -124,6 +127,54 @@ APPLICATION_WINDOW_UNAVAILABLE_DETAIL = "Realm application activity is not avail
 TOKEN_CANDIDATE_LIMIT = 1000
 ASSET_CANDIDATE_LIMIT = 2000
 TOKEN_ACTIVITY_WINDOWS = {"24h": 24, "7d": 168, "30d": 720}
+
+
+def _classify_static_asset_candidates(*, chain_id: str, candidates: list[dict]
+                                      ) -> tuple[dict[str, set[str]], dict[tuple[str, str], StaticAssetClassification]]:
+    """Classify unambiguous candidates with the shared revision-scoped cache."""
+    standards_by_path: dict[str, set[str]] = {}
+    for row in candidates:
+        standards_by_path.setdefault(row["path"], set()).add(row["standard"])
+    cache_keys: dict[tuple[str, str], tuple[str, str, str, int]] = {}
+    static_results: dict[tuple[str, str], StaticAssetClassification] = {}
+    misses: dict[tuple[str, str], dict] = {}
+    for row in candidates:
+        pair = (row["path"], row["standard"])
+        if pair in cache_keys or len(standards_by_path[row["path"]]) != 1:
+            continue
+        key = (chain_id, row["path"], row["standard"], int(row["metadata_observed_height"]))
+        cache_keys[pair] = key
+        cached = asset_classification_cache.get(key)
+        if cached is None:
+            misses[pair] = row
+        else:
+            static_results[pair] = cached
+    if not misses:
+        return standards_by_path, static_results
+    files_by_path: dict[str, list[dict]] = {}
+    miss_paths = sorted({path for path, _ in misses})
+    for file in database.fetch_asset_candidate_files(chain_id=chain_id, paths=miss_paths):
+        files_by_path.setdefault(file["path"], []).append(file)
+    for pair, row in misses.items():
+        files = files_by_path.get(row["path"], [])
+        revision = int(row["metadata_observed_height"])
+        # A concurrent metadata refresh is retried, never cached under a stale revision.
+        if files and any(int(file["metadata_observed_height"]) != revision for file in files):
+            continue
+        if row["standard"] == "grc20":
+            identity = extract_token_identity(files)
+            classification = StaticAssetClassification(identity.verified, identity.name, identity.symbol,
+                identity.decimals, "verified" if identity.verified else "identity_unverified")
+        elif row["standard"] == "grc721":
+            result = classify_grc721(files, qfunc_names=set(row.get("qfunc_names") or ()))
+            identity = result.identity
+            classification = StaticAssetClassification(result.status == "verified",
+                identity.name, identity.symbol, None, result.reason)
+        else:
+            raise ValueError("unknown asset standard")
+        static_results[pair] = classification
+        asset_classification_cache.put(cache_keys[pair], classification)
+    return standards_by_path, static_results
 
 
 def _active_token_count(source: dict, rows: list[dict]) -> int | None:
@@ -1493,48 +1544,9 @@ def get_assets(limit: int = Query(default=50, ge=1, le=100),
             raise HTTPException(status_code=404, detail="Asset directory is not available yet")
         verified: list[AssetDirectoryItem] = []
         seen: set[tuple[str, str]] = set()
-        standards_by_path: dict[str, set[str]] = {}
-        for candidate in result["candidates"]:
-            standards_by_path.setdefault(candidate["path"], set()).add(candidate["standard"])
         chain_id = app.state.api_config.chain_id
-        cache_keys: dict[tuple[str, str], tuple[str, str, str, int]] = {}
-        static_results: dict[tuple[str, str], StaticAssetClassification] = {}
-        misses: dict[tuple[str, str], dict] = {}
-        for row in result["candidates"]:
-            pair = (row["path"], row["standard"])
-            if pair in cache_keys or len(standards_by_path[row["path"]]) != 1:
-                continue
-            key = (chain_id, row["path"], row["standard"], int(row["metadata_observed_height"]))
-            cache_keys[pair] = key
-            cached = asset_classification_cache.get(key)
-            if cached is None:
-                misses[pair] = row
-            else:
-                static_results[pair] = cached
-        files_by_path: dict[str, list[dict]] = {}
-        if misses:
-            miss_paths = sorted({path for path, _ in misses})
-            for file in database.fetch_asset_candidate_files(chain_id=chain_id, paths=miss_paths):
-                files_by_path.setdefault(file["path"], []).append(file)
-            for pair, row in misses.items():
-                files = files_by_path.get(row["path"], [])
-                revision = int(row["metadata_observed_height"])
-                # A concurrent metadata refresh is retried on the next request, never cached under a stale revision.
-                if files and any(int(file["metadata_observed_height"]) != revision for file in files):
-                    continue
-                if row["standard"] == "grc20":
-                    identity = extract_token_identity(files)
-                    classification = StaticAssetClassification(identity.verified, identity.name, identity.symbol,
-                        identity.decimals, "verified" if identity.verified else "identity_unverified")
-                elif row["standard"] == "grc721":
-                    result_classification = classify_grc721(files, qfunc_names=set(row.get("qfunc_names") or ()))
-                    identity = result_classification.identity
-                    classification = StaticAssetClassification(result_classification.status == "verified",
-                        identity.name, identity.symbol, None, result_classification.reason)
-                else:
-                    raise ValueError("unknown asset standard")
-                static_results[pair] = classification
-                asset_classification_cache.put(cache_keys[pair], classification)
+        standards_by_path, static_results = _classify_static_asset_candidates(
+            chain_id=chain_id, candidates=result["candidates"])
         for row in result["candidates"]:
             if len(standards_by_path[row["path"]]) != 1:
                 continue
@@ -1588,6 +1600,58 @@ def get_assets(limit: int = Query(default=50, ge=1, le=100),
         raise
     except Exception:
         LOGGER.exception("Explorer database asset directory query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+
+
+@app.post("/api/assets/nft-activity", response_model=NftActivityResponse)
+def get_nft_activity(request: NftActivityRequest) -> NftActivityResponse:
+    """Return the latest recognized successful GRC721 call in indexed coverage."""
+    paths = request.paths
+    if len(paths) != len(set(paths)):
+        raise HTTPException(status_code=422, detail="paths must be unique and limited to 50")
+    for path in paths:
+        _validate_exact_catalog_path(path, expected_kind="realm")
+    requested = sorted(paths)
+    try:
+        chain_id = app.state.api_config.chain_id
+        candidates_result = database.fetch_asset_candidates(
+            chain_id=chain_id, candidate_limit=ASSET_CANDIDATE_LIMIT + 1)
+        if candidates_result is None:
+            raise HTTPException(status_code=404, detail="Asset directory is not available yet")
+        requested_candidates = [row for row in candidates_result["candidates"] if row["path"] in requested]
+        standards, static_results = _classify_static_asset_candidates(
+            chain_id=chain_id, candidates=requested_candidates)
+        candidates = [row for row in requested_candidates if row["standard"] == "grc721"]
+        candidate_by_path = {row["path"]: row for row in candidates
+                             if standards.get(row["path"]) == {"grc721"}}
+        verified = [path for path in requested if candidate_by_path.get(path) is not None
+                    and static_results.get((path, "grc721")) is not None
+                    and static_results[(path, "grc721")].verified]
+        if verified != requested:
+            raise HTTPException(status_code=404, detail="Verified GRC721 collection not found")
+        result = database.fetch_nft_activity(chain_id=chain_id, paths=requested)
+        if result is None:
+            raise HTTPException(status_code=404, detail="NFT activity is not available yet")
+        rows = {row["path"]: row for row in result["items"]}
+        items = []
+        for path in requested:
+            row = rows.get(path) if result["available"] else None
+            available = result["available"] and not (row and row.get("execution_unknown") is True)
+            action_row = row if available else None
+            items.append(NftActivityItem(path=path, available=available,
+                last_action=action_row.get("last_action") if action_row else None,
+                last_action_function=action_row.get("last_action_function") if action_row else None,
+                last_action_at=isoformat_utc_z(action_row["last_action_at"]) if action_row and action_row.get("last_action_at") else None,
+                last_action_height=int(action_row["last_action_height"]) if action_row and action_row.get("last_action_height") else None,
+                last_action_tx_index=int(action_row["last_action_tx_index"]) if action_row and action_row.get("last_action_tx_index") is not None else None,
+                last_action_message_index=int(action_row["last_action_message_index"]) if action_row and action_row.get("last_action_message_index") is not None else None))
+        checkpoint = result["source"].get("call_index_checkpoint_at")
+        return NftActivityResponse(checkpoint_at=isoformat_utc_z(checkpoint)
+            if isinstance(checkpoint, datetime) else None, items=items)
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.exception("Explorer database NFT activity query failed")
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
 
 

@@ -55,9 +55,17 @@ const grc20Columns = (supplies, suppliesSettled) => [
 const assetIdentity = (item, label = 'tokens-table__token') => <a className={label} href={realmDetailHref(item.path)}>
   <span className="tokens-table__identity">{item.name}<small>${item.symbol}</small></span>
   <span className="tokens-table__path mono">{item.path}</span></a>
-const commonColumns = [
+const actionLabel = (action) => action ? action[0].toUpperCase() + action.slice(1) : null
+const AssetStandardCell = ({ item, activity }) => {
+  const recognized = item.standard === 'grc721' && activity?.available && activity.last_action
+  return <span className="tokens-table__standard">
+    <StatusBadge tone={item.standard}>{item.standard.toUpperCase()}</StatusBadge>
+    {recognized ? <small>{actionLabel(activity.last_action)}</small> : null}
+  </span>
+}
+const commonColumns = (nftActivity) => [
   { key: 'asset', label: 'Asset', render: (item) => assetIdentity(item) },
-  { key: 'standard', label: 'Standard', render: (item) => <StatusBadge tone="neutral">{item.standard.toUpperCase()}</StatusBadge> },
+  { key: 'standard', label: 'Standard', render: (item) => <AssetStandardCell item={item} activity={nftActivity[item.path]} /> },
   { key: 'application', label: 'App', render: applicationLabel },
   { key: 'direct_call_count', label: 'Direct Calls', sortable: true, defaultSortDirection: 'descending', render: (item) => <ChangedValue value={item.direct_call_count}>{formatCount(item.direct_call_count)}</ChangedValue> },
   { key: 'last_activity_at', label: 'Last Activity', sortable: true, defaultSortDirection: 'descending', render: (item) => <LastActivityValue timestamp={item.last_activity_at} /> },
@@ -74,6 +82,15 @@ const nftApplication = (item) => item.rowType === 'family' && item.applicationMo
   ? <span className="tokens-table__app"><strong>Multiple</strong><small>{item.namespaceCount} {item.namespaceCount === 1 ? 'namespace' : 'namespaces'}</small></span>
   : applicationLabel(item.rowType === 'family' ? item.applicationItem : item)
 
+const nftActivityValue = (item) => {
+  const activity = item.nft_activity
+  if (!activity?.available) return <span className="tokens-table__activity"><strong>—</strong><small>Activity unavailable</small></span>
+  if (!activity.last_action) return <span className="tokens-table__activity"><strong>—</strong><small>No recognized NFT action</small></span>
+  const label = actionLabel(activity.last_action)
+  return <span className="tokens-table__activity"><strong><ChangedValue value={`${activity.last_action}|${activity.last_action_height}|${activity.last_action_tx_index}|${activity.last_action_message_index}`}>{label}</ChangedValue></strong>
+    <small><LastActivityValue timestamp={activity.last_action_at} /></small></span>
+}
+
 const nftColumns = (expandedGroupKeys, toggleGroup) => [
   { key: 'collection', label: 'Collection', sortable: true, render: (item) => {
     if (item.rowType === 'family') return <div className="nft-family__identity">
@@ -87,13 +104,13 @@ const nftColumns = (expandedGroupKeys, toggleGroup) => [
     return assetIdentity(item)
   } },
   { key: 'application', label: 'App', render: nftApplication },
-  { key: 'direct_call_count', label: 'Direct Calls', sortable: true, defaultSortDirection: 'descending', render: (item) => <ChangedValue value={item.direct_call_count}>{formatCount(item.direct_call_count)}</ChangedValue> },
+  { key: 'nft_activity', label: 'NFT Activity', sortable: true, defaultSortDirection: 'descending', render: nftActivityValue },
   { key: 'last_activity_at', label: 'Last Activity', sortable: true, defaultSortDirection: 'descending', render: (item) => <LastActivityValue timestamp={item.last_activity_at} /> },
   { key: 'rpc_visible', label: 'Visibility', render: nftVisibility },
 ]
 
 export function Tokens({ tokensPage }) {
-  const { items, supplies = {}, summary, topActivity, nativeToken, activityWindow, availableActivityWindows,
+  const { items, supplies = {}, nftActivity = {}, summary, topActivity, nativeToken, activityWindow, availableActivityWindows,
     selectActivityWindow, searchInput, appliedSearch, loading, error, setSearchInput, submitSearch,
     clearSearch, retry, pageIndex, canLoadOlder, loadOlder, loadNewer, assetFilter, selectAssetFilter } = tokensPage
   const { activityLoading, activityError, retryActivity } = tokensPage
@@ -106,13 +123,13 @@ export function Tokens({ tokensPage }) {
   const supportedSortKeys = assetFilter === 'grc20'
     ? new Set(['total_supply', 'direct_call_count', 'last_activity_at'])
     : assetFilter === 'grc721'
-      ? new Set(['collection', 'direct_call_count', 'last_activity_at'])
+      ? new Set(['collection', 'nft_activity', 'last_activity_at'])
       : new Set(['direct_call_count', 'last_activity_at'])
   const viewSort = supportedSortKeys.has(sort.key) ? sort : { key: 'last_activity_at', direction: 'descending' }
   const effectiveSortKey = viewSort.key === 'total_supply' && !suppliesSettled ? null : viewSort.key
   const sortedItems = useMemo(() => sortTokenDirectoryItems(items, effectiveSortKey, viewSort.direction, supplies),
     [effectiveSortKey, items, supplies, viewSort.direction])
-  const nftGroups = useMemo(() => groupNftCollections(items, { pageIndex, canLoadOlder }), [items, pageIndex, canLoadOlder])
+  const nftGroups = useMemo(() => groupNftCollections(items, { pageIndex, canLoadOlder }, nftActivity), [items, pageIndex, canLoadOlder, nftActivity])
   const nftRows = useMemo(() => flattenNftCollectionGroups(
     sortNftCollectionGroups(nftGroups, viewSort.key, viewSort.direction), expandedNftGroups,
   ), [expandedNftGroups, nftGroups, viewSort.direction, viewSort.key])
@@ -144,7 +161,7 @@ export function Tokens({ tokensPage }) {
   const donutRadius = 42
   const donutCircumference = 2 * Math.PI * donutRadius
   let donutOffset = 0
-  const tableColumns = assetFilter === 'grc20' ? grc20Columns(supplies, suppliesSettled) : assetFilter === 'grc721' ? nftColumns(expandedNftGroups, toggleNftGroup) : commonColumns
+  const tableColumns = assetFilter === 'grc20' ? grc20Columns(supplies, suppliesSettled) : assetFilter === 'grc721' ? nftColumns(expandedNftGroups, toggleNftGroup) : commonColumns(nftActivity)
   const tableRows = assetFilter === 'grc721' ? nftRows : sortedItems
   const empty = error ? 'Assets are currently unavailable.' : appliedSearch ? `No assets match “${appliedSearch}”.` : 'No verified contract assets have been indexed yet.'
   return <section className="blocks-page tokens-page" aria-labelledby="tokens-page-title">
