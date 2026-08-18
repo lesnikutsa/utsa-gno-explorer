@@ -14,10 +14,10 @@ test('transaction labels map to semantic variants with a neutral fallback', () =
   for (const label of ['NFT Mint', 'NFT Transfer', 'NFT Approval', 'NFT Burn']) {
     assert.equal(transactionTypeVariant(label), 'nft')
   }
-  for (const label of ['Token Transfer', 'Token Approval']) {
-    assert.equal(transactionTypeVariant(label), 'token')
+  for (const label of ['GRC20 Transfer', 'GRC20 Approval']) {
+    assert.equal(transactionTypeVariant(label), 'grc20')
   }
-  assert.equal(transactionTypeVariant('Transfer'), 'transfer')
+  assert.equal(transactionTypeVariant('Coin Transfer'), 'coin-transfer')
   assert.equal(transactionTypeVariant('Deployment'), 'deployment')
   assert.equal(transactionTypeVariant('Package Run'), 'package-run')
   assert.equal(transactionTypeVariant('Future Transaction'), 'other')
@@ -25,7 +25,7 @@ test('transaction labels map to semantic variants with a neutral fallback', () =
 })
 
 test('each transaction type variant has centralized badge styling', () => {
-  for (const variant of ['contract-call', 'nft', 'token', 'transfer', 'deployment', 'package-run', 'other']) {
+  for (const variant of ['contract-call', 'nft', 'grc20', 'coin-transfer', 'deployment', 'package-run', 'other']) {
     assert.match(styles, new RegExp(`\\.transaction-type-badge--${variant} \\{[^}]+\\}`))
   }
 })
@@ -46,6 +46,13 @@ test('NFT burn uses the NFT palette rather than execution error red', () => {
   assert.equal(transactionTypeVariant('NFT Burn'), 'nft')
   assert.match(styles, /\.transaction-type-badge--nft \{[^}]*color: var\(--color-type-nft-text\)/)
   assert.doesNotMatch(styles, /\.transaction-type-badge--nft \{[^}]*color-error/)
+})
+
+test('coin and GRC20 transfers use distinct non-error palettes', () => {
+  assert.notEqual(transactionTypeVariant('Coin Transfer'), transactionTypeVariant('GRC20 Transfer'))
+  assert.match(styles, /\.transaction-type-badge--grc20 \{[^}]*color: var\(--color-type-grc20-text\)/)
+  assert.match(styles, /\.transaction-type-badge--coin-transfer \{[^}]*color: var\(--color-type-package-text\)/)
+  assert.doesNotMatch(styles, /\.transaction-type-badge--(?:grc20|coin-transfer) \{[^}]*color-error/)
 })
 
 test('transaction views share TransactionTypeBadge mapping', () => {

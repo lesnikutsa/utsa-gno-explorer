@@ -104,7 +104,7 @@ class FakeDatabase:
 class TransactionSemanticClassifierTests(unittest.TestCase):
     def test_exact_semantic_mapping(self):
         base = {
-            "gno.bank.MsgSend": "Transfer",
+            "gno.bank.MsgSend": "Coin Transfer",
             "gno.vm.MsgAddPackage": "Deployment",
             "gno.vm.MsgRun": "Package Run",
         }
@@ -117,8 +117,8 @@ class TransactionSemanticClassifierTests(unittest.TestCase):
                 "SetApprovalForAll": "NFT Approval", "Burn": "NFT Burn",
             },
             "grc20": {
-                "Transfer": "Token Transfer", "TransferFrom": "Token Transfer",
-                "Approve": "Token Approval",
+                "Transfer": "GRC20 Transfer", "TransferFrom": "GRC20 Transfer",
+                "Approve": "GRC20 Approval",
             },
         }
         for standard, functions in mappings.items():
@@ -214,7 +214,7 @@ class ApiTransactionsTests(unittest.TestCase):
         fake.fetch_asset_candidate_files = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("source failure"))
         with self.make_client(fake) as client:
             items = client.get("/api/transactions").json()["items"]
-        self.assertEqual(items[0]["operation"], "Transfer")
+        self.assertEqual(items[0]["operation"], "Coin Transfer")
         self.assertEqual(items[1]["operation"], "Contract Call")
 
     def test_composite_cursor_has_no_duplicates_or_gaps(self):
@@ -274,7 +274,7 @@ class ApiTransactionsTests(unittest.TestCase):
             "tx_hash": None,
             "block_time": "2026-07-25T12:30:45Z",
             "type": "gno.bank.MsgSend",
-            "operation": "Transfer",
+            "operation": "Coin Transfer",
             "message_count": 1,
             "execution_status": None,
             "gas_wanted": None,

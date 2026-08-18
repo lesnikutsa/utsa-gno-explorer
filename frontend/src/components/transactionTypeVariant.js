@@ -4,9 +4,9 @@ const transactionTypeVariants = {
   'NFT Transfer': 'nft',
   'NFT Approval': 'nft',
   'NFT Burn': 'nft',
-  'Token Transfer': 'token',
-  'Token Approval': 'token',
-  'Transfer': 'transfer',
+  'GRC20 Transfer': 'grc20',
+  'GRC20 Approval': 'grc20',
+  'Coin Transfer': 'coin-transfer',
   'Deployment': 'deployment',
   'Package Run': 'package-run',
 }

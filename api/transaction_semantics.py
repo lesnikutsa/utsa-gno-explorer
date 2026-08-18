@@ -1,7 +1,7 @@
 """Conservative human-readable transaction intent classification."""
 
 BASE_OPERATIONS = {
-    "gno.bank.MsgSend": "Transfer",
+    "gno.bank.MsgSend": "Coin Transfer",
     "gno.vm.MsgAddPackage": "Deployment",
     "gno.vm.MsgRun": "Package Run",
 }
@@ -16,9 +16,9 @@ STANDARD_OPERATIONS = {
         "Burn": "NFT Burn",
     },
     "grc20": {
-        "Transfer": "Token Transfer",
-        "TransferFrom": "Token Transfer",
-        "Approve": "Token Approval",
+        "Transfer": "GRC20 Transfer",
+        "TransferFrom": "GRC20 Transfer",
+        "Approve": "GRC20 Approval",
     },
 }
 
