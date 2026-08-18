@@ -1032,6 +1032,14 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .tokens-table__identity small, .tokens-table__path, .tokens-table__app small { color: var(--color-text-secondary); font-size: 10px; font-weight: 500; overflow-wrap: anywhere; }
 .tokens-table__app { display: grid; gap: 2px; }
 .tokens-table__app strong { white-space: nowrap; }
+.nft-family__identity { display: grid; gap: 3px; }
+.nft-family__identity > small { padding-left: 30px; color: var(--color-text-secondary); font-size: 10px; }
+.nft-family__toggle { display: inline-flex; min-height: 36px; align-items: center; gap: 8px; padding: 4px 6px; border: 0; border-radius: 4px; background: transparent; color: var(--color-text-bright); cursor: pointer; text-align: left; }
+.nft-family__toggle:hover, .nft-family__toggle:focus-visible { background: var(--color-overlay-hover); color: var(--color-accent); }
+.nft-family__toggle:focus-visible { outline: 1px solid var(--color-accent); outline-offset: 2px; }
+.nft-family__child-row { background: var(--color-overlay-hover); box-shadow: inset 3px 0 var(--color-border); }
+.nft-family__child-link { padding-left: 8px; }
+.nft-family__child-link .tokens-table__identity { font-size: 12px; }
 @media (max-width: 1000px) and (min-width: 761px) { .tokens-top__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 760px) {
   .tokens-top__grid { grid-template-columns: 1fr; }
@@ -1045,6 +1053,9 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
   .tokens-page__table tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(90px, auto); border-top: 1px solid var(--color-border); }
   .tokens-page__table .data-table td { width: auto; height: auto; text-align: right; white-space: normal; }
   .tokens-page__table .data-table td:first-child { grid-column: 1 / -1; width: auto; text-align: left; }
+  .tokens-page__table .nft-family__child-row { border-left: 3px solid var(--color-border); box-shadow: none; }
+  .nft-family__toggle { width: 100%; min-height: 44px; }
+  .nft-family__child-link { padding-left: 0; }
   .tokens-page__table td[data-label]::before { display: block; margin-bottom: 3px; color: var(--color-text-secondary); content: attr(data-label); font-size: 9px; font-weight: 700; text-transform: uppercase; }
 }
 @media (max-width: 480px) {
