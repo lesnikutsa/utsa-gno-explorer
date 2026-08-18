@@ -85,8 +85,9 @@ class NginxDeploymentAssetsTests(unittest.TestCase):
             ),
         )
 
-    def test_final_does_not_reference_vite_preview_port(self):
-        self.assertNotIn("4174", self.final)
+    def test_final_does_not_reference_vite_or_review_ports(self):
+        for port in ("4173", "4174", "5173"):
+            self.assertNotIn(port, self.final)
 
     def test_proxy_headers_and_timeouts_are_complete(self):
         directives = (
@@ -104,8 +105,14 @@ class NginxDeploymentAssetsTests(unittest.TestCase):
         for directive in directives:
             self.assertIn(directive, self.final)
 
-    def test_proxy_is_read_only_without_policy_expansion(self):
-        self.assertRegex(self.final, r"limit_except\s+GET\s+OPTIONS\s*\{")
+    def test_proxy_allows_read_only_api_transport_methods_only(self):
+        policies = re.findall(r"limit_except\s+([^\{]+)\s*\{", self.final)
+        self.assertEqual([policy.split() for policy in policies], [["GET", "POST", "OPTIONS"]])
+        for method in ("GET", "POST", "OPTIONS"):
+            self.assertIn(method, policies[0].split())
+        for method in ("PUT", "PATCH", "DELETE"):
+            self.assertNotIn(method, policies[0].split())
+        self.assertRegex(self.final, r"limit_except\s+GET\s+POST\s+OPTIONS\s*\{\s*deny all;\s*\}")
         self.assertNotIn("proxy_buffering off", self.final)
         self.assertNotIn("proxy_request_buffering off", self.final)
         self.assertNotIn("add_header Access-Control-", self.final)
@@ -145,6 +152,16 @@ class NginxDeploymentAssetsTests(unittest.TestCase):
         self.assertNotRegex(self.docs, r"(?i)ufw\s+allow\s+18180")
         self.assertNotIn("BEGIN PRIVATE KEY", self.docs)
         self.assertNotRegex(self.docs, r"postgres(?:ql)?://[^\s/:]+:[^\s/@]+@")
+
+    def test_documentation_installs_tracked_final_config_and_smoke_tests_post(self):
+        install_command = (
+            "sudo install -o root -g root -m 0644 deploy/nginx/exp.gno.utsa.tech.conf "
+            "/etc/nginx/sites-available/exp.gno.utsa.tech.conf"
+        )
+        self.assertIn("source of truth", self.docs)
+        self.assertIn(install_command, self.docs)
+        self.assertIn("https://exp.gno.utsa.tech/api/assets/nft-activity", self.docs)
+        self.assertRegex(self.docs, r"--data '\{\"paths\":\[\"[^\"]+\"\]\}'")
 
     def test_frontend_deploy_script_is_safe_and_repeatable(self):
         script = self.frontend_deploy_script

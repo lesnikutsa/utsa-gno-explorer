@@ -160,12 +160,25 @@ the previous valid dump.
 ```bash
 sudo install -d -o root -g root -m 0755 /var/www/utsa-gno-explorer
 sudo /opt/utsa-gno-explorer/scripts/deploy_frontend.sh
+cd /opt/utsa-gno-explorer
+sudo install -o root -g root -m 0644 deploy/nginx/exp.gno.utsa.tech.conf /etc/nginx/sites-available/exp.gno.utsa.tech.conf
+sudo nginx -t
+sudo systemctl reload nginx
 ```
 
 The script publishes `frontend/dist` to `/var/www/utsa-gno-explorer`, validates Nginx, and
-reloads it. Review repository examples under `deploy/nginx/`; site activation, DNS, and TLS
-certificate issuance remain operator-owned external configuration. Never commit private
-keys. Confirm `sudo nginx -t` before exposing the site.
+reloads it. The tracked final HTTPS configuration is the source of truth for fresh installations
+and migrations, including the read-only API transport policy (`GET POST OPTIONS`). Site
+activation, DNS, and TLS certificate issuance remain operator-owned external configuration.
+Never commit private keys or certificate contents. After deployment, smoke-test the bounded
+read-only POST query through public HTTPS with a known GRC721 path:
+
+```bash
+curl --fail --show-error \
+  --header 'Content-Type: application/json' \
+  --data '{"paths":["gno.land/r/demo/nft"]}' \
+  https://exp.gno.utsa.tech/api/assets/nft-activity
+```
 
 ## 9. Verify services and reboot behavior
 
