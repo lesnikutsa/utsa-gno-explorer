@@ -298,6 +298,64 @@ WHERE chain_id=%s AND path=ANY(%s::text[])
   AND file_kind='gno_source' AND filename LIKE '%%.gno'
 ORDER BY path COLLATE "C" ASC,filename COLLATE "C" ASC
 """
+ASSET_DIRECTORY_FILES_SQL = """
+SELECT f.path,f.filename,f.file_kind,f.byte_count,f.content,
+       m.observed_height AS metadata_observed_height
+FROM realm_metadata_files f
+JOIN realm_metadata m ON m.chain_id=f.chain_id AND m.path=f.path
+WHERE f.chain_id=%s AND f.path=ANY(%s::text[])
+  AND f.file_kind='gno_source' AND f.filename LIKE '%%.gno'
+ORDER BY f.path COLLATE "C" ASC,f.filename COLLATE "C" ASC
+"""
+ASSET_DIRECTORY_CANDIDATES_SQL = """
+WITH candidates AS (
+SELECT c.path,c.rpc_visible,c.call_count,c.successful_call_count,c.failed_call_count,
+       c.last_activity_height,c.last_activity_at,m.observed_height AS metadata_observed_height,
+       m.total_file_bytes,'grc20'::text AS standard,
+       CASE WHEN jsonb_typeof(m.qfuncs_payload)='array'
+         THEN ARRAY(SELECT element->>'FuncName' FROM jsonb_array_elements(m.qfuncs_payload) element)
+         ELSE ARRAY[]::text[] END AS qfunc_names
+FROM realm_catalog c
+JOIN realm_metadata m ON m.chain_id=c.chain_id AND m.path=c.path
+WHERE c.chain_id=%s AND c.path_kind='realm'
+  AND m.qfuncs_status='ok'
+  AND m.qfuncs_payload @> '[{"FuncName":"TotalSupply"}]'::jsonb
+  AND m.qfuncs_payload @> '[{"FuncName":"BalanceOf"}]'::jsonb
+  AND m.qfuncs_payload @> '[{"FuncName":"Transfer"}]'::jsonb
+  AND EXISTS (SELECT 1 FROM realm_metadata_imports imp WHERE imp.chain_id=c.chain_id AND imp.path=c.path
+    AND imp.imported_path='gno.land/p/demo/tokens/grc20')
+UNION ALL
+SELECT c.path,c.rpc_visible,c.call_count,c.successful_call_count,c.failed_call_count,
+       c.last_activity_height,c.last_activity_at,m.observed_height AS metadata_observed_height,
+       m.total_file_bytes,'grc721'::text AS standard,
+       CASE WHEN jsonb_typeof(m.qfuncs_payload)='array'
+         THEN ARRAY(SELECT element->>'FuncName' FROM jsonb_array_elements(m.qfuncs_payload) element)
+         ELSE ARRAY[]::text[] END AS qfunc_names
+FROM realm_catalog c
+JOIN realm_metadata m ON m.chain_id=c.chain_id AND m.path=c.path
+WHERE c.chain_id=%s AND c.path_kind='realm' AND m.total_file_bytes > 0
+  AND (EXISTS (SELECT 1 FROM realm_metadata_imports imp WHERE imp.chain_id=c.chain_id AND imp.path=c.path
+       AND regexp_replace(imp.imported_path, '/+$', '') ~ '/(grc721|grc721v2)$')
+    OR (m.qfuncs_status='ok'
+       AND m.qfuncs_payload @> '[{"FuncName":"Name"}]'::jsonb
+       AND m.qfuncs_payload @> '[{"FuncName":"Symbol"}]'::jsonb
+       AND m.qfuncs_payload @> '[{"FuncName":"OwnerOf"}]'::jsonb
+       AND m.qfuncs_payload @> '[{"FuncName":"TokenURI"}]'::jsonb
+       AND m.qfuncs_payload @> '[{"FuncName":"TransferFrom"}]'::jsonb
+       AND (m.qfuncs_payload @> '[{"FuncName":"BalanceOf"}]'::jsonb
+         OR m.qfuncs_payload @> '[{"FuncName":"Mint"}]'::jsonb
+         OR m.qfuncs_payload @> '[{"FuncName":"Burn"}]'::jsonb
+         OR m.qfuncs_payload @> '[{"FuncName":"Approve"}]'::jsonb
+         OR m.qfuncs_payload @> '[{"FuncName":"GetApproved"}]'::jsonb
+         OR m.qfuncs_payload @> '[{"FuncName":"SafeTransferFrom"}]'::jsonb
+         OR m.qfuncs_payload @> '[{"FuncName":"SetApprovalForAll"}]'::jsonb
+         OR m.qfuncs_payload @> '[{"FuncName":"TotalSupply"}]'::jsonb
+         OR m.qfuncs_payload @> '[{"FuncName":"TokenCount"}]'::jsonb)))
+)
+SELECT * FROM candidates
+ORDER BY COALESCE(last_activity_height,-1) DESC,path COLLATE "C" ASC,standard ASC
+LIMIT %s
+"""
 TOKEN_DIRECTORY_ACTIVITY_SQL = """
 SELECT call.path,
        count(*)::bigint AS direct_call_count,
@@ -1230,6 +1288,39 @@ class ApiDatabase:
                 activity = [dict(row) for row in cursor.fetchall()]
         return {"source": dict(source), "candidates": candidates, "files": files,
                 "activity": activity, "activity_available": coverage_available}
+
+    def fetch_asset_candidates(self, *, chain_id: str, candidate_limit: int = 2001) -> dict[str, Any] | None:
+        """Read lightweight bounded candidate metadata without source content."""
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        with self.pool.connection(timeout=2.0) as connection, connection.transaction(), connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            cursor.execute(TOKEN_DIRECTORY_SOURCE_SQL, (chain_id,))
+            source = cursor.fetchone()
+            if source is None:
+                return None
+            cursor.execute(ASSET_DIRECTORY_CANDIDATES_SQL, (chain_id, chain_id, candidate_limit))
+            candidates = [dict(row) for row in cursor.fetchall()]
+            if len(candidates) >= candidate_limit:
+                raise ValueError("asset candidate count bound exceeded")
+            source_bytes_by_path = {row["path"]: int(row["total_file_bytes"]) for row in candidates}
+            if sum(source_bytes_by_path.values()) > MAX_TOKEN_DIRECTORY_SOURCE_BYTES:
+                raise ValueError("asset directory source byte bound exceeded")
+        return {"source": dict(source), "candidates": candidates}
+
+    def fetch_asset_candidate_files(self, *, chain_id: str, paths: list[str]) -> list[dict[str, Any]]:
+        """Fetch all source for a bounded cache-miss path set in one query."""
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        if not paths:
+            return []
+        if len(paths) > 2000 or paths != sorted(set(paths)):
+            raise ValueError("asset source paths must be sorted, unique, and bounded")
+        with self.pool.connection(timeout=2.0) as connection, connection.transaction(), connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION READ ONLY")
+            cursor.execute(ASSET_DIRECTORY_FILES_SQL, (chain_id, paths))
+            files = [dict(row) for row in cursor.fetchall()]
+        return files
 
     def fetch_verified_token_candidate(self, *, chain_id: str, path: str) -> dict[str, Any] | None:
         """Read bounded persisted source for one exact conservative token candidate."""

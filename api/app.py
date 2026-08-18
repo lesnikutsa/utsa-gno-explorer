@@ -18,6 +18,9 @@ from api.account_service import AccountUnavailableError, fetch_live_account, pub
 from api.network_profile import gno_profile, validate_account_address
 from api.transaction_argument_decoder import decode_transaction_arguments
 from api.token_identity import extract_token_identity
+from api.grc721_identity import classify_grc721
+from api.asset_classification import (StaticAssetClassification,
+                                      asset_classification_cache)
 from indexer.realm_catalog import namespace_key, path_kind as realm_path_kind
 from api.realm_application_registry import CURATED_NAMESPACE_KEYS, REALM_APPLICATION_REGISTRY
 from api.database import (
@@ -92,6 +95,10 @@ from api.schemas import (
     TokenTopActivityItem,
     NativeTokenResponse,
     TokenSupplyResponse,
+    AssetDirectoryItem,
+    AssetDirectoryResponse,
+    AssetDirectorySource,
+    AssetDirectorySummary,
     ValidatorListItem,
     ValidatorSearchItem,
     ValidatorSearchResponse,
@@ -115,6 +122,7 @@ _HASH_RE = re.compile(r"^[0-9A-Fa-f]{64}$")
 CALLS_UNAVAILABLE_DETAIL = "Realm call history is not available"
 APPLICATION_WINDOW_UNAVAILABLE_DETAIL = "Realm application activity is not available for this window"
 TOKEN_CANDIDATE_LIMIT = 1000
+ASSET_CANDIDATE_LIMIT = 2000
 TOKEN_ACTIVITY_WINDOWS = {"24h": 24, "7d": 168, "30d": 720}
 
 
@@ -1463,6 +1471,123 @@ def get_tokens(limit: int = Query(default=50, ge=1, le=100), q: str | None = Que
         raise
     except Exception:
         LOGGER.exception("Explorer database token directory query failed")
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+
+
+@app.get("/api/assets", response_model=AssetDirectoryResponse)
+def get_assets(limit: int = Query(default=50, ge=1, le=100),
+               q: str | None = Query(default=None, min_length=1, max_length=128),
+               standard: Literal["all", "grc20", "grc721"] = Query(default="all"),
+               before_activity_height: int | None = Query(default=None, ge=-1),
+               before_path: str | None = Query(default=None, min_length=1, max_length=256)) -> AssetDirectoryResponse:
+    """Return source-verified GRC20 tokens and GRC721 collections from persisted metadata."""
+    if (before_activity_height is None) != (before_path is None):
+        raise HTTPException(status_code=422, detail="both asset cursor fields are required")
+    search = q.strip().casefold() if q else None
+    if q is not None and not search:
+        raise HTTPException(status_code=422, detail="q must not be blank")
+    try:
+        result = database.fetch_asset_candidates(chain_id=app.state.api_config.chain_id,
+                                                   candidate_limit=ASSET_CANDIDATE_LIMIT + 1)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Asset directory is not available yet")
+        verified: list[AssetDirectoryItem] = []
+        seen: set[tuple[str, str]] = set()
+        standards_by_path: dict[str, set[str]] = {}
+        for candidate in result["candidates"]:
+            standards_by_path.setdefault(candidate["path"], set()).add(candidate["standard"])
+        chain_id = app.state.api_config.chain_id
+        cache_keys: dict[tuple[str, str], tuple[str, str, str, int]] = {}
+        static_results: dict[tuple[str, str], StaticAssetClassification] = {}
+        misses: dict[tuple[str, str], dict] = {}
+        for row in result["candidates"]:
+            pair = (row["path"], row["standard"])
+            if pair in cache_keys or len(standards_by_path[row["path"]]) != 1:
+                continue
+            key = (chain_id, row["path"], row["standard"], int(row["metadata_observed_height"]))
+            cache_keys[pair] = key
+            cached = asset_classification_cache.get(key)
+            if cached is None:
+                misses[pair] = row
+            else:
+                static_results[pair] = cached
+        files_by_path: dict[str, list[dict]] = {}
+        if misses:
+            miss_paths = sorted({path for path, _ in misses})
+            for file in database.fetch_asset_candidate_files(chain_id=chain_id, paths=miss_paths):
+                files_by_path.setdefault(file["path"], []).append(file)
+            for pair, row in misses.items():
+                files = files_by_path.get(row["path"], [])
+                revision = int(row["metadata_observed_height"])
+                # A concurrent metadata refresh is retried on the next request, never cached under a stale revision.
+                if files and any(int(file["metadata_observed_height"]) != revision for file in files):
+                    continue
+                if row["standard"] == "grc20":
+                    identity = extract_token_identity(files)
+                    classification = StaticAssetClassification(identity.verified, identity.name, identity.symbol,
+                        identity.decimals, "verified" if identity.verified else "identity_unverified")
+                elif row["standard"] == "grc721":
+                    result_classification = classify_grc721(files, qfunc_names=set(row.get("qfunc_names") or ()))
+                    identity = result_classification.identity
+                    classification = StaticAssetClassification(result_classification.status == "verified",
+                        identity.name, identity.symbol, None, result_classification.reason)
+                else:
+                    raise ValueError("unknown asset standard")
+                static_results[pair] = classification
+                asset_classification_cache.put(cache_keys[pair], classification)
+        for row in result["candidates"]:
+            if len(standards_by_path[row["path"]]) != 1:
+                continue
+            key_tuple = (row["path"], row["standard"])
+            if key_tuple in seen:
+                continue
+            seen.add(key_tuple)
+            classification = static_results.get(key_tuple)
+            if classification is None or not classification.verified:
+                continue
+            name, symbol, decimals = classification.name, classification.symbol, classification.decimals
+            namespace = namespace_key(row["path"])
+            decided = int(row["successful_call_count"]) + int(row["failed_call_count"])
+            verified.append(AssetDirectoryItem(
+                path=row["path"], namespace_key=namespace,
+                application=dict(REALM_APPLICATION_REGISTRY[namespace]) if namespace in REALM_APPLICATION_REGISTRY else None,
+                name=name, symbol=symbol, standard=row["standard"], decimals=decimals,
+                token_count=None, identity_verified=True, rpc_visible=row["rpc_visible"],
+                direct_call_count=int(row["call_count"]),
+                successful_call_count=int(row["successful_call_count"]),
+                failed_call_count=int(row["failed_call_count"]),
+                success_rate=int(row["successful_call_count"]) / decided if decided else None,
+                last_activity_height=row["last_activity_height"],
+                last_activity_at=isoformat_utc_z(row["last_activity_at"]) if row["last_activity_at"] else None,
+                metadata_observed_height=int(row["metadata_observed_height"])))
+        counts = {kind: sum(item.standard == kind for item in verified) for kind in ("grc20", "grc721")}
+        visible = [item for item in verified if standard == "all" or item.standard == standard]
+        if search:
+            visible = [item for item in visible if any(search in value.casefold()
+                       for value in (item.path, item.name, item.symbol))]
+        if before_activity_height is not None:
+            visible = [item for item in visible if
+                       (item.last_activity_height if item.last_activity_height is not None else -1) < before_activity_height or
+                       ((item.last_activity_height if item.last_activity_height is not None else -1) == before_activity_height
+                        and item.path > before_path)]
+        visible.sort(key=lambda item: (-(item.last_activity_height if item.last_activity_height is not None else -1),
+                                       item.path, item.standard))
+        page = visible[:limit]
+        tail = page[-1] if len(visible) > limit else None
+        source = result["source"]
+        return AssetDirectoryResponse(
+            source=AssetDirectorySource(chain_id=source["chain_id"], indexed_height=source["indexed_height"],
+                catalog_observed_height=source["catalog_observed_height"],
+                metadata_observed_height=source.get("metadata_observed_height")),
+            summary=AssetDirectorySummary(asset_count=counts["grc20"] + counts["grc721"],
+                grc20_count=counts["grc20"], grc721_count=counts["grc721"]),
+            items=page, pagination=TokenDirectoryPagination(
+                next_before_activity_height=(tail.last_activity_height if tail and tail.last_activity_height is not None else (-1 if tail else None)),
+                next_before_path=tail.path if tail else None))
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.exception("Explorer database asset directory query failed")
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
 
 

@@ -16,7 +16,7 @@ def test_tokens_route_navigation_and_page_contract():
     assert page.index("label: 'Decimals'") < page.index("label: 'Total Supply'") < page.index("label: 'Direct Calls'")
     assert "realmDetailHref(item.path)" in page
     assert "item.identity_verified && item.symbol" in page
-    assert all(term not in page for term in ("Price", "Market Cap", "TVL", "NFT"))
+    assert all(term not in page for term in ("Price", "Market Cap", "TVL"))
 
 
 def test_native_and_top_24h_are_separate_api_driven_sections():
@@ -36,8 +36,9 @@ def test_native_and_top_24h_are_separate_api_driven_sections():
     assert "Loading token activity…" in page
     assert "Token activity is currently unavailable." in page
     activity_render = page.split('<section className="tokens-top"', 1)[1]
-    assert activity_render.index("loading || activityLoading") < activity_render.index("error || activityError") < activity_render.index("topActivity === null")
-    assert 'id="tokens-directory-title">GRC20 Tokens' in page
+    assert activity_render.index("activityLoading") < activity_render.index("activityError") < activity_render.index("topActivity === null")
+    assert "loading || activityLoading" not in activity_render and "error || activityError" not in activity_render
+    assert 'id="tokens-directory-title">Contract Assets' in page
     assert "Total Supply" in page and "networkProfile.networkName" in page
     assert "src={networkProfile.networkIconSrc}" in page
     assert "'/assets/utsa-logo.png'" not in page
@@ -71,7 +72,7 @@ def test_tokens_cursor_pagination_and_request_safety_contract():
     assert "id !== requestId.current" in hook
     assert "id === requestId.current" in hook
     assert "mounted.current" in hook and "AbortController" in hook
-    assert "setSummary(null)" in hook
+    assert "setSummary(null)" not in hook
     assert "getTokenSupply(item.path" in hook
     assert "Math.min(4, pending.length)" in hook
     assert "supplyCache.current" in hook
@@ -101,7 +102,7 @@ def test_token_table_uses_existing_sorting_contract_only_for_requested_columns()
     page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
     assert "useMemo" in page and "sortTokenDirectoryItems" in page
     assert "useState({ key: 'last_activity_at', direction: 'descending' })" in page
-    assert "sortKey={sort.key}" in page and "sortDirection={sort.direction}" in page and "onSort=" in page
+    assert "sortKey={viewSort.key}" in page and "sortDirection={viewSort.direction}" in page and "onSort=" in page
     direct = page.split("key: 'direct_call_count'", 1)[1].split("},", 1)[0]
     activity = page.split("key: 'last_activity_at'", 1)[1].split("},", 1)[0]
     supply = page.split("key: 'total_supply'", 1)[1].split("},", 1)[0]
@@ -116,8 +117,8 @@ def test_total_supply_sort_waits_for_terminal_visible_supply_states():
     table = (ROOT / "frontend/src/components/DataTable.jsx").read_text()
     hook = (ROOT / "frontend/src/hooks/useTokensPage.js").read_text()
     sorter = (ROOT / "frontend/src/utils/tokenDirectory.js").read_text()
-    assert "items.every((item) => Object.hasOwn(supplies, item.path))" in page
-    assert "sort.key === 'total_supply' && !suppliesSettled ? null : sort.key" in page
+    assert "items.filter((item) => item.standard === 'grc20').every((item) => Object.hasOwn(supplies, item.path))" in page
+    assert "viewSort.key === 'total_supply' && !suppliesSettled ? null : viewSort.key" in page
     assert "disabled={column.sortDisabled === true}" in table
     assert "BigInt(supply.raw_total_supply)" in sorter and "10n **" in sorter
     total_sort = sorter.split("const exactSupply", 1)[1]
@@ -147,7 +148,7 @@ def test_directory_metrics_use_existing_changed_value_feedback():
     assert "`${timestamp ?? 'never'}|${label}`" in helper
     assert "timestamp ? relativeTime(timestamp) : 'Never'" in helper
     assert "value={lastActivityChangeValue(timestamp, label)}" in helper
-    for existing_value in ("summary?.token_count", "summary?.active_24h_count", "native.available ? native.total_supply : null",
+    for existing_value in ("summary?.grc20_count", "summary?.grc721_count", "native.available ? native.total_supply : null",
                            "token.direct_call_count", "token.success_rate"):
         assert f"value={{{existing_value}}}" in page
 
@@ -162,7 +163,7 @@ def test_directory_feedback_does_not_change_polling_supply_or_sorting():
     background = hook.split("const refreshInBackground", 1)[1].split("const resetAndLoad", 1)[0]
     assert "getTokenSupply" not in background
     assert "useState({ key: 'last_activity_at', direction: 'descending' })" in page
-    assert "sortTokenDirectoryItems(items, effectiveSortKey, sort.direction, supplies)" in page
+    assert "sortTokenDirectoryItems(items, effectiveSortKey, viewSort.direction, supplies)" in page
     total_supply = page.split("key: 'total_supply'", 1)[1].split("},", 1)[0]
     assert "ChangedValue" not in total_supply
 
@@ -174,3 +175,57 @@ console.log(JSON.stringify(values.map(formatTokenSupply)));"""
     result = subprocess.run(["node", "--input-type=module", "--eval", script], cwd=ROOT,
                             check=True, capture_output=True, text=True)
     assert result.stdout.strip() == '["0","300,000,000","102,569,491.93842","184,467,440,737,095,516,161,844,674,407,370,955,161","—"]'
+
+
+def test_unified_asset_tabs_and_tables_preserve_navigation_contract():
+    page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
+    sidebar = (ROOT / "frontend/src/components/Sidebar.jsx").read_text()
+    hook = (ROOT / "frontend/src/hooks/useTokensPage.js").read_text()
+    assert "realms-page__filters" in page and "realms-page__filter" in page
+    for label in ("All", "GRC20 Tokens", "NFTs"):
+        assert f"'{label}'" in page
+    assert "item.standard.toUpperCase()" in page
+    assert "key: 'token_count', label: 'NFTs'" in page
+    assert "token_count', label: 'Total Supply'" not in page
+    assert "standard: currentAssetFilter.current" in hook
+    assert sidebar.count("label: 'Tokens'") == 1 and "label: 'NFTs'" not in sidebar
+
+
+def test_asset_tabs_clear_hidden_total_supply_sort_but_keep_common_sorts():
+    page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
+    assert "assetFilter === 'grc20'" in page
+    assert "new Set(['total_supply', 'direct_call_count', 'last_activity_at'])" in page
+    assert "new Set(['direct_call_count', 'last_activity_at'])" in page
+    fallback = "{ key: 'last_activity_at', direction: 'descending' }"
+    assert f"supportedSortKeys.has(sort.key) ? sort : {fallback}" in page
+    assert f"if (!supportedSortKeys.has(sort.key)) setSort({fallback})" in page
+    assert "sortKey={viewSort.key} sortDirection={viewSort.direction}" in page
+
+
+def test_asset_filter_loading_is_isolated_from_top_tokens_and_preserves_content():
+    hook = (ROOT / "frontend/src/hooks/useTokensPage.js").read_text()
+    page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
+    load_page = hook.split("const loadPage", 1)[1].split("const refreshInBackground", 1)[0]
+    assert "getAssets(" in load_page and "getTokens(" not in load_page
+    for forbidden in ("setItems([])", "setSummary(null)", "setTopActivity(null)"):
+        assert forbidden not in load_page
+    select_filter = hook.split("const selectAssetFilter", 1)[1].split("const loadOlder", 1)[0]
+    assert "setAssetFilter(standard)" in select_filter and "resetAndLoad(appliedSearch, standard)" in select_filter
+    assert "getTokens(" not in select_filter and "setTopActivity" not in select_filter
+    activity_section = page.split('<section className="tokens-top"', 1)[1].split('</section>', 1)[0]
+    assert "loading || activityLoading" not in activity_section
+    assert "error || activityError" not in activity_section
+
+
+def test_long_fallback_namespaces_are_compact_without_changing_asset_columns():
+    page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
+    helper = (ROOT / "frontend/src/utils/namespaceDisplay.js").read_text()
+    assert "applicationPresentation(item)" in page
+    assert "title={presentation.title}" in page
+    assert "item?.application?.display_name" in helper
+    assert "return { label: curated, title: undefined }" in helper
+    assert "value.slice(0, NAMESPACE_HEAD_LENGTH)" in helper
+    assert "value.slice(-NAMESPACE_TAIL_LENGTH)" in helper
+    assert "item.name" in page and "item.symbol" in page and "item.path" in page
+    for heading in ("Asset", "Standard", "App", "Direct Calls", "Last Activity", "Visibility"):
+        assert f"label: '{heading}'" in page
