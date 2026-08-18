@@ -11,6 +11,9 @@ def test_tokens_route_navigation_and_page_contract():
     page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
     assert "path === '/tokens'" in app
     assert "label: 'Tokens'" in sidebar and "href: '/tokens'" in sidebar
+    assert '<h1 className="sr-only" id="tokens-page-title">Tokens</h1>' in page
+    assert '<h1 id="tokens-page-title">Tokens</h1>' not in page
+    assert "tokens-page__header" not in page
     for heading in ("Token", "App", "Decimals", "Total Supply", "Direct Calls", "Last Activity", "Visibility"):
         assert f"label: '{heading}'" in page
     assert page.index("label: 'Decimals'") < page.index("label: 'Total Supply'") < page.index("label: 'Direct Calls'")
@@ -54,6 +57,8 @@ def test_tokens_styles_are_scoped():
     assert "var(--color-card)" in token_rules and "var(--color-text-bright)" in token_rules
     assert "linear-gradient(135deg, var(--color-accent-soft), var(--color-card))" in token_rules
     assert ".tokens-native__card { width: 100%" in css
+    assert ".tokens-page__header" not in css
+    assert ".tokens-page > .tokens-native { margin-top: 0; }" in css
     assert "max-width: 430px" not in token_rules
     assert ".tokens-top__metrics > div:last-child { margin-left: auto; text-align: right; }" in css
 

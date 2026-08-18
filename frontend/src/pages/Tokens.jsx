@@ -92,8 +92,8 @@ export function Tokens({ tokensPage }) {
   const tableColumns = assetFilter === 'grc20' ? grc20Columns(supplies, suppliesSettled) : assetFilter === 'grc721' ? nftColumns : commonColumns
   const empty = error ? 'Assets are currently unavailable.' : appliedSearch ? `No assets match “${appliedSearch}”.` : 'No verified contract assets have been indexed yet.'
   return <section className="blocks-page tokens-page" aria-labelledby="tokens-page-title">
-    <header className="blocks-page__header tokens-page__header"><h1 id="tokens-page-title">Tokens</h1>
-      {error && <button className="blocks-page__button blocks-page__button--accent" onClick={retry}>Retry</button>}</header>
+    <h1 className="sr-only" id="tokens-page-title">Tokens</h1>
+    {error && <button className="blocks-page__button blocks-page__button--accent" onClick={retry}>Retry</button>}
     <section className="tokens-native" aria-labelledby="tokens-native-title">
       <h2 id="tokens-native-title">Native Token</h2>
       <div className="panel tokens-native__card">
