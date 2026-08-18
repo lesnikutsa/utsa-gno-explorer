@@ -96,7 +96,7 @@ def test_duplicate_asset_summary_cards_are_removed_but_filter_counts_remain():
     assert "NFT Collections" not in before_native
     assert "tokens-page__summary" not in css
     assert "tokens-page__metric" not in css
-    for label, count in (("All", "summary?.asset_count"), ("GRC20 Tokens", "summary?.grc20_count"), ("NFTs", "summary?.grc721_count")):
+    for label, count in (("All", "summary?.asset_count"), ("GRC20 Tokens", "summary?.grc20_count"), ("NFT Collections · GRC721", "summary?.grc721_count")):
         assert f"'{label}'" in directory
         assert count in directory
 
@@ -224,10 +224,10 @@ def test_unified_asset_tabs_and_tables_preserve_navigation_contract():
     sidebar = (ROOT / "frontend/src/components/Sidebar.jsx").read_text()
     hook = (ROOT / "frontend/src/hooks/useTokensPage.js").read_text()
     assert "realms-page__filters" in page and "realms-page__filter" in page
-    for label in ("All", "GRC20 Tokens", "NFTs"):
+    for label in ("All", "GRC20 Tokens", "NFT Collections · GRC721"):
         assert f"'{label}'" in page
     assert "item.standard.toUpperCase()" in page
-    assert "key: 'token_count', label: 'NFTs'" in page
+    assert "key: 'token_count', label: 'NFTs'" not in page
     assert "token_count', label: 'Total Supply'" not in page
     assert "standard: currentAssetFilter.current" in hook
     assert sidebar.count("label: 'Tokens'") == 1 and "label: 'NFTs'" not in sidebar
@@ -238,6 +238,7 @@ def test_asset_tabs_clear_hidden_total_supply_sort_but_keep_common_sorts():
     assert "assetFilter === 'grc20'" in page
     assert "new Set(['total_supply', 'direct_call_count', 'last_activity_at'])" in page
     assert "new Set(['direct_call_count', 'last_activity_at'])" in page
+    assert "new Set(['collection', 'direct_call_count', 'last_activity_at'])" in page
     fallback = "{ key: 'last_activity_at', direction: 'descending' }"
     assert f"supportedSortKeys.has(sort.key) ? sort : {fallback}" in page
     assert f"if (!supportedSortKeys.has(sort.key)) setSort({fallback})" in page
@@ -271,3 +272,21 @@ def test_long_fallback_namespaces_are_compact_without_changing_asset_columns():
     assert "item.name" in page and "item.symbol" in page and "item.path" in page
     for heading in ("Asset", "Standard", "App", "Direct Calls", "Last Activity", "Visibility"):
         assert f"label: '{heading}'" in page
+
+
+def test_nft_families_are_presentation_only_accessible_and_keep_real_realm_links():
+    page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
+    grouping = (ROOT / "frontend/src/utils/nftCollections.js").read_text()
+    nft_table = page.split("const nftColumns", 1)[1].split("export function Tokens", 1)[0]
+    assert "aria-expanded={expandedGroupKeys.has(item.groupKey)}" in nft_table
+    assert "href={realmDetailHref(item.path)}" in nft_table
+    assert "rowType === 'family-child'" in page
+    assert "groupNftCollections(items, { pageIndex, canLoadOlder })" in page
+    assert "assetFilter === 'grc721' ? nftRows : sortedItems" in page
+    assert "summary?.grc721_count" in page
+    assert "token_count" not in page
+    assert "Total Supply" in page and "Decimals" in page
+    assert "item.standard.toUpperCase()" in page
+    assert "JSON.stringify([item?.name ?? '', item?.symbol ?? ''])" in grouping
+    for forbidden in ("Gems", "GnoSwap", "GnoBuilders", "TokenCount", "TotalSupply"):
+        assert forbidden not in grouping + nft_table
