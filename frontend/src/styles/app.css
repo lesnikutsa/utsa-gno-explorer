@@ -241,10 +241,18 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .transactions-table__hash:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
 .transaction-type-badge { display: inline-flex; max-width: 100%; align-items: center; padding: 2px 7px; overflow: hidden; border: 1px solid var(--color-border); border-radius: 5px; background: var(--color-card); color: var(--color-text); font-size: 10px; font-weight: 500; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
 .transaction-type-badge--contract-call { border-color: var(--color-type-realm-border); background: var(--color-type-realm-background); color: var(--color-type-realm-text); }
-.transaction-type-badge--add-package { border-color: var(--color-type-package-border); background: var(--color-type-package-background); color: var(--color-type-package-text); }
-.transaction-type-badge--run-package { border-color: var(--color-type-package-deep-border); background: var(--color-type-package-deep-background); color: var(--color-type-package-deep-text); }
-.transaction-type-badge--send-tokens { border-color: var(--color-type-token-border); background: var(--color-type-token-background); color: var(--color-type-token-text); }
+.transaction-type-badge--nft { border-color: var(--color-type-nft-border); background: var(--color-type-nft-background); color: var(--color-type-nft-text); }
+.transaction-type-badge--grc20 { border-color: var(--color-type-grc20-border); background: var(--color-type-grc20-background); color: var(--color-type-grc20-text); }
+.transaction-type-badge--coin-transfer { border-color: var(--color-type-package-border); background: var(--color-type-package-background); color: var(--color-type-package-text); }
+.transaction-type-badge--deployment { border-color: var(--color-type-token-border); background: var(--color-type-token-background); color: var(--color-type-token-text); }
+.transaction-type-badge--package-run { border-color: var(--color-type-package-deep-border); background: var(--color-type-package-deep-background); color: var(--color-type-package-deep-text); }
 .transaction-type-badge--other { border-color: var(--color-type-neutral-border); background: var(--color-type-neutral-background); color: var(--color-type-neutral-text); }
+.transaction-type-badge--segmented { padding: 0; }
+.transaction-type-badge__segments { display: inline-flex; align-items: stretch; line-height: 1.3; }
+.transaction-type-badge__prefix, .transaction-type-badge__action { padding: 2px 6px; }
+.transaction-type-badge__prefix { border-right: 1px solid currentColor; font-weight: 600; }
+.transaction-type-badge--grc20 .transaction-type-badge__prefix { background: var(--color-type-grc20-prefix-background); color: var(--color-type-grc20-prefix-text); }
+.transaction-type-badge--nft .transaction-type-badge__prefix { background: var(--color-type-nft-prefix-background); color: var(--color-type-nft-prefix-text); }
 .transactions-table__type-cell { position: relative; display: inline-block; }
 .transactions-table__type-cell .additional-message-badge { position: absolute; top: 50%; left: calc(100% + 4px); transform: translateY(-50%); }
 .additional-message-badge { display: inline-flex; flex: 0 0 auto; align-items: center; padding: 2px 5px; border: 1px solid var(--color-border); border-radius: 5px; background: var(--color-card); color: var(--color-text-secondary); font-size: 10px; font-weight: 600; line-height: 1.3; white-space: nowrap; }

@@ -17,6 +17,7 @@ from api.config import ConfigError, load_config
 from api.account_service import AccountUnavailableError, fetch_live_account, public_rpc_url
 from api.network_profile import gno_profile, validate_account_address
 from api.transaction_argument_decoder import decode_transaction_arguments
+from api.transaction_semantics import semantic_transaction_operation
 from api.token_identity import extract_token_identity
 from api.grc721_identity import classify_grc721
 from api.asset_classification import (StaticAssetClassification,
@@ -461,11 +462,15 @@ def get_account_transactions(
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
     try:
         page_rows = rows[:limit]
+        summaries = [_public_transaction_summary(row.get("payload_summary")) for row in page_rows]
+        verified_standards = _verified_transaction_standards(summaries)
         last_row = page_rows[-1] if len(rows) > limit and page_rows else None
         return AccountTransactionsResponse(
             items=[
-                _account_transaction_item_from_row(row, address, gno_profile(config.chain_id))
-                for row in page_rows
+                _account_transaction_item_from_row(
+                    row, address, gno_profile(config.chain_id), summary, verified_standards,
+                )
+                for row, summary in zip(page_rows, summaries)
             ],
             pagination=AccountTransactionsPagination(
                 limit=limit,
@@ -655,21 +660,62 @@ def _transaction_detail_from_row(
     )
 
 
-def _transaction_list_item_from_row(row: dict) -> TransactionListItem:
-    summary = _public_transaction_summary(row.get("payload_summary"))
+def _verified_transaction_standards(summaries: list[TransactionSummaryResponse | None]) -> dict[str, str]:
+    paths = sorted({
+        summary.messages[0].package_path for summary in summaries
+        if summary is not None and summary.messages
+        and summary.primary.type == "gno.vm.MsgCall"
+        and isinstance(summary.messages[0].package_path, str)
+    })
+    if not paths:
+        return {}
+    try:
+        candidates = database.fetch_asset_candidates_for_paths(
+            chain_id=app.state.api_config.chain_id, paths=paths,
+        )
+        standards_by_path, classifications = _classify_static_asset_candidates(
+            chain_id=app.state.api_config.chain_id, candidates=candidates,
+        )
+        return {
+            path: next(iter(standards))
+            for path, standards in standards_by_path.items()
+            if len(standards) == 1
+            and classifications.get((path, next(iter(standards)))) is not None
+            and classifications[(path, next(iter(standards)))].verified
+        }
+    except Exception:
+        LOGGER.warning("Transaction asset intent classification failed")
+        return {}
+
+
+def _summary_operation(summary, verified_standards: dict[str, str]) -> tuple[str, str, int | None]:
+    if summary is None:
+        return "unknown", "Transaction", None
+    primary = summary.primary
+    message = summary.messages[0] if summary.messages else None
+    package_path = message.package_path if message is not None and isinstance(message.package_path, str) else None
+    function = message.function if message is not None and isinstance(message.function, str) else None
+    return primary.type, semantic_transaction_operation(
+        primary.type, primary.label, package_path, function,
+        verified_standards.get(package_path) if package_path else None,
+    ), summary.message_count
+
+
+def _transaction_list_item_from_row(row: dict, summary=None, verified_standards=None) -> TransactionListItem:
+    if summary is None:
+        summary = _public_transaction_summary(row.get("payload_summary"))
+    tx_type, operation, message_count = _summary_operation(summary, verified_standards or {})
     return TransactionListItem(
         block_height=row["block_height"],
         index=row["tx_index"],
         tx_hash=_normalize_tx_hash(row.get("tx_hash_hex")),
         block_time=isoformat_utc_z(row["time_utc"]),
-        type=summary.primary.type if summary is not None else "unknown",
-        operation=summary.primary.label if summary is not None else "Transaction",
-        message_count=summary.message_count if summary is not None else None,
+        type=tx_type, operation=operation, message_count=message_count,
         **_execution_fields_from_row(row),
     )
 
 
-def _account_transaction_item_from_row(row: dict, address: str, profile) -> AccountTransactionListItem:
+def _account_transaction_item_from_row(row: dict, address: str, profile, summary=None, verified_standards=None) -> AccountTransactionListItem:
     participation = row.get("participation")
     if not isinstance(participation, list) or not participation:
         raise ValueError("missing Account participation")
@@ -692,7 +738,8 @@ def _account_transaction_item_from_row(row: dict, address: str, profile) -> Acco
     direction = directions.get(frozenset(roles))
     if direction is None:
         raise ValueError("invalid Account participation roles")
-    summary = _public_transaction_summary(row.get("payload_summary"))
+    if summary is None:
+        summary = _public_transaction_summary(row.get("payload_summary"))
     message = None
     if summary is not None:
         for message_index, candidate in enumerate(summary.messages):
@@ -703,10 +750,8 @@ def _account_transaction_item_from_row(row: dict, address: str, profile) -> Acco
                 break
     counterparty = None
     amount = None
-    tx_type = "unknown"
-    operation = "Transaction"
+    tx_type, operation, _ = _summary_operation(summary, verified_standards or {})
     if message is not None:
-        tx_type, operation = message.type, message.label
         amount = message.amount if message.amount is not None else message.send
         candidate = message.recipient if direction == "outgoing" else message.sender
         if (direction != "self" and isinstance(candidate, str)
@@ -2243,10 +2288,15 @@ def get_transactions(
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
 
     page_rows = rows[:limit]
+    summaries = [_public_transaction_summary(row.get("payload_summary")) for row in page_rows]
+    verified_standards = _verified_transaction_standards(summaries)
     has_next_page = len(rows) > limit and bool(page_rows)
     last_row = page_rows[-1] if has_next_page else None
     return TransactionsResponse(
-        items=[_transaction_list_item_from_row(row) for row in page_rows],
+        items=[
+            _transaction_list_item_from_row(row, summary, verified_standards)
+            for row, summary in zip(page_rows, summaries)
+        ],
         pagination=TransactionsPagination(
             limit=limit,
             next_before_height=last_row["block_height"] if last_row else None,
