@@ -58,6 +58,24 @@ def test_tokens_styles_are_scoped():
     assert ".tokens-top__metrics > div:last-child { margin-left: auto; text-align: right; }" in css
 
 
+def test_native_card_separates_live_supply_from_mainnet_distribution():
+    page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
+    css = (ROOT / "frontend/src/styles/app.css").read_text()
+    native_card = page.split('<div className="panel tokens-native__card">', 1)[1].split('</section>\n    <section className="tokens-top"', 1)[0]
+    for visible_text in ("On-chain Supply", "Live RPC", "bank/supply/", "Mainnet Token Distribution",
+                         "Official allocation", "Cosmos Airdrop", "Official tokenomics"):
+        assert visible_text in page + (ROOT / "frontend/src/config/gnotTokenomics.js").read_text()
+    assert "aria-label={`Mainnet GNOT token distribution" in page
+    assert "GNOT_TOKENOMICS.allocations.map" in page
+    assert 'className="panel' not in native_card
+    assert "grid-template-columns: minmax(0, 1.35fr) minmax(340px, 1fr)" in css
+    assert re.search(r"@media \(max-width: 760px\)[\s\S]*?\.tokens-native__content \{ grid-template-columns: 1fr; \}", css)
+    assert re.search(r"@media \(max-width: 760px\)[\s\S]*?\.tokens-native__tokenomics \{[^}]*border-top: 1px solid var\(--color-border-soft\)", css)
+    assert "Official allocation · {GNOT_TOKENOMICS.totalDisplay}" in page
+    assert "On-chain Supply · {GNOT_TOKENOMICS.totalDisplay}" not in page
+    assert "Circulating Supply · {GNOT_TOKENOMICS.totalDisplay}" not in page
+
+
 def test_tokens_cursor_pagination_and_request_safety_contract():
     hook = (ROOT / "frontend/src/hooks/useTokensPage.js").read_text()
     page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
