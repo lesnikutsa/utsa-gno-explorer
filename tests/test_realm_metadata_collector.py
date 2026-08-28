@@ -154,6 +154,7 @@ class CoordinatorCursor:
 
     def execute(self, query, params=()):
         self.query = query
+        self.params = params
         if "pg_advisory_unlock" in query:
             self.connection.unlocked = True
 
@@ -161,7 +162,8 @@ class CoordinatorCursor:
         if "pg_try_advisory_lock" in self.query:
             return (self.connection.locked,)
         if "rpc_endpoints" in self.query:
-            return (17,)
+            endpoint_id = self.connection.endpoint_ids.get(self.params[1])
+            return (endpoint_id,) if endpoint_id is not None else None
         raise AssertionError(self.query)
 
     def fetchall(self):
@@ -174,6 +176,7 @@ class CoordinatorConnection:
         self.locked = locked
         self.unlocked = False
         self.closed = False
+        self.endpoint_ids = {"https://rpc.example/private": 17}
 
     def cursor(self):
         return CoordinatorCursor(self)
@@ -224,6 +227,24 @@ def result_for(request):
     return SimpleNamespace(snapshot=object(), status="complete")
 
 
+def failover_coordinator(monkeypatch, candidate_count=2):
+    connection, _, states, first = coordinator(monkeypatch)
+    probes = [first]
+    for index in range(1, candidate_count):
+        url = f"https://rpc-{index + 1}.example/private"
+        connection.endpoint_ids[url] = 17 + index
+        probes.append(SimpleNamespace(
+            client=CoordinatorClient(), url=url, latest_height=100,
+        ))
+    monkeypatch.setattr(cli, "load_config", lambda: SimpleNamespace(
+        database_url="secret", chain_id="dev", rpc_urls=[probe.url for probe in probes],
+        max_height_lag=5,
+    ))
+    monkeypatch.setattr(cli, "probe_rpc_endpoints", lambda *args, **kwargs: probes)
+    monkeypatch.setattr(cli, "suitable_rpc_probes", lambda candidates: candidates)
+    return connection, states, probes
+
+
 def test_advisory_lock_already_held_exits_without_collection(monkeypatch):
     connection, client, states, _ = coordinator(monkeypatch, locked=False)
     called = []
@@ -258,6 +279,78 @@ def test_all_paths_complete_advances_success_and_closes_resources(monkeypatch):
     assert states[-1].last_successful_height == 77
     assert states[-1].last_successful_at is not None
     assert connection.closed and connection.unlocked and client.closed
+
+
+def test_qfile_listing_failover_publishes_from_second_rpc_at_fixed_height(monkeypatch, caplog):
+    caplog.set_level("INFO", logger="realm_metadata_refresh")
+    connection, states, probes = failover_coordinator(monkeypatch)
+    requests = []
+    published = []
+
+    def collect(client, request):
+        requests.append((client, request))
+        if client is probes[0].client:
+            return SimpleNamespace(snapshot=None, status="failed", failure_code="qfile_listing")
+        snapshot = SimpleNamespace(source_rpc_endpoint_id=request.source_rpc_endpoint_id)
+        return SimpleNamespace(snapshot=snapshot, status="complete", failure_code=None)
+
+    monkeypatch.setattr(cli, "collect_path_metadata", collect)
+    monkeypatch.setattr(cli, "publish_metadata_snapshot", lambda _, snapshot: published.append(snapshot))
+    assert cli.main(["--path", REALM]) == 0
+    assert len(published) == 1 and published[0].source_rpc_endpoint_id == 18
+    assert [request.observed_height for _, request in requests] == [77, 77]
+    assert states[-1].published_path_count == 1 and states[-1].failed_path_count == 0
+    assert "metadata_rpc_failover" in caplog.text and "reason=qfile_listing" in caplog.text
+    assert connection.unlocked and all(probe.client.closed for probe in probes)
+
+
+def test_qfile_file_failure_uses_next_rpc(monkeypatch):
+    _, states, probes = failover_coordinator(monkeypatch)
+    clients = []
+
+    def collect(client, request):
+        clients.append(client)
+        if client is probes[0].client:
+            return SimpleNamespace(snapshot=None, status="failed", failure_code="qfile_file")
+        return SimpleNamespace(snapshot=object(), status="complete", failure_code=None)
+
+    monkeypatch.setattr(cli, "collect_path_metadata", collect)
+    monkeypatch.setattr(cli, "publish_metadata_snapshot", lambda *_: None)
+    assert cli.main(["--path", REALM]) == 0
+    assert clients == [probes[0].client, probes[1].client]
+    assert states[-1].published_path_count == 1
+
+
+def test_all_rpc_required_failures_count_path_once_and_attempts_are_bounded(monkeypatch):
+    _, states, probes = failover_coordinator(monkeypatch, candidate_count=3)
+    calls = []
+
+    def collect(client, request):
+        calls.append((client, request.observed_height))
+        return SimpleNamespace(snapshot=None, status="failed", failure_code="qfile_file")
+
+    monkeypatch.setattr(cli, "collect_path_metadata", collect)
+    assert cli.main(["--path", REALM]) == 2
+    assert calls == [(probe.client, 77) for probe in probes]
+    assert states[-1].published_path_count == 0
+    assert states[-1].failed_path_count == 1
+
+
+def test_publishable_partial_snapshot_does_not_fail_over(monkeypatch):
+    _, states, probes = failover_coordinator(monkeypatch)
+    calls = []
+    snapshot = object()
+
+    def collect(client, request):
+        calls.append(client)
+        return SimpleNamespace(snapshot=snapshot, status="partial", failure_code=None)
+
+    published = []
+    monkeypatch.setattr(cli, "collect_path_metadata", collect)
+    monkeypatch.setattr(cli, "publish_metadata_snapshot", lambda _, value: published.append(value))
+    assert cli.main(["--path", REALM]) == 0
+    assert calls == [probes[0].client] and published == [snapshot]
+    assert states[-1].published_path_count == 1
 
 
 def test_unexpected_collection_error_is_isolated_and_partial(monkeypatch, caplog):
