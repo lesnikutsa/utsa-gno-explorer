@@ -13,6 +13,7 @@ import {
 } from '../utils/validatorHealth'
 import { compareValidatorIdentity, hasValidatorMoniker, matchesValidatorSearch } from '../utils/validatorIdentity'
 import { compareFavoriteGroups, loadValidatorFavorites, saveValidatorFavorites, toggleValidatorFavorite } from '../utils/validatorFavorites'
+import { TELEGRAM_BOT_URL } from '../utils/telegram'
 
 const formatPercent = (value) => {
   if (value === null || value === undefined || value === '') return '—'
@@ -118,9 +119,20 @@ export function Validators({ validatorsPage, chainId }) {
         <div>
           <h1 id="validators-page-title">Validators</h1>
         </div>
-        <button className="blocks-page__button blocks-page__button--accent" type="button" onClick={refresh} disabled={loading || backgroundRefreshing || manualRefreshing}>
-          {manualRefreshing ? 'Refreshing…' : 'Refresh'}
-        </button>
+        <div className="validators-page__actions">
+          <a
+            className="blocks-page__button"
+            href={TELEGRAM_BOT_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Open Telegram Monitoring (opens in a new tab)"
+          >
+            Telegram Monitoring
+          </a>
+          <button className="blocks-page__button blocks-page__button--accent" type="button" onClick={refresh} disabled={loading || backgroundRefreshing || manualRefreshing}>
+            {manualRefreshing ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
       </header>
 
       <p className="validators-page__notice">All validators shown are members of the current active set. Health reflects signing performance across the latest window of up to 1000 network blocks, considering only blocks where the validator was active. It is not a protocol slashing status.</p>
