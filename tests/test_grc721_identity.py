@@ -210,3 +210,46 @@ def test_unqualified_ambiguous_malformed_and_bounds_fail_closed():
     assert classify_grc721(source(CANONICAL + "\n/* unterminated")).status == "rejected"
     assert classify_grc721(source(CANONICAL) * (MAX_TOKEN_SOURCE_FILES + 1)).reason == "file_limit"
     assert classify_grc721(source(CANONICAL + (" " * MAX_TOKEN_SOURCE_BYTES))).reason == "source_limit"
+
+
+def test_pearl_new_token_constructor_extracts_static_identity():
+    canonical = "gno.land/p/nym-config058/grc721"
+    fixture = collection(canonical, constructor='grc721.NewToken("Pearl Demo NFT", "PNFT", privateLedger, teller, cur)')
+    assert classify_grc721(source(fixture)).identity == GRC721Identity("Pearl Demo NFT", "PNFT")
+    constants = collection(canonical, constructor='grc721.NewToken(CollectionName, CollectionSymbol, ledger, teller, cur)')
+    bindings = 'const CollectionName = "Pearl Art"\nconst CollectionSymbol = "PART"\n'
+    assert classify_grc721(source(constants) + source(bindings, filename="identity.gno")).identity == GRC721Identity("Pearl Art", "PART")
+
+
+def test_pearl_new_token_fails_closed_for_dynamic_malformed_and_unverified_usage():
+    canonical = "gno.land/p/nym-config058/grc721"
+    dynamic = collection(canonical, constructor='grc721.NewToken(getName(), "DYN", ledger, teller, cur)')
+    assert classify_grc721(source(dynamic)).reason == "dynamic_or_malformed_identity"
+    malformed = collection(canonical, constructor='grc721.NewToken("Broken", "BRK", ledger, teller, cur')
+    assert classify_grc721(source(malformed)).reason == "dynamic_or_malformed_identity"
+    unrelated = '''import "gno.land/p/demo/notgrc721"
+var token = notgrc721.NewToken("Fake", "FAKE", ledger, teller, cur)
+func OwnerOf() {}
+func TransferFrom() {}
+'''
+    assert classify_grc721(source(unrelated)).reason == "implementation_import_missing"
+
+
+def test_pearl_new_token_requires_exact_canonical_package_even_with_suffix_or_alias():
+    third_party = collection(
+        "gno.land/p/third-party/grc721",
+        constructor='grc721.NewToken("g1owner", "Display name")',
+    )
+    assert classify_grc721(source(third_party)).reason == "constructor_missing"
+    third_party_v2 = collection(
+        "gno.land/p/third-party/grc721v2", alias="nft",
+        constructor='nft.NewToken("Fake NFT", "FAKE", ledger, teller, cur)',
+    )
+    assert classify_grc721(source(third_party_v2)).reason == "constructor_missing"
+    canonical_alias = collection(
+        "gno.land/p/nym-config058/grc721", alias="nft",
+        constructor='nft.NewToken("Aliased Pearl NFT", "APNFT", ledger, teller, cur)',
+    )
+    assert classify_grc721(source(canonical_alias)).identity == GRC721Identity(
+        "Aliased Pearl NFT", "APNFT",
+    )

@@ -29,8 +29,8 @@ class ValidatorFavoritesTests(unittest.TestCase):
           const values = new Map()
           const storage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) }
           let favorites = toggleValidatorFavorite(new Set(), 'g1favorite')
-          saveValidatorFavorites('sapphire-1', favorites, storage)
-          const restored = loadValidatorFavorites('sapphire-1', storage)
+          saveValidatorFavorites('pearl-1', favorites, storage)
+          const restored = loadValidatorFavorites('pearl-1', storage)
           favorites = toggleValidatorFavorite(favorites, 'g1favorite')
           values.set('utsa-gno-explorer.validator-favorites.v1:broken', '{')
           const throwing = { getItem: () => { throw new Error('blocked') }, setItem: () => { throw new Error('blocked') } }

@@ -196,8 +196,8 @@ class ApiTransactionsTests(unittest.TestCase):
         self.assertEqual((items[0]["type"], items[0]["operation"], items[0]["execution_status"]),
                          ("gno.vm.MsgCall", "NFT Mint", "failed"))
         self.assertEqual(items[1]["operation"], "NFT Burn")
-        self.assertEqual(fake.asset_path_calls, [("sapphire-1", [path])])
-        self.assertEqual(fake.asset_file_calls, [("sapphire-1", [path])])
+        self.assertEqual(fake.asset_path_calls, [("pearl-1", [path])])
+        self.assertEqual(fake.asset_file_calls, [("pearl-1", [path])])
         for private in ("payload_summary", "arguments", "source", "private source"):
             self.assertNotIn(private, response.text)
 

@@ -17,7 +17,7 @@ from scripts.inspect_rpc import RpcError
 
 
 UTSA = "g16mldrfu90pe5r97cjm3xk02m7a3d0z8g9g3r75"
-PROFILE = gno_profile("sapphire-1")
+PROFILE = gno_profile("pearl-1")
 
 
 @pytest.fixture(autouse=True)
@@ -573,7 +573,7 @@ def test_endpoint_found_contract_and_invalid_short_circuit():
     config = ApiConfig("postgres://test")
     live = {"address": UTSA, "found": True, "balances": parse_coins("1ugnot", PROFILE),
             "account_number": "275", "sequence": "1", "public_key": None,
-            "source": {"kind": "rpc", "chain_id": "sapphire-1", "rpc_url": "https://rpc.example"}, "observed_height": 100}
+            "source": {"kind": "rpc", "chain_id": "pearl-1", "rpc_url": "https://rpc.example"}, "observed_height": 100}
     module.app.state.api_config = config
     fake_database = FakeDatabase()
     with patch.object(module, "database", fake_database), patch.object(module, "fetch_live_account", return_value=live) as fetch:
@@ -584,7 +584,7 @@ def test_endpoint_found_contract_and_invalid_short_circuit():
     assert invalid.value.status_code == 422 and invalid.value.detail == "Invalid account address"
     assert fetch.call_count == 1
     fetch.assert_called_once_with(UTSA, config, preferred_rpc_url=None)
-    assert fake_database.selected_calls == ["sapphire-1"]
+    assert fake_database.selected_calls == ["pearl-1"]
     assert fake_database.relation_calls == [UTSA]
 
 
@@ -593,7 +593,7 @@ def test_route_logs_one_authoritative_total_and_validator_timing_on_success(capl
     module.app.state.api_config = ApiConfig("postgres://test")
     live = {"address": UTSA, "found": True, "balances": [], "account_number": "1",
             "sequence": "0", "public_key": None, "source": {"kind": "rpc",
-            "chain_id": "sapphire-1", "rpc_url": "https://rpc.example"},
+            "chain_id": "pearl-1", "rpc_url": "https://rpc.example"},
             "observed_height": 99}
     with patch.object(module, "database", FakeDatabase()), patch.object(
         module, "fetch_live_account", return_value=live,
@@ -626,7 +626,7 @@ def test_endpoint_missing_account_does_not_query_database():
     from api import app as module
     module.app.state.api_config = ApiConfig("postgres://test")
     live = {"address": UTSA, "found": False, "balances": [], "account_number": None,
-            "sequence": None, "public_key": None, "source": {"kind": "rpc", "chain_id": "sapphire-1",
+            "sequence": None, "public_key": None, "source": {"kind": "rpc", "chain_id": "pearl-1",
             "rpc_url": "https://rpc.example"}, "observed_height": 100}
     fake_database = FakeDatabase(error=AssertionError("DB must not be called"))
     with patch.object(module, "database", fake_database), patch.object(module, "fetch_live_account", return_value=live):
@@ -650,7 +650,7 @@ def test_endpoint_database_failure_is_safe(error):
     from api import app as module
     module.app.state.api_config = ApiConfig("postgres://secret")
     live = {"address": UTSA, "found": True, "balances": [], "account_number": "1", "sequence": "0",
-            "public_key": None, "source": {"kind": "rpc", "chain_id": "sapphire-1",
+            "public_key": None, "source": {"kind": "rpc", "chain_id": "pearl-1",
             "rpc_url": "https://rpc.example"}, "observed_height": 100}
     with patch.object(module, "database", FakeDatabase(error=error)), patch.object(module, "fetch_live_account", return_value=live):
         with pytest.raises(module.HTTPException) as response:
@@ -708,8 +708,8 @@ def test_validator_relation_duplicate_rows_are_rejected():
 def test_fetch_selected_rpc_url_is_narrow_read_only(rows, expected):
     database = ApiDatabase()
     database.pool = FakePool(rows)
-    assert database.fetch_selected_rpc_url("sapphire-1") == expected
-    assert database.pool.cursor.parameters == ("default", "sapphire-1")
+    assert database.fetch_selected_rpc_url("pearl-1") == expected
+    assert database.pool.cursor.parameters == ("default", "pearl-1")
     sql = database.pool.cursor.sql
     assert "selected_rpc_endpoint_id" in sql
     assert "endpoint.chain_id = state.chain_id" in sql
@@ -729,7 +729,7 @@ def test_selected_rpc_lookup_failure_is_safe_and_does_not_call_live_rpc(caplog):
         module.get_account(UTSA)
     assert response.value.status_code == 503
     assert response.value.detail == "Account data is temporarily unavailable"
-    assert fetch.call_count == 0 and fake_database.selected_calls == ["sapphire-1"]
+    assert fetch.call_count == 0 and fake_database.selected_calls == ["pearl-1"]
     assert "Account selected RPC query failed" in caplog.text
     assert "database-secret" not in caplog.text and secret not in caplog.text
 
@@ -740,7 +740,7 @@ def test_route_passes_raw_selected_rpc_once_and_keeps_response_schema():
     module.app.state.api_config = ApiConfig("postgres://test")
     live = {"address": UTSA, "found": False, "balances": [], "account_number": None,
             "sequence": None, "public_key": None, "source": {"kind": "rpc",
-            "chain_id": "sapphire-1", "rpc_url": "https://rpc.example.invalid"},
+            "chain_id": "pearl-1", "rpc_url": "https://rpc.example.invalid"},
             "observed_height": 100}
     fake_database = FakeDatabase(selected_url=raw)
     with patch.object(module, "database", fake_database), patch.object(
@@ -748,7 +748,7 @@ def test_route_passes_raw_selected_rpc_once_and_keeps_response_schema():
     ) as fetch:
         response = module.get_account(UTSA)
     fetch.assert_called_once_with(UTSA, module.app.state.api_config, preferred_rpc_url=raw)
-    assert fake_database.selected_calls == ["sapphire-1"]
+    assert fake_database.selected_calls == ["pearl-1"]
     assert set(response.model_dump()) == {
         "address", "found", "account_number", "sequence", "public_key", "balances",
         "validator_relation", "source", "observed_height",

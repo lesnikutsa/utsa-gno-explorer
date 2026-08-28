@@ -259,7 +259,7 @@ def configured_rpc_urls() -> list[str]:
 
 def configured_chain_id() -> str:
     load_dotenv()
-    return os.environ.get("GNO_CHAIN_ID", "sapphire-1").strip() or "sapphire-1"
+    return os.environ.get("GNO_CHAIN_ID", "pearl-1").strip() or "pearl-1"
 
 
 def configured_max_height_lag() -> int:

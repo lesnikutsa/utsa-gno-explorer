@@ -24,7 +24,7 @@ def exact_result(path=PATH, source='grc20.NewToken("Demo", "DMT", 6, 0, cur)'):
 @pytest.fixture(autouse=True)
 def configure():
     module.app.state.api_config = SimpleNamespace(
-        chain_id="sapphire-1", rpc_urls=("https://rpc.example",),
+        chain_id="pearl-1", rpc_urls=("https://rpc.example",),
     )
     token_supply_cache.clear()
 
@@ -52,7 +52,7 @@ def test_arbitrary_or_unverified_realm_is_rejected_before_rpc():
         with pytest.raises(HTTPException) as error:
             module.get_token_supply("gno.land/r/demo/not_a_token")
     assert error.value.status_code == 404
-    verify.assert_called_once_with(chain_id="sapphire-1", path="gno.land/r/demo/not_a_token")
+    verify.assert_called_once_with(chain_id="pearl-1", path="gno.land/r/demo/not_a_token")
     query.assert_not_called()
 
     with patch.object(module.database, "fetch_verified_token_candidate",

@@ -25,7 +25,7 @@ def result(**source_overrides):
         candidates.append({**base, "path": path})
         files.append({"path": path, "filename": "main.gno", "file_kind": "gno_source",
                       "byte_count": len(content), "content": content})
-    source = {"chain_id": "sapphire-1", "indexed_height": 110, "catalog_observed_height": 100,
+    source = {"chain_id": "pearl-1", "indexed_height": 110, "catalog_observed_height": 100,
               "metadata_observed_height": 100, "checkpoint_at": NOW, "call_index_from_height": 1,
               "call_index_through_height": 100, "call_index_coverage_started_at": NOW - timedelta(days=2),
               "call_index_checkpoint_at": NOW, "available_activity_hours": (24,)}
@@ -35,14 +35,14 @@ def result(**source_overrides):
 
 
 def setup_module():
-    module.app.state.api_config = SimpleNamespace(chain_id="sapphire-1")
+    module.app.state.api_config = SimpleNamespace(chain_id="pearl-1")
 
 
 def call(mock_result=None, **kwargs):
     defaults = {"limit": 50, "q": None, "activity_window": "24h", "before_activity_height": None, "before_path": None}
     with patch.object(module.database, "fetch_token_candidates", return_value=mock_result or result()) as fetch:
         response = module.get_tokens(**(defaults | kwargs))
-    fetch.assert_called_once_with(chain_id="sapphire-1", window_hours=module.TOKEN_ACTIVITY_WINDOWS[kwargs.get("activity_window", "24h")], candidate_limit=1001)
+    fetch.assert_called_once_with(chain_id="pearl-1", window_hours=module.TOKEN_ACTIVITY_WINDOWS[kwargs.get("activity_window", "24h")], candidate_limit=1001)
     return response
 
 

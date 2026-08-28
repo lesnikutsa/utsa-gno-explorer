@@ -31,7 +31,7 @@ class FrontendNetworkProfileTests(unittest.TestCase):
         self.assertIn("typeof value === 'string'", self.profile)
         self.assertIn("value.trim() ? value.trim() : fallback", self.profile)
         self.assertIn("'Gno.land'", self.profile)
-        self.assertIn("'Sapphire'", self.profile)
+        self.assertIn("'Pearl'", self.profile)
         self.assertIn("telegramValidatorMonitorEnabled", self.profile)
         self.assertIn("telegramValidatorWatchPrefix", self.profile)
         self.assertIn("=== 'true'", self.profile)

@@ -59,8 +59,8 @@ sudo install -o root -g utsa-gno -m 0640 deploy/systemd/api.env.example /etc/uts
 ```
 
 Write a strong placeholder-replacing password, without a trailing newline, to
-`postgres-password`. Edit the three `.env` files securely. Keep `GNO_CHAIN_ID=sapphire-1`
-and the approved Sapphire RPC endpoint in `rpc.env`. `indexer.env` uses the
+`postgres-password`. Edit the three `.env` files securely. Keep `GNO_CHAIN_ID=pearl-1`
+and the approved Pearl RPC endpoint in `rpc.env`. `indexer.env` uses the
 writer role `utsa_gno_indexer`; `api.env` uses the separately created read-only
 `utsa_gno_api` role. Replace every password placeholder with URL-safe values. Never print
 or commit these values and do not add a shared raw `DATABASE_URL` file.
@@ -69,13 +69,13 @@ or commit these values and do not add a shared raw `DATABASE_URL` file.
 with a leading `-`. When overrides are needed, create it as `root:utsa-gno`, mode `0640`;
 use only variables documented in the [production reference](production-deployment.md).
 
-## 5. Bootstrap Sapphire from block 1
+## 5. Bootstrap Pearl from block 1
 
-Sapphire is a fresh chain, not a Topaz hardfork, and has no Topaz historical replay. Use
+Pearl is a fresh chain with no Sapphire historical replay. Use
 an entirely empty production database and set `INDEXER_START_HEIGHT=1` to index every
-normal block from block 1. Do not restore or reuse Topaz database rows, checkpoints, or
+normal block from block 1. Do not restore or reuse Sapphire database rows, checkpoints, or
 backups. Initialize the existing schema normally; no network data conversion or SQL
-migration is part of the Sapphire cutover.
+migration is part of the Pearl cutover.
 
 ## 6. Start PostgreSQL and create the required roles
 

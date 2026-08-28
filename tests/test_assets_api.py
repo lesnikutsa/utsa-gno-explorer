@@ -24,13 +24,13 @@ def fixture():
          "content": 'import "gno.land/p/vendor/grc721"\nvar nft=grc721.NewBasicNFT(0, cur, "Art", "ART")\nfunc OwnerOf() {}\nfunc Mint() {}',
          "metadata_observed_height": 9},
     ]
-    source = {"chain_id": "sapphire-1", "indexed_height": 10, "catalog_observed_height": 9,
+    source = {"chain_id": "pearl-1", "indexed_height": 10, "catalog_observed_height": 9,
               "metadata_observed_height": 9}
     return {"source": source, "candidates": rows, "files": files}
 
 
 def call(mock_result=None, **overrides):
-    module.app.state.api_config = SimpleNamespace(chain_id="sapphire-1")
+    module.app.state.api_config = SimpleNamespace(chain_id="pearl-1")
     defaults = {"limit": 50, "q": None, "standard": "all",
                 "before_activity_height": None, "before_path": None}
     data = mock_result or fixture()
@@ -55,7 +55,7 @@ def test_all_and_standard_filters_are_verified_and_native_is_absent():
 
 def test_asset_source_has_no_fabricated_activity_window():
     payload = call().model_dump()
-    assert payload["source"] == {"chain_id": "sapphire-1", "indexed_height": 10,
+    assert payload["source"] == {"chain_id": "pearl-1", "indexed_height": 10,
                                  "catalog_observed_height": 9, "metadata_observed_height": 9}
     assert "activity_window" not in payload["source"]
     assert "available_activity_windows" not in payload["source"]
@@ -86,7 +86,7 @@ def test_static_classification_cache_reuses_all_filters_and_rejected_results():
             module.get_assets(limit=50, q=None, standard=standard,
                               before_activity_height=None, before_path=None)
     assert classify.call_count == 1
-    files.assert_called_once_with(chain_id="sapphire-1",
+    files.assert_called_once_with(chain_id="pearl-1",
                                   paths=["gno.land/r/demo/art", "gno.land/r/demo/coin"])
 
     asset_classification_cache.clear()
@@ -117,7 +117,7 @@ def test_cache_reclassifies_only_changed_revision_and_new_candidate():
          patch.object(module, "classify_grc721", wraps=module.classify_grc721) as classify:
         module.get_assets(limit=50, q=None, standard="all", before_activity_height=None, before_path=None)
     assert classify.call_count == 1
-    files.assert_called_once_with(chain_id="sapphire-1", paths=["gno.land/r/demo/art"])
+    files.assert_called_once_with(chain_id="pearl-1", paths=["gno.land/r/demo/art"])
 
     new = fixture()
     new_row = {**new["candidates"][1], "path": "gno.land/r/demo/new-art"}
@@ -128,4 +128,4 @@ def test_cache_reclassifies_only_changed_revision_and_new_candidate():
          patch.object(module, "classify_grc721", wraps=module.classify_grc721) as classify:
         module.get_assets(limit=50, q=None, standard="all", before_activity_height=None, before_path=None)
     assert classify.call_count == 1
-    files.assert_called_once_with(chain_id="sapphire-1", paths=["gno.land/r/demo/new-art"])
+    files.assert_called_once_with(chain_id="pearl-1", paths=["gno.land/r/demo/new-art"])

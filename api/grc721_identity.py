@@ -7,7 +7,9 @@ import re
 from api.token_identity import MAX_TOKEN_SOURCE_BYTES, MAX_TOKEN_SOURCE_FILES, _strip_comments
 
 GRC721_PACKAGE_COMPONENTS = frozenset({"grc721", "grc721v2"})
-CONSTRUCTORS = frozenset({"NewBasicNFT", "NewNFTWithMetadata"})
+LEGACY_CONSTRUCTORS = frozenset({"NewBasicNFT", "NewNFTWithMetadata"})
+PEARL_CONSTRUCTOR = "NewToken"
+PEARL_GRC721_PACKAGE = "gno.land/p/nym-config058/grc721"
 OWNERSHIP_READERS = frozenset({"OwnerOf"})
 COLLECTION_SIGNALS = frozenset({
     "TokenURI", "TokenMetadata", "BalanceOf", "GetApproved", "Exists",
@@ -46,7 +48,7 @@ def _implementation_component(path: str) -> str | None:
     return component if component in GRC721_PACKAGE_COMPONENTS else None
 
 
-def _imports(source: str) -> set[str]:
+def _imports(source: str, *, canonical_pearl_only: bool = False) -> set[str]:
     """Return usable aliases for recognized GRC721 imports in this file only."""
     clean = _strip_comments(source)
     aliases: set[str] = set()
@@ -54,9 +56,12 @@ def _imports(source: str) -> set[str]:
     for block in re.finditer(r"(?s)\bimport\s*\((.*?)\)", clean):
         specs.extend(re.finditer(r'(?m)^\s*(?:(?P<alias>\.|_|[A-Za-z_]\w*)\s+)?"(?P<path>[^"]+)"', block.group(1)))
     for match in specs:
-        component = _implementation_component(match.group("path"))
+        imported_path = match.group("path").rstrip("/")
+        component = _implementation_component(imported_path)
         alias = match.group("alias") or component
-        if component and alias not in {".", "_"} and _IDENTIFIER_RE.fullmatch(alias):
+        path_allowed = not canonical_pearl_only or imported_path == PEARL_GRC721_PACKAGE
+        if (component and path_allowed and alias not in {".", "_"}
+                and _IDENTIFIER_RE.fullmatch(alias)):
             aliases.add(alias)
     return aliases
 
@@ -97,12 +102,12 @@ def _bounded_sources(files: list[dict]) -> list[str] | GRC721Classification:
     return sources
 
 
-def _constructor_calls(source: str, aliases: set[str]):
+def _constructor_calls(source: str, aliases: set[str], constructors: frozenset[str]):
     if not aliases:
         return
     qualified = "|".join(re.escape(alias) for alias in sorted(aliases))
-    constructors = "|".join(sorted(CONSTRUCTORS))
-    for match in re.finditer(rf"\b(?:{qualified})\.(?P<constructor>{constructors})\s*\(", source):
+    constructor_pattern = "|".join(sorted(constructors))
+    for match in re.finditer(rf"\b(?:{qualified})\.(?P<constructor>{constructor_pattern})\s*\(", source):
         start, index, depth, quote = match.end(), match.end(), 1, None
         while index < len(source) and depth:
             char = source[index]
@@ -264,12 +269,18 @@ def classify_grc721(files: list[dict], *, path_kind: str = "realm",
     identities: list[tuple[str, str]] = []
     for source in sources:
         aliases = _imports(source)  # Imports are deliberately file-scoped.
-        for _, arguments in _constructor_calls(source, aliases):
+        calls = list(_constructor_calls(source, aliases, LEGACY_CONSTRUCTORS))
+        pearl_aliases = _imports(source, canonical_pearl_only=True)
+        calls.extend(_constructor_calls(source, pearl_aliases, frozenset({PEARL_CONSTRUCTOR})))
+        for constructor, arguments in calls:
             parts = _argument_parts(arguments) if arguments is not None else None
             if parts is None or len(parts) < 2:
                 return GRC721Classification("rejected", "dynamic_or_malformed_identity")
-            name = _resolve_identity_argument(parts[-2], bindings, ambiguous)
-            symbol = _resolve_identity_argument(parts[-1], bindings, ambiguous)
+            # Pearl's Token/PrivateLedger/Teller constructor puts identity first;
+            # the legacy constructors put it in the final two arguments.
+            identity_parts = parts[:2] if constructor == "NewToken" else parts[-2:]
+            name = _resolve_identity_argument(identity_parts[0], bindings, ambiguous)
+            symbol = _resolve_identity_argument(identity_parts[1], bindings, ambiguous)
             if name is None or symbol is None:
                 return GRC721Classification("rejected", "dynamic_or_malformed_identity")
             if (not name or name != name.strip() or len(name) > 128 or

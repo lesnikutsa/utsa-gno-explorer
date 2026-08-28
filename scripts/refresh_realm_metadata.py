@@ -155,31 +155,59 @@ def main(argv: list[str] | None = None) -> int:
         suitable = suitable_rpc_probes(probes)
         if not suitable:
             raise RuntimeError("no_suitable_rpc")
-        candidate = suitable[0]
-        if candidate.latest_height is None or candidate.latest_height < selection.observed_height:
+        candidates = [
+            probe for probe in suitable
+            if isinstance(probe.latest_height, int)
+            and not isinstance(probe.latest_height, bool)
+            and probe.latest_height >= selection.observed_height
+        ]
+        if not candidates:
             raise RuntimeError("rpc_cannot_serve_catalog_height")
+        endpoint_ids: dict[str, int | None] = {}
         with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT id FROM rpc_endpoints WHERE chain_id=%s AND url=%s",
-                (config.chain_id, candidate.url),
-            )
-            endpoint_row = cursor.fetchone()
+            for candidate in candidates:
+                cursor.execute(
+                    "SELECT id FROM rpc_endpoints WHERE chain_id=%s AND url=%s",
+                    (config.chain_id, candidate.url),
+                )
+                endpoint_row = cursor.fetchone()
+                endpoint_ids[candidate.url] = int(endpoint_row[0]) if endpoint_row else None
         connection.commit()
-        endpoint_id = int(endpoint_row[0]) if endpoint_row else None
 
         for path, kind in selection.paths:
-            try:
-                result = collect_path_metadata(
-                    candidate.client,
-                    CollectionRequest(config.chain_id, path, kind, selection.observed_height,
-                                      endpoint_id),
-                )
-            except Exception:
+            result = None
+            collection_error = False
+            for index, candidate in enumerate(candidates):
+                try:
+                    result = collect_path_metadata(
+                        candidate.client,
+                        CollectionRequest(
+                            config.chain_id, path, kind, selection.observed_height,
+                            endpoint_ids[candidate.url],
+                        ),
+                    )
+                except Exception:
+                    collection_error = True
+                    break
+                if result.snapshot is not None:
+                    break
+                failure_code = getattr(result, "failure_code", None)
+                if failure_code not in {"qfile_listing", "qfile_file"}:
+                    break
+                if index + 1 < len(candidates):
+                    next_candidate = candidates[index + 1]
+                    LOGGER.info(
+                        "metadata_rpc_failover path=%s from=%s to=%s reason=%s",
+                        path, urlsplit(candidate.url).hostname or "unknown-host",
+                        urlsplit(next_candidate.url).hostname or "unknown-host",
+                        failure_code,
+                    )
+            if collection_error:
                 failed += 1
                 LOGGER.info("path=%s kind=%s status=failed observed_height=%s",
                             path, kind, selection.observed_height)
                 continue
-            if result.snapshot is None:
+            if result is None or result.snapshot is None:
                 failed += 1
                 LOGGER.info("path=%s kind=%s status=failed observed_height=%s",
                             path, kind, selection.observed_height)
@@ -206,7 +234,7 @@ def main(argv: list[str] | None = None) -> int:
         LOGGER.info(
             "chain=%s rpc_host=%s height=%s selected=%s published=%s failed=%s "
             "status=%s elapsed=%.3f",
-            config.chain_id, urlsplit(candidate.url).hostname or "unknown-host",
+            config.chain_id, urlsplit(candidates[0].url).hostname or "unknown-host",
             selection.observed_height, len(selection.paths), published, failed,
             terminal, time.monotonic() - started_clock,
         )
