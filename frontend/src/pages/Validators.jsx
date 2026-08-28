@@ -121,7 +121,7 @@ export function Validators({ validatorsPage, chainId }) {
         </div>
         <div className="validators-page__actions">
           <a
-            className="blocks-page__button"
+            className="blocks-page__button blocks-page__button--telegram"
             href={TELEGRAM_BOT_URL}
             target="_blank"
             rel="noopener noreferrer"

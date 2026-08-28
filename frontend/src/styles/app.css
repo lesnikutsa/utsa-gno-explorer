@@ -210,6 +210,11 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .blocks-page__button:hover:not(:disabled) { border-color: var(--color-text-secondary); background: var(--color-surface-hover); }
 .blocks-page__button--accent { border-color: rgba(200,75,49,.55); background: var(--color-accent-soft); }
 .blocks-page__button--accent:hover:not(:disabled) { border-color: var(--color-accent); background: rgba(200,75,49,.22); }
+.blocks-page__button--telegram { border-color: rgba(42,171,238,.72); background: rgba(42,171,238,.1); color: #63bce8; }
+.blocks-page__button--telegram:hover:not(:disabled) { border-color: #2aabee; background: rgba(42,171,238,.18); color: #8bd3f5; }
+.blocks-page__button--telegram:focus-visible { border-color: #2aabee; outline: 2px solid #2aabee; outline-offset: 2px; background: rgba(42,171,238,.18); color: #8bd3f5; }
+:root[data-theme="light"] .blocks-page__button--telegram { border-color: rgba(8,120,173,.7); background: rgba(42,171,238,.09); color: #075f8c; }
+:root[data-theme="light"] .blocks-page__button--telegram:hover:not(:disabled), :root[data-theme="light"] .blocks-page__button--telegram:focus-visible { border-color: #0878ad; background: rgba(42,171,238,.16); color: #064f75; }
 .blocks-page__button:disabled { cursor: not-allowed; opacity: .45; }
 .validators-search { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .validators-search input { width: min(420px, 100%); min-width: 0; padding: 7px 10px; border: 1px solid var(--color-border); border-radius: 5px; outline: none; background: var(--color-input); color: var(--color-text); font: inherit; font-size: 11px; }
