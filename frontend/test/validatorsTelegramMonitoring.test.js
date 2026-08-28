@@ -4,6 +4,7 @@ import test from 'node:test'
 
 const validatorsPage = readFileSync(new URL('../src/pages/Validators.jsx', import.meta.url), 'utf8')
 const telegramConfig = readFileSync(new URL('../src/utils/telegram.js', import.meta.url), 'utf8')
+const styles = readFileSync(new URL('../src/styles/app.css', import.meta.url), 'utf8')
 
 test('Telegram monitoring URL uses the shared bot username without a start payload', () => {
   assert.match(telegramConfig, /export const TELEGRAM_BOT_USERNAME = 'UTSAGNOBot'/)
@@ -22,4 +23,12 @@ test('Validators page exposes Telegram Monitoring as a safe accessible external 
 test('Validators page keeps the manual Refresh control', () => {
   assert.match(validatorsPage, /onClick=\{refresh\}/)
   assert.match(validatorsPage, /\{manualRefreshing \? 'Refreshing…' : 'Refresh'\}/)
+})
+
+test('Telegram Monitoring has dedicated theme-aware interaction styling', () => {
+  assert.match(validatorsPage, /className="blocks-page__button blocks-page__button--telegram"/)
+  assert.match(styles, /\.blocks-page__button--telegram \{/)
+  assert.match(styles, /\.blocks-page__button--telegram:hover:not\(:disabled\) \{/)
+  assert.match(styles, /\.blocks-page__button--telegram:focus-visible \{/)
+  assert.match(styles, /:root\[data-theme="light"\] \.blocks-page__button--telegram \{/)
 })
