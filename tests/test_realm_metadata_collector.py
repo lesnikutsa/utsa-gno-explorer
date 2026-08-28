@@ -321,6 +321,22 @@ def test_qfile_file_failure_uses_next_rpc(monkeypatch):
     assert states[-1].published_path_count == 1
 
 
+def test_rpc_below_catalog_height_is_skipped_for_fixed_height_collection(monkeypatch):
+    _, states, probes = failover_coordinator(monkeypatch)
+    probes[0].latest_height = 76
+    calls = []
+
+    def collect(client, request):
+        calls.append((client, request.observed_height, request.source_rpc_endpoint_id))
+        return SimpleNamespace(snapshot=object(), status="complete", failure_code=None)
+
+    monkeypatch.setattr(cli, "collect_path_metadata", collect)
+    monkeypatch.setattr(cli, "publish_metadata_snapshot", lambda *_: None)
+    assert cli.main(["--path", REALM]) == 0
+    assert calls == [(probes[1].client, 77, 18)]
+    assert states[-1].published_path_count == 1 and states[-1].failed_path_count == 0
+
+
 def test_all_rpc_required_failures_count_path_once_and_attempts_are_bounded(monkeypatch):
     _, states, probes = failover_coordinator(monkeypatch, candidate_count=3)
     calls = []

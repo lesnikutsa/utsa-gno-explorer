@@ -155,11 +155,17 @@ def main(argv: list[str] | None = None) -> int:
         suitable = suitable_rpc_probes(probes)
         if not suitable:
             raise RuntimeError("no_suitable_rpc")
-        if suitable[0].latest_height is None or suitable[0].latest_height < selection.observed_height:
+        candidates = [
+            probe for probe in suitable
+            if isinstance(probe.latest_height, int)
+            and not isinstance(probe.latest_height, bool)
+            and probe.latest_height >= selection.observed_height
+        ]
+        if not candidates:
             raise RuntimeError("rpc_cannot_serve_catalog_height")
         endpoint_ids: dict[str, int | None] = {}
         with connection.cursor() as cursor:
-            for candidate in suitable:
+            for candidate in candidates:
                 cursor.execute(
                     "SELECT id FROM rpc_endpoints WHERE chain_id=%s AND url=%s",
                     (config.chain_id, candidate.url),
@@ -171,7 +177,7 @@ def main(argv: list[str] | None = None) -> int:
         for path, kind in selection.paths:
             result = None
             collection_error = False
-            for index, candidate in enumerate(suitable):
+            for index, candidate in enumerate(candidates):
                 try:
                     result = collect_path_metadata(
                         candidate.client,
@@ -188,8 +194,8 @@ def main(argv: list[str] | None = None) -> int:
                 failure_code = getattr(result, "failure_code", None)
                 if failure_code not in {"qfile_listing", "qfile_file"}:
                     break
-                if index + 1 < len(suitable):
-                    next_candidate = suitable[index + 1]
+                if index + 1 < len(candidates):
+                    next_candidate = candidates[index + 1]
                     LOGGER.info(
                         "metadata_rpc_failover path=%s from=%s to=%s reason=%s",
                         path, urlsplit(candidate.url).hostname or "unknown-host",
@@ -228,7 +234,7 @@ def main(argv: list[str] | None = None) -> int:
         LOGGER.info(
             "chain=%s rpc_host=%s height=%s selected=%s published=%s failed=%s "
             "status=%s elapsed=%.3f",
-            config.chain_id, urlsplit(suitable[0].url).hostname or "unknown-host",
+            config.chain_id, urlsplit(candidates[0].url).hostname or "unknown-host",
             selection.observed_height, len(selection.paths), published, failed,
             terminal, time.monotonic() - started_clock,
         )
