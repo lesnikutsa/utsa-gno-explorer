@@ -14,7 +14,7 @@ const links = Object.freeze({
 
 export const networkProfile = Object.freeze({
   projectName: publicValue(import.meta.env.VITE_PROJECT_NAME, 'Gno.land'),
-  networkName: publicValue(import.meta.env.VITE_NETWORK_NAME, 'Sapphire'),
+  networkName: publicValue(import.meta.env.VITE_NETWORK_NAME, 'Pearl'),
   networkIconSrc: publicValue(
     import.meta.env.VITE_NETWORK_ICON,
     '/assets/networks/gnoland.png',
@@ -32,7 +32,7 @@ export const networkProfile = Object.freeze({
   },
   description: publicValue(
     import.meta.env.VITE_PROJECT_DESCRIPTION,
-    'Gno.land is a smart-contract platform built around interpreted Go and transparent on-chain applications. Sapphire is the current public test network tracked by UTSA Explorer.',
+    'Gno.land is a smart-contract platform built around interpreted Go and transparent on-chain applications. Pearl is the current public test network tracked by UTSA Explorer.',
   ),
   telegramValidatorMonitorEnabled: publicFlag(
     import.meta.env.VITE_TELEGRAM_VALIDATOR_MONITOR_ENABLED,

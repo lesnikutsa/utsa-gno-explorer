@@ -7,7 +7,7 @@ import re
 from api.token_identity import MAX_TOKEN_SOURCE_BYTES, MAX_TOKEN_SOURCE_FILES, _strip_comments
 
 GRC721_PACKAGE_COMPONENTS = frozenset({"grc721", "grc721v2"})
-CONSTRUCTORS = frozenset({"NewBasicNFT", "NewNFTWithMetadata"})
+CONSTRUCTORS = frozenset({"NewBasicNFT", "NewNFTWithMetadata", "NewToken"})
 OWNERSHIP_READERS = frozenset({"OwnerOf"})
 COLLECTION_SIGNALS = frozenset({
     "TokenURI", "TokenMetadata", "BalanceOf", "GetApproved", "Exists",
@@ -264,12 +264,15 @@ def classify_grc721(files: list[dict], *, path_kind: str = "realm",
     identities: list[tuple[str, str]] = []
     for source in sources:
         aliases = _imports(source)  # Imports are deliberately file-scoped.
-        for _, arguments in _constructor_calls(source, aliases):
+        for constructor, arguments in _constructor_calls(source, aliases):
             parts = _argument_parts(arguments) if arguments is not None else None
             if parts is None or len(parts) < 2:
                 return GRC721Classification("rejected", "dynamic_or_malformed_identity")
-            name = _resolve_identity_argument(parts[-2], bindings, ambiguous)
-            symbol = _resolve_identity_argument(parts[-1], bindings, ambiguous)
+            # Pearl's Token/PrivateLedger/Teller constructor puts identity first;
+            # the legacy constructors put it in the final two arguments.
+            identity_parts = parts[:2] if constructor == "NewToken" else parts[-2:]
+            name = _resolve_identity_argument(identity_parts[0], bindings, ambiguous)
+            symbol = _resolve_identity_argument(identity_parts[1], bindings, ambiguous)
             if name is None or symbol is None:
                 return GRC721Classification("rejected", "dynamic_or_malformed_identity")
             if (not name or name != name.strip() or len(name) > 128 or

@@ -4,11 +4,11 @@ This is the current production operations hub. Start with [installation](install
 [update](update.md) for changes and [restore](restore.md) for recovery. Exhaustive details
 remain in the [production reference](production-deployment.md).
 
-## Sapphire cutover invariant
+## Pearl cutover invariant
 
-Sapphire is a fresh chain, not a Topaz hardfork. A Sapphire production bootstrap must use
+Pearl is a fresh chain. A Pearl production bootstrap must use
 an empty database with `INDEXER_START_HEIGHT=1` so complete normal block history is indexed
-from block 1. Never restore or reuse Topaz rows, checkpoints, or backups for Sapphire.
+from block 1. Never restore or reuse Sapphire rows, checkpoints, or backups for Pearl.
 
 ## Runtime layout
 

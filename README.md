@@ -1,6 +1,6 @@
 # UTSA Gno.land Explorer
 
-Independent explorer and infrastructure project for Gno.land Sapphire.
+Independent explorer and infrastructure project for Gno.land Pearl.
 
 ## Live services
 
@@ -9,7 +9,7 @@ Independent explorer and infrastructure project for Gno.land Sapphire.
 
 ## Current release
 
-The active public test network is Sapphire, with chain ID `sapphire-1`. Sapphire is a
+The active public test network is Pearl, with chain ID `pearl-1`. Pearl is a
 fresh chain rather than a Topaz hardfork, and complete Explorer history starts at block 1.
 This independent community project does not claim official Gno.land ownership or endorsement.
 
@@ -54,7 +54,7 @@ Production is designed for a supported Ubuntu server with:
 - Node.js 22 and npm for the frontend;
 - Docker Engine with Compose and PostgreSQL 16;
 - systemd, Nginx, rsync, and operator-managed TLS;
-- access to the Sapphire RPC endpoint.
+- access to the Pearl RPC endpoint.
 
 Production configuration and secrets live outside Git under `/etc/utsa-gno-explorer`.
 Never commit database passwords or credential-bearing RPC URLs.

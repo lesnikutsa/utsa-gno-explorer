@@ -34,8 +34,8 @@ no frontend, no API endpoint, no production service, and no scheduled collector.
 extraction from the one optional source sample is an approximate diagnostic summary only;
 it is not a dependency graph.
 
-Live Sapphire support remains unverified until an operator runs this probe against the
-configured Sapphire RPC endpoint.
+Live Pearl support remains unverified until an operator runs this probe against the
+configured Pearl RPC endpoint.
 
 ## CLI examples
 
