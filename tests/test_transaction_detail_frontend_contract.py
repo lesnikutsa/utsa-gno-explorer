@@ -224,9 +224,9 @@ class TransactionDetailFrontendContractTests(unittest.TestCase):
         self.assertNotIn("padding", transaction_rule)
 
     def test_navigation_and_transaction_hash_search_use_existing_detail_route(self):
-        sidebar = self.read("frontend/src/components/Sidebar.jsx")
+        navigation = self.read("frontend/src/config/navigation.js")
         search = self.read("frontend/src/hooks/useGlobalSearch.js")
-        self.assertIn("href: '/transactions'", sidebar)
+        self.assertIn("href: '/transactions'", navigation)
         self.assertIn("getTransactionByHash(trimmed)", search)
         self.assertIn("`/blocks/${transaction.block_height}/transactions/${transaction.index}`", search)
 

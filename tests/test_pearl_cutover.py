@@ -52,7 +52,7 @@ class PearlCutoverTests(unittest.TestCase):
         self.assertNotIn("https://gnoland-testnet-rpc.itrocket.net", source)
 
     def test_frontend_defaults_to_pearl_and_disables_topaz_monitor(self):
-        profile = (ROOT / "frontend/src/config/networkProfile.js").read_text()
+        profile = (ROOT / "frontend/src/config/networkRegistry.js").read_text()
         environment = (ROOT / "frontend/.env.example").read_text()
         telegram = (ROOT / "frontend/src/utils/telegram.js").read_text()
         self.assertIn("'Pearl'", profile)

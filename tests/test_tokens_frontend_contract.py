@@ -7,10 +7,11 @@ ROOT = Path(__file__).parents[1]
 
 def test_tokens_route_navigation_and_page_contract():
     app = (ROOT / "frontend/src/App.jsx").read_text()
-    sidebar = (ROOT / "frontend/src/components/Sidebar.jsx").read_text()
+    navigation = (ROOT / "frontend/src/config/navigation.js").read_text()
     page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
     assert "path === '/tokens'" in app
-    assert "label: 'Tokens'" in sidebar and "href: '/tokens'" in sidebar
+    token_items = re.findall(r"\{ label: 'Tokens', Icon: (\w+), href: '([^']+)', capability: ([^ }]+) \}", navigation)
+    assert token_items == [('TokensIcon', '/tokens', 'NetworkCapability.TOKENS')]
     assert '<h1 className="sr-only" id="tokens-page-title">Tokens</h1>' in page
     assert '<h1 id="tokens-page-title">Tokens</h1>' not in page
     assert "tokens-page__header" not in page
@@ -25,9 +26,14 @@ def test_tokens_route_navigation_and_page_contract():
 def test_native_and_top_24h_are_separate_api_driven_sections():
     page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
     hook = (ROOT / "frontend/src/hooks/useTokensPage.js").read_text()
-    profile = (ROOT / "frontend/src/config/networkProfile.js").read_text()
-    for value in ("Native Token", "GNOT", "Native", "ugnot", "decimals: 6"):
-        assert value in page + profile
+    registry = (ROOT / "frontend/src/config/networkRegistry.js").read_text()
+    assert "Native Token" in page
+    native_token = registry.split("nativeToken: Object.freeze({", 1)[1].split("}),", 1)[0]
+    assert re.search(r"name: 'GNOT'", native_token)
+    assert re.search(r"symbol: 'GNOT'", native_token)
+    assert re.search(r"type: 'Native'", native_token)
+    assert re.search(r"baseDenom: publicValue\(import\.meta\.env\.VITE_NATIVE_DENOM, 'ugnot'\)", native_token)
+    assert re.search(r"decimals: 6", native_token)
     assert "realmDetailHref(networkProfile.nativeToken" not in page
     assert "getTokenSupply(networkProfile.nativeToken" not in hook
     assert '>Top Tokens</h2>' in page and "Direct Calls ({TOKEN_WINDOW_LABELS[activityWindow]})" in page
@@ -221,7 +227,7 @@ console.log(JSON.stringify(values.map(formatTokenSupply)));"""
 
 def test_unified_asset_tabs_and_tables_preserve_navigation_contract():
     page = (ROOT / "frontend/src/pages/Tokens.jsx").read_text()
-    sidebar = (ROOT / "frontend/src/components/Sidebar.jsx").read_text()
+    navigation = (ROOT / "frontend/src/config/navigation.js").read_text()
     hook = (ROOT / "frontend/src/hooks/useTokensPage.js").read_text()
     assert "realms-page__filters" in page and "realms-page__filter" in page
     for label in ("All", "GRC20 Tokens", "NFT Collections · GRC721"):
@@ -230,7 +236,9 @@ def test_unified_asset_tabs_and_tables_preserve_navigation_contract():
     assert "key: 'token_count', label: 'NFTs'" not in page
     assert "token_count', label: 'Total Supply'" not in page
     assert "standard: currentAssetFilter.current" in hook
-    assert sidebar.count("label: 'Tokens'") == 1 and "label: 'NFTs'" not in sidebar
+    assert navigation.count("label: 'Tokens'") == 1
+    assert "label: 'NFTs'" not in navigation
+    assert "href: '/tokens'" in navigation
 
 
 def test_asset_tabs_clear_hidden_total_supply_sort_but_keep_common_sorts():

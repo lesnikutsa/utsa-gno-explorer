@@ -13,6 +13,7 @@ const transactionsPage = read('../src/pages/Transactions.jsx')
 const transactionTypeBadge = read('../src/components/TransactionTypeBadge.jsx')
 const validator = read('../src/pages/ValidatorDetail.jsx')
 const profile = read('../src/config/networkProfile.js')
+const registry = read('../src/config/networkRegistry.js')
 const styles = read('../src/styles/app.css')
 
 const address = 'g16mldrfu90pe5r97cjm3xk02m7a3d0z8g9g3r75'
@@ -72,8 +73,9 @@ test('manual refresh keeps loaded account values visible', () => {
   assert.ok(page.includes('loading && account?.found && <p className="account-detail__updating"'))
 })
 test('network profile defines the native denom with an ugnot fallback', () => {
-  assert.ok(profile.includes('import.meta.env.VITE_NATIVE_DENOM'))
-  assert.match(profile, /nativeDenom:\s*publicValue\([\s\S]*?'ugnot'/)
+  assert.match(profile, /getNetworkById\(DEFAULT_NETWORK_ID\)\.presentation/)
+  assert.ok(registry.includes('import.meta.env.VITE_NATIVE_DENOM'))
+  assert.match(registry, /nativeDenom:\s*publicValue\([\s\S]*?'ugnot'/)
 })
 test('primary balance selection uses denom rather than a display symbol', () => {
   const synthetic = { denom: 'GNOT', symbol: 'GNOT' }

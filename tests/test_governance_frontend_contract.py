@@ -10,11 +10,13 @@ def read(path):
 
 class TestGovernanceNavigation:
     sidebar = read('frontend/src/components/Sidebar.jsx')
+    navigation = read('frontend/src/config/navigation.js')
     app = read('frontend/src/App.jsx')
 
     def test_navigation_order_and_icon(self):
-        assert self.sidebar.index("label: 'Governance'") > self.sidebar.index("label: 'Validators'")
-        assert 'GovernanceIcon' in self.sidebar
+        assert self.navigation.index("label: 'Governance'") > self.navigation.index("label: 'Validators'")
+        governance_item = re.search(r"\{ label: 'Governance', Icon: (\w+), href: '([^']+)', capability: ([^ }]+) \}", self.navigation)
+        assert governance_item.groups() == ('GovernanceIcon', '/governance', 'NetworkCapability.GOVERNANCE')
 
     def test_list_and_detail_routes(self):
         assert "path === '/governance'" in self.app
