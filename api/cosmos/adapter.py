@@ -2,12 +2,15 @@
 
 from dataclasses import dataclass
 import logging
+import re
 from urllib.parse import urlsplit
 
 from .cache import RequestCache
 from .config import CosmosNetworkConfig
-from .errors import AllEndpointsUnavailable, MalformedUpstreamResponse, RejectedEndpoint
-from .parsing import parse_rest_block, parse_rest_head, parse_rpc_block, parse_rpc_status
+from .errors import (AllEndpointsUnavailable, HistoryUnavailable,
+                     MalformedUpstreamResponse, RejectedEndpoint)
+from .parsing import (parse_node_status, parse_rest_block, parse_rest_head,
+                      parse_rpc_block, parse_rpc_status)
 from .transport import JsonTransport
 
 LOGGER = logging.getLogger(__name__)
@@ -110,6 +113,24 @@ class CosmosAdapter:
             raise AllEndpointsUnavailable("all validated RPC endpoints failed")
         return await self._cache.get_or_load(key, self.config.cache_ttl, load)
 
+    async def node_status(self):
+        """Return identity-checked local status, including a syncing endpoint."""
+        key = (self.config.network_id, "node_status", ())
+        async def load():
+            for number, endpoint in enumerate(self.config.rpc_endpoints, 1):
+                started = self._clock()
+                try:
+                    payload = await self._transport.get_object(endpoint, "/status")
+                    return parse_node_status(payload, network_id=self.config.network_id,
+                                             expected_chain_id=self.config.chain_id,
+                                             source_host=self._host(endpoint))
+                except Exception as exc:
+                    LOGGER.info("cosmos_endpoint_failed host=%s network=%s operation=node_status reason=%s candidate=%d duration_ms=%d",
+                                self._host(endpoint), self.config.network_id, self._reason(exc), number,
+                                int(max(0.0, self._clock() - started) * 1000))
+            raise AllEndpointsUnavailable("no identity-validated RPC status")
+        return await self._cache.get_or_load(key, 2.0, load)
+
     async def block(self, height: int, *, source: str = "rpc"):
         if type(height) is not int or height <= 0:
             raise ValueError("height must be a positive integer")
@@ -123,11 +144,20 @@ class CosmosAdapter:
             for number, candidate in enumerate(candidates, 1):
                 started = self._clock()
                 try:
-                    payload = await self._transport.get_object(candidate.endpoint, path)
+                    payload = await self._transport.get_object(candidate.endpoint, path,
+                                                               accept_error_payload=source == "rpc")
+                    if source == "rpc" and isinstance(payload.get("error"), dict):
+                        message = payload["error"].get("data") or payload["error"].get("message")
+                        match = re.search(r"height\s+\d+\s+is not available(?:, lowest height is\s+(\d+))?",
+                                          message if isinstance(message, str) else "", re.IGNORECASE)
+                        if match:
+                            raise HistoryUnavailable(height, int(match.group(1)) if match.group(1) else None)
                     result = parser(payload, network_id=self.config.network_id, expected_chain_id=self.config.chain_id)
                     if result.height != height:
                         raise RejectedEndpoint("wrong_height")
                     return result
+                except HistoryUnavailable:
+                    raise
                 except Exception as exc:
                     LOGGER.info("cosmos_endpoint_failed host=%s network=%s operation=%s_block reason=%s candidate=%d duration_ms=%d",
                                 self._host(candidate.endpoint), self.config.network_id, source,

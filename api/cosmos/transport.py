@@ -22,7 +22,7 @@ class JsonTransport:
         )
         self._max_response_bytes = max_response_bytes
 
-    async def get_object(self, base_url: str, path: str) -> dict:
+    async def get_object(self, base_url: str, path: str, *, accept_error_payload: bool = False) -> dict:
         parsed = urlsplit(path)
         if not path.startswith("/") or parsed.scheme or parsed.netloc or parsed.fragment or len(path) > 512:
             raise ValueError("adapter path must be relative")
@@ -31,7 +31,7 @@ class JsonTransport:
             async with asyncio.timeout(self._timeout_seconds):
                 async with self._client.stream("GET", base_url.rstrip("/") + path,
                                                timeout=self._timeout) as response:
-                    if not 200 <= response.status_code < 300:
+                    if not 200 <= response.status_code < 300 and not accept_error_payload:
                         raise RejectedEndpoint("http_status")
                     chunks = []
                     size = 0

@@ -9,8 +9,11 @@ from unittest.mock import patch
 import httpx
 
 from api.cosmos import (AllEndpointsUnavailable, CosmosAdapter, CosmosNetworkConfig,
-                        InvalidConfiguration, MalformedUpstreamResponse, RequestCache)
-from api.cosmos.parsing import parse_rest_block, parse_rest_head, parse_rpc_block, parse_rpc_status
+                        HistoryUnavailable, InvalidConfiguration,
+                        MalformedUpstreamResponse, RequestCache)
+from api.cosmos.parsing import (parse_node_status, parse_rest_block, parse_rest_head,
+                                parse_rpc_block, parse_rpc_status)
+from api.cosmos.registry import ATOMONE, NETWORKS
 from api.cosmos.transport import JsonTransport
 
 FIXTURES = Path(__file__).parent / "fixtures" / "cosmos"
@@ -36,6 +39,14 @@ class FakeClock:
 
 
 class ConfigTests(unittest.TestCase):
+    def test_atomone_registry_is_immutable_and_has_two_native_assets(self):
+        self.assertIs(NETWORKS["atomone-mainnet"], ATOMONE)
+        self.assertEqual(ATOMONE.transport.chain_id, "atomone-1")
+        self.assertEqual([(item.base, item.symbol, item.exponent) for item in ATOMONE.assets],
+                         [("uatone", "ATONE", 6), ("uphoton", "PHOTON", 6)])
+        with self.assertRaises(TypeError):
+            NETWORKS["other"] = ATOMONE
+
     def test_valid_config_is_immutable_and_deduplicates_in_first_seen_order(self):
         item = config(rpc_endpoints=("HTTPS://RPC-A.EXAMPLE/", "https://rpc-a.example", "https://rpc-b.example"))
         self.assertEqual(item.rpc_endpoints, ("https://rpc-a.example", "https://rpc-b.example"))
@@ -56,6 +67,16 @@ class ConfigTests(unittest.TestCase):
 
 
 class ParsingTests(unittest.TestCase):
+    def test_node_status_accepts_syncing_and_normalizes_tx_index(self):
+        for raw, expected in (("on", "on"), ("kv", "on"), ("off", "off"), (None, "unknown")):
+            payload = fixture("rpc_status.json")
+            payload["result"]["sync_info"]["catching_up"] = True
+            payload["result"]["node_info"]["other"] = {"tx_index": raw}
+            status = parse_node_status(payload, network_id="stable",
+                                       expected_chain_id="cosmos-test-1", source_host="safe")
+            self.assertTrue(status.catching_up)
+            self.assertEqual(status.tx_index, expected)
+
     def test_rpc_status_and_rest_identity_are_normalized(self):
         rpc = parse_rpc_status(fixture("rpc_status.json"), network_id="stable", expected_chain_id="cosmos-test-1", source_host="rpc.example")
         rest = parse_rest_head(fixture("rest_block.json"), network_id="stable", expected_chain_id="cosmos-test-1", source_host="rest.example")
@@ -230,6 +251,34 @@ class CacheTests(unittest.IsolatedAsyncioTestCase):
 
 class AdapterTests(unittest.IsolatedAsyncioTestCase):
     def transport(self, handler): return httpx.MockTransport(handler)
+
+    async def test_node_status_accepts_syncing_while_chain_head_remains_strict(self):
+        async def handler(_request):
+            payload = fixture("rpc_status.json")
+            payload["result"]["sync_info"]["catching_up"] = True
+            return httpx.Response(200, json=payload)
+        adapter = CosmosAdapter(config(rpc_endpoints=("https://rpc-a.example",)),
+                                transport=self.transport(handler))
+        self.assertTrue((await adapter.node_status()).catching_up)
+        with self.assertRaises(AllEndpointsUnavailable):
+            await adapter.chain_head()
+        await adapter.aclose()
+
+    async def test_rpc_pruning_error_is_typed_and_does_not_expose_message(self):
+        async def handler(request):
+            if request.url.path == "/status":
+                return httpx.Response(200, json=fixture("rpc_status.json"))
+            return httpx.Response(500, json={"error": {"message":
+                "height 1 is not available, lowest height is 3133197 SECRET"}})
+        adapter = CosmosAdapter(config(rpc_endpoints=("https://rpc-a.example",)),
+                                transport=self.transport(handler))
+        with self.assertRaises(HistoryUnavailable) as captured:
+            await adapter.block(1)
+        self.assertEqual(captured.exception.requested_height, 1)
+        self.assertEqual(captured.exception.lowest_available_height, 3133197)
+        self.assertEqual(str(captured.exception), "history_unavailable")
+        self.assertNotIn("SECRET", repr(captured.exception))
+        await adapter.aclose()
 
     async def test_ranking_stale_and_catching_up_exclusion_and_rpc_failover(self):
         calls = []

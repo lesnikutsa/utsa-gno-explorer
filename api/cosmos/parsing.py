@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import re
 
 from .errors import MalformedUpstreamResponse, RejectedEndpoint
-from .models import BlockSummary, ChainHead
+from .models import BlockSummary, ChainHead, NodeStatus
 
 _HEX = re.compile(r"^[0-9A-Fa-f]+$")
 
@@ -72,6 +72,39 @@ def parse_rpc_status(payload: dict, *, network_id: str, expected_chain_id: str, 
         raise MalformedUpstreamResponse("invalid catching-up status")
     return ChainHead(network_id, chain_id, _height(sync.get("latest_block_height")),
                      _timestamp(sync.get("latest_block_time")), catching_up, source_host)
+
+
+def _optional_text(value: object, name: str, maximum: int = 256) -> str | None:
+    return None if value in (None, "") else _text(value, name, maximum)
+
+
+def parse_node_status(payload: dict, *, network_id: str, expected_chain_id: str,
+                      source_host: str) -> NodeStatus:
+    result = _mapping(_mapping(payload).get("result"))
+    sync = _mapping(result.get("sync_info"))
+    info = _mapping(result.get("node_info"))
+    chain_id = _identity(info.get("network"), expected_chain_id)
+    catching_up = sync.get("catching_up")
+    if type(catching_up) is not bool:
+        raise MalformedUpstreamResponse("invalid catching-up status")
+    other = info.get("other") or {}
+    if not isinstance(other, dict):
+        raise MalformedUpstreamResponse("invalid node metadata")
+    raw_index = other.get("tx_index")
+    tx_index = "on" if raw_index in {"on", "kv"} else "off" if raw_index in {"off", "null"} else "unknown"
+    version = info.get("version")
+    app = result.get("application_version") or {}
+    if not isinstance(app, dict):
+        raise MalformedUpstreamResponse("invalid application version")
+    return NodeStatus(
+        network_id, chain_id, _height(sync.get("latest_block_height")),
+        _timestamp(sync.get("latest_block_time")), catching_up, tx_index,
+        _optional_text(version, "node version"),
+        _optional_text(app.get("name"), "application name"),
+        _optional_text(app.get("version"), "application version"),
+        _optional_text(app.get("cosmos_sdk_version"), "SDK version"),
+        _optional_text(app.get("comet_version") or version, "CometBFT version"), source_host,
+    )
 
 
 def _rest_block(payload: dict) -> tuple[dict, dict]:
