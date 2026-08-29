@@ -35,16 +35,17 @@ class InspectGovernanceTests(unittest.TestCase):
 
     @patch("scripts.inspect_governance.discover_governance")
     @patch("scripts.inspect_governance.select_rpc")
+    @patch("scripts.inspect_governance.configured_chain_id", return_value="configured-chain")
     @patch("scripts.inspect_governance.configured_rpc_urls", return_value=["https://rpc"])
-    def test_human_summary_separates_count_first_and_latest_id(self, _urls, select, discover):
+    def test_human_summary_separates_count_first_and_latest_id(self, _urls, _chain_id, select, discover):
         select.return_value.client.base_url = "https://rpc/"
         select.return_value.latest_height = 42
-        source = GovernanceSource("topaz-1", "https://rpc", 42, "gno.land/r/gov/dao")
+        source = GovernanceSource("configured-chain", "https://rpc", 42, "gno.land/r/gov/dao")
         discover.return_value = GovernanceDiscovery(source, True, 5, (self.proposal(20), self.proposal(0)))
         stdout = io.StringIO()
         with redirect_stdout(stdout):
             self.assertEqual(main([]), 0)
-        self.assertIn("Chain: topaz-1", stdout.getvalue())
+        self.assertIn("Chain: configured-chain", stdout.getvalue())
         self.assertIn("Proposals: 2; first: #0; latest: #20; pages: 5; complete: true", stdout.getvalue())
 
         discover.return_value = GovernanceDiscovery(source, True, 1, ())

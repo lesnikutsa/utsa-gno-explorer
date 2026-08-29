@@ -47,7 +47,7 @@ class ApiDeploymentAssetTests(unittest.TestCase):
             if line and not line.startswith("#") and "=" in line
         )
         urls = values["GNO_RPC_URLS"].split(",")
-        self.assertEqual(urls, ["https://primary-rpc.example.invalid", "https://fallback-rpc.example.invalid"])
+        self.assertEqual(urls, ["https://rpc.pearl.testnets.gno.land"])
         for url in urls:
             parsed = urlsplit(url)
             self.assertEqual(parsed.scheme, "https")
