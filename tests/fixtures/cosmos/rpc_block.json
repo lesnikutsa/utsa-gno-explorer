@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","result":{"block_id":{"hash":"AABBCCDD"},"block":{"header":{"chain_id":"cosmos-test-1","height":"41","time":"2026-08-29T12:34:55Z","proposer_address":"00112233AABBCCDD"},"data":{"txs":["dHg="]}}}}
