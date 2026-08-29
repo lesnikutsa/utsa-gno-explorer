@@ -41,7 +41,7 @@ class JsonTransport:
                             raise MalformedUpstreamResponse("upstream response is too large")
                         chunks.append(chunk)
                     body = b"".join(chunks)
-        except (TimeoutError, httpx.TransportError):
+        except (TimeoutError, httpx.RequestError):
             transport_failed = True
         if transport_failed:
             # Raise outside the handler so secret-bearing transport exceptions are

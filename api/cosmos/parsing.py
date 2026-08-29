@@ -34,13 +34,18 @@ def _height(value: object) -> int:
 
 def _timestamp(value: object) -> str:
     text = _text(value, "timestamp", 64)
+    invalid = False
     try:
         parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise MalformedUpstreamResponse("invalid timestamp") from exc
-    if parsed.tzinfo is None:
+        if parsed.tzinfo is None:
+            invalid = True
+        else:
+            normalized = parsed.astimezone(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+    except (ValueError, OverflowError):
+        invalid = True
+    if invalid:
         raise MalformedUpstreamResponse("invalid timestamp")
-    return parsed.astimezone(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+    return normalized
 
 
 def _hex(value: object, name: str, maximum: int) -> str:

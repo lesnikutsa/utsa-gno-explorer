@@ -82,6 +82,18 @@ class ParsingTests(unittest.TestCase):
             with self.subTest(path=path), self.assertRaises(MalformedUpstreamResponse):
                 parse_rest_block(payload, network_id="stable", expected_chain_id="cosmos-test-1")
 
+    def test_timestamp_utc_underflow_and_overflow_are_controlled(self):
+        for timestamp in ("0001-01-01T00:00:00+01:00", "9999-12-31T23:59:59-01:00"):
+            payload = fixture("rest_block.json")
+            payload["block"]["header"]["time"] = timestamp
+            with self.subTest(timestamp=timestamp), self.assertRaisesRegex(
+                MalformedUpstreamResponse, "^invalid timestamp$"
+            ) as captured:
+                parse_rest_block(payload, network_id="stable", expected_chain_id="cosmos-test-1")
+            self.assertIsNone(captured.exception.__cause__)
+            self.assertIsNone(captured.exception.__context__)
+            self.assertNotIn(timestamp, repr(captured.exception))
+
     def test_rpc_and_rest_reject_falsey_non_list_transactions(self):
         for parser, fixture_name, result_key in (
             (parse_rpc_block, "rpc_block.json", "result"),
@@ -149,6 +161,27 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(captured.exception.__cause__)
             self.assertIsNone(captured.exception.__context__)
             self.assertNotIn("SECRET_MARKER", repr(captured.exception))
+
+    async def test_invalid_gzip_is_a_sanitized_transport_error(self):
+        async def handler(_request):
+            return httpx.Response(200, headers={"content-encoding": "gzip"}, content=b"not gzip")
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            transport = JsonTransport(timeout=1, max_response_bytes=1024, client=client)
+            with self.assertRaisesRegex(Exception, "^transport_error$") as captured:
+                await transport.get_object("https://safe.example", "/status")
+            self.assertIsNone(captured.exception.__cause__)
+            self.assertIsNone(captured.exception.__context__)
+
+    async def test_decoding_error_drops_secret_exception_chain(self):
+        async def handler(_request):
+            raise httpx.DecodingError("SECRET_DECODING_MARKER")
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            transport = JsonTransport(timeout=1, max_response_bytes=1024, client=client)
+            with self.assertRaisesRegex(Exception, "^transport_error$") as captured:
+                await transport.get_object("https://safe.example", "/status")
+            self.assertIsNone(captured.exception.__cause__)
+            self.assertIsNone(captured.exception.__context__)
+            self.assertNotIn("SECRET_DECODING_MARKER", repr(captured.exception))
 
     async def test_owned_client_is_closed(self):
         transport = JsonTransport(timeout=1, max_response_bytes=1024,
@@ -302,6 +335,18 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
                 await adapter.chain_head()
         rendered = "\n".join(logs.output) + repr(captured.exception)
         self.assertNotIn("SECRET_MARKER", rendered)
+        self.assertIn("reason=transport_error", rendered)
+        await adapter.aclose()
+
+    async def test_decoding_secret_is_absent_from_aggregate_error_and_logs(self):
+        async def handler(_request):
+            raise httpx.DecodingError("SECRET_DECODING_MARKER")
+        adapter = CosmosAdapter(config(), transport=self.transport(handler), clock=FakeClock())
+        with self.assertLogs("api.cosmos.adapter", "INFO") as logs:
+            with self.assertRaises(AllEndpointsUnavailable) as captured:
+                await adapter.chain_head()
+        rendered = "\n".join(logs.output) + repr(captured.exception)
+        self.assertNotIn("SECRET_DECODING_MARKER", rendered)
         self.assertIn("reason=transport_error", rendered)
         await adapter.aclose()
 
