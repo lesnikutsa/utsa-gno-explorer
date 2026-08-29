@@ -11,6 +11,8 @@ class FrontendNetworkProfileTests(unittest.TestCase):
     def setUpClass(cls):
         cls.profile_path = ROOT / "frontend/src/config/networkProfile.js"
         cls.profile = cls.profile_path.read_text()
+        cls.registry = (ROOT / "frontend/src/config/networkRegistry.js").read_text()
+        cls.navigation = (ROOT / "frontend/src/config/navigation.js").read_text()
         cls.sidebar = (ROOT / "frontend/src/components/Sidebar.jsx").read_text()
         cls.logo = (ROOT / "frontend/src/components/UtsaLogo.jsx").read_text()
         cls.overview = (ROOT / "frontend/src/pages/Overview.jsx").read_text()
@@ -19,29 +21,29 @@ class FrontendNetworkProfileTests(unittest.TestCase):
 
     def test_profile_uses_public_vite_values_with_fallbacks(self):
         self.assertTrue(self.profile_path.is_file())
-        self.assertIn("import.meta.env", self.profile)
-        self.assertNotIn("process.env", self.profile)
+        self.assertIn("getNetworkById(DEFAULT_NETWORK_ID).presentation", self.profile)
+        self.assertIn("import.meta.env", self.registry)
+        self.assertNotIn("process.env", self.registry)
         for name in (
             "VITE_PROJECT_NAME", "VITE_NETWORK_NAME", "VITE_PROJECT_DESCRIPTION",
             "VITE_PROJECT_WEBSITE", "VITE_PROJECT_DOCUMENTATION", "VITE_PROJECT_GITHUB",
             "VITE_TELEGRAM_VALIDATOR_MONITOR_ENABLED",
             "VITE_TELEGRAM_VALIDATOR_WATCH_PREFIX",
         ):
-            self.assertIn(f"import.meta.env.{name}", self.profile)
-        self.assertIn("typeof value === 'string'", self.profile)
-        self.assertIn("value.trim() ? value.trim() : fallback", self.profile)
-        self.assertIn("'Gno.land'", self.profile)
-        self.assertIn("'Pearl'", self.profile)
-        self.assertIn("telegramValidatorMonitorEnabled", self.profile)
-        self.assertIn("telegramValidatorWatchPrefix", self.profile)
-        self.assertIn("=== 'true'", self.profile)
-        self.assertEqual(self.profile.count("Object.freeze("), 2)
+            self.assertIn(f"import.meta.env.{name}", self.registry)
+        self.assertIn("typeof value === 'string'", self.registry)
+        self.assertIn("value.trim() ? value.trim() : fallback", self.registry)
+        self.assertIn("'Gno.land'", self.registry)
+        self.assertIn("'Pearl'", self.registry)
+        self.assertIn("telegramValidatorMonitorEnabled", self.registry)
+        self.assertIn("telegramValidatorWatchPrefix", self.registry)
+        self.assertIn("=== 'true'", self.registry)
         self.assertIn("export const networkProfile", self.profile)
         self.assertIn("export default networkProfile", self.profile)
 
     def test_sidebar_contains_only_complete_navigation(self):
         self.assertIn("networkProfile", self.sidebar)
-        items = re.findall(r"\{ label: '([^']+)', Icon: \w+, href: '([^']+)' \}", self.sidebar)
+        items = re.findall(r"\{ label: '([^']+)', Icon: \w+, href: '([^']+)', capability: NetworkCapability\.\w+ \}", self.navigation)
         self.assertEqual(items, [
             ("Overview", "/"),
             ("Blocks", "/blocks"),

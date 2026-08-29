@@ -12,10 +12,10 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         return (ROOT / relative_path).read_text(encoding="utf-8")
 
     def test_navigation_and_route(self):
-        sidebar = self.read("frontend/src/components/Sidebar.jsx")
+        navigation = self.read("frontend/src/config/navigation.js")
         app = self.read("frontend/src/App.jsx")
-        self.assertLess(sidebar.index("label: 'Blocks'"), sidebar.index("label: 'Transactions'"))
-        self.assertLess(sidebar.index("label: 'Transactions'"), sidebar.index("label: 'Validators'"))
+        self.assertLess(navigation.index("label: 'Blocks'"), navigation.index("label: 'Transactions'"))
+        self.assertLess(navigation.index("label: 'Transactions'"), navigation.index("label: 'Validators'"))
         self.assertIn("path === '/transactions'", app)
         self.assertIn("<TransactionsPage />", app)
         self.assertIn("transactionDetailMatch", app)

@@ -14,10 +14,10 @@ class ChainIdentitySourceContractTests(unittest.TestCase):
 
     def test_sidebar_renders_dynamic_chain_and_fallback(self):
         self.assertIn("Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed })", self.sidebar)
-        self.assertIn("import { networkProfile } from '../config/networkProfile'", self.sidebar)
+        self.assertIn("const networkProfile = selectedNetwork.presentation", self.sidebar)
         self.assertIn("`${networkProfile.projectName} · ${chainId}`", self.sidebar)
         self.assertIn("`${networkProfile.projectName} network`", self.sidebar)
-        self.assertIn("aria-label={`Current chain: ${chainLabel}`}", self.sidebar)
+        self.assertIn("aria-label={`Select network. Current network: ${chainLabel}`}", self.sidebar)
         self.assertIn("data-sidebar-tooltip={collapsed ? chainLabel : undefined}", self.sidebar)
         self.assertIn("aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}", self.sidebar)
 

@@ -14,10 +14,11 @@ class RealmsFrontendContractTests(unittest.TestCase):
     def test_route_and_navigation(self):
         app = self.read("frontend/src/App.jsx")
         sidebar = self.read("frontend/src/components/Sidebar.jsx")
+        navigation = self.read("frontend/src/config/navigation.js")
         self.assertIn("path === '/realms' || path === '/realms/'", app)
         self.assertIn("<Realms realmsPage={realmsPage} realmApplications={realmApplications} />", app)
-        self.assertLess(sidebar.index("label: 'Transactions'"), sidebar.index("label: 'Realms'"))
-        self.assertLess(sidebar.index("label: 'Realms'"), sidebar.index("label: 'Validators'"))
+        self.assertLess(navigation.index("label: 'Transactions'"), navigation.index("label: 'Realms'"))
+        self.assertLess(navigation.index("label: 'Realms'"), navigation.index("label: 'Validators'"))
         self.assertIn("return pathname === href || pathname.startsWith(`${href}/`)", sidebar)
         self.assertEqual(sidebar.count("aria-current="), 1)
 

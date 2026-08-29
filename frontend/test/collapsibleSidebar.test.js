@@ -9,6 +9,7 @@ const icons = readFileSync(new URL('../src/components/Icons.jsx', import.meta.ur
 const theme = readFileSync(new URL('../src/styles/theme.css', import.meta.url), 'utf8')
 const styles = readFileSync(new URL('../src/styles/app.css', import.meta.url), 'utf8')
 const profile = readFileSync(new URL('../src/config/networkProfile.js', import.meta.url), 'utf8')
+const registry = readFileSync(new URL('../src/config/networkRegistry.js', import.meta.url), 'utf8')
 const networkDirectory = new URL('../public/assets/networks/', import.meta.url)
 
 test('desktop collapsed preference is separate, safe, and persistent', () => {
@@ -51,9 +52,10 @@ test('network icon is configurable and safely falls back to ChainIcon', () => {
   assert.equal(existsSync(new URL('.gitkeep', networkDirectory)), true)
   assert.equal(existsSync(new URL('gnoland.png', networkDirectory)), true)
   assert.equal(existsSync(new URL('gnoland.svg', networkDirectory)), false)
-  assert.match(profile, /networkIconSrc: publicValue\(/)
-  assert.match(profile, /import\.meta\.env\.VITE_NETWORK_ICON/)
-  assert.match(profile, /'\/assets\/networks\/gnoland\.png'/)
+  assert.match(profile, /getNetworkById\(DEFAULT_NETWORK_ID\)\.presentation/)
+  assert.match(registry, /networkIconSrc: publicValue\(/)
+  assert.match(registry, /import\.meta\.env\.VITE_NETWORK_ICON/)
+  assert.match(registry, /'\/assets\/networks\/gnoland\.png'/)
   assert.match(sidebar, /src=\{networkProfile\.networkIconSrc\}/)
   assert.doesNotMatch(sidebar, /\/assets\/networks\/gnoland\.png/)
   assert.match(sidebar, /className="chain-select__network-icon"/)
@@ -61,7 +63,7 @@ test('network icon is configurable and safely falls back to ChainIcon', () => {
   assert.match(sidebar, /onError=\{\(\) => setNetworkIconFailed\(true\)\}/)
   assert.match(sidebar, /networkIconFailed \? \([\s\S]*?chain-select__network-icon-fallback[\s\S]*?<ChainIcon \/>/)
   assert.match(sidebar, /className="chain-select__label">\{chainLabel\}<\/span>/)
-  assert.match(sidebar, /aria-label=\{`Current chain: \$\{chainLabel\}`\}/)
+  assert.match(sidebar, /aria-label=\{`Select network\. Current network: \$\{chainLabel\}`\}/)
 })
 
 test('existing logo and shared responsive width contracts are preserved', () => {

@@ -24,7 +24,7 @@ class RealmDetailFrontendContractTests(unittest.TestCase):
 
     def test_route_wrapper_query_contract_and_sidebar(self):
         app = self.read("frontend/src/App.jsx")
-        sidebar = self.read("frontend/src/components/Sidebar.jsx")
+        navigation = self.read("frontend/src/config/navigation.js")
         page = self.read("frontend/src/pages/RealmDetail.jsx")
         self.assertIn("path === '/realm' || path === '/realm/'", app)
         self.assertIn("function RealmDetailPage()", app)
@@ -35,8 +35,8 @@ class RealmDetailFrontendContractTests(unittest.TestCase):
         self.assertNotIn('healthState="loading"', app)
         self.assertIn("Invalid Realm or Package path", page)
         self.assertIn('href="/realms"', page)
-        self.assertNotIn("label: 'Realm Detail'", sidebar)
-        self.assertEqual(sidebar.count("label: 'Realms'"), 1)
+        self.assertNotIn("label: 'Realm Detail'", navigation)
+        self.assertEqual(navigation.count("label: 'Realms'"), 1)
 
     def test_strict_path_identity_and_urlsearchparams_round_trip(self):
         values = run_node(
