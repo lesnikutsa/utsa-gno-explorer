@@ -26,6 +26,7 @@ class JsonTransport:
         parsed = urlsplit(path)
         if not path.startswith("/") or parsed.scheme or parsed.netloc or parsed.fragment or len(path) > 512:
             raise ValueError("adapter path must be relative")
+        transport_failed = False
         try:
             async with asyncio.timeout(self._timeout_seconds):
                 async with self._client.stream("GET", base_url.rstrip("/") + path,
@@ -40,12 +41,22 @@ class JsonTransport:
                             raise MalformedUpstreamResponse("upstream response is too large")
                         chunks.append(chunk)
                     body = b"".join(chunks)
-        except (TimeoutError, httpx.TimeoutException, httpx.NetworkError) as exc:
-            raise RejectedEndpoint("transport_error") from exc
+        except (TimeoutError, httpx.TransportError):
+            transport_failed = True
+        if transport_failed:
+            # Raise outside the handler so secret-bearing transport exceptions are
+            # not retained as __context__ on the safe adapter error.
+            raise RejectedEndpoint("transport_error")
+        malformed_json = False
         try:
-            payload = json.loads(body)
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise MalformedUpstreamResponse("upstream response is not valid JSON") from exc
+            payload = json.loads(
+                body,
+                parse_constant=lambda _value: (_ for _ in ()).throw(ValueError()),
+            )
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+            malformed_json = True
+        if malformed_json:
+            raise MalformedUpstreamResponse("upstream response is not valid JSON")
         if not isinstance(payload, dict):
             raise MalformedUpstreamResponse("upstream JSON is not an object")
         return payload

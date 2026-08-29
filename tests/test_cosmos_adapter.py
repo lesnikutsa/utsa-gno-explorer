@@ -10,7 +10,7 @@ import httpx
 
 from api.cosmos import (AllEndpointsUnavailable, CosmosAdapter, CosmosNetworkConfig,
                         InvalidConfiguration, MalformedUpstreamResponse, RequestCache)
-from api.cosmos.parsing import parse_rest_block, parse_rest_head, parse_rpc_status
+from api.cosmos.parsing import parse_rest_block, parse_rest_head, parse_rpc_block, parse_rpc_status
 from api.cosmos.transport import JsonTransport
 
 FIXTURES = Path(__file__).parent / "fixtures" / "cosmos"
@@ -82,6 +82,34 @@ class ParsingTests(unittest.TestCase):
             with self.subTest(path=path), self.assertRaises(MalformedUpstreamResponse):
                 parse_rest_block(payload, network_id="stable", expected_chain_id="cosmos-test-1")
 
+    def test_rpc_and_rest_reject_falsey_non_list_transactions(self):
+        for parser, fixture_name, result_key in (
+            (parse_rpc_block, "rpc_block.json", "result"),
+            (parse_rest_block, "rest_block.json", None),
+        ):
+            for value in ({}, "", 0, False):
+                payload = fixture(fixture_name)
+                root = payload[result_key] if result_key else payload
+                root["block"]["data"]["txs"] = value
+                with self.subTest(parser=parser.__name__, value=value), self.assertRaises(MalformedUpstreamResponse):
+                    parser(payload, network_id="stable", expected_chain_id="cosmos-test-1")
+            for value in (None,):
+                payload = fixture(fixture_name)
+                root = payload[result_key] if result_key else payload
+                root["block"]["data"]["txs"] = value
+                self.assertEqual(parser(payload, network_id="stable", expected_chain_id="cosmos-test-1").transaction_count, 0)
+            payload = fixture(fixture_name)
+            root = payload[result_key] if result_key else payload
+            del root["block"]["data"]["txs"]
+            self.assertEqual(parser(payload, network_id="stable", expected_chain_id="cosmos-test-1").transaction_count, 0)
+
+    def test_malformed_nested_rpc_objects_raise_controlled_error(self):
+        for value in ("invalid", [], None):
+            payload = fixture("rpc_status.json")
+            payload["result"]["node_info"] = value
+            with self.subTest(value=value), self.assertRaises(MalformedUpstreamResponse):
+                parse_rpc_status(payload, network_id="stable", expected_chain_id="cosmos-test-1", source_host="safe")
+
 
 class TransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_json_shape_size_status_and_malformed_json(self):
@@ -101,6 +129,26 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
                 transport = JsonTransport(timeout=1, max_response_bytes=1024, client=client)
                 with self.assertRaisesRegex(Exception, "transport_error"):
                     await transport.get_object("https://safe.example", "/status")
+
+    async def test_nonstandard_json_constants_are_rejected(self):
+        for constant in (b"NaN", b"Infinity", b"-Infinity"):
+            async def handler(_request, constant=constant):
+                return httpx.Response(200, content=b'{"value":' + constant + b'}')
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                transport = JsonTransport(timeout=1, max_response_bytes=1024, client=client)
+                with self.subTest(constant=constant), self.assertRaises(MalformedUpstreamResponse):
+                    await transport.get_object("https://safe.example", "/status")
+
+    async def test_protocol_error_drops_secret_exception_chain(self):
+        async def handler(_request):
+            raise httpx.RemoteProtocolError("SECRET_MARKER")
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            transport = JsonTransport(timeout=1, max_response_bytes=1024, client=client)
+            with self.assertRaisesRegex(Exception, "^transport_error$") as captured:
+                await transport.get_object("https://safe.example", "/status")
+            self.assertIsNone(captured.exception.__cause__)
+            self.assertIsNone(captured.exception.__context__)
+            self.assertNotIn("SECRET_MARKER", repr(captured.exception))
 
     async def test_owned_client_is_closed(self):
         transport = JsonTransport(timeout=1, max_response_bytes=1024,
@@ -203,6 +251,58 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(200, json=payload)
         adapter = CosmosAdapter(config(), transport=self.transport(handler))
         with self.assertRaises(AllEndpointsUnavailable): await adapter.chain_head()
+        await adapter.aclose()
+
+    async def test_selected_read_catching_up_fails_over(self):
+        counts = {}
+        async def handler(request):
+            counts[request.url.host] = counts.get(request.url.host, 0) + 1
+            payload = fixture("rpc_status.json")
+            if request.url.host == "rpc-a.example" and counts[request.url.host] == 2:
+                payload["result"]["sync_info"]["catching_up"] = True
+            return httpx.Response(200, json=payload)
+        adapter = CosmosAdapter(config(), transport=self.transport(handler), clock=FakeClock())
+        head = await adapter.chain_head()
+        self.assertEqual(head.source_host, "rpc-b.example")
+        self.assertEqual(counts, {"rpc-a.example": 2, "rpc-b.example": 2})
+        await adapter.aclose()
+
+    async def test_all_selected_reads_becoming_unsuitable_is_aggregate_error(self):
+        counts = {}
+        async def handler(request):
+            counts[request.url.host] = counts.get(request.url.host, 0) + 1
+            payload = fixture("rpc_status.json")
+            if counts[request.url.host] == 2:
+                payload["result"]["sync_info"]["catching_up"] = True
+            return httpx.Response(200, json=payload)
+        adapter = CosmosAdapter(config(), transport=self.transport(handler), clock=FakeClock())
+        with self.assertRaisesRegex(AllEndpointsUnavailable, "all validated RPC endpoints failed"):
+            await adapter.chain_head()
+        await adapter.aclose()
+
+    async def test_selected_read_height_regression_fails_over(self):
+        counts = {}
+        async def handler(request):
+            counts[request.url.host] = counts.get(request.url.host, 0) + 1
+            payload = fixture("rpc_status.json")
+            if request.url.host == "rpc-a.example" and counts[request.url.host] == 2:
+                payload["result"]["sync_info"]["latest_block_height"] = "39"
+            return httpx.Response(200, json=payload)
+        adapter = CosmosAdapter(config(max_height_lag=2), transport=self.transport(handler), clock=FakeClock())
+        head = await adapter.chain_head()
+        self.assertEqual((head.source_host, head.latest_height), ("rpc-b.example", 42))
+        await adapter.aclose()
+
+    async def test_protocol_secret_is_absent_from_aggregate_error_and_logs(self):
+        async def handler(_request):
+            raise httpx.RemoteProtocolError("SECRET_MARKER")
+        adapter = CosmosAdapter(config(), transport=self.transport(handler), clock=FakeClock())
+        with self.assertLogs("api.cosmos.adapter", "INFO") as logs:
+            with self.assertRaises(AllEndpointsUnavailable) as captured:
+                await adapter.chain_head()
+        rendered = "\n".join(logs.output) + repr(captured.exception)
+        self.assertNotIn("SECRET_MARKER", rendered)
+        self.assertIn("reason=transport_error", rendered)
         await adapter.aclose()
 
     async def test_cache_hit_avoids_network(self):

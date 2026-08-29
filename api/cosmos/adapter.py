@@ -48,7 +48,7 @@ class CosmosAdapter:
     def _reason(exc: Exception) -> str:
         if isinstance(exc, RejectedEndpoint):
             code = exc.args[0] if exc.args else "rejected"
-            return code if code in {"catching_up", "http_status", "transport_error", "wrong_chain", "wrong_height"} else "rejected"
+            return code if code in {"catching_up", "http_status", "stale_height", "transport_error", "wrong_chain", "wrong_height"} else "rejected"
         if isinstance(exc, MalformedUpstreamResponse):
             return "malformed_response"
         return "unexpected_response"
@@ -89,15 +89,24 @@ class CosmosAdapter:
         key = (self.config.network_id, "chain_head", ())
         async def load():
             candidates = await self._cached_candidates("rpc")
+            minimum_fresh_height = max(candidate.height for candidate in candidates) - self.config.max_height_lag
             for number, candidate in enumerate(candidates, 1):
+                started = self._clock()
                 try:
                     payload = await self._transport.get_object(candidate.endpoint, "/status")
-                    return parse_rpc_status(payload, network_id=self.config.network_id,
+                    head = parse_rpc_status(payload, network_id=self.config.network_id,
                                             expected_chain_id=self.config.chain_id,
                                             source_host=self._host(candidate.endpoint))
-                except Exception:
-                    LOGGER.info("cosmos_endpoint_failed host=%s network=%s operation=chain_head reason=read_failed candidate=%d duration_ms=0",
-                                self._host(candidate.endpoint), self.config.network_id, number)
+                    if head.catching_up:
+                        raise RejectedEndpoint("catching_up")
+                    if head.latest_height < minimum_fresh_height:
+                        raise RejectedEndpoint("stale_height")
+                    return head
+                except Exception as exc:
+                    LOGGER.info("cosmos_endpoint_failed host=%s network=%s operation=chain_head reason=%s candidate=%d duration_ms=%d",
+                                self._host(candidate.endpoint), self.config.network_id,
+                                self._reason(exc), number,
+                                int(max(0.0, self._clock() - started) * 1000))
             raise AllEndpointsUnavailable("all validated RPC endpoints failed")
         return await self._cache.get_or_load(key, self.config.cache_ttl, load)
 
@@ -112,14 +121,17 @@ class CosmosAdapter:
             path = f"/block?height={height}" if source == "rpc" else f"/cosmos/base/tendermint/v1beta1/blocks/{height}"
             parser = parse_rpc_block if source == "rpc" else parse_rest_block
             for number, candidate in enumerate(candidates, 1):
+                started = self._clock()
                 try:
                     payload = await self._transport.get_object(candidate.endpoint, path)
                     result = parser(payload, network_id=self.config.network_id, expected_chain_id=self.config.chain_id)
                     if result.height != height:
                         raise RejectedEndpoint("wrong_height")
                     return result
-                except Exception:
-                    LOGGER.info("cosmos_endpoint_failed host=%s network=%s operation=%s_block reason=read_failed candidate=%d duration_ms=0",
-                                self._host(candidate.endpoint), self.config.network_id, source, number)
+                except Exception as exc:
+                    LOGGER.info("cosmos_endpoint_failed host=%s network=%s operation=%s_block reason=%s candidate=%d duration_ms=%d",
+                                self._host(candidate.endpoint), self.config.network_id, source,
+                                self._reason(exc), number,
+                                int(max(0.0, self._clock() - started) * 1000))
             raise AllEndpointsUnavailable(f"all validated {source.upper()} endpoints failed")
         return await self._cache.get_or_load(key, self.config.cache_ttl, load)

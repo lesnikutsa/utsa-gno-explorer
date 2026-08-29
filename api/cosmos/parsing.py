@@ -58,8 +58,10 @@ def _identity(actual: object, expected: str) -> str:
 
 
 def parse_rpc_status(payload: dict, *, network_id: str, expected_chain_id: str, source_host: str) -> ChainHead:
-    sync = _mapping(_mapping(payload.get("result")).get("sync_info"))
-    chain_id = _identity(_mapping(payload["result"]).get("node_info", {}).get("network"), expected_chain_id)
+    result = _mapping(_mapping(payload).get("result"))
+    sync = _mapping(result.get("sync_info"))
+    node_info = _mapping(result.get("node_info"))
+    chain_id = _identity(node_info.get("network"), expected_chain_id)
     catching_up = sync.get("catching_up")
     if type(catching_up) is not bool:
         raise MalformedUpstreamResponse("invalid catching-up status")
@@ -68,7 +70,7 @@ def parse_rpc_status(payload: dict, *, network_id: str, expected_chain_id: str, 
 
 
 def _rest_block(payload: dict) -> tuple[dict, dict]:
-    block = _mapping(payload.get("block"))
+    block = _mapping(_mapping(payload).get("block"))
     return block, _mapping(block.get("header"))
 
 
@@ -79,6 +81,7 @@ def parse_rest_head(payload: dict, *, network_id: str, expected_chain_id: str, s
 
 
 def parse_rest_block(payload: dict, *, network_id: str, expected_chain_id: str) -> BlockSummary:
+    payload = _mapping(payload)
     block, header = _rest_block(payload)
     chain_id = _identity(header.get("chain_id"), expected_chain_id)
     txs = _mapping(block.get("data")).get("txs")
@@ -93,11 +96,13 @@ def parse_rest_block(payload: dict, *, network_id: str, expected_chain_id: str) 
 
 
 def parse_rpc_block(payload: dict, *, network_id: str, expected_chain_id: str) -> BlockSummary:
-    result = _mapping(payload.get("result"))
+    result = _mapping(_mapping(payload).get("result"))
     block = _mapping(result.get("block"))
     header = _mapping(block.get("header"))
     chain_id = _identity(header.get("chain_id"), expected_chain_id)
-    txs = _mapping(block.get("data")).get("txs") or []
+    txs = _mapping(block.get("data")).get("txs")
+    if txs is None:
+        txs = []
     if not isinstance(txs, list) or len(txs) > 1_000_000:
         raise MalformedUpstreamResponse("invalid transaction list")
     return BlockSummary(network_id, chain_id, _height(header.get("height")),
