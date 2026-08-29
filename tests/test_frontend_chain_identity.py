@@ -13,11 +13,13 @@ class ChainIdentitySourceContractTests(unittest.TestCase):
         cls.hook = (ROOT / "frontend/src/hooks/useChainIdentity.js").read_text()
 
     def test_sidebar_renders_dynamic_chain_and_fallback(self):
-        self.assertIn("Sidebar({ open, onClose, chainId })", self.sidebar)
+        self.assertIn("Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed })", self.sidebar)
         self.assertIn("import { networkProfile } from '../config/networkProfile'", self.sidebar)
         self.assertIn("`${networkProfile.projectName} · ${chainId}`", self.sidebar)
         self.assertIn("`${networkProfile.projectName} network`", self.sidebar)
-        self.assertIn("title={chainLabel}", self.sidebar)
+        self.assertIn("aria-label={`Current chain: ${chainLabel}`}", self.sidebar)
+        self.assertIn("data-sidebar-tooltip={collapsed ? chainLabel : undefined}", self.sidebar)
+        self.assertIn("aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}", self.sidebar)
 
     def test_sidebar_has_no_hardcoded_network_identity(self):
         for stale_label in (

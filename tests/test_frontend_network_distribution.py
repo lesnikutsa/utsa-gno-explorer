@@ -68,7 +68,7 @@ class FrontendNetworkDistributionTests(unittest.TestCase):
     def test_toggle_style_remains_quiet(self):
         toggle = self.css.split(".distribution__toggle {", 1)[1].split("}", 1)[0]
         self.assertIn("var(--color-text-secondary)", toggle)
-        self.assertIn("rgba(9,24,39,.32)", toggle)
+        self.assertIn("var(--color-surface-subtle)", toggle)
         self.assertNotRegex(toggle, r"(?<!-)width:\s*100%")
         self.assertIn("width: fit-content", toggle)
         self.assertIn("min-width: 100px", toggle)

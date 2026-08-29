@@ -215,7 +215,9 @@ class TransactionsFrontendContractTests(unittest.TestCase):
         self.assertNotIn(".transactions-table__hash-cell .copy-button", styles)
         self.assertIn("import { TransactionTypeBadge }", page)
         self.assertIn("<TransactionTypeBadge title={transaction.type !== 'unknown' ? transaction.type : undefined}>{transaction.operation}</TransactionTypeBadge>", page)
-        self.assertIn("className={`transaction-type-badge transaction-type-badge--${variant}`}", badge)
+        self.assertIn("transaction-type-badge--${variant}", badge)
+        self.assertIn("segment ? ' transaction-type-badge--segmented' : ''", badge)
+        self.assertIn("aria-label={segment ? children : undefined}", badge)
         self.assertIn(".transaction-type-badge {", styles)
         self.assertNotIn("transactions-table__operation", page + styles)
 

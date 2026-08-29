@@ -47,6 +47,7 @@ class FrontendNetworkProfileTests(unittest.TestCase):
             ("Blocks", "/blocks"),
             ("Transactions", "/transactions"),
             ("Realms", "/realms"),
+            ("Tokens", "/tokens"),
             ("Validators", "/validators"),
             ("Governance", "/governance"),
         ])

@@ -188,7 +188,7 @@ class TestGovernanceScopeAndCss:
         'frontend/src/pages/Governance.jsx',
         'frontend/src/pages/GovernanceDetail.jsx',
     ])
-    css = read('frontend/src/styles/app.css').split('/* Governance */', 1)[1]
+    css = read('frontend/src/styles/app.css').split('/* Governance */', 1)[1].split('/* Realms catalog */', 1)[0]
 
     def test_scope_has_no_rpc_raw_wallet_search_or_assets(self):
         lowered = self.files.lower()
