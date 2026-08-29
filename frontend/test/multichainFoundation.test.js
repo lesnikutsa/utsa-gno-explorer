@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import { adjacentOptionIndex } from '../src/utils/networkSelector.js'
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
 const registry = read('../src/config/networkRegistry.js')
@@ -46,20 +47,43 @@ test('navigation retains the exact Pearl order and is filtered declaratively by 
 })
 
 test('selector is registry-driven, keyboard accessible, focused, and selection does not navigate', () => {
-  assert.match(sidebar, /supportedNetworks\.map\(\(network\) =>/)
+  assert.match(sidebar, /supportedNetworks\.map\(\(network, index\) =>/)
   assert.match(sidebar, /aria-haspopup="listbox"/)
   assert.match(sidebar, /aria-expanded=\{networkMenuOpen\}/)
   assert.match(sidebar, /role="option" aria-selected=\{selected\}/)
-  assert.match(sidebar, /role="listbox" aria-label="Supported networks" onKeyDown=\{handleNetworkKeyDown\}/)
+  assert.match(sidebar, /role="listbox" aria-label="Supported networks" onKeyDown=\{handleNetworkOptionsKeyDown\}/)
   assert.match(sidebar, /event\.key === 'Escape'/)
   assert.match(sidebar, /event\.key === 'ArrowDown' \|\| event\.key === 'ArrowUp'/)
-  assert.match(sidebar, /activeNetworkOption\.current\?\.focus\(\)/)
+  assert.match(sidebar, /networkOptions\.current\[focusedNetworkIndex\]\?\.focus\(\)/)
   assert.match(sidebar, /networkSelectorTrigger\.current\?\.focus\(\)/)
+  assert.match(sidebar, /tabIndex=\{focusedNetworkIndex === index \? 0 : -1\}/)
+  assert.match(sidebar, /event\.key === 'Enter' \|\| event\.key === ' '/)
   const selectionHandler = sidebar.slice(sidebar.indexOf('const handleNetworkSelection'), sidebar.indexOf('const isActive'))
   assert.match(selectionHandler, /selectNetwork\(networkId\)/)
   assert.doesNotMatch(selectionHandler, /navigateInternal|location|history|reload/)
   assert.match(context, /if \(getNetworkById\(networkId\)\) setSelectedNetworkId\(networkId\)/)
   assert.doesNotMatch(context, /localStorage/)
+})
+
+test('selector focus wraps predictably for any registry size', () => {
+  assert.equal(adjacentOptionIndex(0, 3, 'next'), 1)
+  assert.equal(adjacentOptionIndex(2, 3, 'next'), 0)
+  assert.equal(adjacentOptionIndex(2, 3, 'previous'), 1)
+  assert.equal(adjacentOptionIndex(0, 3, 'previous'), 2)
+  assert.equal(adjacentOptionIndex(-1, 3, 'next'), 0)
+  assert.equal(adjacentOptionIndex(-1, 3, 'previous'), 2)
+  assert.equal(adjacentOptionIndex(0, 0, 'next'), -1)
+})
+
+test('selector closes for outside interaction, navigation, and mobile close with listener cleanup', () => {
+  assert.match(sidebar, /document\.addEventListener\('pointerdown', handleOutsidePointerDown\)/)
+  assert.match(sidebar, /return \(\) => document\.removeEventListener\('pointerdown', handleOutsidePointerDown\)/)
+  assert.match(sidebar, /if \(!networkSelector\.current\?\.contains\(event\.target\)\) setNetworkMenuOpen\(false\)/)
+  assert.match(sidebar, /if \(previousSidebarOpen\.current && !open\) setNetworkMenuOpen\(false\)/)
+  assert.match(sidebar, /const handleNavigation = \(event, href\) => \{\s*closeNetworkMenu\(\{ restoreFocus: false \}\)/)
+  assert.match(sidebar, /const handleSidebarClose = \(\) => \{\s*closeNetworkMenu\(\{ restoreFocus: false \}\)\s*onClose\(\)/)
+  assert.match(sidebar, /onClick=\{handleSidebarClose\}/)
+  assert.match(sidebar, /setNetworkIconFailed\(false\)\s*\}, \[selectedNetwork\.id, networkProfile\.networkIconSrc\]\)/)
 })
 
 test('all legacy Pearl list and detail routes remain unprefixed', () => {

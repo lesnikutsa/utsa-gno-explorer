@@ -5,12 +5,16 @@ import { navigationItems } from '../config/navigation'
 import { hasNetworkCapability, supportedNetworks } from '../config/networkRegistry'
 import { useSelectedNetwork } from '../context/SelectedNetworkContext'
 import { isInterceptableNavigation, navigateInternal, usePathname } from '../utils/navigation'
+import { adjacentOptionIndex } from '../utils/networkSelector'
 
 export function Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed }) {
   const [networkIconFailed, setNetworkIconFailed] = useState(false)
   const [networkMenuOpen, setNetworkMenuOpen] = useState(false)
-  const activeNetworkOption = useRef(null)
+  const [focusedNetworkIndex, setFocusedNetworkIndex] = useState(0)
+  const networkOptions = useRef([])
   const networkSelectorTrigger = useRef(null)
+  const networkSelector = useRef(null)
+  const previousSidebarOpen = useRef(open)
   const { selectedNetwork, selectNetwork } = useSelectedNetwork()
   const networkProfile = selectedNetwork.presentation
   const pathname = usePathname()
@@ -18,18 +22,61 @@ export function Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed }
   const isTransactionDetail = /^\/blocks\/[^/]+\/transactions\/[^/]+\/?$/.test(pathname)
   const chainLabel = chainId ? `${networkProfile.projectName} · ${chainId}` : `${networkProfile.projectName} network`
   useEffect(() => {
-    if (networkMenuOpen) activeNetworkOption.current?.focus()
+    if (networkMenuOpen) networkOptions.current[focusedNetworkIndex]?.focus()
+  }, [focusedNetworkIndex, networkMenuOpen])
+
+  useEffect(() => {
+    setNetworkIconFailed(false)
+  }, [selectedNetwork.id, networkProfile.networkIconSrc])
+
+  useEffect(() => {
+    if (!networkMenuOpen) return undefined
+    const handleOutsidePointerDown = (event) => {
+      if (!networkSelector.current?.contains(event.target)) setNetworkMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', handleOutsidePointerDown)
+    return () => document.removeEventListener('pointerdown', handleOutsidePointerDown)
   }, [networkMenuOpen])
 
-  const closeNetworkMenu = () => {
+  useEffect(() => {
+    if (previousSidebarOpen.current && !open) setNetworkMenuOpen(false)
+    previousSidebarOpen.current = open
+  }, [open])
+
+  const closeNetworkMenu = ({ restoreFocus = true } = {}) => {
     setNetworkMenuOpen(false)
-    networkSelectorTrigger.current?.focus()
+    if (restoreFocus) networkSelectorTrigger.current?.focus()
   }
-  const handleNetworkKeyDown = (event) => {
-    if (event.key === 'Escape') closeNetworkMenu()
+  const selectedNetworkIndex = Math.max(0, supportedNetworks.findIndex(({ id }) => id === selectedNetwork.id))
+  const openNetworkMenu = () => {
+    setFocusedNetworkIndex(selectedNetworkIndex)
+    setNetworkMenuOpen(true)
+  }
+  const handleNetworkTriggerKeyDown = (event) => {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
-      setNetworkMenuOpen(true)
+      openNetworkMenu()
+    }
+  }
+  const handleNetworkOptionsKeyDown = (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      closeNetworkMenu()
+      return
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      setFocusedNetworkIndex((current) => adjacentOptionIndex(
+        current,
+        supportedNetworks.length,
+        event.key === 'ArrowUp' ? 'previous' : 'next',
+      ))
+      return
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      const focusedNetwork = supportedNetworks[focusedNetworkIndex]
+      if (focusedNetwork) handleNetworkSelection(focusedNetwork.id)
     }
   }
   const handleNetworkSelection = (networkId) => {
@@ -43,20 +90,25 @@ export function Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed }
     return pathname === href || pathname.startsWith(`${href}/`)
   }
   const handleNavigation = (event, href) => {
+    closeNetworkMenu({ restoreFocus: false })
     if (!isInterceptableNavigation(event, href, event.currentTarget.target)) return
     event.preventDefault()
     navigateInternal(href)
     onClose()
   }
+  const handleSidebarClose = () => {
+    closeNetworkMenu({ restoreFocus: false })
+    onClose()
+  }
 
   return (
     <>
-      <button className={`sidebar-backdrop ${open ? 'is-visible' : ''}`} onClick={onClose} aria-label="Close navigation" />
+      <button className={`sidebar-backdrop ${open ? 'is-visible' : ''}`} onClick={handleSidebarClose} aria-label="Close navigation" />
       <aside className={`sidebar ${open ? 'is-open' : ''}`}>
         <UtsaLogo />
-        <div className="chain-select">
+        <div className="chain-select" ref={networkSelector}>
           <span className="sidebar__label">Current chain</span>
-          <button ref={networkSelectorTrigger} type="button" data-sidebar-tooltip={collapsed ? chainLabel : undefined} aria-label={`Select network. Current network: ${chainLabel}`} aria-haspopup="listbox" aria-expanded={networkMenuOpen} aria-controls="network-selector-options" onClick={() => setNetworkMenuOpen((value) => !value)} onKeyDown={handleNetworkKeyDown}>
+          <button ref={networkSelectorTrigger} type="button" data-sidebar-tooltip={collapsed ? chainLabel : undefined} aria-label={`Select network. Current network: ${chainLabel}`} aria-haspopup="listbox" aria-expanded={networkMenuOpen} aria-controls="network-selector-options" onClick={() => networkMenuOpen ? closeNetworkMenu() : openNetworkMenu()} onKeyDown={handleNetworkTriggerKeyDown}>
             <span className="chain-select__compact-icon">
               {networkIconFailed ? (
                 <span className="chain-select__network-icon-fallback"><ChainIcon /></span>
@@ -73,10 +125,10 @@ export function Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed }
             <span className="chain-select__chevron"><ChevronDownIcon /></span>
           </button>
           {networkMenuOpen && (
-            <div className="chain-select__options" id="network-selector-options" role="listbox" aria-label="Supported networks" onKeyDown={handleNetworkKeyDown}>
-              {supportedNetworks.map((network) => {
+            <div className="chain-select__options" id="network-selector-options" role="listbox" aria-label="Supported networks" onKeyDown={handleNetworkOptionsKeyDown}>
+              {supportedNetworks.map((network, index) => {
                 const selected = network.id === selectedNetwork.id
-                return <button key={network.id} ref={selected ? activeNetworkOption : undefined} type="button" role="option" aria-selected={selected} onClick={() => handleNetworkSelection(network.id)}>{network.presentation.projectName} · {network.presentation.networkName}</button>
+                return <button key={network.id} ref={(option) => { networkOptions.current[index] = option }} type="button" role="option" aria-selected={selected} tabIndex={focusedNetworkIndex === index ? 0 : -1} onFocus={() => setFocusedNetworkIndex(index)} onClick={() => handleNetworkSelection(network.id)}>{network.presentation.projectName} · {network.presentation.networkName}</button>
               })}
             </div>
           )}
