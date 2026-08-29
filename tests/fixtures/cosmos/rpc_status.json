@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","result":{"node_info":{"network":"cosmos-test-1"},"sync_info":{"latest_block_height":"42","latest_block_time":"2026-08-29T12:34:56.123456789Z","catching_up":false}}}
