@@ -19,7 +19,9 @@ MIN_INTERVALS = 20
 STALL_SECONDS = 300
 MAX_TRANSACTION_COUNT = 2_147_483_647
 _HISTORY_ERROR = re.compile(
-    r"height\s+\d+\s+is not available(?:, lowest height is\s+(\d+))?", re.IGNORECASE)
+    r"height\s+(\d+)\s+is not available(?:, lowest height is\s+(\d+))?", re.IGNORECASE)
+_BLOCKCHAIN_HISTORY_ERROR = re.compile(
+    r"min height\s+(\d+)\s+can't be greater than max height\s+(\d+)", re.IGNORECASE)
 
 
 def _timestamp(value: object) -> datetime:
@@ -172,9 +174,13 @@ class CosmosBlockService:
         if isinstance(payload.get("error"), dict):
             error = payload["error"]
             message = error.get("data") or error.get("message")
-            match = _HISTORY_ERROR.search(message if isinstance(message, str) else "")
+            match = _BLOCKCHAIN_HISTORY_ERROR.fullmatch(
+                message.strip() if isinstance(message, str) else "")
             if match:
-                raise HistoryUnavailable(minimum, int(match.group(1)) if match.group(1) else None)
+                boundary, reported_maximum = int(match.group(1)), int(match.group(2))
+                if (0 < boundary <= MAX_HEIGHT and reported_maximum == maximum
+                        and boundary > maximum):
+                    raise HistoryUnavailable(minimum, boundary)
             raise MalformedUpstreamResponse("unexpected blockchain error")
         return parse_blockchain(payload, chain_id=self.adapter.config.chain_id, minimum=minimum, maximum=maximum)
 
@@ -196,34 +202,44 @@ class CosmosBlockService:
 
     async def block(self, heads: ObservedHeads, height: int):
         """Direct lookup against every identity-checked RPC that reached the height."""
-        observations = []
-        for endpoint, local_height, _ in heads.endpoints:
-            if local_height < height:
-                continue
-            try:
-                payload = await self.adapter._transport.get_object(
-                    endpoint, f"/block?height={height}", accept_error_payload=True)
-                if isinstance(payload.get("error"), dict):
-                    error = payload["error"]
-                    message = error.get("data") or error.get("message")
-                    match = _HISTORY_ERROR.search(message if isinstance(message, str) else "")
-                    if match:
-                        observations.append(int(match.group(1)) if match.group(1) else None)
-                        continue
-                    raise MalformedUpstreamResponse("unexpected block error")
-                result = parse_rpc_block(payload, network_id=self.adapter.config.network_id,
-                                         expected_chain_id=self.adapter.config.chain_id)
-                if result.height != height:
-                    raise MalformedUpstreamResponse("wrong block height")
-                return result
-            except HistoryUnavailable as exc:
-                observations.append(exc.lowest_available_height)
-            except Exception:
-                continue
-        if observations:
-            known = [value for value in observations if value is not None]
-            raise HistoryUnavailable(height, min(known) if known else None)
-        raise AllEndpointsUnavailable("block unavailable")
+        key = (self.adapter.config.network_id, "direct_block", (height,))
+        async def load():
+            observations = []
+            for endpoint, local_height, _ in heads.endpoints:
+                if local_height < height:
+                    continue
+                try:
+                    payload = await self.adapter._transport.get_object(
+                        endpoint, f"/block?height={height}", accept_error_payload=True)
+                    if isinstance(payload.get("error"), dict):
+                        error = payload["error"]
+                        message = error.get("data") or error.get("message")
+                        match = _HISTORY_ERROR.fullmatch(
+                            message.strip() if isinstance(message, str) else "")
+                        if match:
+                            requested = int(match.group(1))
+                            boundary = int(match.group(2)) if match.group(2) else None
+                            if (requested != height or boundary is not None
+                                    and not height < boundary <= MAX_HEIGHT):
+                                raise MalformedUpstreamResponse("invalid history boundary")
+                            observations.append(boundary)
+                            continue
+                        raise MalformedUpstreamResponse("unexpected block error")
+                    result = parse_rpc_block(payload, network_id=self.adapter.config.network_id,
+                                             expected_chain_id=self.adapter.config.chain_id)
+                    if result.height != height:
+                        raise MalformedUpstreamResponse("wrong block height")
+                    return result
+                except HistoryUnavailable as exc:
+                    observations.append(exc.lowest_available_height)
+                except Exception:
+                    continue
+            if observations:
+                known = [value for value in observations if value is not None]
+                raise HistoryUnavailable(height, min(known) if known else None)
+            raise AllEndpointsUnavailable("block unavailable")
+        return await self.adapter._cache.get_or_load(
+            key, self.adapter.config.cache_ttl, load)
 
     async def sample(self, heads: ObservedHeads) -> list[dict]:
         key = (self.adapter.config.network_id, "block_eta_sample", (heads.eta_head,))

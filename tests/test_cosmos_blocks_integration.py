@@ -75,13 +75,18 @@ class Upstream:
             available = [height for height in range(maximum, minimum - 1, -1)
                          if node["lowest"] <= height <= node["height"]]
             if not available:
+                if node.get("blockchain_error"):
+                    return httpx.Response(200, json={"error": {"data": node["blockchain_error"]}})
                 return httpx.Response(200, json={"error": {"data":
-                    f"height {maximum} is not available, lowest height is {node['lowest']}"}})
+                    f"min height {node['lowest']} can't be greater than max height {maximum}"}})
             return httpx.Response(200, json={"result": {"block_metas": [
                 meta(height, self.malformed_txs if height == maximum and self.malformed_txs is not None else "0")
                 for height in available[:20]]}})
         if path == "/block":
             height = int(request.url.params["height"])
+            if "block_error_lowest" in node:
+                return httpx.Response(200, json={"error": {"data":
+                    f"height {height} is not available, lowest height is {node['block_error_lowest']}"}})
             if node["lowest"] <= height <= node["height"]:
                 return httpx.Response(200, json=full_block(height))
             return httpx.Response(200, json={"error": {"data":
@@ -114,7 +119,24 @@ class CosmosBlocksApiTests(unittest.TestCase):
                 self.assertEqual(body["state"], "future")
                 self.assertEqual(body["eta"] is not None, expected_eta)
                 self.assertEqual(body["eta_unavailable_reason"], reason)
+                if lowest == 160:
+                    self.assertEqual(body["eta"]["sample_interval_count"], 32)
                 self.assertLessEqual(upstream.calls[("a.example", "/blockchain")], 6)
+
+    def test_pruning_boundary_at_metadata_page_and_arbitrary_error(self):
+        with TestClient(self.module.app) as client:
+            upstream = Upstream({"a.example": {"height": 200, "lowest": 161}})
+            self.install(client, upstream)
+            body = client.get("/api/networks/atomone-mainnet/blocks/201").json()
+            self.assertEqual(body["state"], "future")
+            self.assertIsNotNone(body["eta"])
+            self.assertLessEqual(upstream.calls[("a.example", "/blockchain")], 6)
+        with TestClient(self.module.app) as client:
+            upstream = Upstream({"a.example": {"height": 200, "lowest": 191,
+                                                "blockchain_error": "internal database failure"}})
+            self.install(client, upstream)
+            self.assertEqual(client.get(
+                "/api/networks/atomone-mainnet/blocks/201").status_code, 503)
 
     def test_cached_repeated_list_and_eta_samples(self):
         upstream = Upstream({"a.example": {"height": 200, "lowest": 1}})
@@ -175,3 +197,52 @@ class CosmosBlocksApiTests(unittest.TestCase):
             self.assertEqual(client.get("/api/networks/unknown/blocks").status_code, 404)
             self.assertEqual(client.get("/api/networks/atomone-mainnet/blocks?limit=21").status_code, 422)
             self.assertEqual(client.get("/api/networks/atomone-mainnet/blocks/0").status_code, 422)
+
+    def test_direct_block_cache_singleflight_expiry_and_errors(self):
+        clock = [0.0]
+        cache = RequestCache(clock=lambda: clock[0])
+        upstream = Upstream({"a.example": {"height": 200, "lowest": 1}})
+        async def exercise():
+            http = httpx.AsyncClient(transport=httpx.MockTransport(upstream))
+            service = CosmosService(definition(), client=http, cache=cache, now=lambda: NOW)
+            heads = await service.blocks_adapter.heads()
+            await service.blocks_adapter.block(heads, 100)
+            await service.blocks_adapter.block(heads, 100)
+            await asyncio.gather(*(service.blocks_adapter.block(heads, 100) for _ in range(3)))
+            self.assertEqual(upstream.calls[("a.example", "/block")], 1)
+            clock[0] = 3
+            await service.blocks_adapter.block(heads, 100)
+            self.assertEqual(upstream.calls[("a.example", "/block")], 2)
+            upstream.nodes["a.example"]["block_error_lowest"] = 0
+            clock[0] = 6
+            for _ in range(2):
+                with self.assertRaises(Exception):
+                    await service.blocks_adapter.block(heads, 100)
+            self.assertEqual(upstream.calls[("a.example", "/block")], 4)
+            await http.aclose()
+        asyncio.run(exercise())
+
+        upstream = Upstream({"a.example": {"height": 200, "lowest": 1}})
+        with TestClient(self.module.app) as client:
+            self.install(client, upstream)
+            for _ in range(3):
+                self.assertEqual(client.get(
+                    "/api/networks/atomone-mainnet/blocks/100").status_code, 200)
+            self.assertEqual(upstream.calls[("a.example", "/status")], 1)
+            self.assertEqual(upstream.calls[("a.example", "/block")], 1)
+
+    def test_invalid_history_boundary_is_503_or_uses_valid_backup(self):
+        with TestClient(self.module.app) as client:
+            upstream = Upstream({"a.example": {"height": 200, "lowest": 190,
+                                                "block_error_lowest": 0}})
+            self.install(client, upstream)
+            self.assertEqual(client.get(
+                "/api/networks/atomone-mainnet/blocks/100").status_code, 503)
+        with TestClient(self.module.app) as client:
+            nodes = {"a.example": {"height": 200, "lowest": 190, "block_error_lowest": 0},
+                     "archive.example": {"height": 150, "lowest": 1}}
+            upstream = Upstream(nodes)
+            self.install(client, upstream)
+            body = client.get("/api/networks/atomone-mainnet/blocks/100").json()
+            self.assertEqual(body["state"], "available")
+            self.assertEqual(upstream.calls[("archive.example", "/block")], 1)

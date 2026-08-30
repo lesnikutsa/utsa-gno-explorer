@@ -37,6 +37,10 @@ Wrong-chain, malformed, and transport failures are controlled 503 responses rath
 than false missing-block results. Upstream URLs and exception details are not public.
 Direct historical lookup considers every identity-checked configured RPC that has
 reached the target, even when it is too far behind to serve as a live-head candidate.
+Successfully validated direct blocks use the same 2-second cache and single-flight,
+keyed by network and height. Failed lookups are not cached. Reported history bounds
+must be positive signed 64-bit heights consistent with the requested height; invalid
+bounds are upstream failures rather than public history facts.
 
 ```json
 {"network_id":"atomone-mainnet","chain_id":"atomone-1","state":"node_not_synced","current_height":100,"target_height":101,"catching_up":true,"block":null,"lowest_available_height":null,"eta":null,"eta_unavailable_reason":null}
@@ -62,6 +66,11 @@ used and requests do not continue below that boundary. A sufficiently large suff
 produces an ETA; a confirmed shorter suffix produces `insufficient_sample`. Transport,
 identity, and malformed-response errors are not interpreted as pruning and remain
 controlled upstream failures after bounded failover.
+
+For `/blockchain`, CometBFT may report the retained boundary as `min height B can't be
+greater than max height N` after its range filter raises the requested minimum to B.
+This exact, range-consistent form confirms the boundary while preserving metadata
+already collected from higher pages. Arbitrary JSON-RPC errors do not confirm pruning.
 
 The immutable estimate is the last confirmed block time plus remaining blocks times
 the trimmed mean. It is not re-anchored to request time. A passed estimate becomes
