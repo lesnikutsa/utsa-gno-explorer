@@ -15,7 +15,7 @@ from api.cosmos import (AllEndpointsUnavailable, CosmosAdapter, CosmosNetworkCon
 from api.cosmos.parsing import (parse_node_status, parse_rest_block, parse_rest_head,
                                 parse_rest_node_info, parse_rpc_block, parse_rpc_status)
 from api.cosmos.registry import ATOMONE, NETWORKS
-from api.cosmos.service import CosmosService, consensus_address
+from api.cosmos.service import CosmosService, _decimal, consensus_address
 from api.cosmos.transport import JsonTransport
 
 FIXTURES = Path(__file__).parent / "fixtures" / "cosmos"
@@ -69,6 +69,14 @@ class ConfigTests(unittest.TestCase):
 
 
 class ParsingTests(unittest.TestCase):
+    def test_decimal_normalization_is_bounded_and_exact(self):
+        self.assertEqual(_decimal("153847948212982", "amount"), "153847948212982")
+        self.assertEqual(_decimal("0.050000000000000000", "fraction"), "0.050000000000000000")
+        self.assertEqual(_decimal("00012.3400", "amount"), "12.3400")
+        for value in ("1e100000", "1e-100000"):
+            with self.subTest(value=value), self.assertRaises(MalformedUpstreamResponse):
+                _decimal(value, "amount")
+
     def test_rest_node_info_validates_identity_and_versions(self):
         payload = {"default_node_info": {"network": "cosmos-test-1"},
                    "application_version": {"name": "atomoned", "version": "1.2.3",
@@ -458,13 +466,16 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
 class ValidatorRankingTests(unittest.IsolatedAsyncioTestCase):
     async def test_slashing_uses_sdk_round_int64_semantics(self):
         service = object.__new__(CosmosService)
-        async def rest(_name, _path):
-            return {"params": {"signed_blocks_window": "10", "min_signed_per_window": "0.21",
-                "downtime_jail_duration": "600s", "slash_fraction_double_sign": "0.05",
-                "slash_fraction_downtime": "0.01"}}
-        service._rest = rest
-        result = await service._slashing()
-        self.assertEqual(result["allowed_missed_threshold"], 8)
+        for window, minimum, expected in ((10, "0.25", 8), (10, "0.35", 6),
+                                           (10, "0.21", 8), (10000, "0.05", 9500)):
+            async def rest(_name, _path, window=window, minimum=minimum):
+                return {"params": {"signed_blocks_window": str(window), "min_signed_per_window": minimum,
+                    "downtime_jail_duration": "600s", "slash_fraction_double_sign": "0.05",
+                    "slash_fraction_downtime": "0.01"}}
+            service._rest = rest
+            with self.subTest(window=window, minimum=minimum):
+                result = await service._slashing()
+                self.assertEqual(result["allowed_missed_threshold"], expected)
 
     async def test_active_only_deterministic_top_missed(self):
         key_a = {"key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}

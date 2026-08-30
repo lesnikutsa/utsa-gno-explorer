@@ -4,9 +4,10 @@ import asyncio
 import base64
 from dataclasses import replace
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_HALF_EVEN, localcontext
 import hashlib
 import math
+import re
 from urllib.parse import quote
 
 import httpx
@@ -25,6 +26,8 @@ MARKET_TTL = 30.0
 MAX_PAGES = 10
 PAGE_SIZE = 200
 MAX_LIST_ITEMS = MAX_PAGES * PAGE_SIZE
+_UNSIGNED_DECIMAL = re.compile(r"^[0-9]+(?:\.[0-9]+)?$")
+_SIGNED_DECIMAL = re.compile(r"^-?[0-9]+(?:\.[0-9]+)?$")
 
 
 def _mapping(value: object, name: str = "object") -> dict:
@@ -53,7 +56,9 @@ def _field(payload: object, *names: str) -> object:
 
 
 def _decimal(value: object, name: str, *, nonnegative: bool = True) -> str:
-    if isinstance(value, bool) or not isinstance(value, str) or not value or len(value) > 128:
+    pattern = _UNSIGNED_DECIMAL if nonnegative else _SIGNED_DECIMAL
+    if (isinstance(value, bool) or not isinstance(value, str) or not value
+            or len(value) > 128 or pattern.fullmatch(value) is None):
         raise MalformedUpstreamResponse(f"invalid {name}")
     try:
         number = Decimal(value)
@@ -242,7 +247,11 @@ class CosmosService:
         params = await self._rest("slashing_params", "/cosmos/slashing/v1beta1/params")
         window = _integer(_field(params, "signed_blocks_window"), "signed blocks window")
         minimum = _decimal(_field(params, "min_signed_per_window"), "minimum signed per window")
-        required = int((Decimal(minimum) * window).to_integral_value(rounding=ROUND_HALF_UP))
+        minimum_decimal = Decimal(minimum)
+        precision = len(minimum_decimal.as_tuple().digits) + len(str(window)) + 2
+        with localcontext() as context:
+            context.prec = precision
+            required = int((minimum_decimal * window).to_integral_value(rounding=ROUND_HALF_EVEN))
         return {"signed_blocks_window": window, "minimum_signed_per_window": minimum,
                 "allowed_missed_threshold": window - required,
                 "downtime_jail_duration": _text(_field(params, "downtime_jail_duration"), "downtime jail duration", 64),

@@ -141,7 +141,7 @@ class CosmosUpstreamIntegrationTests(unittest.TestCase):
             if path == "/cosmos/staking/v1beta1/validators": return httpx.Response(200, json=validators)
             if path == "/cosmos/mint/v1beta1/inflation":
                 payload = copy.deepcopy(base["mint_inflation"])
-                if malformed_mint: payload["inflation"] = "-1"
+                if malformed_mint: payload["inflation"] = "1e100000"
                 return httpx.Response(200, json=payload)
             if path == "/cosmos/mint/v1beta1/params": return httpx.Response(200, json=base["mint_params"])
             if path == "/cosmos/slashing/v1beta1/params": return httpx.Response(200, json=base["slashing"])

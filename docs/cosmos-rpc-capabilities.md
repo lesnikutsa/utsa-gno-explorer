@@ -17,7 +17,8 @@ staking, slashing, and validator data use a 5-second TTL. CoinGecko market data 
 pollers or capability probes.
 
 The slashing `allowed_missed_threshold` is the protocol window limit derived with the
-SDK `RoundInt64` rule. A validator is evaluated for punishment only after the SDK's
+SDK `RoundInt64` rule, including round-half-to-even behavior. A validator is evaluated
+for punishment only after the SDK's
 minimum observation period and when its counter exceeds that limit. Consequently,
 `remaining_misses_before_threshold` is distance to the counter limit, not a guaranteed
 number of blocks before jail.
