@@ -1,5 +1,6 @@
 import importlib
 import logging
+import os
 import sys
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -203,6 +204,18 @@ class ApiHealthTests(unittest.TestCase):
             self.assertEqual(fake_database.open_count, 1)
             self.assertEqual(client.get("/api/health").status_code, 200)
         self.assertEqual(fake_database.close_count, 1)
+
+    def test_ambient_socks_proxy_does_not_affect_gno_routes(self):
+        fake_database = FakeDatabase(health_row())
+        proxy = {"HTTP_PROXY": "socks5://invalid.invalid:9999",
+                 "HTTPS_PROXY": "socks5://invalid.invalid:9999",
+                 "ALL_PROXY": "socks5://invalid.invalid:9999"}
+        with patch.dict(os.environ, proxy), self.make_client(fake_database) as client:
+            cosmos_client = client.app.state.cosmos_http_client
+            self.assertEqual(client.get("/api/health").status_code, 200)
+            self.assertFalse(cosmos_client._trust_env)
+            self.assertFalse(cosmos_client.is_closed)
+        self.assertTrue(cosmos_client.is_closed)
 
     def test_no_pool_or_postgresql_connection_is_created_during_module_import(self):
         sys.modules.pop("api.database", None)

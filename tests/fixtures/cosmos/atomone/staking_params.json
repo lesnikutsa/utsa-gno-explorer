@@ -1,0 +1,1 @@
+{"params":{"unbonding_time":"1814400s","max_validators":100,"max_entries":7,"historical_entries":10000,"bond_denom":"uatone","min_commission_rate":"0.050000000000000000","max_commission_rate":"0.200000000000000000","key_rotation_fee":{"denom":"uatone","amount":"1000000"}}}

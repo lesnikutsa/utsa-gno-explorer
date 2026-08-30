@@ -3,14 +3,19 @@ from copy import deepcopy
 import json
 from pathlib import Path
 import threading
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 import httpx
 
 from api.cosmos import (AllEndpointsUnavailable, CosmosAdapter, CosmosNetworkConfig,
-                        InvalidConfiguration, MalformedUpstreamResponse, RequestCache)
-from api.cosmos.parsing import parse_rest_block, parse_rest_head, parse_rpc_block, parse_rpc_status
+                        HistoryUnavailable, InvalidConfiguration,
+                        MalformedUpstreamResponse, NodeNotSynced, RequestCache)
+from api.cosmos.parsing import (parse_node_status, parse_rest_block, parse_rest_head,
+                                parse_rest_node_info, parse_rpc_block, parse_rpc_status)
+from api.cosmos.registry import ATOMONE, NETWORKS
+from api.cosmos.service import CosmosService, _decimal, consensus_address
 from api.cosmos.transport import JsonTransport
 
 FIXTURES = Path(__file__).parent / "fixtures" / "cosmos"
@@ -36,6 +41,14 @@ class FakeClock:
 
 
 class ConfigTests(unittest.TestCase):
+    def test_atomone_registry_is_immutable_and_has_two_native_assets(self):
+        self.assertIs(NETWORKS["atomone-mainnet"], ATOMONE)
+        self.assertEqual(ATOMONE.transport.chain_id, "atomone-1")
+        self.assertEqual([(item.base, item.symbol, item.exponent) for item in ATOMONE.assets],
+                         [("uatone", "ATONE", 6), ("uphoton", "PHOTON", 6)])
+        with self.assertRaises(TypeError):
+            NETWORKS["other"] = ATOMONE
+
     def test_valid_config_is_immutable_and_deduplicates_in_first_seen_order(self):
         item = config(rpc_endpoints=("HTTPS://RPC-A.EXAMPLE/", "https://rpc-a.example", "https://rpc-b.example"))
         self.assertEqual(item.rpc_endpoints, ("https://rpc-a.example", "https://rpc-b.example"))
@@ -56,6 +69,35 @@ class ConfigTests(unittest.TestCase):
 
 
 class ParsingTests(unittest.TestCase):
+    def test_decimal_normalization_is_bounded_and_exact(self):
+        self.assertEqual(_decimal("153847948212982", "amount"), "153847948212982")
+        self.assertEqual(_decimal("0.050000000000000000", "fraction"), "0.050000000000000000")
+        self.assertEqual(_decimal("00012.3400", "amount"), "12.3400")
+        for value in ("1e100000", "1e-100000"):
+            with self.subTest(value=value), self.assertRaises(MalformedUpstreamResponse):
+                _decimal(value, "amount")
+
+    def test_rest_node_info_validates_identity_and_versions(self):
+        payload = {"default_node_info": {"network": "cosmos-test-1"},
+                   "application_version": {"name": "atomoned", "version": "1.2.3",
+                                           "cosmos_sdk_version": "0.47.0"}}
+        self.assertEqual(parse_rest_node_info(payload, expected_chain_id="cosmos-test-1"),
+                         {"application_name": "atomoned", "application_version": "1.2.3",
+                          "sdk_version": "0.47.0"})
+        payload["default_node_info"]["network"] = "wrong"
+        with self.assertRaises(Exception):
+            parse_rest_node_info(payload, expected_chain_id="cosmos-test-1")
+
+    def test_node_status_accepts_syncing_and_normalizes_tx_index(self):
+        for raw, expected in (("on", "on"), ("kv", "on"), ("off", "off"), (None, "unknown")):
+            payload = fixture("rpc_status.json")
+            payload["result"]["sync_info"]["catching_up"] = True
+            payload["result"]["node_info"]["other"] = {"tx_index": raw}
+            status = parse_node_status(payload, network_id="stable",
+                                       expected_chain_id="cosmos-test-1", source_host="safe")
+            self.assertTrue(status.catching_up)
+            self.assertEqual(status.tx_index, expected)
+
     def test_rpc_status_and_rest_identity_are_normalized(self):
         rpc = parse_rpc_status(fixture("rpc_status.json"), network_id="stable", expected_chain_id="cosmos-test-1", source_host="rpc.example")
         rest = parse_rest_head(fixture("rest_block.json"), network_id="stable", expected_chain_id="cosmos-test-1", source_host="rest.example")
@@ -231,6 +273,61 @@ class CacheTests(unittest.IsolatedAsyncioTestCase):
 class AdapterTests(unittest.IsolatedAsyncioTestCase):
     def transport(self, handler): return httpx.MockTransport(handler)
 
+    async def test_node_status_accepts_syncing_while_chain_head_remains_strict(self):
+        async def handler(_request):
+            payload = fixture("rpc_status.json")
+            payload["result"]["sync_info"]["catching_up"] = True
+            return httpx.Response(200, json=payload)
+        adapter = CosmosAdapter(config(rpc_endpoints=("https://rpc-a.example",)),
+                                transport=self.transport(handler))
+        self.assertTrue((await adapter.node_status()).catching_up)
+        with self.assertRaises(AllEndpointsUnavailable):
+            await adapter.chain_head()
+        await adapter.aclose()
+
+
+    async def test_rpc_pruning_error_is_typed_and_does_not_expose_message(self):
+        async def handler(request):
+            if request.url.path == "/status":
+                return httpx.Response(200, json=fixture("rpc_status.json"))
+            return httpx.Response(500, json={"error": {"message":
+                "height 1 is not available, lowest height is 3133197 SECRET"}})
+        adapter = CosmosAdapter(config(rpc_endpoints=("https://rpc-a.example",)),
+                                transport=self.transport(handler))
+        with self.assertRaises(HistoryUnavailable) as captured:
+            await adapter.block(1)
+        self.assertEqual(captured.exception.requested_height, 1)
+        self.assertEqual(captured.exception.lowest_available_height, 3133197)
+        self.assertEqual(str(captured.exception), "history_unavailable")
+        self.assertNotIn("SECRET", repr(captured.exception))
+        await adapter.aclose()
+
+    async def test_pruned_rpc_fails_over_to_deeper_history(self):
+        async def handler(request):
+            if request.url.path == "/status":
+                return httpx.Response(200, json=fixture("rpc_status.json"))
+            if request.url.host == "rpc-a.example":
+                return httpx.Response(500, json={"error": {"message":
+                    "height 41 is not available, lowest height is 42"}})
+            return httpx.Response(200, json=fixture("rpc_block.json"))
+        adapter = CosmosAdapter(config(), transport=self.transport(handler))
+        self.assertEqual((await adapter.block(41)).height, 41)
+        await adapter.aclose()
+
+    async def test_syncing_rpc_serves_local_blocks_and_rejects_ahead_height(self):
+        async def handler(request):
+            if request.url.path == "/status":
+                payload = fixture("rpc_status.json")
+                payload["result"]["sync_info"]["catching_up"] = True
+                return httpx.Response(200, json=payload)
+            return httpx.Response(200, json=fixture("rpc_block.json"))
+        adapter = CosmosAdapter(config(rpc_endpoints=("https://rpc-a.example",)),
+                                transport=self.transport(handler))
+        self.assertEqual((await adapter.block(41)).height, 41)
+        with self.assertRaises(NodeNotSynced):
+            await adapter.block(43)
+        await adapter.aclose()
+
     async def test_ranking_stale_and_catching_up_exclusion_and_rpc_failover(self):
         calls = []
         async def handler(request):
@@ -365,3 +462,46 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         candidates = await adapter._candidates("rpc")
         self.assertEqual([item.endpoint for item in candidates], list(config().rpc_endpoints))
         await adapter.aclose()
+
+class ValidatorRankingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_slashing_uses_sdk_round_int64_semantics(self):
+        service = object.__new__(CosmosService)
+        for window, minimum, expected in ((10, "0.25", 8), (10, "0.35", 6),
+                                           (10, "0.21", 8), (10000, "0.05", 9500)):
+            async def rest(_name, _path, window=window, minimum=minimum):
+                return {"params": {"signed_blocks_window": str(window), "min_signed_per_window": minimum,
+                    "downtime_jail_duration": "600s", "slash_fraction_double_sign": "0.05",
+                    "slash_fraction_downtime": "0.01"}}
+            service._rest = rest
+            with self.subTest(window=window, minimum=minimum):
+                result = await service._slashing()
+                self.assertEqual(result["allowed_missed_threshold"], expected)
+
+    async def test_active_only_deterministic_top_missed(self):
+        key_a = {"key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}
+        key_b = {"key": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="}
+        address_a = consensus_address(key_a, "atonevalcons")
+        address_b = consensus_address(key_b, "atonevalcons")
+        service = object.__new__(CosmosService)
+        service.definition = SimpleNamespace(validator_consensus_prefix="atonevalcons")
+        validators = [
+            {"status": "BOND_STATUS_BONDED", "consensus_pubkey": key_a,
+             "description": {"moniker": "A"}, "operator_address": "atonevaloper1a", "jailed": False},
+            {"status": "BOND_STATUS_BONDED", "consensus_pubkey": key_b,
+             "description": {"moniker": "B"}, "operator_address": "atonevaloper1b", "jailed": True},
+        ]
+        infos = [
+            {"address": address_b, "missed_blocks_counter": "4", "start_height": "1",
+             "index_offset": "2", "tombstoned": False},
+            {"address": address_a, "missed_blocks_counter": "4", "start_height": "1",
+             "index_offset": "3", "tombstoned": False},
+            {"address": "atonevalcons1inactive", "missed_blocks_counter": "100",
+             "start_height": "1", "index_offset": "1", "tombstoned": False},
+        ]
+        async def paginate(_name, path, _field):
+            return validators if "validators" in path else infos
+        service._paginate = paginate
+        result = await service._top_missed(10, validators)
+        self.assertEqual([item["operator_address"] for item in result],
+                         ["atonevaloper1a", "atonevaloper1b"])
+        self.assertEqual([item["remaining_misses_before_threshold"] for item in result], [6, 6])

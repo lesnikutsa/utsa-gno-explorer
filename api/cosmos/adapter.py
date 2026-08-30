@@ -2,12 +2,15 @@
 
 from dataclasses import dataclass
 import logging
+import re
 from urllib.parse import urlsplit
 
 from .cache import RequestCache
 from .config import CosmosNetworkConfig
-from .errors import AllEndpointsUnavailable, MalformedUpstreamResponse, RejectedEndpoint
-from .parsing import parse_rest_block, parse_rest_head, parse_rpc_block, parse_rpc_status
+from .errors import (AllEndpointsUnavailable, HistoryUnavailable,
+                     MalformedUpstreamResponse, NodeNotSynced, RejectedEndpoint)
+from .parsing import (parse_node_status, parse_rest_block, parse_rest_head,
+                      parse_rpc_block, parse_rpc_status)
 from .transport import JsonTransport
 
 LOGGER = logging.getLogger(__name__)
@@ -110,6 +113,30 @@ class CosmosAdapter:
             raise AllEndpointsUnavailable("all validated RPC endpoints failed")
         return await self._cache.get_or_load(key, self.config.cache_ttl, load)
 
+    async def node_status(self):
+        """Return identity-checked local status, including a syncing endpoint."""
+        key = (self.config.network_id, "node_status", ())
+        async def load():
+            syncing = None
+            for number, endpoint in enumerate(self.config.rpc_endpoints, 1):
+                started = self._clock()
+                try:
+                    payload = await self._transport.get_object(endpoint, "/status")
+                    status = parse_node_status(payload, network_id=self.config.network_id,
+                                               expected_chain_id=self.config.chain_id,
+                                               source_host=self._host(endpoint))
+                    if not status.catching_up:
+                        return status
+                    syncing = syncing or status
+                except Exception as exc:
+                    LOGGER.info("cosmos_endpoint_failed host=%s network=%s operation=node_status reason=%s candidate=%d duration_ms=%d",
+                                self._host(endpoint), self.config.network_id, self._reason(exc), number,
+                                int(max(0.0, self._clock() - started) * 1000))
+            if syncing is not None:
+                return syncing
+            raise AllEndpointsUnavailable("no identity-validated RPC status")
+        return await self._cache.get_or_load(key, 2.0, load)
+
     async def block(self, height: int, *, source: str = "rpc"):
         if type(height) is not int or height <= 0:
             raise ValueError("height must be a positive integer")
@@ -117,21 +144,59 @@ class CosmosAdapter:
             raise ValueError("source must be RPC or REST")
         key = (self.config.network_id, "block", (source, height))
         async def load():
-            candidates = await self._cached_candidates(source)
+            syncing_only = False
+            try:
+                candidates = await self._cached_candidates(source)
+            except AllEndpointsUnavailable:
+                if source != "rpc":
+                    raise
+                status_candidates = []
+                for order, endpoint in enumerate(self.config.rpc_endpoints):
+                    try:
+                        payload = await self._transport.get_object(endpoint, "/status")
+                        status = parse_node_status(payload, network_id=self.config.network_id,
+                                                   expected_chain_id=self.config.chain_id,
+                                                   source_host=self._host(endpoint))
+                        if status.catching_up:
+                            status_candidates.append(_Candidate(endpoint, status.local_height, 0.0, order))
+                    except Exception:
+                        continue
+                if not status_candidates:
+                    raise
+                syncing_only = True
+                candidates = tuple(status_candidates)
+                if all(candidate.height < height for candidate in candidates):
+                    raise NodeNotSynced("node_not_synced")
             path = f"/block?height={height}" if source == "rpc" else f"/cosmos/base/tendermint/v1beta1/blocks/{height}"
             parser = parse_rpc_block if source == "rpc" else parse_rest_block
+            history_observations = []
             for number, candidate in enumerate(candidates, 1):
+                if syncing_only and candidate.height < height:
+                    continue
                 started = self._clock()
                 try:
-                    payload = await self._transport.get_object(candidate.endpoint, path)
+                    payload = await self._transport.get_object(candidate.endpoint, path,
+                                                               accept_error_payload=source == "rpc")
+                    if source == "rpc" and isinstance(payload.get("error"), dict):
+                        message = payload["error"].get("data") or payload["error"].get("message")
+                        match = re.search(r"height\s+\d+\s+is not available(?:, lowest height is\s+(\d+))?",
+                                          message if isinstance(message, str) else "", re.IGNORECASE)
+                        if match:
+                            raise HistoryUnavailable(height, int(match.group(1)) if match.group(1) else None)
                     result = parser(payload, network_id=self.config.network_id, expected_chain_id=self.config.chain_id)
                     if result.height != height:
                         raise RejectedEndpoint("wrong_height")
                     return result
+                except HistoryUnavailable as exc:
+                    history_observations.append(exc.lowest_available_height)
+                    continue
                 except Exception as exc:
                     LOGGER.info("cosmos_endpoint_failed host=%s network=%s operation=%s_block reason=%s candidate=%d duration_ms=%d",
                                 self._host(candidate.endpoint), self.config.network_id, source,
                                 self._reason(exc), number,
                                 int(max(0.0, self._clock() - started) * 1000))
+            if history_observations:
+                known = [item for item in history_observations if item is not None]
+                raise HistoryUnavailable(height, min(known) if known else None)
             raise AllEndpointsUnavailable(f"all validated {source.upper()} endpoints failed")
         return await self._cache.get_or_load(key, self.config.cache_ttl, load)

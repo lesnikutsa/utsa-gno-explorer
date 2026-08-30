@@ -8,6 +8,7 @@ import json
 import math
 import time
 import traceback
+import httpx
 from typing import Literal
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -118,6 +119,10 @@ from api.schemas import (
 )
 from api.token_supply import (NATIVE_GNOT_DECIMALS, NATIVE_GNOT_DENOM, decimal_amount,
                               query_native_gnot_supply, query_total_supply, token_supply_cache)
+from api.cosmos import AllEndpointsUnavailable, RejectedEndpoint, RequestCache
+from api.cosmos.registry import NETWORKS, get_network as get_cosmos_network
+from api.cosmos.service import CosmosService
+from api.cosmos.schemas import MarketResponse, OverviewResponse
 
 LOGGER = logging.getLogger(__name__)
 UNAVAILABLE_DETAIL = "Explorer database is unavailable"
@@ -374,21 +379,75 @@ async def lifespan(app: FastAPI):
         config = load_config()
         database.open(config)
         app.state.api_config = config
-    except ConfigError as exc:
-        LOGGER.error("API configuration error: %s", exc)
+    except ConfigError:
+        LOGGER.error("API configuration startup failed")
         raise RuntimeError("API configuration error") from None
     except Exception:
         LOGGER.error("Explorer database startup failed")
         raise RuntimeError(UNAVAILABLE_DETAIL) from None
+    client = None
+    try:
+        app.state.cosmos_http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(5.0, connect=3.0), follow_redirects=False,
+            limits=httpx.Limits(max_connections=32, max_keepalive_connections=16),
+            trust_env=False,
+        )
+        client = app.state.cosmos_http_client
+        app.state.cosmos_cache = RequestCache(max_entries=256)
+        app.state.cosmos_services = {
+            network_id: CosmosService(definition, client=app.state.cosmos_http_client,
+                                      cache=app.state.cosmos_cache)
+            for network_id, definition in NETWORKS.items()
+        }
+    except Exception:
+        LOGGER.error("Cosmos service startup failed")
+        if client is not None:
+            await client.aclose()
+        database.close()
+        raise RuntimeError(UNAVAILABLE_DETAIL) from None
     try:
         yield
     finally:
+        client = getattr(app.state, "cosmos_http_client", None)
+        if client is not None:
+            await client.aclose()
         database.close()
 
 
 app = FastAPI(title="UTSA Gno.land Explorer API", lifespan=lifespan)
 
 ACCOUNT_UNAVAILABLE_DETAIL = "Account data is temporarily unavailable"
+
+
+def _cosmos_service(network_id: str) -> CosmosService:
+    if get_cosmos_network(network_id) is None:
+        raise HTTPException(status_code=404, detail="Unknown network")
+    services = getattr(app.state, "cosmos_services", None)
+    if not isinstance(services, dict) or network_id not in services:
+        raise HTTPException(status_code=503, detail="Network data is temporarily unavailable")
+    return services[network_id]
+
+
+@app.get("/api/networks/{network_id}/overview", response_model=OverviewResponse)
+async def get_cosmos_network_overview(network_id: str):
+    service = _cosmos_service(network_id)
+    try:
+        return await service.overview()
+    except (AllEndpointsUnavailable, RejectedEndpoint):
+        raise HTTPException(status_code=503, detail="Network data is temporarily unavailable") from None
+    except Exception:
+        LOGGER.error("Cosmos overview failed network=%s reason=controlled_failure", network_id)
+        raise HTTPException(status_code=503, detail="Network data is temporarily unavailable") from None
+
+
+@app.get("/api/networks/{network_id}/market", response_model=MarketResponse)
+async def get_cosmos_network_market(network_id: str):
+    service = _cosmos_service(network_id)
+    try:
+        return await service.market()
+    except Exception:
+        LOGGER.info("Cosmos market failed network=%s reason=upstream_unavailable", network_id)
+        raise HTTPException(status_code=503, detail="Market data is temporarily unavailable") from None
 
 
 def utc_now() -> datetime:

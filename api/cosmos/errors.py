@@ -19,3 +19,20 @@ class MalformedUpstreamResponse(CosmosAdapterError):
 
 class AllEndpointsUnavailable(CosmosAdapterError):
     """No validated endpoint completed an operation."""
+
+
+class HistoryUnavailable(CosmosAdapterError):
+    """A requested block is outside the connected RPC's retained history."""
+
+    reason = "history_unavailable"
+
+    def __init__(self, requested_height: int, lowest_available_height: int | None = None):
+        super().__init__(self.reason)
+        self.requested_height = requested_height
+        self.lowest_available_height = lowest_available_height
+
+
+class NodeNotSynced(CosmosAdapterError):
+    """A requested height is ahead of the syncing RPC's local head."""
+
+    reason = "node_not_synced"

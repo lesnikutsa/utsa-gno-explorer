@@ -6,10 +6,12 @@ from .config import CosmosNetworkConfig
 from .errors import (
     AllEndpointsUnavailable,
     InvalidConfiguration,
+    HistoryUnavailable,
+    NodeNotSynced,
     MalformedUpstreamResponse,
     RejectedEndpoint,
 )
-from .models import BlockSummary, ChainHead
+from .models import BlockSummary, ChainHead, NodeStatus
 
 __all__ = [
     "AllEndpointsUnavailable",
@@ -18,7 +20,10 @@ __all__ = [
     "CosmosAdapter",
     "CosmosNetworkConfig",
     "InvalidConfiguration",
+    "HistoryUnavailable",
+    "NodeNotSynced",
     "MalformedUpstreamResponse",
     "RejectedEndpoint",
     "RequestCache",
+    "NodeStatus",
 ]
