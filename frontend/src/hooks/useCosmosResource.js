@@ -1,22 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { CosmosRequestScope } from '../utils/cosmosRequestScope'
 
 export function useCosmosResource(url, interval = 5000) {
-  const [state, setState] = useState({ data: null, loading: true, error: null, stale: false })
-  const running = useRef(false)
-  const activeController = useRef(null)
-  const generation = useRef(0)
+  const [state, setState] = useState({ url, data: null, loading: true, error: null, stale: false })
+  const scope = useRef(new CosmosRequestScope())
   const load = useCallback(async (background = false) => {
-    if (running.current || document.hidden) return
-    running.current = true
-    const requestGeneration = generation.current
+    if (scope.current.current || document.hidden) return
     const controller = new AbortController()
-    activeController.current = controller
+    const request = scope.current.begin(url, controller)
+    if (!request) return
     const timeout = window.setTimeout(() => controller.abort(), 15000)
     try {
       const response = await fetch(url, { signal: controller.signal, headers: { Accept: 'application/json' } })
       if (!response.ok) throw new Error(`Request failed (${response.status})`)
       const data = await response.json()
-      if (requestGeneration === generation.current) setState((current) => {
+      if (scope.current.isCurrent(request, url)) setState((current) => {
         if (background && Array.isArray(data.blocks) && Array.isArray(current.data?.blocks)) {
           const newest = data.blocks[0]?.height
           const previous = current.data.blocks[0]?.height
@@ -26,23 +24,25 @@ export function useCosmosResource(url, interval = 5000) {
               .sort((left, right) => right.height - left.height).slice(0, 20)
           }
         }
-        return { data, loading: false, error: null, stale: false }
+        return { url, data, loading: false, error: null, stale: false }
       })
     } catch (error) {
-      if (requestGeneration === generation.current) setState((current) => ({ ...current, loading: false, error: error.name === 'AbortError' ? 'Request timed out' : error.message, stale: Boolean(current.data) }))
+      if (scope.current.isCurrent(request, url)) setState((current) => ({ ...current, url, loading: false, error: error.name === 'AbortError' ? 'Request timed out' : error.message, stale: Boolean(current.data) }))
     } finally {
       window.clearTimeout(timeout)
-      running.current = false
-      if (activeController.current === controller) activeController.current = null
+      scope.current.finish(request)
     }
   }, [url])
   useEffect(() => {
     let active = true
+    setState({ url, data: null, loading: true, error: null, stale: false })
     load(false)
     const timer = window.setInterval(() => { if (active) load(true) }, interval)
     const visible = () => { if (!document.hidden) load(true) }
     document.addEventListener('visibilitychange', visible)
-    return () => { active = false; generation.current += 1; activeController.current?.abort(); running.current = false; window.clearInterval(timer); document.removeEventListener('visibilitychange', visible) }
+    return () => { active = false; scope.current.reset(); window.clearInterval(timer); document.removeEventListener('visibilitychange', visible) }
   }, [load, interval])
-  return { ...state, refresh: () => load(false) }
+  return state.url === url
+    ? { ...state, refresh: () => load(false) }
+    : { url, data: null, loading: true, error: null, stale: false, refresh: () => load(false) }
 }

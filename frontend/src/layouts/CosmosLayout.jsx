@@ -6,7 +6,7 @@ import { useTheme } from '../hooks/useTheme'
 export function CosmosLayout({ network, section, children }) {
   const { selectNetwork } = useSelectedNetwork()
   const { theme, toggleTheme } = useTheme()
-  useEffect(() => { selectNetwork(network.id); document.title = `${network.presentation.projectName} Explorer` }, [network.id])
+  useEffect(() => { selectNetwork(network.id); document.title = `${network.presentation.projectName} Explorer` }, [network.id, selectNetwork])
   return <div className="cosmos-shell">
     <aside className="cosmos-sidebar">
       <strong>UTSA Explorer</strong><small>AtomOne · Mainnet</small>

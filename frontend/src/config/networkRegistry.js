@@ -89,6 +89,7 @@ export const getNetworkById = (networkId) => (
   supportedNetworks.find(({ id }) => id === networkId) ?? null
 )
 
+
 export const hasNetworkCapability = (network, capability) => (
   network.capabilities.includes(capability)
 )

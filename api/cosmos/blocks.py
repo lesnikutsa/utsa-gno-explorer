@@ -1,7 +1,6 @@
 """Bounded CometBFT block metadata and future-height estimation."""
 
 from datetime import timedelta
-import math
 import re
 
 from .errors import AllEndpointsUnavailable, HistoryUnavailable, MalformedUpstreamResponse
@@ -87,3 +86,65 @@ async def metadata(adapter, min_height, max_height):
         known = [value for value in observations if value is not None]
         raise HistoryUnavailable(min_height, min(known) if known else None)
     raise AllEndpointsUnavailable("block metadata unavailable")
+
+
+async def metadata_sample(adapter, confirmed_height, *, maximum_headers=101, maximum_requests=6):
+    """Load one bounded, contiguous sample despite CometBFT's 20-item page cap."""
+    if not 1 <= maximum_headers <= 101 or not 1 <= maximum_requests <= 6:
+        raise ValueError("metadata sample bounds are invalid")
+    history_observations = []
+    for endpoint in adapter.config.rpc_endpoints:
+        blocks = {}
+        upper = confirmed_height
+        for _request_number in range(maximum_requests):
+            if upper < 1 or len(blocks) >= maximum_headers:
+                break
+            lower = max(1, upper - min(20, maximum_headers - len(blocks)) + 1)
+            path = f"/blockchain?minHeight={lower}&maxHeight={upper}"
+            try:
+                payload = await adapter._transport.get_object(endpoint, path, accept_error_payload=True)
+                error = payload.get("error")
+                if isinstance(error, dict):
+                    message = str(error.get("data") or error.get("message") or "")
+                    match = _PRUNED.search(message)
+                    if match:
+                        lowest = int(match.group(1)) if match.group(1) else None
+                        history_observations.append(lowest)
+                        break
+                    else:
+                        raise AllEndpointsUnavailable("metadata unavailable")
+                page = parse_blockchain(payload, network_id=adapter.config.network_id,
+                                        expected_chain_id=adapter.config.chain_id)
+                if not page:
+                    break
+                for block in page:
+                    if not lower <= block["height"] <= upper:
+                        raise MalformedUpstreamResponse("metadata height outside requested range")
+                    previous = blocks.get(block["height"])
+                    if previous is not None and previous != block:
+                        raise MalformedUpstreamResponse("conflicting duplicate metadata")
+                    blocks[block["height"]] = block
+                page_low = min(block["height"] for block in page)
+                if page_low > upper or page_low == upper and upper != 1:
+                    raise MalformedUpstreamResponse("metadata page did not advance")
+                upper = page_low - 1
+            except HistoryUnavailable as exc:
+                history_observations.append(exc.lowest_available_height)
+                break
+            except Exception:
+                blocks = {}
+                break
+        if blocks:
+            ordered = [blocks[height] for height in sorted(blocks)]
+            # Only the newest continuous suffix is useful; never scan across a gap.
+            suffix = [ordered[-1]]
+            for block in reversed(ordered[:-1]):
+                if block["height"] != suffix[0]["height"] - 1:
+                    break
+                suffix.insert(0, block)
+            if suffix[-1]["height"] == confirmed_height:
+                return suffix[-maximum_headers:]
+    if history_observations:
+        known = [height for height in history_observations if height is not None]
+        raise HistoryUnavailable(confirmed_height, min(known) if known else None)
+    raise AllEndpointsUnavailable("metadata sample unavailable")

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { adjacentOptionIndex } from '../src/utils/networkSelector.js'
+import { networkIdForPath } from '../src/utils/networkSelection.js'
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
 const registry = read('../src/config/networkRegistry.js')
@@ -11,9 +12,9 @@ const context = read('../src/context/SelectedNetworkContext.jsx')
 const app = read('../src/App.jsx')
 const identity = read('../src/hooks/useChainIdentity.js')
 
-test('registry contains one uniquely identified Pearl network with static identity metadata', () => {
+test('registry contains uniquely identified Pearl and AtomOne networks with static identity metadata', () => {
   const ids = [...registry.matchAll(/\bid: '([^']+)'/g)].map((match) => match[1])
-  assert.deepEqual(ids, ['gno-pearl'])
+  assert.deepEqual(ids, ['gno-pearl', 'atomone-mainnet'])
   assert.equal(new Set(ids).size, ids.length)
   assert.match(registry, /family: NetworkFamily\.GNO/)
   assert.match(registry, /expectedChainId: 'pearl-1'/)
@@ -46,7 +47,7 @@ test('navigation retains the exact Pearl order and is filtered declaratively by 
   assert.match(sidebar, /navigationItems\.filter\(\(\{ capability \}\) => hasNetworkCapability\(selectedNetwork, capability\)\)/)
 })
 
-test('selector is registry-driven, keyboard accessible, focused, and selection does not navigate', () => {
+test('selector is registry-driven, keyboard accessible, focused, and selection updates the route', () => {
   assert.match(sidebar, /supportedNetworks\.map\(\(network, index\) =>/)
   assert.match(sidebar, /aria-haspopup="listbox"/)
   assert.match(sidebar, /aria-expanded=\{networkMenuOpen\}/)
@@ -60,9 +61,22 @@ test('selector is registry-driven, keyboard accessible, focused, and selection d
   assert.match(sidebar, /event\.key === 'Enter' \|\| event\.key === ' '/)
   const selectionHandler = sidebar.slice(sidebar.indexOf('const handleNetworkSelection'), sidebar.indexOf('const isActive'))
   assert.match(selectionHandler, /selectNetwork\(networkId\)/)
-  assert.doesNotMatch(selectionHandler, /navigateInternal|location|history|reload/)
+  assert.match(selectionHandler, /navigateInternal\(networkId === 'gno-pearl' \? '\/' : `\/networks\/\$\{networkId\}`\)/)
   assert.match(context, /if \(getNetworkById\(networkId\)\) setSelectedNetworkId\(networkId\)/)
   assert.doesNotMatch(context, /localStorage/)
+})
+
+test('URL is authoritative for direct links and Gno/AtomOne back-forward transitions', () => {
+  const lookup = (id) => id === 'atomone-mainnet' ? { family: 'cosmos' } : id === 'gno-pearl' ? { family: 'gno' } : null
+  const selected = (path) => networkIdForPath(path, lookup, 'gno-pearl')
+  assert.equal(selected('/'), 'gno-pearl')
+  assert.equal(selected('/validators/example'), 'gno-pearl')
+  assert.equal(selected('/networks/atomone-mainnet'), 'atomone-mainnet')
+  assert.equal(selected('/networks/atomone-mainnet/blocks/42'), 'atomone-mainnet')
+  assert.equal(selected('/networks/unknown'), 'gno-pearl')
+  assert.match(context, /window\.addEventListener\('popstate', synchronizeWithUrl\)/)
+  assert.match(context, /window\.addEventListener\(INTERNAL_NAVIGATION_EVENT, synchronizeWithUrl\)/)
+  assert.match(context, /networkIdForPath\(window\.location\.pathname, getNetworkById, DEFAULT_NETWORK_ID\)/)
 })
 
 test('selector focus wraps predictably for any registry size', () => {
