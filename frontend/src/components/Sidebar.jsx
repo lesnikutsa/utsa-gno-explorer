@@ -85,6 +85,7 @@ export function Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed }
   }
   const isActive = (href) => {
     if (href === '/') return pathname === '/'
+    if (href === selectedNetwork.routePrefix) return pathname === href || pathname === `${href}/`
     if (href === '/transactions' && isTransactionDetail) return true
     if (href === '/blocks' && isTransactionDetail) return false
     return pathname === href || pathname.startsWith(`${href}/`)

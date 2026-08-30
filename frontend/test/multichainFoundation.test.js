@@ -11,12 +11,13 @@ const context = read('../src/context/SelectedNetworkContext.jsx')
 const app = read('../src/App.jsx')
 const identity = read('../src/hooks/useChainIdentity.js')
 
-test('registry contains one uniquely identified Pearl network with static identity metadata', () => {
+test('registry contains uniquely identified Pearl and AtomOne networks with static identity metadata', () => {
   const ids = [...registry.matchAll(/\bid: '([^']+)'/g)].map((match) => match[1])
-  assert.deepEqual(ids, ['gno-pearl'])
+  assert.deepEqual(ids, ['gno-pearl', 'atomone-mainnet'])
   assert.equal(new Set(ids).size, ids.length)
   assert.match(registry, /family: NetworkFamily\.GNO/)
   assert.match(registry, /expectedChainId: 'pearl-1'/)
+  assert.match(registry, /expectedChainId: 'atomone-1'/)
   assert.doesNotMatch(registry, /(?:rpc|rest)(?:Url|Endpoint)|VITE_(?:RPC|REST)/i)
 })
 
@@ -46,7 +47,7 @@ test('navigation retains the exact Pearl order and is filtered declaratively by 
   assert.match(sidebar, /navigationItems\.filter\(\(\{ capability \}\) => hasNetworkCapability\(selectedNetwork, capability\)\)/)
 })
 
-test('selector is registry-driven, keyboard accessible, focused, and selection does not navigate', () => {
+test('selector is registry-driven, keyboard accessible, focused, and selection navigates to network overview', () => {
   assert.match(sidebar, /supportedNetworks\.map\(\(network, index\) =>/)
   assert.match(sidebar, /aria-haspopup="listbox"/)
   assert.match(sidebar, /aria-expanded=\{networkMenuOpen\}/)
@@ -60,8 +61,8 @@ test('selector is registry-driven, keyboard accessible, focused, and selection d
   assert.match(sidebar, /event\.key === 'Enter' \|\| event\.key === ' '/)
   const selectionHandler = sidebar.slice(sidebar.indexOf('const handleNetworkSelection'), sidebar.indexOf('const isActive'))
   assert.match(selectionHandler, /selectNetwork\(networkId\)/)
-  assert.doesNotMatch(selectionHandler, /navigateInternal|location|history|reload/)
-  assert.match(context, /if \(getNetworkById\(networkId\)\) setSelectedNetworkId\(networkId\)/)
+  assert.doesNotMatch(selectionHandler, /location|history|reload/)
+  assert.match(context, /navigateInternal\(networkOverviewPath\(network\)\)/)
   assert.doesNotMatch(context, /localStorage/)
 })
 

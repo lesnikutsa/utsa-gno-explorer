@@ -237,7 +237,7 @@ function GnoTopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefreshCou
   )
 }
 
-function CosmosTopBar({ onMenuClick, healthState, theme, onToggleTheme, network }) {
+export function CosmosTopBar({ onMenuClick, healthState, theme, onToggleTheme, network }) {
   const [query, setQuery] = useState('')
   const [message, setMessage] = useState('')
   const submit = (event) => {

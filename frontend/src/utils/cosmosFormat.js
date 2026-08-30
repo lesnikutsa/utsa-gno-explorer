@@ -32,7 +32,9 @@ export const mergeBlockWindow = (previous, incoming, maximum = 20) => {
   if (!rows.length) return previous
   const priorHead = BigInt(previous?.[0]?.height || 0)
   const nextHead = BigInt(rows[0]?.height || 0)
-  const source = priorHead && nextHead - priorHead > 20n ? rows : [...rows, ...(previous || [])]
+  const incomingTail = BigInt(rows.at(-1)?.height || 0)
+  const transitionIsCovered = !priorHead || incomingTail <= priorHead + 1n
+  const source = transitionIsCovered ? [...rows, ...(previous || [])] : rows
   return [...new Map(source.map((block) => [String(block.height), block])).values()]
     .sort((a, b) => BigInt(a.height) > BigInt(b.height) ? -1 : 1).slice(0, maximum)
 }

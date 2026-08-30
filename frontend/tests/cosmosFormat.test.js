@@ -32,3 +32,9 @@ test('a large head jump replaces rather than backfills the rolling window', () =
   const current = [{ height: '150' }, { height: '149' }]
   assert.deepEqual(mergeBlockWindow(previous, current), current)
 })
+
+test('a gap immediately below the fresh batch replaces the old window', () => {
+  const previous = Array.from({ length: 10 }, (_, index) => ({ height: String(100 - index) }))
+  const current = Array.from({ length: 10 }, (_, index) => ({ height: String(115 - index) }))
+  assert.deepEqual(mergeBlockWindow(previous, current), current)
+})
