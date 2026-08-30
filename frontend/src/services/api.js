@@ -147,11 +147,6 @@ export const getGovernanceProposals = ({ limit, beforeProposalId } = {}) => {
 }
 export const getGovernanceProposal = (proposalId) => request(`/governance/proposals/${encodeURIComponent(proposalId)}`)
 
-export const getCosmosOverview = (networkId, { signal } = {}) => request(`/networks/${encodeURIComponent(networkId)}/overview`, { signal })
-export const getCosmosMarket = (networkId, { signal } = {}) => request(`/networks/${encodeURIComponent(networkId)}/market`, { signal })
-export const getCosmosBlocks = (networkId, { limit = 10, signal } = {}) => request(`/networks/${encodeURIComponent(networkId)}/blocks?limit=${limit}`, { signal })
-export const getCosmosBlock = (networkId, height, { signal } = {}) => request(`/networks/${encodeURIComponent(networkId)}/blocks/${encodeURIComponent(height)}`, { signal })
-
 export const getValidatorSigningHistory = ({ limit = 100 } = {}) => {
   const query = new URLSearchParams()
   query.set('limit', limit)

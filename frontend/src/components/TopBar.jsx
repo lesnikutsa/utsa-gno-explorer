@@ -6,7 +6,7 @@ import { formatAverageBlockTime, normalizeBlockTimeIntervals } from '../utils/bl
 
 const labels = { loading: 'Connecting', healthy: 'Healthy', degraded: 'Degraded', error: 'Unavailable' }
 
-function GnoTopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefreshCountdown = true, averageBlockTimeSeconds, averageBlockTimeSampleSize, averageBlockTimeIntervalsSeconds, theme, onToggleTheme }) {
+export function TopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefreshCountdown = true, averageBlockTimeSeconds, averageBlockTimeSampleSize, averageBlockTimeIntervalsSeconds, theme, onToggleTheme }) {
   const [clock, setClock] = useState(Date.now())
   const searchInputRef = useRef(null)
   const searchFormRef = useRef(null)
@@ -235,25 +235,4 @@ function GnoTopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefreshCou
       </div>
     </header>
   )
-}
-
-export function CosmosTopBar({ onMenuClick, healthState, theme, onToggleTheme, network }) {
-  const [query, setQuery] = useState('')
-  const [message, setMessage] = useState('')
-  const submit = (event) => {
-    event.preventDefault()
-    const normalized = query.trim()
-    if (!/^[1-9]\d*$/.test(normalized) || BigInt(normalized) > BigInt(Number.MAX_SAFE_INTEGER)) {
-      setMessage('Enter a positive whole-number height in the supported range.')
-      return
-    }
-    setMessage('')
-    window.history.pushState({}, '', `${network.routePrefix}/blocks/${normalized}`)
-    window.dispatchEvent(new Event('explorer:navigate'))
-  }
-  return <header className="topbar"><button className="menu-button" onClick={onMenuClick} aria-label="Open navigation"><MenuIcon /></button><form className="global-search" role="search" onSubmit={submit}><label className="search-box"><SearchIcon /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search AtomOne block height…" aria-label="Search AtomOne by block height only" autoComplete="off" /><kbd>/</kbd></label>{message && <span className="global-search__message is-error" role="alert">{message}</span>}</form><button className="theme-toggle" type="button" onClick={onToggleTheme} aria-label={theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}>{theme === 'light' ? <MoonIcon /> : <SunIcon />}</button><div className="network-update"><span className={`pulse pulse--${healthState}`} /><div><strong>{labels[healthState] || healthState}</strong><span>Height search only</span></div></div></header>
-}
-
-export function TopBar(props) {
-  return props.network?.family === 'cosmos' ? <CosmosTopBar {...props} /> : <GnoTopBar {...props} />
 }

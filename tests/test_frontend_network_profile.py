@@ -61,8 +61,8 @@ class FrontendNetworkProfileTests(unittest.TestCase):
 
     def test_brand_uses_profile_and_preserves_logo(self):
         self.assertIn("networkProfile", self.logo)
-        self.assertIn("{profile.projectName} Explorer", self.logo)
-        self.assertIn("`UTSA ${profile.projectName} Explorer`", self.logo)
+        self.assertIn("{networkProfile.projectName} Explorer", self.logo)
+        self.assertIn("`UTSA ${networkProfile.projectName} Explorer`", self.logo)
         self.assertIn("'/assets/utsa-logo.png'", self.logo)
         self.assertIn('<div className="brand__asset" aria-hidden="true">', self.logo)
 
@@ -78,15 +78,14 @@ class FrontendNetworkProfileTests(unittest.TestCase):
         self.assertNotIn("Explore Network", self.overview)
         self.assertNotIn('href="/network"', self.overview)
 
-    def test_app_updates_metadata_for_url_selected_network(self):
+    def test_app_updates_existing_metadata_without_network_route(self):
         self.assertIn("import { networkProfile }", self.app)
         self.assertIn("useEffect(() => {", self.app)
         self.assertLess(self.app.index("useEffect(() => {"), self.app.index("if (path ==="))
-        self.assertIn("const profile = selectedNetwork?.presentation || networkProfile", self.app)
-        self.assertIn("document.title = `${profile.projectName} Explorer`", self.app)
+        self.assertIn("document.title = `${networkProfile.projectName} Explorer`", self.app)
         self.assertIn("document.querySelector('meta[name=\"description\"]')", self.app)
-        self.assertIn("descriptionMeta.setAttribute('content', profile.description)", self.app)
-        self.assertIn("path.startsWith('/networks/')", self.app)
+        self.assertIn("descriptionMeta.setAttribute('content', networkProfile.description)", self.app)
+        self.assertNotIn("'/network'", self.app)
         self.assertNotIn("NetworkPage", self.app)
         self.assertNotIn("useNetworkPage", self.app)
 

@@ -70,20 +70,6 @@ export const supportedNetworks = Object.freeze([
       NetworkCapability.TELEGRAM_MONITORING,
     ]),
   }),
-  Object.freeze({
-    id: 'atomone-mainnet',
-    family: NetworkFamily.COSMOS,
-    expectedChainId: 'atomone-1',
-    routePrefix: '/networks/atomone-mainnet',
-    presentation: Object.freeze({
-      projectName: 'AtomOne', networkName: 'Mainnet',
-      networkIconSrc: '/assets/networks/atomone.png', nativeDenom: 'uatone',
-      nativeToken: Object.freeze({ name: 'ATONE', symbol: 'ATONE', type: 'Native', baseDenom: 'uatone', decimals: 6 }),
-      description: 'AtomOne mainnet data provided by the Explorer API.',
-      telegramValidatorMonitorEnabled: false, telegramValidatorWatchPrefix: '', links: Object.freeze({}),
-    }),
-    capabilities: Object.freeze([NetworkCapability.OVERVIEW, NetworkCapability.BLOCKS]),
-  }),
 ])
 
 export const DEFAULT_NETWORK_ID = 'gno-pearl'
@@ -95,13 +81,3 @@ export const getNetworkById = (networkId) => (
 export const hasNetworkCapability = (network, capability) => (
   network.capabilities.includes(capability)
 )
-
-export const networkOverviewPath = (network) => network.routePrefix || '/'
-export const networkPath = (network, path = '/') => network.routePrefix
-  ? `${network.routePrefix}${path === '/' ? '' : path}`
-  : path
-
-export const getNetworkFromPath = (pathname) => {
-  const match = pathname.match(/^\/networks\/([^/]+)(?:\/|$)/)
-  return match ? getNetworkById(match[1]) : getNetworkById(DEFAULT_NETWORK_ID)
-}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { ExplorerLayout } from './layouts/ExplorerLayout'
 import { networkProfile } from './config/networkProfile'
 import { Blocks } from './pages/Blocks'
@@ -32,29 +32,8 @@ import { useGovernanceDetail } from './hooks/useGovernanceDetail'
 import { useAccountDetail } from './hooks/useAccountDetail'
 import { useRealmDetail } from './hooks/useRealmDetail'
 import { usePathname } from './utils/navigation'
-import { getNetworkFromPath } from './config/networkRegistry'
-import { CosmosOverview } from './pages/CosmosOverview'
-import { CosmosBlocks } from './pages/CosmosBlocks'
-import { CosmosBlockDetail } from './pages/CosmosBlockDetail'
 
 const NETWORK_MASCOT_SRC = '/assets/network-mascot.png?v=1'
-
-function CosmosPage({ network, page, height }) {
-  const [identity, setIdentity] = useState(null)
-  const onIdentity = useCallback((value) => setIdentity(value), [])
-  const healthState = identity?.operational_state === 'healthy' ? 'healthy'
-    : identity?.operational_state === 'syncing' ? 'loading'
-      : identity?.operational_state === 'degraded' ? 'degraded' : 'error'
-  return <ExplorerLayout healthState={healthState} chainId={identity?.chain_id || network.expectedChainId} showRefreshCountdown={false}>
-    {page === 'overview' && <CosmosOverview network={network} onIdentity={onIdentity} />}
-    {page === 'blocks' && <CosmosBlocks network={network} onIdentity={onIdentity} />}
-    {page === 'block' && <CosmosBlockDetail network={network} height={height} onIdentity={onIdentity} />}
-  </ExplorerLayout>
-}
-
-function NotFound({ message = 'This network or route is not supported.' }) {
-  return <div className="standalone-state"><h1>Not found</h1><p>{message}</p><a href="/">Open Gno Overview</a></div>
-}
 
 function OverviewPage() {
   const explorerData = useExplorerData()
@@ -210,24 +189,12 @@ function GovernanceDetailPage({ proposalId }) {
 
 export default function App() {
   const path = usePathname()
-  const selectedNetwork = getNetworkFromPath(path)
 
   useEffect(() => {
-    const profile = selectedNetwork?.presentation || networkProfile
-    document.title = `${profile.projectName} Explorer`
+    document.title = `${networkProfile.projectName} Explorer`
     const descriptionMeta = document.querySelector('meta[name="description"]')
-    if (descriptionMeta) descriptionMeta.setAttribute('content', profile.description)
-  }, [selectedNetwork])
-
-  if (path.startsWith('/networks/')) {
-    if (!selectedNetwork) return <NotFound />
-    const prefix = selectedNetwork.routePrefix
-    if (path === prefix || path === `${prefix}/`) return <CosmosPage network={selectedNetwork} page="overview" />
-    if (path === `${prefix}/blocks` || path === `${prefix}/blocks/`) return <CosmosPage network={selectedNetwork} page="blocks" />
-    const detail = path.match(new RegExp(`^${prefix}/blocks/([^/]+)/?$`))
-    if (detail) return <CosmosPage network={selectedNetwork} page="block" height={detail[1]} />
-    return <NotFound message="This AtomOne section is not available in the first frontend phase." />
-  }
+    if (descriptionMeta) descriptionMeta.setAttribute('content', networkProfile.description)
+  }, [])
 
   if (path === '/blocks' || path === '/blocks/') {
     return <BlocksPage />

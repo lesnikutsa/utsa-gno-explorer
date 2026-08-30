@@ -27,21 +27,22 @@ class JsonTransport:
         if not path.startswith("/") or parsed.scheme or parsed.netloc or parsed.fragment or len(path) > 512:
             raise ValueError("adapter path must be relative")
         transport_failed = False
+        async def read_response() -> bytes:
+            async with self._client.stream("GET", base_url.rstrip("/") + path,
+                                           timeout=self._timeout) as response:
+                if not 200 <= response.status_code < 300 and not accept_error_payload:
+                    raise RejectedEndpoint("http_status")
+                chunks = []
+                size = 0
+                async for chunk in response.aiter_bytes():
+                    size += len(chunk)
+                    if size > self._max_response_bytes:
+                        raise MalformedUpstreamResponse("upstream response is too large")
+                    chunks.append(chunk)
+                return b"".join(chunks)
         try:
-            async with asyncio.timeout(self._timeout_seconds):
-                async with self._client.stream("GET", base_url.rstrip("/") + path,
-                                               timeout=self._timeout) as response:
-                    if not 200 <= response.status_code < 300 and not accept_error_payload:
-                        raise RejectedEndpoint("http_status")
-                    chunks = []
-                    size = 0
-                    async for chunk in response.aiter_bytes():
-                        size += len(chunk)
-                        if size > self._max_response_bytes:
-                            raise MalformedUpstreamResponse("upstream response is too large")
-                        chunks.append(chunk)
-                    body = b"".join(chunks)
-        except (TimeoutError, httpx.RequestError):
+            body = await asyncio.wait_for(read_response(), timeout=self._timeout_seconds)
+        except (asyncio.TimeoutError, httpx.RequestError):
             transport_failed = True
         if transport_failed:
             # Raise outside the handler so secret-bearing transport exceptions are

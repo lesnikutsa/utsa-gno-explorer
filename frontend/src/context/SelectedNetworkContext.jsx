@@ -1,17 +1,15 @@
-import { createContext, useContext, useMemo } from 'react'
-import { getNetworkFromPath, networkOverviewPath } from '../config/networkRegistry'
-import { navigateInternal, usePathname } from '../utils/navigation'
+import { createContext, useContext, useMemo, useState } from 'react'
+import { DEFAULT_NETWORK_ID, getNetworkById } from '../config/networkRegistry'
 
 const SelectedNetworkContext = createContext(null)
 
 export function SelectedNetworkProvider({ children }) {
-  const pathname = usePathname()
-  const selectedNetwork = getNetworkFromPath(pathname)
+  const [selectedNetworkId, setSelectedNetworkId] = useState(DEFAULT_NETWORK_ID)
+  const selectedNetwork = getNetworkById(selectedNetworkId)
   const value = useMemo(() => ({
     selectedNetwork,
     selectNetwork: (networkId) => {
-      const network = getNetworkFromPath(`/networks/${networkId}`)
-      if (network?.id === networkId) navigateInternal(networkOverviewPath(network))
+      if (getNetworkById(networkId)) setSelectedNetworkId(networkId)
     },
   }), [selectedNetwork])
 

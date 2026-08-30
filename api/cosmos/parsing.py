@@ -1,10 +1,10 @@
 """Strict parsers for the small accepted CometBFT/Cosmos response subset."""
 
-from datetime import datetime, timezone
 import re
 
 from .errors import MalformedUpstreamResponse, RejectedEndpoint
 from .models import BlockSummary, ChainHead, NodeStatus
+from .rfc3339 import normalize_rfc3339
 
 _HEX = re.compile(r"^[0-9A-Fa-f]+$")
 
@@ -36,11 +36,7 @@ def _timestamp(value: object) -> str:
     text = _text(value, "timestamp", 64)
     invalid = False
     try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-        if parsed.tzinfo is None:
-            invalid = True
-        else:
-            normalized = parsed.astimezone(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+        normalized = normalize_rfc3339(text)
     except (ValueError, OverflowError):
         invalid = True
     if invalid:

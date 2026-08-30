@@ -17,6 +17,7 @@ from api.cosmos.parsing import (parse_node_status, parse_rest_block, parse_rest_
 from api.cosmos.registry import ATOMONE, NETWORKS
 from api.cosmos.service import CosmosService, _decimal, consensus_address
 from api.cosmos.transport import JsonTransport
+from api.cosmos.rfc3339 import normalize_rfc3339
 
 FIXTURES = Path(__file__).parent / "fixtures" / "cosmos"
 
@@ -69,6 +70,30 @@ class ConfigTests(unittest.TestCase):
 
 
 class ParsingTests(unittest.TestCase):
+    def test_rfc3339_fraction_lengths_and_offsets_are_normalized(self):
+        cases = {
+            "2026-08-29T12:34:56Z": "2026-08-29T12:34:56.000000Z",
+            "2026-08-29T12:34:56.1Z": "2026-08-29T12:34:56.100000Z",
+            "2026-08-29T12:34:56.123456Z": "2026-08-29T12:34:56.123456Z",
+            "2026-08-29T12:34:56.123456789Z": "2026-08-29T12:34:56.123456Z",
+            "2026-08-29T12:34:56.123456789+02:30": "2026-08-29T10:04:56.123456Z",
+            "2026-08-29T12:34:56.123456789-02:30": "2026-08-29T15:04:56.123456Z",
+        }
+        for value, expected in cases.items():
+            with self.subTest(value=value):
+                self.assertEqual(normalize_rfc3339(value), expected)
+
+    def test_rfc3339_rejects_invalid_timezone_date_fraction_and_utc_overflow(self):
+        invalid = (
+            "2026-08-29T12:34:56", "2026-02-30T12:34:56Z",
+            "2026-08-29T12:34:56.Z", "2026-08-29T12:34:56.1234567890Z",
+            "2026-08-29t12:34:56Z", "0001-01-01T00:00:00+01:00",
+            "9999-12-31T23:59:59-01:00",
+        )
+        for value in invalid:
+            with self.subTest(value=value), self.assertRaises((ValueError, OverflowError)):
+                normalize_rfc3339(value)
+
     def test_decimal_normalization_is_bounded_and_exact(self):
         self.assertEqual(_decimal("153847948212982", "amount"), "153847948212982")
         self.assertEqual(_decimal("0.050000000000000000", "fraction"), "0.050000000000000000")
@@ -166,6 +191,55 @@ class ParsingTests(unittest.TestCase):
 
 
 class TransportTests(unittest.IsolatedAsyncioTestCase):
+    class SlowStream(httpx.AsyncByteStream):
+        def __init__(self, *, delay):
+            self.delay = delay
+            self.started = asyncio.Event()
+            self.closed = False
+
+        async def __aiter__(self):
+            self.started.set()
+            yield b'{"value":'
+            await asyncio.sleep(self.delay)
+            yield b'1}'
+
+        async def aclose(self):
+            self.closed = True
+
+    async def test_total_deadline_covers_request_and_slow_stream_body(self):
+        async def slow_request(_request):
+            await asyncio.sleep(0.05)
+            return httpx.Response(200, json={"secret": "must-not-leak"})
+        async with httpx.AsyncClient(transport=httpx.MockTransport(slow_request)) as client:
+            transport = JsonTransport(timeout=0.01, max_response_bytes=1024, client=client)
+            with self.assertRaisesRegex(Exception, "^transport_error$") as captured:
+                await transport.get_object("https://safe.example", "/status")
+            self.assertIsNone(captured.exception.__cause__)
+            self.assertIsNone(captured.exception.__context__)
+            self.assertNotIn("must-not-leak", repr(captured.exception))
+
+        stream = self.SlowStream(delay=0.05)
+        async def streaming(_request):
+            return httpx.Response(200, stream=stream)
+        async with httpx.AsyncClient(transport=httpx.MockTransport(streaming)) as client:
+            transport = JsonTransport(timeout=0.01, max_response_bytes=1024, client=client)
+            with self.assertRaisesRegex(Exception, "^transport_error$"):
+                await transport.get_object("https://safe.example", "/status")
+            self.assertTrue(stream.closed)
+
+    async def test_calling_task_cancellation_propagates_and_closes_stream(self):
+        stream = self.SlowStream(delay=60)
+        async def streaming(_request):
+            return httpx.Response(200, stream=stream)
+        async with httpx.AsyncClient(transport=httpx.MockTransport(streaming)) as client:
+            transport = JsonTransport(timeout=10, max_response_bytes=1024, client=client)
+            task = asyncio.create_task(transport.get_object("https://safe.example", "/status"))
+            await stream.started.wait()
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+            self.assertTrue(stream.closed)
+
     async def test_json_shape_size_status_and_malformed_json(self):
         responses = [httpx.Response(200, content=b"[]"), httpx.Response(200, content=b"x" * 1025),
                      httpx.Response(503, json={}), httpx.Response(200, content=b"{")]
