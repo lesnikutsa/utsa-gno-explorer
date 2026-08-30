@@ -7,6 +7,7 @@ from .errors import (
     AllEndpointsUnavailable,
     InvalidConfiguration,
     HistoryUnavailable,
+    NodeNotSynced,
     MalformedUpstreamResponse,
     RejectedEndpoint,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "CosmosNetworkConfig",
     "InvalidConfiguration",
     "HistoryUnavailable",
+    "NodeNotSynced",
     "MalformedUpstreamResponse",
     "RejectedEndpoint",
     "RequestCache",

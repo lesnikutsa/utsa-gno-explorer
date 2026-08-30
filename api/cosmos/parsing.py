@@ -107,6 +107,18 @@ def parse_node_status(payload: dict, *, network_id: str, expected_chain_id: str,
     )
 
 
+def parse_rest_node_info(payload: dict, *, expected_chain_id: str) -> dict[str, str | None]:
+    root = _mapping(payload)
+    default = _mapping(root.get("default_node_info"))
+    _identity(default.get("network"), expected_chain_id)
+    app = _mapping(root.get("application_version"))
+    return {
+        "application_name": _optional_text(app.get("name"), "application name"),
+        "application_version": _optional_text(app.get("version"), "application version"),
+        "sdk_version": _optional_text(app.get("cosmos_sdk_version"), "SDK version"),
+    }
+
+
 def _rest_block(payload: dict) -> tuple[dict, dict]:
     block = _mapping(_mapping(payload).get("block"))
     return block, _mapping(block.get("header"))
