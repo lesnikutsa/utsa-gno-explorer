@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { formatBaseAmount, formatMarketPercent, formatRatio, mergeBlockWindow, validateCosmosHeight } from '../src/utils/cosmosFormat.js'
+import { cosmosBlockLookupOperationalState, formatBaseAmount, formatMarketPercent, formatRatio, mergeBlockWindow, validateCosmosHeight } from '../src/utils/cosmosFormat.js'
 
 test('formats large base-denom integers without floating point precision loss', () => {
   assert.equal(formatBaseAmount('1234567890123456789012345', 6), '1,234,567,890,123,456,789.012345')
@@ -16,6 +16,12 @@ test('distinguishes ratios from market percentages and preserves zero', () => {
 test('height validation rejects rounding, exponent notation, zero and unsafe integers', () => {
   for (const invalid of ['0', '-1', '1.2', '1e6', '9007199254740992', '']) assert.ok(validateCosmosHeight(invalid).error)
   assert.deepEqual(validateCosmosHeight('9007199254740991'), { height: '9007199254740991' })
+})
+
+test('block lookup status uses root catching_up and node-not-synced state', () => {
+  assert.equal(cosmosBlockLookupOperationalState({ state: 'available', catching_up: true }), 'syncing')
+  assert.equal(cosmosBlockLookupOperationalState({ state: 'available', catching_up: false }), 'healthy')
+  assert.equal(cosmosBlockLookupOperationalState({ state: 'node_not_synced', catching_up: false }), 'syncing')
 })
 
 test('rolling block window deduplicates, sorts and caps at twenty', () => {

@@ -1,5 +1,9 @@
 export const isSectionError = (value) => Boolean(value?.error)
 
+export const cosmosBlockLookupOperationalState = (response) => (
+  response?.catching_up || response?.state === 'node_not_synced' ? 'syncing' : 'healthy'
+)
+
 export const formatBaseAmount = (amount, exponent = 0, maximumFractionDigits = exponent) => {
   if (!/^(0|[1-9]\d*)$/.test(String(amount)) || !Number.isInteger(exponent) || exponent < 0) return '—'
   const padded = String(amount).padStart(exponent + 1, '0')

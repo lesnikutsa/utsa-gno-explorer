@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CosmosPanel } from '../components/CosmosPanel'
 import { getCosmosBlock } from '../services/api'
 import { useCosmosResource } from '../hooks/useCosmosResource'
-import { validateCosmosHeight } from '../utils/cosmosFormat'
+import { cosmosBlockLookupOperationalState, validateCosmosHeight } from '../utils/cosmosFormat'
 
 const etaReasons = {
   insufficient_sample: 'Not enough completed block intervals are available for an ETA.',
@@ -32,7 +32,7 @@ export function CosmosBlockDetail({ network, height, onIdentity }) {
   const resource = useCosmosResource(load, { enabled: Boolean(validation.height), stopWhen })
   const data = resource.data
   useEffect(() => { completed.current = data?.state === 'available' }, [data?.state])
-  useEffect(() => { if (data) onIdentity({ chain_id: data.chain_id, operational_state: data.source?.catching_up || data.state === 'node_not_synced' ? 'syncing' : 'healthy' }) }, [data, onIdentity])
+  useEffect(() => { if (data) onIdentity({ chain_id: data.chain_id, operational_state: cosmosBlockLookupOperationalState(data) }) }, [data, onIdentity])
   useEffect(() => {
     if (data?.state !== 'future' || !data?.eta?.estimated_at) return undefined
     const timer = window.setInterval(() => setClock(Date.now()), 1_000)
