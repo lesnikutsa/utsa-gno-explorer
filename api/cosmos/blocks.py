@@ -3,18 +3,23 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import math
+import re
 from urllib.parse import urlencode
 
 from .adapter import CosmosAdapter
 from .errors import (AllEndpointsUnavailable, HistoryUnavailable,
                      MalformedUpstreamResponse)
 from .parsing import parse_node_status
+from .parsing import parse_rpc_block
 
 MAX_HEIGHT = 9_223_372_036_854_775_807
 METADATA_PAGE_SIZE = 20
 SAMPLE_HEADERS = 101
 MIN_INTERVALS = 20
 STALL_SECONDS = 300
+MAX_TRANSACTION_COUNT = 2_147_483_647
+_HISTORY_ERROR = re.compile(
+    r"height\s+\d+\s+is not available(?:, lowest height is\s+(\d+))?", re.IGNORECASE)
 
 
 def _timestamp(value: object) -> datetime:
@@ -56,12 +61,18 @@ def parse_blockchain(payload: object, *, chain_id: str, minimum: int, maximum: i
         if height < minimum or height > maximum or height in seen or header.get("chain_id") != chain_id:
             raise MalformedUpstreamResponse("invalid block metadata range")
         block_hash, proposer = item["block_id"].get("hash"), header.get("proposer_address")
-        if not all(isinstance(value, str) and 1 <= len(value) <= 128 and value.isascii()
+        if not all(isinstance(value, str) and 1 <= len(value) <= 128 and len(value) % 2 == 0 and value.isascii()
                    and all(char in "0123456789abcdefABCDEF" for char in value)
                    for value in (block_hash, proposer)):
             raise MalformedUpstreamResponse("invalid block identity")
-        txs = item.get("num_txs", header.get("num_txs", "0"))
-        transaction_count = _positive_int(txs, "transaction count") if str(txs) != "0" else 0
+        txs = item.get("num_txs", header.get("num_txs"))
+        if isinstance(txs, bool) or not isinstance(txs, (str, int)):
+            raise MalformedUpstreamResponse("invalid transaction count")
+        if isinstance(txs, str) and (not txs.isascii() or not txs.isdigit() or len(txs) > 10):
+            raise MalformedUpstreamResponse("invalid transaction count")
+        transaction_count = int(txs)
+        if not 0 <= transaction_count <= MAX_TRANSACTION_COUNT:
+            raise MalformedUpstreamResponse("invalid transaction count")
         timestamp = _timestamp(header.get("time"))
         seen.add(height)
         result.append({"height": height, "hash": block_hash.upper(),
@@ -106,13 +117,24 @@ def estimate_height_eta(blocks: list[dict], target_height: int, *, now: datetime
             "status": "overdue_awaiting" if estimate <= now.astimezone(timezone.utc) else "estimated"}, None
 
 
+def _enough_eta_headers(count: int) -> bool:
+    intervals = count - 1
+    return intervals >= MIN_INTERVALS and intervals - 2 * max(1, intervals // 10) >= MIN_INTERVALS
+
+
 @dataclass(frozen=True)
 class ObservedHeads:
     observed_height: int
     catching_up: bool
     confirmed_height: int | None
-    endpoint: str
-    endpoints: tuple[str, ...]
+    endpoints: tuple[tuple[str, int, bool], ...]
+
+    @property
+    def eta_head(self) -> int | None:
+        """A synchronized head is reliable only when no checked node is ahead of it."""
+        if self.confirmed_height is None or self.observed_height > self.confirmed_height:
+            return None
+        return self.confirmed_height
 
 
 class CosmosBlockService:
@@ -120,59 +142,121 @@ class CosmosBlockService:
         self.adapter = adapter
 
     async def heads(self) -> ObservedHeads:
-        statuses = []
-        for endpoint in self.adapter.config.rpc_endpoints:
-            try:
-                payload = await self.adapter._transport.get_object(endpoint, "/status")
-                statuses.append((endpoint, parse_node_status(payload, network_id=self.adapter.config.network_id,
-                                expected_chain_id=self.adapter.config.chain_id,
-                                source_host=self.adapter._host(endpoint))))
-            except Exception:
-                continue
-        if not statuses:
-            raise AllEndpointsUnavailable("no identity-validated RPC status")
-        synced = [(endpoint, status) for endpoint, status in statuses if not status.catching_up]
-        selected = max(synced or statuses, key=lambda pair: pair[1].local_height)
-        ordered = tuple(endpoint for endpoint, _ in sorted(synced or statuses,
-                        key=lambda pair: pair[1].local_height, reverse=True))
-        return ObservedHeads(selected[1].local_height, not bool(synced),
-                             max((status.local_height for _, status in synced), default=None), selected[0], ordered)
+        key = (self.adapter.config.network_id, "block_rpc_heads", ())
+        async def load():
+            statuses = []
+            for endpoint in self.adapter.config.rpc_endpoints:
+                try:
+                    payload = await self.adapter._transport.get_object(endpoint, "/status")
+                    status = parse_node_status(payload, network_id=self.adapter.config.network_id,
+                                               expected_chain_id=self.adapter.config.chain_id,
+                                               source_host=self.adapter._host(endpoint))
+                    statuses.append((endpoint, status.local_height, status.catching_up))
+                except Exception:
+                    continue
+            if not statuses:
+                raise AllEndpointsUnavailable("no identity-validated RPC status")
+            observed = max(height for _, height, _ in statuses)
+            synced = [height for _, height, catching_up in statuses if not catching_up]
+            ordered = tuple(sorted(statuses, key=lambda item: item[1], reverse=True))
+            observed_catching_up = all(catching_up for _, height, catching_up in statuses
+                                       if height == observed)
+            return ObservedHeads(observed, observed_catching_up,
+                                 max(synced, default=None), ordered)
+        return await self.adapter._cache.get_or_load(
+            key, self.adapter.config.probe_ttl, load)
 
     async def _metadata(self, endpoint: str, minimum: int, maximum: int) -> list[dict]:
         path = "/blockchain?" + urlencode({"minHeight": minimum, "maxHeight": maximum})
         payload = await self.adapter._transport.get_object(endpoint, path, accept_error_payload=True)
         if isinstance(payload.get("error"), dict):
-            raise HistoryUnavailable(minimum)
+            error = payload["error"]
+            message = error.get("data") or error.get("message")
+            match = _HISTORY_ERROR.search(message if isinstance(message, str) else "")
+            if match:
+                raise HistoryUnavailable(minimum, int(match.group(1)) if match.group(1) else None)
+            raise MalformedUpstreamResponse("unexpected blockchain error")
         return parse_blockchain(payload, chain_id=self.adapter.config.chain_id, minimum=minimum, maximum=maximum)
 
     async def window(self, heads: ObservedHeads, count: int) -> list[dict]:
         minimum = max(1, heads.observed_height - count + 1)
-        for endpoint in heads.endpoints:
+        key = (self.adapter.config.network_id, "block_metadata_window",
+               (heads.observed_height, count))
+        async def load():
+            for endpoint, height, _ in heads.endpoints:
+                if height < heads.observed_height:
+                    continue
+                try:
+                    return (await self._metadata(endpoint, minimum, heads.observed_height))[:count]
+                except Exception:
+                    continue
+            raise AllEndpointsUnavailable("block metadata unavailable")
+        return await self.adapter._cache.get_or_load(
+            key, self.adapter.config.cache_ttl, load)
+
+    async def block(self, heads: ObservedHeads, height: int):
+        """Direct lookup against every identity-checked RPC that reached the height."""
+        observations = []
+        for endpoint, local_height, _ in heads.endpoints:
+            if local_height < height:
+                continue
             try:
-                return (await self._metadata(endpoint, minimum, heads.observed_height))[:count]
+                payload = await self.adapter._transport.get_object(
+                    endpoint, f"/block?height={height}", accept_error_payload=True)
+                if isinstance(payload.get("error"), dict):
+                    error = payload["error"]
+                    message = error.get("data") or error.get("message")
+                    match = _HISTORY_ERROR.search(message if isinstance(message, str) else "")
+                    if match:
+                        observations.append(int(match.group(1)) if match.group(1) else None)
+                        continue
+                    raise MalformedUpstreamResponse("unexpected block error")
+                result = parse_rpc_block(payload, network_id=self.adapter.config.network_id,
+                                         expected_chain_id=self.adapter.config.chain_id)
+                if result.height != height:
+                    raise MalformedUpstreamResponse("wrong block height")
+                return result
+            except HistoryUnavailable as exc:
+                observations.append(exc.lowest_available_height)
             except Exception:
                 continue
-        raise AllEndpointsUnavailable("block metadata unavailable")
+        if observations:
+            known = [value for value in observations if value is not None]
+            raise HistoryUnavailable(height, min(known) if known else None)
+        raise AllEndpointsUnavailable("block unavailable")
 
     async def sample(self, heads: ObservedHeads) -> list[dict]:
-        key = (self.adapter.config.network_id, "block_eta_sample", (heads.confirmed_height,))
+        key = (self.adapter.config.network_id, "block_eta_sample", (heads.eta_head,))
         async def load():
-            maximum = heads.confirmed_height
+            maximum = heads.eta_head
             minimum = max(1, maximum - SAMPLE_HEADERS + 1)
-            for endpoint in heads.endpoints:
+            best = []
+            history_confirmed = False
+            for endpoint, height, catching_up in heads.endpoints:
+                if catching_up or height < maximum:
+                    continue
                 blocks = []
                 end = maximum
                 try:
                     while end >= minimum:
                         start = max(minimum, end - METADATA_PAGE_SIZE + 1)
-                        blocks.extend(await self._metadata(endpoint, start, end))
+                        try:
+                            blocks.extend(await self._metadata(endpoint, start, end))
+                        except HistoryUnavailable:
+                            history_confirmed = True
+                            break
                         end = start - 1
                     unique = {item["height"]: item for item in blocks}
                     result = [unique[height] for height in sorted(unique)]
-                    if len(result) != maximum - minimum + 1:
-                        raise MalformedUpstreamResponse("incomplete ETA sample")
-                    return result
+                    if result and result[-1]["height"] == maximum and all(
+                            right["height"] == left["height"] + 1
+                            for left, right in zip(result, result[1:])):
+                        best = result if len(result) > len(best) else best
+                        if _enough_eta_headers(len(result)):
+                            return result
                 except Exception:
                     continue
+            if best or history_confirmed:
+                return best
             raise AllEndpointsUnavailable("ETA sample unavailable")
         return await self.adapter._cache.get_or_load(key, self.adapter.config.cache_ttl, load)

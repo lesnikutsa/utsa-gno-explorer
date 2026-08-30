@@ -52,3 +52,14 @@ class MetadataTests(unittest.TestCase):
                 "time": "2026-08-30T00:00:00Z", "proposer_address": "BB"}, "num_txs": "0"}
         with self.assertRaises(MalformedUpstreamResponse):
             parse_blockchain({"result": {"block_metas": [item]}}, chain_id="chain-1", minimum=1, maximum=1)
+
+    def test_rejects_missing_negative_typed_and_oversized_transaction_counts(self):
+        for value in (None, -1, "-1", True, 2_147_483_648, "2147483648", 1.5):
+            with self.subTest(value=value):
+                item = {"block_id": {"hash": "AA"}, "header": {"chain_id": "chain-1", "height": "1",
+                        "time": "2026-08-30T00:00:00Z", "proposer_address": "BB"}}
+                if value is not None:
+                    item["num_txs"] = value
+                with self.assertRaises(MalformedUpstreamResponse):
+                    parse_blockchain({"result": {"block_metas": [item]}},
+                                     chain_id="chain-1", minimum=1, maximum=1)

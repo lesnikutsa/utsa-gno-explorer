@@ -197,18 +197,18 @@ class CosmosService:
         heads = await self.blocks_adapter.heads()
         base = {"network_id": self.definition.transport.network_id,
                 "chain_id": self.definition.transport.chain_id,
-                "current_height": heads.confirmed_height or heads.observed_height,
+                "current_height": heads.observed_height,
                 "target_height": height, "catching_up": heads.catching_up,
                 "block": None, "lowest_available_height": None, "eta": None,
                 "eta_unavailable_reason": None}
-        if heads.confirmed_height is not None and height > heads.confirmed_height:
+        if height > heads.observed_height and heads.eta_head is not None:
             sample = await self.blocks_adapter.sample(heads)
             eta, reason = estimate_height_eta(sample, height, now=self._now())
             return {**base, "state": "future", "eta": eta, "eta_unavailable_reason": reason}
-        if heads.confirmed_height is None and height > heads.observed_height:
+        if height > heads.observed_height:
             return {**base, "state": "node_not_synced"}
         try:
-            block = await self.adapter.block(height)
+            block = await self.blocks_adapter.block(heads, height)
             return {**base, "state": "available", "block": self._block_item(block)}
         except NodeNotSynced:
             return {**base, "state": "node_not_synced"}
