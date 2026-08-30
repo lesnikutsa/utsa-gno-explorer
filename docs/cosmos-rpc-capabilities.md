@@ -1,62 +1,63 @@
 # Cosmos RPC capability model
 
-Cosmos network configuration declares identity, native assets, address prefixes, and
-upstream pools. It does not declare a node as archive or pruned. Block history,
-transaction indexing, and historical application state are independent capabilities.
-Block history is proven only by the successful direct request being served; a pruning
-error is a safe observation, not persistent network metadata.
+Cosmos network configuration declares identity and upstream pools, but never labels a
+node as archive or pruned. Block history is proven only by a successful direct request.
+A pruning response is an observation for that request and the existing bounded
+failover tries the other configured RPCs. `earliest_block_height=0` is not archive
+proof; a lower bound is returned only when an RPC provides one reliably.
 
-Node status accepts an identity-validated syncing RPC and exposes its local progress.
-Normal data operations continue to require and prefer a synchronized RPC. Operational
-states are `healthy`, `syncing`, `degraded`, and `unavailable`. Overview sections fail
-independently so status and local height remain visible while optional modules fail.
+Status accepts identity-validated syncing nodes and exposes their local progress. A
+fresh confirmed head is the greatest height among checked, synchronized RPCs rather
+than the first or fastest node. If every usable RPC is catching up, available local
+blocks remain usable, higher requests are `node_not_synced`, and no network-wide future
+claim or ETA is made.
 
-Status and live-head cache entries use a 2-second TTL. Chain parameters, supply,
-staking, slashing, and validator data use a 5-second TTL. CoinGecko market data uses a
-30-second TTL. Caches are request-driven and single-flight; there are no background
-pollers or capability probes.
+## Block API
 
-The slashing `allowed_missed_threshold` is the protocol window limit derived with the
-SDK `RoundInt64` rule, including round-half-to-even behavior. A validator is evaluated
-for punishment only after the SDK's
-minimum observation period and when its counter exceeds that limit. Consequently,
-`remaining_misses_before_threshold` is distance to the counter limit, not a guaranteed
-number of blocks before jail.
+`GET /api/networks/{network_id}/blocks?limit=10` returns a descending, duplicate-free
+metadata window. The limit defaults to 10 and is restricted to 1--20. It also returns
+the observed height, catch-up state, and confirmed height when known. A head jump
+replaces the bounded window; the service never walks intermediate history. The call
+uses CometBFT `/blockchain`, not full transaction-bearing blocks.
 
-Future block views will maintain an initial 10-block rolling window, prepend new
-blocks, and replace the window after large height jumps rather than fetching every
-intermediate block. Old heights use direct lookup. Future transaction views will seek
-up to 20 recent transactions through a bounded scan and perform exact hash lookup
-directly. They will not imply nonexistence when the connected RPC index cannot find a
-transaction. Account current state and balances remain independent of transaction
-history, and no blocks or transactions view requires Next/Previous pagination.
+`GET /api/networks/{network_id}/blocks/{height}` directly looks up a positive signed
+64-bit height and reports `available`, `future`, `node_not_synced`, or
+`history_unavailable`. Unknown networks return 404 and invalid input returns 422.
+Wrong-chain, malformed, and transport failures are controlled 503 responses rather
+than false missing-block results. Upstream URLs and exception details are not public.
 
-## Height ETA contract for Blocks and Search
+```json
+{"network_id":"atomone-mainnet","chain_id":"atomone-1","state":"node_not_synced","current_height":100,"target_height":101,"catching_up":true,"block":null,"lowest_available_height":null,"eta":null,"eta_unavailable_reason":null}
+```
 
-The next Blocks/Search phase must treat a height above a confirmed synchronized head
-as **Block not produced yet** and show the current confirmed height, target height,
-blocks remaining, estimated block time, average block interval, sample size, estimated
-UTC datetime, the user's local datetime, a countdown, and an explicit **Estimated**
-label.
+```json
+{"network_id":"atomone-mainnet","chain_id":"atomone-1","state":"history_unavailable","current_height":200,"target_height":10,"catching_up":false,"block":null,"lowest_available_height":50,"eta":null,"eta_unavailable_reason":null}
+```
 
-The estimate must use approximately 100 recent completed block intervals. Only
-positive intervals participate, anomalously fast and slow samples are removed with a
-bounded trimmed calculation, and a single latest interval is never sufficient. The
-estimate is recomputed when a new block arrives. The one-second countdown runs in the
-browser without making one RPC request per second, and samples are not persisted as a
-large database history. If too few valid samples remain, no ETA is shown.
+## Height ETA
 
-If the latest block age exceeds a safe stall threshold, ETA is paused and the view
-shows **Network appears stalled**, latest height, time since the latest block, and
-**ETA paused**. With only a catching-up RPC and no synchronized reference endpoint,
-the UI must instead say **Current RPC has only synchronized to height X** and must not
-claim the target is unproduced or calculate a future-block ETA. With a synchronized
-reference, a target at or below its height but above the local syncing height is
-`node_not_synced`; only a target above the reference height is eligible for ETA.
+A future-height estimate uses up to 101 consecutive metadata headers (100 completed
+intervals). Only positive adjacent-height intervals participate. The fastest and
+slowest 10% (at least one on each side) are trimmed, and at least 20 intervals must
+remain. A sample needs no more than six `/blockchain` requests per attempted RPC. It is
+cached for 2 seconds by network and confirmed head, independently of target height,
+using the shared single-flight cache. Errors are not cached. All calls are
+request-driven; there are no background polls.
 
-Future governance integration may derive an Upcoming Upgrade from a passed proposal
-containing `MsgSoftwareUpgrade` and a plan height. It will show proposal/title, upgrade
-height, blocks remaining, estimated date/time, countdown, and **Estimated**. This is
-not a promise that the upgrade block will be committed at that second: during a
-planned halt the latest committed block may remain at plan height minus one until the
-new software starts.
+The immutable estimate is the last confirmed block time plus remaining blocks times
+the trimmed mean. It is not re-anchored to request time. A passed estimate becomes
+`overdue_awaiting` without moving its date. At a latest-block age greater than 300
+seconds, the network appears stalled and ETA is paused. Fewer than 20 usable intervals
+produces `insufficient_sample`; date arithmetic overflow produces `date_out_of_range`.
+
+```json
+{"network_id":"atomone-mainnet","chain_id":"atomone-1","state":"future","current_height":200,"target_height":210,"catching_up":false,"block":null,"lowest_available_height":null,"eta":{"current_height":200,"target_height":210,"remaining_blocks":10,"average_interval_seconds":5.2,"sample_interval_count":80,"sample_start_height":100,"sample_end_height":200,"estimated_at":"2026-08-30T12:00:52Z","approximate":true,"status":"estimated"},"eta_unavailable_reason":null}
+```
+
+ETA is approximate, not a promise of an update time. A planned upgrade at height H can
+leave H-1 as the last completed block until new software starts. Governance upgrade
+plan discovery is outside this API.
+
+Overview status/live-head and block/ETA cache entries use a 2-second TTL. Other
+overview sections use 5 seconds and market data uses 30 seconds. Cache operation is
+bounded and single-flight.

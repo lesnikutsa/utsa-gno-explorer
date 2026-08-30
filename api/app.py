@@ -122,7 +122,8 @@ from api.token_supply import (NATIVE_GNOT_DECIMALS, NATIVE_GNOT_DENOM, decimal_a
 from api.cosmos import AllEndpointsUnavailable, RejectedEndpoint, RequestCache
 from api.cosmos.registry import NETWORKS, get_network as get_cosmos_network
 from api.cosmos.service import CosmosService
-from api.cosmos.schemas import MarketResponse, OverviewResponse
+from api.cosmos.schemas import (CosmosBlockLookupResponse, CosmosBlocksResponse,
+                                MarketResponse, OverviewResponse)
 
 LOGGER = logging.getLogger(__name__)
 UNAVAILABLE_DETAIL = "Explorer database is unavailable"
@@ -448,6 +449,26 @@ async def get_cosmos_network_market(network_id: str):
     except Exception:
         LOGGER.info("Cosmos market failed network=%s reason=upstream_unavailable", network_id)
         raise HTTPException(status_code=503, detail="Market data is temporarily unavailable") from None
+
+
+@app.get("/api/networks/{network_id}/blocks", response_model=CosmosBlocksResponse)
+async def get_cosmos_network_blocks(network_id: str, limit: int = Query(default=10, ge=1, le=20)):
+    service = _cosmos_service(network_id)
+    try:
+        return await service.recent_blocks(limit)
+    except Exception:
+        LOGGER.info("Cosmos blocks failed network=%s reason=upstream_unavailable", network_id)
+        raise HTTPException(status_code=503, detail="Block data is temporarily unavailable") from None
+
+
+@app.get("/api/networks/{network_id}/blocks/{height}", response_model=CosmosBlockLookupResponse)
+async def get_cosmos_network_block(network_id: str, height: int = Path(gt=0, le=9_223_372_036_854_775_807)):
+    service = _cosmos_service(network_id)
+    try:
+        return await service.block_at_height(height)
+    except Exception:
+        LOGGER.info("Cosmos block lookup failed network=%s reason=upstream_unavailable", network_id)
+        raise HTTPException(status_code=503, detail="Block data is temporarily unavailable") from None
 
 
 def utc_now() -> datetime:

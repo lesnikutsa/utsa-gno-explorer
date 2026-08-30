@@ -14,8 +14,10 @@ import httpx
 from pydantic import TypeAdapter, ValidationError
 
 from .adapter import CosmosAdapter
+from .blocks import CosmosBlockService, MAX_HEIGHT, estimate_height_eta
 from .cache import RequestCache
-from .errors import AllEndpointsUnavailable, MalformedUpstreamResponse
+from .errors import (AllEndpointsUnavailable, HistoryUnavailable,
+                     MalformedUpstreamResponse, NodeNotSynced)
 from .parsing import parse_rest_node_info
 from .registry import NetworkDefinition
 from .schemas import (AssetsSupply, Distribution, Governance, MarketResponse,
@@ -163,11 +165,56 @@ def consensus_address(public_key: object, prefix: str) -> str:
 
 
 class CosmosService:
-    def __init__(self, definition: NetworkDefinition, *, client: httpx.AsyncClient, cache: RequestCache):
+    def __init__(self, definition: NetworkDefinition, *, client: httpx.AsyncClient, cache: RequestCache,
+                 now=None):
         self.definition = definition
         self.cache = cache
         self.adapter = CosmosAdapter(definition.transport, client=client, cache=cache)
         self.transport = self.adapter._transport
+        self.blocks_adapter = CosmosBlockService(self.adapter)
+        self._now = now or (lambda: datetime.now(timezone.utc))
+
+    @staticmethod
+    def _block_item(block):
+        return {"height": block.height, "hash": block.block_hash,
+                "timestamp": block.block_time, "proposer": block.proposer_address,
+                "transaction_count": block.transaction_count}
+
+    async def recent_blocks(self, limit: int):
+        heads = await self.blocks_adapter.heads()
+        blocks = await self.blocks_adapter.window(heads, limit)
+        return {"network_id": self.definition.transport.network_id,
+                "chain_id": self.definition.transport.chain_id,
+                "source": {"observed_height": heads.observed_height,
+                           "catching_up": heads.catching_up,
+                           "confirmed_height": heads.confirmed_height},
+                "blocks": [{key: value for key, value in block.items() if key != "_time"}
+                           for block in blocks]}
+
+    async def block_at_height(self, height: int):
+        if type(height) is not int or not 0 < height <= MAX_HEIGHT:
+            raise ValueError("invalid height")
+        heads = await self.blocks_adapter.heads()
+        base = {"network_id": self.definition.transport.network_id,
+                "chain_id": self.definition.transport.chain_id,
+                "current_height": heads.confirmed_height or heads.observed_height,
+                "target_height": height, "catching_up": heads.catching_up,
+                "block": None, "lowest_available_height": None, "eta": None,
+                "eta_unavailable_reason": None}
+        if heads.confirmed_height is not None and height > heads.confirmed_height:
+            sample = await self.blocks_adapter.sample(heads)
+            eta, reason = estimate_height_eta(sample, height, now=self._now())
+            return {**base, "state": "future", "eta": eta, "eta_unavailable_reason": reason}
+        if heads.confirmed_height is None and height > heads.observed_height:
+            return {**base, "state": "node_not_synced"}
+        try:
+            block = await self.adapter.block(height)
+            return {**base, "state": "available", "block": self._block_item(block)}
+        except NodeNotSynced:
+            return {**base, "state": "node_not_synced"}
+        except HistoryUnavailable as exc:
+            return {**base, "state": "history_unavailable",
+                    "lowest_available_height": exc.lowest_available_height}
 
     async def _rest(self, name: str, path: str, validator=None):
         key = (self.definition.transport.network_id, "overview_rest", (name, path))

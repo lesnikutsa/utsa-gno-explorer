@@ -164,3 +164,50 @@ class MarketResponse(StrictModel):
     market_cap: DecimalString
     change_24h: SignedDecimalString
     source_last_updated_at: str = Field(min_length=20, max_length=64)
+
+
+class BlockItem(StrictModel):
+    height: int = Field(gt=0, le=9_223_372_036_854_775_807)
+    hash: str = Field(min_length=1, max_length=128, pattern=r"^[0-9A-F]+$")
+    timestamp: str = Field(min_length=20, max_length=64)
+    proposer: str = Field(min_length=1, max_length=128, pattern=r"^[0-9A-F]+$")
+    transaction_count: int = Field(ge=0, le=2_147_483_647)
+
+
+class BlockSourceState(StrictModel):
+    observed_height: int = Field(gt=0)
+    catching_up: bool
+    confirmed_height: int | None = Field(default=None, gt=0)
+
+
+class CosmosBlocksResponse(StrictModel):
+    network_id: str
+    chain_id: str
+    source: BlockSourceState
+    blocks: list[BlockItem] = Field(min_length=1, max_length=20)
+
+
+class EtaEstimate(StrictModel):
+    current_height: int = Field(gt=0)
+    target_height: int = Field(gt=0)
+    remaining_blocks: int = Field(gt=0)
+    average_interval_seconds: float = Field(gt=0)
+    sample_interval_count: int = Field(ge=20, le=100)
+    sample_start_height: int = Field(gt=0)
+    sample_end_height: int = Field(gt=0)
+    estimated_at: str
+    approximate: Literal[True]
+    status: Literal["estimated", "overdue_awaiting"]
+
+
+class CosmosBlockLookupResponse(StrictModel):
+    network_id: str
+    chain_id: str
+    state: Literal["available", "future", "node_not_synced", "history_unavailable"]
+    current_height: int = Field(gt=0)
+    target_height: int = Field(gt=0)
+    catching_up: bool
+    block: BlockItem | None = None
+    lowest_available_height: int | None = Field(default=None, gt=0)
+    eta: EtaEstimate | None = None
+    eta_unavailable_reason: Literal["insufficient_sample", "network_appears_stalled", "date_out_of_range"] | None = None
