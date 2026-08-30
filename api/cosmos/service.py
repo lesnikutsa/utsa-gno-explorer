@@ -268,7 +268,9 @@ class CosmosService:
                     "block": None, "eta": eta,
                     "eta_unavailable_reason": reason}
         try:
-            block = await self._observed_block(height, observations)
+            key = (self.definition.transport.network_id, "observed_block", (height,))
+            block = await self.cache.get_or_load(
+                key, 2.0, lambda: self._observed_block(height, observations))
             return {"state": "available", "local_height": observed_height, "source": "rpc",
                     "block": self._public_block(block), "eta": None, "eta_unavailable_reason": None}
         except HistoryUnavailable:

@@ -96,10 +96,15 @@ async def metadata_sample(adapter, confirmed_height, *, maximum_headers=101, max
     for endpoint in adapter.config.rpc_endpoints:
         blocks = {}
         upper = confirmed_height
+        known_lowest = None
         for _request_number in range(maximum_requests):
             if upper < 1 or len(blocks) >= maximum_headers:
                 break
             lower = max(1, upper - min(20, maximum_headers - len(blocks)) + 1)
+            if known_lowest is not None:
+                if upper < known_lowest:
+                    break
+                lower = max(lower, known_lowest)
             path = f"/blockchain?minHeight={lower}&maxHeight={upper}"
             try:
                 payload = await adapter._transport.get_object(endpoint, path, accept_error_payload=True)
@@ -110,7 +115,11 @@ async def metadata_sample(adapter, confirmed_height, *, maximum_headers=101, max
                     if match:
                         lowest = int(match.group(1)) if match.group(1) else None
                         history_observations.append(lowest)
-                        break
+                        if (lowest is None or lowest < 1 or lowest > confirmed_height
+                                or lowest > upper or lowest == known_lowest):
+                            break
+                        known_lowest = lowest
+                        continue
                     else:
                         raise AllEndpointsUnavailable("metadata unavailable")
                 page = parse_blockchain(payload, network_id=adapter.config.network_id,
@@ -125,8 +134,6 @@ async def metadata_sample(adapter, confirmed_height, *, maximum_headers=101, max
                         raise MalformedUpstreamResponse("conflicting duplicate metadata")
                     blocks[block["height"]] = block
                 page_low = min(block["height"] for block in page)
-                if page_low > upper or page_low == upper and upper != 1:
-                    raise MalformedUpstreamResponse("metadata page did not advance")
                 upper = page_low - 1
             except HistoryUnavailable as exc:
                 history_observations.append(exc.lowest_available_height)
