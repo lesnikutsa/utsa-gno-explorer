@@ -3,8 +3,14 @@ import { Sidebar } from '../components/Sidebar'
 import { TopBar } from '../components/TopBar'
 import { useChainIdentity } from '../hooks/useChainIdentity'
 import { useTheme } from '../hooks/useTheme'
+import { useSelectedNetwork } from '../context/SelectedNetworkContext'
 
-export function ExplorerLayout({ children, healthState, nextFastRefreshAt, showRefreshCountdown = true, averageBlockTimeSeconds, averageBlockTimeSampleSize, averageBlockTimeIntervalsSeconds }) {
+function GnoChainIdentity({ children }) {
+  const chainId = useChainIdentity()
+  return children(chainId)
+}
+
+export function ExplorerLayout({ children, healthState, chainId: providedChainId, nextFastRefreshAt, showRefreshCountdown = true, averageBlockTimeSeconds, averageBlockTimeSampleSize, averageBlockTimeIntervalsSeconds }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
@@ -13,7 +19,7 @@ export function ExplorerLayout({ children, healthState, nextFastRefreshAt, showR
       return false
     }
   })
-  const chainId = useChainIdentity()
+  const { selectedNetwork } = useSelectedNetwork()
   const { theme, toggleTheme } = useTheme()
 
   useEffect(() => {
@@ -24,7 +30,7 @@ export function ExplorerLayout({ children, healthState, nextFastRefreshAt, showR
     }
   }, [sidebarCollapsed])
 
-  return (
+  const renderLayout = (chainId) => (
     <div className={`app-shell ${sidebarCollapsed ? 'is-sidebar-collapsed' : ''}`}>
       <Sidebar
         open={sidebarOpen}
@@ -34,9 +40,12 @@ export function ExplorerLayout({ children, healthState, nextFastRefreshAt, showR
         onToggleCollapsed={() => setSidebarCollapsed((collapsed) => !collapsed)}
       />
       <div className="app-frame">
-        <TopBar onMenuClick={() => setSidebarOpen(true)} healthState={healthState} nextFastRefreshAt={nextFastRefreshAt} showRefreshCountdown={showRefreshCountdown} averageBlockTimeSeconds={averageBlockTimeSeconds} averageBlockTimeSampleSize={averageBlockTimeSampleSize} averageBlockTimeIntervalsSeconds={averageBlockTimeIntervalsSeconds} theme={theme} onToggleTheme={toggleTheme} />
+        <TopBar network={selectedNetwork} onMenuClick={() => setSidebarOpen(true)} healthState={healthState} nextFastRefreshAt={nextFastRefreshAt} showRefreshCountdown={showRefreshCountdown} averageBlockTimeSeconds={averageBlockTimeSeconds} averageBlockTimeSampleSize={averageBlockTimeSampleSize} averageBlockTimeIntervalsSeconds={averageBlockTimeIntervalsSeconds} theme={theme} onToggleTheme={toggleTheme} />
         <main className="main-content">{typeof children === 'function' ? children(chainId) : children}</main>
       </div>
     </div>
   )
+  return selectedNetwork.family === 'cosmos'
+    ? renderLayout(providedChainId || selectedNetwork.expectedChainId)
+    : <GnoChainIdentity>{renderLayout}</GnoChainIdentity>
 }

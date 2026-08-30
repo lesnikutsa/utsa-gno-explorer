@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { UtsaLogo } from './UtsaLogo'
 import { ChainIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon } from './Icons'
 import { navigationItems } from '../config/navigation'
-import { hasNetworkCapability, supportedNetworks } from '../config/networkRegistry'
+import { hasNetworkCapability, networkPath, supportedNetworks } from '../config/networkRegistry'
 import { useSelectedNetwork } from '../context/SelectedNetworkContext'
 import { isInterceptableNavigation, navigateInternal, usePathname } from '../utils/navigation'
 import { adjacentOptionIndex } from '../utils/networkSelector'
@@ -105,7 +105,7 @@ export function Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed }
     <>
       <button className={`sidebar-backdrop ${open ? 'is-visible' : ''}`} onClick={handleSidebarClose} aria-label="Close navigation" />
       <aside className={`sidebar ${open ? 'is-open' : ''}`}>
-        <UtsaLogo />
+        <UtsaLogo profile={networkProfile} />
         <div className="chain-select" ref={networkSelector}>
           <span className="sidebar__label">Current chain</span>
           <button ref={networkSelectorTrigger} type="button" data-sidebar-tooltip={collapsed ? chainLabel : undefined} aria-label={`Select network. Current network: ${chainLabel}`} aria-haspopup="listbox" aria-expanded={networkMenuOpen} aria-controls="network-selector-options" onClick={() => networkMenuOpen ? closeNetworkMenu() : openNetworkMenu()} onKeyDown={handleNetworkTriggerKeyDown}>
@@ -135,8 +135,9 @@ export function Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed }
         </div>
         <nav className="sidebar__nav" aria-label="Explorer navigation">
           {items.map(({ label, Icon, href }) => {
-            const active = isActive(href)
-            return <a key={label} className={`nav-item ${active ? 'is-active' : ''}`} href={href} onClick={(event) => handleNavigation(event, href)} aria-current={active ? 'page' : undefined} data-sidebar-tooltip={collapsed && !active ? label : undefined}><Icon /><span className="nav-item__label">{label}</span></a>
+            const destination = networkPath(selectedNetwork, href)
+            const active = isActive(destination)
+            return <a key={label} className={`nav-item ${active ? 'is-active' : ''}`} href={destination} onClick={(event) => handleNavigation(event, destination)} aria-current={active ? 'page' : undefined} data-sidebar-tooltip={collapsed && !active ? label : undefined}><Icon /><span className="nav-item__label">{label}</span></a>
           })}
         </nav>
         <button

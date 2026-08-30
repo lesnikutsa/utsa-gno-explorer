@@ -117,7 +117,8 @@ class GlobalSearchFrontendContractTests(unittest.TestCase):
         ):
             self.assertIn(fragment, self.navigation)
         self.assertIn("const pathname = usePathname()", self.sidebar)
-        self.assertIn("href={href}", self.sidebar)
+        self.assertIn("href={destination}", self.sidebar)
+        self.assertIn("networkPath(selectedNetwork, href)", self.sidebar)
         self.assertIn("event.preventDefault()", self.sidebar)
         self.assertIn("navigateInternal(href)", self.sidebar)
         self.assertIn("aria-current={active ? 'page' : undefined}", self.sidebar)
