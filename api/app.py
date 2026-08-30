@@ -120,7 +120,7 @@ from api.schemas import (
 from api.token_supply import (NATIVE_GNOT_DECIMALS, NATIVE_GNOT_DENOM, decimal_amount,
                               query_native_gnot_supply, query_total_supply, token_supply_cache)
 from api.cosmos import AllEndpointsUnavailable, RejectedEndpoint, RequestCache
-from api.cosmos.registry import NETWORKS, get_network
+from api.cosmos.registry import NETWORKS, get_network as get_cosmos_network
 from api.cosmos.service import CosmosService
 from api.cosmos.schemas import MarketResponse, OverviewResponse
 
@@ -420,7 +420,7 @@ ACCOUNT_UNAVAILABLE_DETAIL = "Account data is temporarily unavailable"
 
 
 def _cosmos_service(network_id: str) -> CosmosService:
-    if get_network(network_id) is None:
+    if get_cosmos_network(network_id) is None:
         raise HTTPException(status_code=404, detail="Unknown network")
     services = getattr(app.state, "cosmos_services", None)
     if not isinstance(services, dict) or network_id not in services:

@@ -16,6 +16,12 @@ staking, slashing, and validator data use a 5-second TTL. CoinGecko market data 
 30-second TTL. Caches are request-driven and single-flight; there are no background
 pollers or capability probes.
 
+The slashing `allowed_missed_threshold` is the protocol window limit derived with the
+SDK `RoundInt64` rule. A validator is evaluated for punishment only after the SDK's
+minimum observation period and when its counter exceeds that limit. Consequently,
+`remaining_misses_before_threshold` is distance to the counter limit, not a guaranteed
+number of blocks before jail.
+
 Future block views will maintain an initial 10-block rolling window, prepend new
 blocks, and replace the window after large height jumps rather than fetching every
 intermediate block. Old heights use direct lookup. Future transaction views will seek

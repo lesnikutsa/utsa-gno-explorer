@@ -456,6 +456,16 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         await adapter.aclose()
 
 class ValidatorRankingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_slashing_uses_sdk_round_int64_semantics(self):
+        service = object.__new__(CosmosService)
+        async def rest(_name, _path):
+            return {"params": {"signed_blocks_window": "10", "min_signed_per_window": "0.21",
+                "downtime_jail_duration": "600s", "slash_fraction_double_sign": "0.05",
+                "slash_fraction_downtime": "0.01"}}
+        service._rest = rest
+        result = await service._slashing()
+        self.assertEqual(result["allowed_missed_threshold"], 8)
+
     async def test_active_only_deterministic_top_missed(self):
         key_a = {"key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}
         key_b = {"key": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="}
@@ -480,7 +490,7 @@ class ValidatorRankingTests(unittest.IsolatedAsyncioTestCase):
         async def paginate(_name, path, _field):
             return validators if "validators" in path else infos
         service._paginate = paginate
-        result = await service._top_missed(10)
+        result = await service._top_missed(10, validators)
         self.assertEqual([item["operator_address"] for item in result],
                          ["atonevaloper1a", "atonevaloper1b"])
         self.assertEqual([item["remaining_misses_before_threshold"] for item in result], [6, 6])

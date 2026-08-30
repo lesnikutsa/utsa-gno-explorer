@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 DecimalString = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^(0|[1-9][0-9]*)(\.[0-9]+)?$")]
+SignedDecimalString = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^-?(0|[1-9][0-9]*)(\.[0-9]+)?$")]
 AmountString = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^(0|[1-9][0-9]*)$")]
 
 
@@ -20,7 +21,7 @@ class SectionError(StrictModel):
 
 
 class NetworkOverview(StrictModel):
-    network_id: str = Field(min_length=1, max_length=64)
+    network_id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     family: Literal["cosmos"]
     display_name: str = Field(min_length=1, max_length=64)
     network_name: str = Field(min_length=1, max_length=64)
@@ -41,15 +42,20 @@ class NetworkOverview(StrictModel):
 
 
 class NativeAsset(StrictModel):
-    base: Literal["uatone", "uphoton"]
-    display: Literal["atone", "photon"]
-    symbol: Literal["ATONE", "PHOTON"]
-    exponent: Literal[6]
+    base: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9/:._-]+$")
+    display: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9/:._-]+$")
+    symbol: str = Field(min_length=1, max_length=32)
+    exponent: int = Field(ge=0, le=18)
     total_supply: AmountString
 
 
 class AssetsSupply(StrictModel):
-    assets: list[NativeAsset] = Field(min_length=2, max_length=2)
+    assets: list[NativeAsset] = Field(min_length=1, max_length=16)
+
+
+class CoinAmount(StrictModel):
+    denom: str = Field(min_length=1, max_length=128)
+    amount: DecimalString
 
 
 class Staking(StrictModel):
@@ -62,9 +68,9 @@ class Staking(StrictModel):
     max_entries: int = Field(ge=0)
     historical_entries: int = Field(ge=0)
     bond_denom: str = Field(min_length=1, max_length=128)
-    min_commission_rate: DecimalString
-    max_commission_rate: DecimalString
-    key_rotation_fee: DecimalString
+    min_commission_rate: DecimalString | None = None
+    max_commission_rate: DecimalString | None = None
+    key_rotation_fee: CoinAmount | None = None
 
 
 class Mint(StrictModel):
@@ -88,7 +94,7 @@ class Slashing(StrictModel):
 class NakamotoBonus(StrictModel):
     enabled: bool
     step: DecimalString
-    period: str = Field(min_length=1, max_length=64)
+    period_epoch_identifier: str = Field(min_length=1, max_length=64)
     minimum_coefficient: DecimalString
     maximum_coefficient: DecimalString
 
@@ -96,29 +102,36 @@ class NakamotoBonus(StrictModel):
 class Distribution(StrictModel):
     community_tax: DecimalString
     withdraw_address_enabled: bool
-    community_pool: dict[Literal["uatone", "uphoton"], DecimalString]
-    nakamoto_bonus: NakamotoBonus
+    community_pool: dict[str, DecimalString] = Field(max_length=16)
+    nakamoto_bonus: NakamotoBonus | None = None
+
+
+class DecimalRange(StrictModel):
+    min: DecimalString
+    max: DecimalString
 
 
 class GovernanceAdvanced(StrictModel):
-    law_quorum: DecimalString
-    law_threshold: DecimalString
-    constitution_amendment_quorum: DecimalString
-    constitution_amendment_threshold: DecimalString
-    quorum_timeout: str = Field(min_length=1, max_length=64)
-    maximum_voting_period_extension: str = Field(min_length=1, max_length=64)
-    governor_status_change_period: str = Field(min_length=1, max_length=64)
-    minimum_governor_self_delegation: DecimalString
-    quorum_ranges: list[DecimalString] = Field(max_length=16)
+    law_quorum: DecimalString | None = None
+    law_threshold: DecimalString | None = None
+    constitution_amendment_quorum: DecimalString | None = None
+    constitution_amendment_threshold: DecimalString | None = None
+    quorum_range: DecimalRange | None = None
+    law_quorum_range: DecimalRange | None = None
+    constitution_amendment_quorum_range: DecimalRange | None = None
+    quorum_timeout: str | None = Field(default=None, max_length=64)
+    maximum_voting_period_extension: str | None = Field(default=None, max_length=64)
+    governor_status_change_period: str | None = Field(default=None, max_length=64)
+    minimum_governor_self_delegation: DecimalString | None = None
 
 
 class Governance(StrictModel):
-    minimum_deposit: dict[Literal["uatone", "uphoton"], DecimalString]
+    minimum_deposit: dict[str, DecimalString] = Field(max_length=16)
     maximum_deposit_period: str = Field(min_length=1, max_length=64)
     voting_period: str = Field(min_length=1, max_length=64)
     quorum: DecimalString
     threshold: DecimalString
-    advanced: GovernanceAdvanced
+    advanced: GovernanceAdvanced | None = None
 
 
 class MissedValidator(StrictModel):
@@ -145,9 +158,9 @@ class OverviewResponse(StrictModel):
 
 
 class MarketResponse(StrictModel):
-    network_id: Literal["atomone-mainnet"]
+    network_id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     currency: Literal["USD"]
     price: DecimalString
     market_cap: DecimalString
-    change_24h: Annotated[str, Field(min_length=1, max_length=128, pattern=r"^-?(0|[1-9][0-9]*)(\.[0-9]+)?$")]
+    change_24h: SignedDecimalString
     source_last_updated_at: str = Field(min_length=20, max_length=64)

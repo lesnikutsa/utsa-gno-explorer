@@ -1,0 +1,1 @@
+{"params":{"community_tax":"0.020000000000000000","withdraw_addr_enabled":true,"nakamoto_bonus":{"enabled":true,"step":"0.100000000000000000","period_epoch_identifier":"week","minimum_coefficient":"0.500000000000000000","maximum_coefficient":"1.500000000000000000"}}}
