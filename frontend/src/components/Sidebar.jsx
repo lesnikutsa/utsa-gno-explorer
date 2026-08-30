@@ -82,6 +82,7 @@ export function Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed }
   const handleNetworkSelection = (networkId) => {
     selectNetwork(networkId)
     closeNetworkMenu()
+    navigateInternal(networkId === 'gno-pearl' ? '/' : `/networks/${networkId}`)
   }
   const isActive = (href) => {
     if (href === '/') return pathname === '/'

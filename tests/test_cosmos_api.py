@@ -113,6 +113,35 @@ class CosmosRouteTests(unittest.TestCase):
             service.market = AsyncMock(return_value=market)
             self.assertEqual(client.get("/api/networks/atomone-mainnet/market").json(), market)
 
+    def test_blocks_and_lookup_contracts_and_validation(self):
+        block = {"height": 42, "hash": "AA", "timestamp": "2026-08-29T12:34:56.123456Z",
+                 "proposer": "BB", "transaction_count": 0}
+        with TestClient(self.module.app) as client:
+            service = client.app.state.cosmos_services["atomone-mainnet"]
+            service.blocks = AsyncMock(return_value={"source": "rpc_metadata", "blocks": [block]})
+            response = client.get("/api/networks/atomone-mainnet/blocks?limit=10")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["blocks"], [block])
+            self.assertEqual(client.get("/api/networks/atomone-mainnet/blocks?limit=0").status_code, 422)
+            self.assertEqual(client.get("/api/networks/unknown/blocks").status_code, 404)
+            for state in ("available", "future", "node_not_synced", "history_unavailable"):
+                payload = {"state": state, "local_height": 42, "source": "rpc",
+                           "block": block if state == "available" else None, "eta": None,
+                           "eta_unavailable_reason": "insufficient_history" if state == "future" else None}
+                service.block_lookup = AsyncMock(return_value=payload)
+                lookup = client.get("/api/networks/atomone-mainnet/blocks/42")
+                self.assertEqual(lookup.status_code, 200, lookup.text)
+                self.assertEqual(lookup.json()["state"], state)
+            self.assertEqual(client.get("/api/networks/atomone-mainnet/blocks/0").status_code, 422)
+
+    def test_block_routes_sanitize_upstream_failures(self):
+        with TestClient(self.module.app) as client:
+            service = client.app.state.cosmos_services["atomone-mainnet"]
+            service.blocks = AsyncMock(side_effect=RuntimeError("SECRET_RPC_URL"))
+            response = client.get("/api/networks/atomone-mainnet/blocks")
+            self.assertEqual(response.status_code, 503)
+            self.assertNotIn("SECRET_RPC_URL", response.text)
+
 
 class CosmosUpstreamIntegrationTests(unittest.TestCase):
     def handler(self, *, malformed_mint=False, negative_market=False, counters=None):

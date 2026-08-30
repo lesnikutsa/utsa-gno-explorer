@@ -3,7 +3,7 @@
 import asyncio
 import base64
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_EVEN, localcontext
 import hashlib
 import math
@@ -20,6 +20,9 @@ from .parsing import parse_rest_node_info
 from .registry import NetworkDefinition
 from .schemas import (AssetsSupply, Distribution, Governance, MarketResponse,
                       MissedValidator, Mint, OverviewResponse, Slashing, Staking)
+from .blocks import estimate_eta_result, metadata
+from .rfc3339 import parse_rfc3339
+from .errors import HistoryUnavailable, NodeNotSynced
 
 SECTION_TTL = 5.0
 MARKET_TTL = 30.0
@@ -168,6 +171,62 @@ class CosmosService:
         self.cache = cache
         self.adapter = CosmosAdapter(definition.transport, client=client, cache=cache)
         self.transport = self.adapter._transport
+
+    @staticmethod
+    def _public_block(block):
+        return {"height": block.height, "hash": block.block_hash,
+                "timestamp": block.block_time, "proposer": block.proposer_address,
+                "transaction_count": block.transaction_count}
+
+    async def blocks(self, limit: int = 10):
+        if type(limit) is not int or not 1 <= limit <= 20:
+            raise ValueError("limit must be between 1 and 20")
+        head = await self.adapter.node_status()
+        low = max(1, head.local_height - limit + 1)
+        items = await self.cache.get_or_load(
+            (self.definition.transport.network_id, "blocks", (low, head.local_height)), 2.0,
+            lambda: metadata(self.adapter, low, head.local_height))
+        return {"source": "rpc_metadata", "blocks": sorted(items, key=lambda item: item["height"], reverse=True)[:limit]}
+
+    async def block_lookup(self, height: int):
+        status = await self.adapter.node_status()
+        reference_height = status.local_height
+        synchronized = not status.catching_up
+        try:
+            candidates = await self.adapter._cached_candidates("rpc")
+            reference_height = max(candidate.height for candidate in candidates)
+            synchronized = True
+        except AllEndpointsUnavailable:
+            pass
+        if height > reference_height:
+            # A catching-up node cannot establish a network-wide future height.
+            if not synchronized:
+                return {"state": "node_not_synced", "local_height": status.local_height,
+                        "source": "rpc", "block": None, "eta": None,
+                        "eta_unavailable_reason": None}
+            start = max(1, reference_height - 100)
+            try:
+                history = await metadata(self.adapter, start, reference_height)
+                eta, reason = estimate_eta_result(history, height)
+                if eta and history:
+                    latest_time = parse_rfc3339(max(history, key=lambda item: item["height"])["timestamp"])
+                    if datetime.now(timezone.utc) - latest_time > timedelta(seconds=max(300, eta["average_block_seconds"] * 20)):
+                        eta, reason = None, "network_stalled"
+            except (HistoryUnavailable, AllEndpointsUnavailable):
+                eta, reason = None, "insufficient_history"
+            return {"state": "future", "local_height": status.local_height, "source": "rpc",
+                    "block": None, "eta": eta,
+                    "eta_unavailable_reason": reason}
+        try:
+            block = await self.adapter.block(height)
+            return {"state": "available", "local_height": status.local_height, "source": "rpc",
+                    "block": self._public_block(block), "eta": None, "eta_unavailable_reason": None}
+        except NodeNotSynced:
+            state = "node_not_synced"
+        except HistoryUnavailable:
+            state = "history_unavailable"
+        return {"state": state, "local_height": status.local_height, "source": "rpc",
+                "block": None, "eta": None, "eta_unavailable_reason": None}
 
     async def _rest(self, name: str, path: str, validator=None):
         key = (self.definition.transport.network_id, "overview_rest", (name, path))

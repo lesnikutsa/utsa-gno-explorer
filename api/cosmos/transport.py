@@ -28,7 +28,9 @@ class JsonTransport:
             raise ValueError("adapter path must be relative")
         transport_failed = False
         try:
-            async with asyncio.timeout(self._timeout_seconds):
+            # wait_for supplies one deadline for headers and the complete stream
+            # on Python 3.10, where asyncio.timeout is not available.
+            async def receive():
                 async with self._client.stream("GET", base_url.rstrip("/") + path,
                                                timeout=self._timeout) as response:
                     if not 200 <= response.status_code < 300 and not accept_error_payload:
@@ -40,8 +42,9 @@ class JsonTransport:
                         if size > self._max_response_bytes:
                             raise MalformedUpstreamResponse("upstream response is too large")
                         chunks.append(chunk)
-                    body = b"".join(chunks)
-        except (TimeoutError, httpx.RequestError):
+                    return b"".join(chunks)
+            body = await asyncio.wait_for(receive(), timeout=self._timeout_seconds)
+        except (asyncio.TimeoutError, httpx.RequestError):
             transport_failed = True
         if transport_failed:
             # Raise outside the handler so secret-bearing transport exceptions are

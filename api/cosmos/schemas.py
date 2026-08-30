@@ -164,3 +164,32 @@ class MarketResponse(StrictModel):
     market_cap: DecimalString
     change_24h: SignedDecimalString
     source_last_updated_at: str = Field(min_length=20, max_length=64)
+
+
+class CosmosBlock(StrictModel):
+    height: int = Field(gt=0)
+    hash: str = Field(min_length=2, max_length=128)
+    timestamp: str = Field(min_length=20, max_length=64)
+    proposer: str = Field(min_length=2, max_length=128)
+    transaction_count: int = Field(ge=0)
+
+
+class BlocksResponse(StrictModel):
+    source: Literal["rpc_metadata"]
+    blocks: list[CosmosBlock] = Field(max_length=20)
+
+
+class HeightEta(StrictModel):
+    remaining_blocks: int = Field(gt=0)
+    average_block_seconds: float = Field(gt=0)
+    estimated_at: str = Field(min_length=20, max_length=64)
+    sample_intervals: int = Field(ge=20, le=100)
+
+
+class BlockLookupResponse(StrictModel):
+    state: Literal["available", "future", "node_not_synced", "history_unavailable"]
+    local_height: int = Field(gt=0)
+    source: Literal["rpc"]
+    block: CosmosBlock | None = None
+    eta: HeightEta | None = None
+    eta_unavailable_reason: Literal["insufficient_history", "network_stalled", "date_overflow"] | None = None
