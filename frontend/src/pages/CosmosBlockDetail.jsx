@@ -4,28 +4,30 @@ import { CosmosValidatorIdentity } from '../components/CosmosValidatorIdentity'
 import { TransactionExecutionBadge } from '../components/TransactionExecutionBadge'
 import { useCosmosResource } from '../hooks/useCosmosResource'
 import { relativeTime } from '../utils/time'
+import { countdownParts, formatAverageBlockTime, formatEstimatedArrival } from '../utils/futureBlock'
 
 const utc = (value) => new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'UTC' }).format(new Date(value)).replace(',', ' ·') + ' UTC'
 const Hash = ({ value, label, compact = false }) => value ? <span className="cosmos-copy-value"><code className={compact ? undefined : 'cosmos-hash-value'} title={value}>{value}</code><CopyButton value={value} label={`Copy ${label}`} /></span> : <span>—</span>
 const Metric = ({ label, children }) => <div><span>{label}</span><strong>{children}</strong></div>
 
-export const humanDuration = (seconds) => {
-  const value = Math.max(0, Math.round(seconds))
-  if (value >= 31557600) return `About ${Math.round(value / 31557600)} ${Math.round(value / 31557600) === 1 ? 'year' : 'years'}`
-  if (value >= 86400) return `About ${Math.round(value / 86400)} ${Math.round(value / 86400) === 1 ? 'day' : 'days'}`
-  const hours = Math.floor(value / 3600); const minutes = Math.max(1, Math.round((value % 3600) / 60))
-  if (hours) return `~${hours} ${hours === 1 ? 'hour' : 'hours'}${minutes < 60 ? ` ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}` : ''}`
-  return `~${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`
+const Countdown = ({ estimatedAt, now }) => {
+  const countdown = countdownParts(estimatedAt, now)
+  if (!countdown) return null
+  return <div className="cosmos-future-countdown" aria-label="Estimated time until block">
+    <p>Estimated time until block</p>
+    <div className="cosmos-future-countdown__grid">{[['Days', countdown.days], ['Hours', countdown.hours], ['Minutes', countdown.minutes], ['Seconds', countdown.seconds]].map(([label, value]) => <div key={label}><strong>{label === 'Days' ? value.toLocaleString('en-US') : String(value).padStart(2, '0')}</strong><span>{label}</span></div>)}</div>
+  </div>
 }
 
-function UnavailableBlock({ data, height, now }) {
+export function UnavailableBlock({ data, height, now }) {
   if (data.state === 'node_not_synced') return <section className="cosmos-card cosmos-block-state"><h2>Block data is not available yet</h2><p>The connected RPC is still syncing. Its current height is {data.local_height.toLocaleString()}.</p></section>
   if (data.state === 'history_unavailable') return <section className="cosmos-card cosmos-block-state"><h2>Block history is unavailable</h2><p>The connected RPC endpoints have pruned this historical block or cannot provide it.</p></section>
-  const eta = data.eta
+  const eta = data.eta_unavailable_reason ? null : data.eta
+  const remainingBlocks = eta?.remaining_blocks ?? (Number.isSafeInteger(Number(height)) && Number(height) > data.local_height ? Number(height) - data.local_height : null)
   return <section className="cosmos-card cosmos-block-state"><h2>Block #{Number(height).toLocaleString()} has not been produced yet</h2>
-    <div className="cosmos-detail-summary"><Metric label="Current height">{data.local_height.toLocaleString()}</Metric><Metric label="Blocks remaining">{(eta?.remaining_blocks ?? Math.max(0, Number(height) - data.local_height)).toLocaleString()}</Metric>{eta && <><Metric label="Average block time">{eta.average_block_seconds.toLocaleString()} seconds</Metric><Metric label="Estimated arrival">{utc(eta.estimated_at)}</Metric></>}</div>
-    {eta ? <p className="cosmos-block-state__remaining">{humanDuration((Date.parse(eta.estimated_at) - now) / 1000)}</p> : <p>{data.eta_unavailable_reason === 'network_stalled' ? 'An arrival estimate is unavailable because the network does not appear to be producing new blocks.' : data.eta_unavailable_reason === 'date_overflow' ? 'This block is too far in the future to estimate a calendar arrival time.' : 'An arrival estimate is unavailable until enough recent block history is available.'}</p>}
-    {eta && <p className="muted">Estimate based on the latest {eta.sample_intervals} block intervals. Actual arrival time may change as network block time changes.</p>}
+    {eta && <Countdown estimatedAt={eta.estimated_at} now={now} />}
+    <div className="cosmos-detail-summary cosmos-future-metrics"><Metric label="Current height">{data.local_height.toLocaleString('en-US')}</Metric><Metric label="Blocks remaining">{remainingBlocks === null ? '—' : remainingBlocks.toLocaleString('en-US')}</Metric><Metric label="Average block time">{eta ? formatAverageBlockTime(eta.average_block_seconds) : '—'}</Metric><Metric label="Estimated arrival">{eta ? formatEstimatedArrival(eta.estimated_at) : '—'}</Metric></div>
+    {eta ? <p className="cosmos-future-note muted">Estimate based on the latest {eta.sample_intervals} block intervals.<br />Actual arrival time may change as network block time changes.</p> : <p className="cosmos-future-unavailable">Estimated arrival is temporarily unavailable.</p>}
   </section>
 }
 

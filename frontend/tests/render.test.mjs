@@ -32,3 +32,26 @@ test('existing Gno Card still renders its children', async () => {
   const html = renderToStaticMarkup(React.createElement(Card, { eyebrow: 'Gno card', value: 'preserved', meta: 'contract' }))
   assert.match(html, /preserved/)
 })
+
+test('future Cosmos block renders countdown and missing ETA fallback safely', async () => {
+  const { UnavailableBlock } = await server.ssrLoadModule('/src/pages/CosmosBlockDetail.jsx')
+  const now = Date.parse('2026-08-31T00:00:00Z')
+  const future = {
+    state: 'future', local_height: 10_150_210, eta_unavailable_reason: null,
+    eta: { remaining_blocks: 960_901, average_block_seconds: 5.795,
+      estimated_at: '2026-11-04T07:24:03.123456Z', sample_intervals: 80 },
+  }
+  const html = renderToStaticMarkup(React.createElement(UnavailableBlock, { data: future, height: '11111111', now }))
+  assert.match(html, /Estimated time until block/)
+  assert.match(html, />65<\/strong><span>Days/)
+  assert.match(html, />07<\/strong><span>Hours/)
+  assert.match(html, /5\.795 s/)
+  assert.match(html, /04 Nov 2026 · 07:24:03 UTC/)
+  assert.match(html, /latest 80 block intervals/)
+
+  const fallback = renderToStaticMarkup(React.createElement(UnavailableBlock, {
+    data: { ...future, eta: null, eta_unavailable_reason: 'network_stalled' }, height: '11111111', now,
+  }))
+  assert.match(fallback, /Estimated arrival is temporarily unavailable/)
+  assert.doesNotMatch(fallback, /NaN|cosmos-future-countdown__grid/)
+})

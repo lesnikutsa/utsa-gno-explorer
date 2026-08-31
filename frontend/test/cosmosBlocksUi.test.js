@@ -126,13 +126,20 @@ test('future and unavailable blocks use human-friendly state presentation', () =
   for (const label of ['Current height', 'Blocks remaining', 'Average block time', 'Estimated arrival']) {
     assert.match(detail, new RegExp(`label="${label}"`))
   }
-  assert.match(detail, /About.*year/)
+  assert.match(detail, /Estimated time until block/)
+  for (const unit of ['Days', 'Hours', 'Minutes', 'Seconds']) assert.match(detail, new RegExp(`'${unit}'`))
+  assert.match(detail, /formatAverageBlockTime\(eta\.average_block_seconds\)/)
+  assert.match(detail, /formatEstimatedArrival\(eta\.estimated_at\)/)
   assert.match(detail, /Estimate based on the latest \{eta\.sample_intervals\} block intervals/)
+  assert.match(detail, /Estimated arrival is temporarily unavailable/)
+  assert.match(detail, /data\.eta_unavailable_reason \? null : data\.eta/)
   assert.match(detail, /RPC is still syncing/)
   assert.match(detail, /pruned this historical block/)
-  assert.match(detail, /network does not appear to be producing new blocks/)
   assert.doesNotMatch(detail, /replaceAll\('_'/)
   assert.doesNotMatch(detail, /\$\{remainingSeconds\}s remaining/)
+  assert.match(styles, /\.cosmos-future-countdown__grid \{[^}]*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/)
+  assert.match(styles, /max-width: 800px[^}]*\.cosmos-future-countdown__grid \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/)
+  assert.match(styles, /\.cosmos-future-countdown__grid > div \{[^}]*min-width: 0;/)
 })
 
 test('Gno Blocks and Block Detail remain outside Cosmos-scoped implementation', () => {
