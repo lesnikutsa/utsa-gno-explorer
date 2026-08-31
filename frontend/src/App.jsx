@@ -36,6 +36,7 @@ import { useSelectedNetwork } from './context/SelectedNetworkContext'
 import { CosmosOverview } from './pages/CosmosOverview'
 import { CosmosBlocks } from './pages/CosmosBlocks'
 import { CosmosBlockDetail } from './pages/CosmosBlockDetail'
+import { CosmosTransactions } from './pages/CosmosTransactions'
 import { CosmosExplorerLayout } from './layouts/CosmosExplorerLayout'
 
 const NETWORK_MASCOT_SRC = '/assets/network-mascot.png?v=1'
@@ -203,18 +204,20 @@ export default function App() {
     if (descriptionMeta) descriptionMeta.setAttribute('content', networkProfile.description)
   }, [path])
 
-  const cosmosMatch = path.match(/^\/networks\/([^/]+)(?:\/(blocks)(?:\/([^/]+))?)?\/?$/)
+  const cosmosMatch = path.match(/^\/networks\/([^/]+)(?:\/(blocks|transactions)(?:\/([^/]+))?)?\/?$/)
   if (cosmosMatch) {
     const network = getNetworkById(cosmosMatch[1])
     if (networksLoading) return <main className="route-error"><p>Loading network registry…</p></main>
     if (networksError) return <main className="route-error"><h1>Network registry unavailable</h1></main>
     if (!network || network.family !== 'cosmos') return <main className="route-error"><h1>Network not found</h1></main>
-    const rawHeight = cosmosMatch[3]
+    const rawHeight = cosmosMatch[2] === 'blocks' ? cosmosMatch[3] : null
+    if (cosmosMatch[2] === 'transactions' && cosmosMatch[3]) return <main className="route-error"><h1>Route not found</h1></main>
     const renderContent = ({ overview, blocks, blockTime }) => rawHeight
       ? (/^[1-9]\d{0,18}$/.test(rawHeight) && BigInt(rawHeight) <= 9223372036854775807n
         ? <CosmosBlockDetail network={network} height={rawHeight} />
         : <p className="cosmos-error">Invalid block height.</p>)
-      : cosmosMatch[2] ? <CosmosBlocks network={network} resource={blocks} /> : <CosmosOverview network={network} overview={overview} blocks={blocks} averageBlockSeconds={blockTime.average} />
+      : cosmosMatch[2] === 'transactions' ? <CosmosTransactions network={network} />
+      : cosmosMatch[2] === 'blocks' ? <CosmosBlocks network={network} resource={blocks} /> : <CosmosOverview network={network} overview={overview} blocks={blocks} averageBlockSeconds={blockTime.average} />
     return <CosmosExplorerLayout network={network}>{renderContent}</CosmosExplorerLayout>
   }
   if (path.startsWith('/networks/')) return <main className="route-error"><h1>Route not found</h1></main>

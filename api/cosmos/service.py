@@ -24,6 +24,7 @@ from .blocks import estimate_eta_result, metadata, metadata_sample
 from .block_detail import normalize_detail
 from .rfc3339 import parse_rfc3339
 from .errors import HistoryUnavailable
+from .transactions import normalize_transactions
 
 SECTION_TTL = 5.0
 MARKET_TTL = 30.0
@@ -198,6 +199,30 @@ class CosmosService:
             identity = identities.get(item["proposer"].upper())
             enriched.append({**item, **identity} if identity else item)
         return {"source": "rpc_metadata", "blocks": sorted(enriched, key=lambda item: item["height"], reverse=True)[:limit]}
+
+    async def transactions(self, limit=20, page=1):
+        if type(limit) is not int or not 1 <= limit <= 20 or type(page) is not int or not 1 <= page <= 100:
+            raise ValueError("invalid transaction page")
+        path = ("/cosmos/tx/v1beta1/txs?events=tx.height%3E0"
+                f"&pagination.offset={(page - 1) * limit}&pagination.limit={limit}&pagination.count_total=true"
+                "&order_by=ORDER_BY_DESC")
+        capability = False
+        async for endpoint, payload in self.adapter.rest_failover(path):
+            if "code" in payload and "tx" in str(payload.get("message", "")).lower():
+                capability = True
+                continue
+            try:
+                rows, total = normalize_transactions(payload, limit)
+                return {"state": "available", "transactions": rows, "page": page,
+                        "page_size": limit, "total": total,
+                        "has_older": total is not None and page * limit < total,
+                        "has_newer": page > 1, "source_host": self.adapter._host(endpoint)}
+            except MalformedUpstreamResponse:
+                continue
+        if capability:
+            return {"state": "indexing_unavailable", "transactions": [], "page": page,
+                    "page_size": limit, "total": None, "has_older": False, "has_newer": page > 1}
+        raise AllEndpointsUnavailable("no valid transaction search response")
 
     @staticmethod
     def _validator_identities(validators):
