@@ -69,6 +69,9 @@ test('Block Detail exposes human and technical information through compact discl
   assert.match(detail, /<summary>More technical hashes<\/summary>/)
   assert.match(detail, /<h2>Commit Summary<\/h2>/)
   assert.match(detail, /<summary>Commit Signatures \(\{data\.signatures\.length\}\)<\/summary>/)
+  assert.match(detail, /<span className="cosmos-copy-value"><CosmosValidatorIdentity/)
+  assert.match(styles, /\.cosmos-copy-value \{[^}]*width: 100%;[^}]*justify-content: space-between;/)
+  assert.match(styles, /\.cosmos-detail-summary > div \{[^}]*border: 1px solid var\(--color-border-soft\);[^}]*background: var\(--color-surface-subtle\);/)
 })
 
 test('Block Detail handles transaction rows, zero state, optional evidence and collapsed JSON', () => {
