@@ -33,10 +33,10 @@ import { useAccountDetail } from './hooks/useAccountDetail'
 import { useRealmDetail } from './hooks/useRealmDetail'
 import { usePathname } from './utils/navigation'
 import { useSelectedNetwork } from './context/SelectedNetworkContext'
-import { CosmosLayout } from './layouts/CosmosLayout'
 import { CosmosOverview } from './pages/CosmosOverview'
 import { CosmosBlocks } from './pages/CosmosBlocks'
 import { CosmosBlockDetail } from './pages/CosmosBlockDetail'
+import { CosmosExplorerLayout } from './layouts/CosmosExplorerLayout'
 
 const NETWORK_MASCOT_SRC = '/assets/network-mascot.png?v=1'
 
@@ -210,12 +210,12 @@ export default function App() {
     if (networksError) return <main className="route-error"><h1>Network registry unavailable</h1></main>
     if (!network || network.family !== 'cosmos') return <main className="route-error"><h1>Network not found</h1></main>
     const rawHeight = cosmosMatch[3]
-    const content = rawHeight
+    const renderContent = ({ overview, blocks, blockTime }) => rawHeight
       ? (/^[1-9]\d{0,18}$/.test(rawHeight) && BigInt(rawHeight) <= 9223372036854775807n
         ? <CosmosBlockDetail network={network} height={rawHeight} />
         : <p className="cosmos-error">Invalid block height.</p>)
-      : cosmosMatch[2] ? <CosmosBlocks network={network} /> : <CosmosOverview network={network} />
-    return <CosmosLayout network={network} section={cosmosMatch[2] ? 'blocks' : 'overview'}>{content}</CosmosLayout>
+      : cosmosMatch[2] ? <CosmosBlocks network={network} resource={blocks} /> : <CosmosOverview network={network} overview={overview} blocks={blocks} averageBlockSeconds={blockTime.average} />
+    return <CosmosExplorerLayout network={network}>{renderContent}</CosmosExplorerLayout>
   }
   if (path.startsWith('/networks/')) return <main className="route-error"><h1>Route not found</h1></main>
 

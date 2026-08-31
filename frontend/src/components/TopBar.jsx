@@ -3,6 +3,8 @@ import { BlocksIcon, MenuIcon, MoonIcon, SearchIcon, SunIcon } from './Icons'
 import { useGlobalSearch } from '../hooks/useGlobalSearch'
 import { shortAddress } from '../utils/address'
 import { formatAverageBlockTime, normalizeBlockTimeIntervals } from '../utils/blockTime'
+import { useSelectedNetwork } from '../context/SelectedNetworkContext'
+import { NetworkBlockSearch } from './NetworkBlockSearch'
 
 const labels = { loading: 'Connecting', healthy: 'Healthy', degraded: 'Degraded', error: 'Unavailable' }
 
@@ -16,6 +18,8 @@ export function TopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefres
   const blockTimePointerType = useRef(null)
   const [averageBlockTimeUpdating, setAverageBlockTimeUpdating] = useState(false)
   const [blockTimeHistoryOpen, setBlockTimeHistoryOpen] = useState(false)
+  const { selectedNetwork } = useSelectedNetwork()
+  const cosmosSearch = selectedNetwork.family === 'cosmos'
   const {
     query, status, message, searching, validatorResults, dropdownOpen, highlightedIndex,
     submitSearch, updateQuery, clearSearch, selectValidator, closeDropdown, moveHighlight,
@@ -96,7 +100,6 @@ export function TopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefres
       event.currentTarget.blur()
     }
   }
-
   const secondsUntilRefresh = nextFastRefreshAt
     ? Math.min(5, Math.max(0, Math.ceil((nextFastRefreshAt - clock) / 1_000)))
     : 0
@@ -108,7 +111,7 @@ export function TopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefres
   return (
     <header className="topbar">
       <button className="menu-button" onClick={onMenuClick} aria-label="Open navigation"><MenuIcon /></button>
-      <form ref={searchFormRef} className="global-search" role="search" onSubmit={submitSearch} aria-busy={searching}>
+      {cosmosSearch ? <NetworkBlockSearch network={selectedNetwork} inputRef={searchInputRef} formRef={searchFormRef} /> : <form ref={searchFormRef} className="global-search" role="search" onSubmit={submitSearch} aria-busy={searching}>
         <label className="search-box">
           <SearchIcon />
           <input
@@ -158,7 +161,7 @@ export function TopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefres
             {message}
           </div>
         )}
-      </form>
+      </form>}
       {showAverageBlockTime && (
         <div
           ref={blockTimeControlRef}

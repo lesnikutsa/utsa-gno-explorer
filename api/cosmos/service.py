@@ -18,7 +18,7 @@ from .cache import RequestCache
 from .errors import AllEndpointsUnavailable, MalformedUpstreamResponse, RejectedEndpoint
 from .parsing import parse_node_status, parse_rest_node_info, parse_rpc_block
 from .registry import NetworkDefinition
-from .schemas import (AssetsSupply, Distribution, Governance, MarketResponse,
+from .schemas import (AssetsSupply, Distribution, Governance, MarketHistoryResponse, MarketResponse,
                       MissedValidator, Mint, OverviewResponse, Slashing, Staking)
 from .blocks import estimate_eta_result, metadata, metadata_sample
 from .rfc3339 import parse_rfc3339
@@ -188,7 +188,39 @@ class CosmosService:
         items = await self.cache.get_or_load(
             (self.definition.transport.network_id, "blocks", (low, head.local_height)), 2.0,
             lambda: metadata(self.adapter, low, head.local_height))
-        return {"source": "rpc_metadata", "blocks": sorted(items, key=lambda item: item["height"], reverse=True)[:limit]}
+        try:
+            identities = self._validator_identities(await self._bonded_validators())
+        except Exception:
+            identities = {}
+        enriched = []
+        for item in items:
+            identity = identities.get(item["proposer"].upper())
+            enriched.append({**item, **identity} if identity else item)
+        return {"source": "rpc_metadata", "blocks": sorted(enriched, key=lambda item: item["height"], reverse=True)[:limit]}
+
+    @staticmethod
+    def _validator_identities(validators):
+        identities = {}
+        for raw in validators:
+            try:
+                validator = _mapping(raw, "validator")
+                public_key = _mapping(validator.get("consensus_pubkey"), "consensus public key")
+                decoded = base64.b64decode(_text(public_key.get("key"), "consensus public key", 256), validate=True)
+                proposer = hashlib.sha256(decoded).digest()[:20].hex().upper()
+                operator = _text(validator.get("operator_address"), "operator address", 90)
+                description = _mapping(validator.get("description"), "validator description")
+                moniker = description.get("moniker")
+                if not isinstance(moniker, str) or not moniker.strip() or len(moniker.strip()) > 256 or not moniker.isprintable():
+                    continue
+                raw_identity = description.get("identity")
+                identity = raw_identity.strip() if isinstance(raw_identity, str) else ""
+                if len(identity) > 128 or (identity and (not identity.isascii() or not identity.isalnum())):
+                    identity = ""
+                identities[proposer] = {"proposer_moniker": moniker.strip(), "proposer_operator_address": operator,
+                                        **({"proposer_identity": identity} if identity else {})}
+            except Exception:
+                continue
+        return identities
 
     async def _status_observations(self):
         async def load():
@@ -464,7 +496,10 @@ class CosmosService:
                 moniker = ""
             bonded[address] = {"moniker": moniker or operator_address,
                                "operator_address": operator_address,
-                               "consensus_address": address, "jailed": _boolean(item.get("jailed"), "jailed")}
+                               "consensus_address": address, "jailed": _boolean(item.get("jailed"), "jailed"),
+                               "identity": (_text(description["identity"], "validator identity", 128)
+                                            if isinstance(description.get("identity"), str)
+                                            and description["identity"].isascii() and description["identity"].isalnum() else None)}
         results = []
         for raw in infos:
             info = _mapping(raw, "signing info")
@@ -481,6 +516,17 @@ class CosmosService:
 
     async def overview(self) -> dict:
         status = await self.adapter.node_status()
+        try:
+            rpc_candidates = await self.adapter._cached_candidates("rpc")
+            highest = max(candidate.height for candidate in rpc_candidates)
+            rpc_pool = [{"host": self.adapter._host(candidate.endpoint),
+                         "latency_ms": min(30000, max(0, round(candidate.latency * 1000))),
+                         "height": candidate.height,
+                         "state": "healthy" if highest - candidate.height <= self.definition.transport.max_height_lag else "degraded",
+                         "selected": self.adapter._host(candidate.endpoint) == status.source_host}
+                        for candidate in rpc_candidates]
+        except Exception:
+            rpc_pool = []
         supply_task = asyncio.create_task(self._supply())
         validators_task = asyncio.create_task(self._bonded_validators())
         slashing_task = asyncio.create_task(self._slashing())
@@ -530,7 +576,8 @@ class CosmosService:
             "application_version": status.application_version, "sdk_version": status.sdk_version,
             "cometbft_version": status.cometbft_version,
             "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-            "block_history_state": "unknown", "historical_state": "unknown"}
+            "block_history_state": "unknown", "historical_state": "unknown",
+            "rpc_status_source": status.source_host, "rpc_pool": rpc_pool}
         return OverviewResponse.model_validate({"network": network, **normalized}).model_dump(mode="json")
 
     async def market(self) -> dict:
@@ -560,4 +607,32 @@ class CosmosService:
                 return MarketResponse.model_validate(result).model_dump(mode="json")
             except ValidationError:
                 raise MalformedUpstreamResponse("invalid market data") from None
+        return await self.cache.get_or_load(key, MARKET_TTL, load)
+
+    async def market_history(self) -> dict:
+        key = (self.definition.transport.network_id, "market_history", ())
+        async def load():
+            identifier = quote(self.definition.coingecko_id, safe="")
+            response = await self.transport.get_object("https://api.coingecko.com",
+                f"/api/v3/coins/{identifier}/market_chart?vs_currency=usd&days=1")
+            prices = response.get("prices")
+            if not isinstance(prices, list) or not 2 <= len(prices) <= 2000:
+                raise MalformedUpstreamResponse("invalid market history")
+            normalized = []
+            for point in prices:
+                if not isinstance(point, list) or len(point) != 2:
+                    raise MalformedUpstreamResponse("invalid market history point")
+                timestamp, price = point
+                if (isinstance(timestamp, bool) or not isinstance(timestamp, (int, float))
+                        or not math.isfinite(timestamp) or timestamp <= 0
+                        or isinstance(price, bool) or not isinstance(price, (int, float))
+                        or not math.isfinite(price) or price < 0):
+                    raise MalformedUpstreamResponse("invalid market history point")
+                normalized.append({"timestamp": int(timestamp), "price": format(Decimal(str(price)), "f")})
+            if any(right["timestamp"] <= left["timestamp"] for left, right in zip(normalized, normalized[1:])):
+                raise MalformedUpstreamResponse("invalid market history order")
+            if len(normalized) > 96:
+                normalized = [normalized[index * (len(normalized) - 1) // 95] for index in range(96)]
+            result = {"network_id": self.definition.transport.network_id, "currency": "USD", "points": normalized}
+            return MarketHistoryResponse.model_validate(result).model_dump(mode="json")
         return await self.cache.get_or_load(key, MARKET_TTL, load)

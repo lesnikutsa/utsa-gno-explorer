@@ -32,9 +32,9 @@ class ChainIdentitySourceContractTests(unittest.TestCase):
 
     def test_layout_uses_hook_once_and_passes_result_to_sidebar(self):
         self.assertIn("import { useChainIdentity } from '../hooks/useChainIdentity'", self.layout)
-        self.assertEqual(self.layout.count("useChainIdentity()"), 1)
-        self.assertIn("const chainId = useChainIdentity()", self.layout)
-        self.assertIn("chainId={chainId}", self.layout)
+        self.assertEqual(self.layout.count("useChainIdentity({ enabled: chainIdOverride === undefined })"), 1)
+        self.assertIn("const resolvedChainId = chainIdOverride ?? chainId", self.layout)
+        self.assertIn("chainId={resolvedChainId}", self.layout)
 
     def test_hook_uses_existing_health_api_and_poll_interval(self):
         self.assertIn("import { getHealth } from '../services/api'", self.hook)

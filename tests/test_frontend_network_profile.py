@@ -60,9 +60,10 @@ class FrontendNetworkProfileTests(unittest.TestCase):
         self.assertIn("chainId ?", self.sidebar)
 
     def test_brand_uses_profile_and_preserves_logo(self):
-        self.assertIn("networkProfile", self.logo)
-        self.assertIn("{networkProfile.projectName} Explorer", self.logo)
-        self.assertIn("`UTSA ${networkProfile.projectName} Explorer`", self.logo)
+        self.assertIn("projectName", self.logo)
+        self.assertIn("projectName={networkProfile.projectName}", self.sidebar)
+        self.assertIn("{projectName} Explorer", self.logo)
+        self.assertIn("`UTSA ${projectName} Explorer`", self.logo)
         self.assertIn("'/assets/utsa-logo.png'", self.logo)
         self.assertIn('<div className="brand__asset" aria-hidden="true">', self.logo)
 

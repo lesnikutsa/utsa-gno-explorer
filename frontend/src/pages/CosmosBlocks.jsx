@@ -1,9 +1,8 @@
 import { useState } from 'react'
-import { useCosmosResource } from '../hooks/useCosmosResource'
 import { navigateInternal } from '../utils/navigation'
 
-export function CosmosBlocks({ network }) {
-  const resource = useCosmosResource(`/api/networks/${network.id}/blocks?limit=10`)
+export function CosmosBlocks({ network, resource: suppliedResource }) {
+  const resource = suppliedResource
   const [height, setHeight] = useState('')
   const submit = (event) => {
     event.preventDefault()

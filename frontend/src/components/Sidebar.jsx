@@ -19,6 +19,8 @@ export function Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed }
   const networkProfile = selectedNetwork.presentation
   const pathname = usePathname()
   const items = navigationItems.filter(({ capability }) => hasNetworkCapability(selectedNetwork, capability))
+  const networkHref = (href) => selectedNetwork.family === 'cosmos'
+    ? `/networks/${selectedNetwork.id}${href === '/' ? '' : href}` : href
   const isTransactionDetail = /^\/blocks\/[^/]+\/transactions\/[^/]+\/?$/.test(pathname)
   const chainLabel = chainId ? `${networkProfile.projectName} · ${chainId}` : `${networkProfile.projectName} network`
   useEffect(() => {
@@ -86,6 +88,9 @@ export function Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed }
   }
   const isActive = (href) => {
     if (href === '/') return pathname === '/'
+    if (selectedNetwork.family === 'cosmos' && href === `/networks/${selectedNetwork.id}`) {
+      return pathname === href || pathname === `${href}/`
+    }
     if (href === '/transactions' && isTransactionDetail) return true
     if (href === '/blocks' && isTransactionDetail) return false
     return pathname === href || pathname.startsWith(`${href}/`)
@@ -106,11 +111,11 @@ export function Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed }
     <>
       <button className={`sidebar-backdrop ${open ? 'is-visible' : ''}`} onClick={handleSidebarClose} aria-label="Close navigation" />
       <aside className={`sidebar ${open ? 'is-open' : ''}`}>
-        <UtsaLogo />
+        <UtsaLogo projectName={networkProfile.projectName} />
         <div className="chain-select" ref={networkSelector}>
           <span className="sidebar__label">Current chain</span>
           <button ref={networkSelectorTrigger} type="button" data-sidebar-tooltip={collapsed ? chainLabel : undefined} aria-label={`Select network. Current network: ${chainLabel}`} aria-haspopup="listbox" aria-expanded={networkMenuOpen} aria-controls="network-selector-options" onClick={() => networkMenuOpen ? closeNetworkMenu() : openNetworkMenu()} onKeyDown={handleNetworkTriggerKeyDown}>
-            <span className="chain-select__compact-icon">
+            <span className="chain-select__network-identity">
               {networkIconFailed ? (
                 <span className="chain-select__network-icon-fallback"><ChainIcon /></span>
               ) : (
@@ -135,7 +140,8 @@ export function Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed }
           )}
         </div>
         <nav className="sidebar__nav" aria-label="Explorer navigation">
-          {items.map(({ label, Icon, href }) => {
+          {items.map(({ label, Icon, href: itemHref }) => {
+            const href = networkHref(itemHref)
             const active = isActive(href)
             return <a key={label} className={`nav-item ${active ? 'is-active' : ''}`} href={href} onClick={(event) => handleNavigation(event, href)} aria-current={active ? 'page' : undefined} data-sidebar-tooltip={collapsed && !active ? label : undefined}><Icon /><span className="nav-item__label">{label}</span></a>
           })}

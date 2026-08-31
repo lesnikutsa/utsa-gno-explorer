@@ -124,7 +124,7 @@ from api.cosmos.registry import (NETWORKS, get_network as get_cosmos_network,
                                  public_networks)
 from api.cosmos.service import CosmosService
 from api.cosmos.schemas import (BlockLookupResponse, BlocksResponse as CosmosBlocksResponse,
-                                MarketResponse, OverviewResponse, PublicNetworksResponse)
+                                MarketHistoryResponse, MarketResponse, OverviewResponse, PublicNetworksResponse)
 
 LOGGER = logging.getLogger(__name__)
 UNAVAILABLE_DETAIL = "Explorer database is unavailable"
@@ -457,7 +457,17 @@ async def get_cosmos_network_market(network_id: str):
         raise HTTPException(status_code=503, detail="Market data is temporarily unavailable") from None
 
 
-@app.get("/api/networks/{network_id}/blocks", response_model=CosmosBlocksResponse)
+@app.get("/api/networks/{network_id}/market/history", response_model=MarketHistoryResponse)
+async def get_cosmos_network_market_history(network_id: str):
+    service = _cosmos_service(network_id)
+    try:
+        return await service.market_history()
+    except Exception:
+        LOGGER.info("Cosmos market history failed network=%s reason=upstream_unavailable", network_id)
+        raise HTTPException(status_code=503, detail="Market history is temporarily unavailable") from None
+
+
+@app.get("/api/networks/{network_id}/blocks", response_model=CosmosBlocksResponse, response_model_exclude_none=True)
 async def get_cosmos_blocks(network_id: str, limit: int = Query(10, ge=1, le=20)):
     service = _cosmos_service(network_id)
     try:

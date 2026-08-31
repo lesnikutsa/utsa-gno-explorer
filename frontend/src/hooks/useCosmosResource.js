@@ -24,7 +24,7 @@ export function useCosmosResource(url, interval = 5000) {
               .sort((left, right) => right.height - left.height).slice(0, 20)
           }
         }
-        return { url, data, loading: false, error: null, stale: false }
+        return { url, data, loading: false, error: null, stale: false, nextRefreshAt: Date.now() + interval }
       })
     } catch (error) {
       if (scope.current.isCurrent(request, url)) setState((current) => ({ ...current, url, loading: false, error: error.name === 'AbortError' ? 'Request timed out' : error.message, stale: Boolean(current.data) }))
@@ -32,7 +32,7 @@ export function useCosmosResource(url, interval = 5000) {
       window.clearTimeout(timeout)
       scope.current.finish(request)
     }
-  }, [url])
+  }, [url, interval])
   useEffect(() => {
     let active = true
     setState({ url, data: null, loading: true, error: null, stale: false })
