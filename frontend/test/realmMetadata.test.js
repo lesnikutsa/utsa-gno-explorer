@@ -31,6 +31,7 @@ test('Source expansion is independent from selected-file loading', () => {
   assert.match(detail, /<div className="realm-metadata__source-header"><h3>Source<\/h3><button/)
   assert.match(detail, /className="blocks-page__button realm-metadata__source-toggle"/)
   assert.match(styles, /\.realm-metadata__source-toggle \{[^}]*border-color: var\(--color-accent\);[^}]*background: var\(--color-accent-soft\);[^}]*color: var\(--color-text-bright\);/)
+  assert.match(styles, /\.realm-metadata__source-toggle:hover[^}]*background: rgba\(200,75,49,\.22\)/)
   assert.match(styles, /\.realm-metadata__source-header \{[^}]*flex-wrap: wrap;[^}]*gap: 8px;/)
   assert.doesNotMatch(styles, /\.realm-metadata__source-header \{[^}]*justify-content: space-between;/)
   assert.match(detail, /aria-expanded=\{sourceExpanded\}/)

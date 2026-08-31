@@ -75,7 +75,7 @@ test('Block Detail exposes human and technical information through compact discl
   assert.match(detail, /className=\{compact \? undefined : 'cosmos-hash-value'\}/)
   assert.match(detail, /label="transaction hash" compact/)
   assert.doesNotMatch(detail, /shortHash/)
-  assert.match(styles, /\.cosmos-detail-card details > summary, \.cosmos-normalized-json > summary \{[^}]*outline: 1px solid var\(--color-accent\)/)
+  assert.match(styles, /\.cosmos-detail-card details > summary, \.cosmos-normalized-json > summary \{[^}]*border: 1px solid var\(--color-accent\);[^}]*border-radius: 5px;[^}]*background: var\(--color-accent-soft\)/)
   assert.match(styles, /\.cosmos-copy-value code \{[^}]*overflow-wrap: anywhere;[^}]*word-break: break-all;/)
   assert.match(styles, /code\.cosmos-hash-value \{ font-size: 12px; \}/)
 })
