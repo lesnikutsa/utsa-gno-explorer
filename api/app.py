@@ -120,6 +120,7 @@ from api.schemas import (
 from api.token_supply import (NATIVE_GNOT_DECIMALS, NATIVE_GNOT_DENOM, decimal_amount,
                               query_native_gnot_supply, query_total_supply, token_supply_cache)
 from api.cosmos import AllEndpointsUnavailable, RejectedEndpoint, RequestCache
+from api.cosmos.errors import TransactionNotFound
 from api.cosmos.registry import (NETWORKS, get_network as get_cosmos_network,
                                  public_networks)
 from api.cosmos.service import CosmosService
@@ -132,6 +133,7 @@ from api.cosmos.schemas import (
     OverviewResponse as CosmosOverviewResponse,
     PublicNetworksResponse as CosmosPublicNetworksResponse,
     TransactionDetailResponse as CosmosTransactionDetailResponse,
+    CosmosTransactionLookupResponse,
     TransactionsResponse as CosmosTransactionsResponse,
 )
 
@@ -495,6 +497,20 @@ async def get_cosmos_transactions(network_id: str, limit: int = Query(20, ge=1, 
     except Exception:
         LOGGER.info("Cosmos transactions failed network=%s reason=upstream_unavailable", network_id)
         raise HTTPException(status_code=503, detail="Transaction data is temporarily unavailable") from None
+
+
+@app.get("/api/networks/{network_id}/transactions/{tx_hash}",
+         response_model=CosmosTransactionLookupResponse)
+async def get_cosmos_transaction_by_hash(
+        network_id: str, tx_hash: str = Path(..., pattern=r"^[0-9A-Fa-f]{64}$")):
+    service = _cosmos_service(network_id)
+    try:
+        return await service.transaction_lookup(tx_hash)
+    except TransactionNotFound:
+        raise HTTPException(status_code=404, detail="Transaction not found") from None
+    except Exception:
+        LOGGER.info("Cosmos transaction lookup failed network=%s reason=upstream_unavailable", network_id)
+        raise HTTPException(status_code=503, detail="Transaction lookup is temporarily unavailable") from None
 
 
 @app.get("/api/networks/{network_id}/blocks/{height}", response_model=CosmosBlockLookupResponse)

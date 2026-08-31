@@ -15,12 +15,14 @@ from pydantic import TypeAdapter, ValidationError
 
 from .adapter import CosmosAdapter
 from .cache import RequestCache
-from .errors import AllEndpointsUnavailable, MalformedUpstreamResponse, RejectedEndpoint
+from .errors import (AllEndpointsUnavailable, MalformedUpstreamResponse,
+                     RejectedEndpoint, TransactionNotFound)
 from .parsing import parse_node_status, parse_rest_node_info, parse_rpc_block
 from .registry import NetworkDefinition
 from .schemas import (AssetsSupply, Distribution, Governance, MarketHistoryResponse, MarketResponse,
-                      MissedValidator, Mint, OverviewResponse, Slashing, Staking)
-from .blocks import estimate_eta_result, metadata, metadata_sample
+                      CosmosTransactionsResponse, MissedValidator, Mint,
+                      OverviewResponse, Slashing, Staking)
+from .blocks import checkpoint_average, metadata
 from .block_detail import normalize_detail
 from .rfc3339 import parse_rfc3339
 from .errors import HistoryUnavailable
@@ -29,6 +31,7 @@ from .transaction_detail import normalize_transaction_detail
 
 SECTION_TTL = 5.0
 MARKET_TTL = 30.0
+ETA_SAMPLE_TTL = 300.0
 MAX_PAGES = 10
 PAGE_SIZE = 200
 MAX_LIST_ITEMS = MAX_PAGES * PAGE_SIZE
@@ -216,16 +219,50 @@ class CosmosService:
                 continue
             try:
                 rows, total = normalize_transactions(payload, limit)
-                return {"state": "available", "transactions": rows, "page": page,
+                candidate = {"state": "available", "transactions": rows, "page": page,
                         "page_size": limit, "total": total,
-                        "has_older": total is not None and page * limit < total,
+                        "has_older": page < 100 and total is not None and page * limit < total,
                         "has_newer": page > 1, "source_host": self.adapter._host(endpoint)}
-            except MalformedUpstreamResponse:
+                return TypeAdapter(CosmosTransactionsResponse).validate_python(candidate).model_dump()
+            except (MalformedUpstreamResponse, ValidationError):
                 continue
         if capability:
             return {"state": "indexing_unavailable", "transactions": [], "page": page,
                     "page_size": limit, "total": None, "has_older": False, "has_newer": page > 1}
         raise AllEndpointsUnavailable("no valid transaction search response")
+
+    async def transaction_lookup(self, tx_hash: str):
+        """Resolve an exact transaction hash through identity-validated RPCs."""
+        if not isinstance(tx_hash, str) or re.fullmatch(r"[0-9A-Fa-f]{64}", tx_hash) is None:
+            raise ValueError("invalid transaction hash")
+        normalized_hash = tx_hash.upper()
+        candidates = await self.adapter._cached_candidates("rpc")
+        not_found = False
+        for candidate in candidates:
+            try:
+                payload = await self.transport.get_object(
+                    candidate.endpoint, f"/tx?hash=0x{normalized_hash}&prove=false",
+                    accept_error_payload=True)
+                error = payload.get("error")
+                if isinstance(error, dict):
+                    message = str(error.get("data") or error.get("message") or "").lower()
+                    if "not found" in message:
+                        not_found = True
+                    continue
+                result = _mapping(payload.get("result"), "transaction lookup result")
+                result_hash = _text(result.get("hash"), "transaction hash", 64).upper()
+                if result_hash != normalized_hash or re.fullmatch(r"[0-9A-F]{64}", result_hash) is None:
+                    raise MalformedUpstreamResponse("transaction hash mismatch")
+                height = _integer(result.get("height"), "transaction height")
+                index = _integer(result.get("index"), "transaction index")
+                if height <= 0 or index > 10_000:
+                    raise MalformedUpstreamResponse("invalid transaction location")
+                return {"height": height, "index": index, "tx_hash": result_hash}
+            except Exception:
+                continue
+        if not_found:
+            raise TransactionNotFound("transaction not found")
+        raise AllEndpointsUnavailable("transaction lookup unavailable")
 
     @staticmethod
     def _validator_identities(validators):
@@ -315,14 +352,26 @@ class CosmosService:
                         "source": "rpc", "block": None, "eta": None,
                         "eta_unavailable_reason": None}
             try:
-                key = (self.definition.transport.network_id, "eta_sample", (confirmed_height,))
-                history = await self.cache.get_or_load(
-                    key, 2.0, lambda: metadata_sample(self.adapter, confirmed_height))
-                eta, reason = estimate_eta_result(history, height)
-                if eta and history:
-                    latest_time = parse_rfc3339(max(history, key=lambda item: item["height"])["timestamp"])
-                    if self._wall_clock() - latest_time > timedelta(seconds=max(300, eta["average_block_seconds"] * 20)):
-                        eta, reason = None, "network_stalled"
+                sample = await self.cache.get_or_load(
+                    (self.definition.transport.network_id, "eta_checkpoint", ()), ETA_SAMPLE_TTL,
+                    lambda: checkpoint_average(self.adapter, confirmed_height))
+                if sample is None:
+                    raise HistoryUnavailable(confirmed_height)
+                confirmed_status = max(confirmed, key=lambda status: status.local_height)
+                average = sample["average_block_seconds"]
+                latest_time = parse_rfc3339(confirmed_status.latest_block_time)
+                if self._wall_clock() - latest_time > timedelta(seconds=max(300, average * 20)):
+                    eta, reason = None, "network_stalled"
+                else:
+                    remaining = height - confirmed_status.local_height
+                    try:
+                        estimated = latest_time + timedelta(seconds=average * remaining)
+                        eta = {"remaining_blocks": remaining, "average_block_seconds": average,
+                               "estimated_at": estimated.isoformat(timespec="microseconds").replace("+00:00", "Z"),
+                               "sample_intervals": sample["sample_intervals"]}
+                        reason = None
+                    except (OverflowError, ValueError):
+                        eta, reason = None, "date_overflow"
             except (HistoryUnavailable, AllEndpointsUnavailable):
                 eta, reason = None, "insufficient_history"
             return {"state": "future", "local_height": observed_height, "source": "rpc",

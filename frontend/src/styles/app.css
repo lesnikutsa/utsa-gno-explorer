@@ -1168,6 +1168,15 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .cosmos-block-nav a { color: #dc795e; font-weight: 600; }
 .cosmos-block-nav a:hover { color: var(--color-text-bright); }
 .cosmos-back { display: inline-flex; margin-bottom: 10px; }
+.cosmos-block-state > h2 { margin: 0; color: var(--color-text-bright); font-size: 18px; text-align: center; }
+.cosmos-future-countdown { margin: 24px auto 18px; text-align: center; }
+.cosmos-future-countdown > p { margin: 0 0 10px; color: var(--color-text-secondary); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.cosmos-future-countdown__grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; max-width: 720px; margin: 0 auto; }
+.cosmos-future-countdown__grid > div { display: grid; min-width: 0; min-height: 112px; place-content: center; gap: 7px; padding: 12px 8px; border: 1px solid var(--color-border-soft); border-radius: 7px; background: var(--color-surface-subtle); }
+.cosmos-future-countdown__grid strong { min-width: 0; color: var(--color-text-bright); font: 700 clamp(28px, 4vw, 48px)/1 var(--font-mono); overflow-wrap: anywhere; }
+.cosmos-future-countdown__grid span { color: var(--color-text-secondary); font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.cosmos-future-metrics { margin-top: 0; padding-right: 0; padding-left: 0; }
+.cosmos-future-note, .cosmos-future-unavailable { margin: 6px 0 0; color: var(--color-text-secondary); font-size: 10px; line-height: 1.55; text-align: center; }
 .cosmos-detail-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; padding: 10px 12px; overflow: hidden; }
 .cosmos-detail-summary > div { display: grid; min-width: 0; align-content: start; gap: 4px; padding: 8px 9px; border: 1px solid var(--color-border-soft); border-radius: 5px; background: var(--color-surface-subtle); }
 .cosmos-detail-summary > div > span, .cosmos-commit-summary > div > span { color: var(--color-text-secondary); font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
@@ -1211,6 +1220,6 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .cosmos-signature-status--nil, .cosmos-signature-status--absent { color: var(--color-warning); }
 .cosmos-normalized-json { margin-bottom: 10px; overflow: hidden; }
 .cosmos-normalized-json pre { max-height: 420px; margin: 0; padding: 11px 13px; overflow: auto; border-top: 1px solid var(--color-border-soft); background: var(--color-surface-subtle); color: var(--color-text); font-size: 10px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
-@media (max-width: 800px) { .cosmos-detail-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cosmos-commit-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 800px) { .cosmos-detail-summary, .cosmos-future-countdown__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cosmos-commit-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 560px) { .cosmos-detail-card dl { grid-template-columns: 1fr; } .cosmos-detail-card dt { padding-bottom: 3px; border-bottom: 0; } .cosmos-detail-card dd { padding-top: 3px; } .cosmos-copy-value { gap: 8px; } .cosmos-copy-value .copy-button { flex: 0 0 24px; } }
 @media (prefers-reduced-motion: reduce) { .cosmos-blocks .is-new-row, .cosmos-blocks .is-settling-row, .cosmos-detail-card details > summary::after, .cosmos-normalized-json > summary::after { animation: none !important; transition: none; } }

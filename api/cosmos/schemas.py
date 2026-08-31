@@ -261,6 +261,12 @@ class CosmosTransactionsResponse(StrictModel):
     source_host: str | None = Field(default=None, max_length=253)
 
 
+class CosmosTransactionLookupResponse(StrictModel):
+    height: int = Field(gt=0, le=9_223_372_036_854_775_807)
+    index: int = Field(ge=0, le=10_000)
+    tx_hash: str = Field(pattern=r"^[0-9A-F]{64}$")
+
+
 # Backwards-compatible module export; the distinct class name also keeps the
 # existing Gno OpenAPI component name stable when both families are mounted.
 TransactionsResponse = CosmosTransactionsResponse
@@ -270,7 +276,7 @@ class HeightEta(StrictModel):
     remaining_blocks: int = Field(gt=0)
     average_block_seconds: float = Field(gt=0)
     estimated_at: str = Field(min_length=20, max_length=64)
-    sample_intervals: int = Field(ge=20, le=100)
+    sample_intervals: int = Field(ge=20, le=1000)
 
 
 class BlockLookupResponse(StrictModel):
