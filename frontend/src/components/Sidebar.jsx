@@ -88,6 +88,9 @@ export function Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed }
   }
   const isActive = (href) => {
     if (href === '/') return pathname === '/'
+    if (selectedNetwork.family === 'cosmos' && href === `/networks/${selectedNetwork.id}`) {
+      return pathname === href || pathname === `${href}/`
+    }
     if (href === '/transactions' && isTransactionDetail) return true
     if (href === '/blocks' && isTransactionDetail) return false
     return pathname === href || pathname.startsWith(`${href}/`)
@@ -112,7 +115,7 @@ export function Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed }
         <div className="chain-select" ref={networkSelector}>
           <span className="sidebar__label">Current chain</span>
           <button ref={networkSelectorTrigger} type="button" data-sidebar-tooltip={collapsed ? chainLabel : undefined} aria-label={`Select network. Current network: ${chainLabel}`} aria-haspopup="listbox" aria-expanded={networkMenuOpen} aria-controls="network-selector-options" onClick={() => networkMenuOpen ? closeNetworkMenu() : openNetworkMenu()} onKeyDown={handleNetworkTriggerKeyDown}>
-            <span className="chain-select__compact-icon">
+            <span className="chain-select__network-identity">
               {networkIconFailed ? (
                 <span className="chain-select__network-icon-fallback"><ChainIcon /></span>
               ) : (
@@ -137,10 +140,10 @@ export function Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed }
           )}
         </div>
         <nav className="sidebar__nav" aria-label="Explorer navigation">
-          {items.map(({ label, Icon, href }) => {
-            const resolvedHref = networkHref(href)
-            const active = isActive(resolvedHref)
-            return <a key={label} className={`nav-item ${active ? 'is-active' : ''}`} href={resolvedHref} onClick={(event) => handleNavigation(event, resolvedHref)} aria-current={active ? 'page' : undefined} data-sidebar-tooltip={collapsed && !active ? label : undefined}><Icon /><span className="nav-item__label">{label}</span></a>
+          {items.map(({ label, Icon, href: itemHref }) => {
+            const href = networkHref(itemHref)
+            const active = isActive(href)
+            return <a key={label} className={`nav-item ${active ? 'is-active' : ''}`} href={href} onClick={(event) => handleNavigation(event, href)} aria-current={active ? 'page' : undefined} data-sidebar-tooltip={collapsed && !active ? label : undefined}><Icon /><span className="nav-item__label">{label}</span></a>
           })}
         </nav>
         <button

@@ -4,7 +4,7 @@ import { TopBar } from '../components/TopBar'
 import { useChainIdentity } from '../hooks/useChainIdentity'
 import { useTheme } from '../hooks/useTheme'
 
-export function ExplorerLayout({ children, healthState, nextFastRefreshAt, showRefreshCountdown = true, averageBlockTimeSeconds, averageBlockTimeSampleSize, averageBlockTimeIntervalsSeconds, chainId: chainIdOverride, searchEnabled = true, documentTitle }) {
+export function ExplorerLayout({ children, healthState, nextFastRefreshAt, showRefreshCountdown = true, averageBlockTimeSeconds, averageBlockTimeSampleSize, averageBlockTimeIntervalsSeconds, chainId: chainIdOverride, documentTitle }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
@@ -13,8 +13,9 @@ export function ExplorerLayout({ children, healthState, nextFastRefreshAt, showR
       return false
     }
   })
-  const liveChainId = useChainIdentity({ enabled: chainIdOverride === undefined })
-  const chainId = chainIdOverride ?? liveChainId
+  const chainId = useChainIdentity()
+  const resolvedChainId = chainIdOverride ?? chainId
+  // The Gno path remains equivalent to chainId={chainId}; Cosmos supplies its validated registry identity.
   const { theme, toggleTheme } = useTheme()
 
   useEffect(() => {
@@ -34,12 +35,12 @@ export function ExplorerLayout({ children, healthState, nextFastRefreshAt, showR
       <Sidebar
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
-        chainId={chainId}
+        chainId={resolvedChainId}
         collapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((collapsed) => !collapsed)}
       />
       <div className="app-frame">
-        <TopBar onMenuClick={() => setSidebarOpen(true)} healthState={healthState} nextFastRefreshAt={nextFastRefreshAt} showRefreshCountdown={showRefreshCountdown} averageBlockTimeSeconds={averageBlockTimeSeconds} averageBlockTimeSampleSize={averageBlockTimeSampleSize} averageBlockTimeIntervalsSeconds={averageBlockTimeIntervalsSeconds} theme={theme} onToggleTheme={toggleTheme} searchEnabled={searchEnabled} />
+        <TopBar onMenuClick={() => setSidebarOpen(true)} healthState={healthState} nextFastRefreshAt={nextFastRefreshAt} showRefreshCountdown={showRefreshCountdown} averageBlockTimeSeconds={averageBlockTimeSeconds} averageBlockTimeSampleSize={averageBlockTimeSampleSize} averageBlockTimeIntervalsSeconds={averageBlockTimeIntervalsSeconds} theme={theme} onToggleTheme={toggleTheme} />
         <main className="main-content">{typeof children === 'function' ? children(chainId) : children}</main>
       </div>
     </div>

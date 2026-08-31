@@ -13,7 +13,7 @@ from api.cosmos.errors import AllEndpointsUnavailable
 from api.cosmos import RequestCache
 from api.cosmos.registry import ATOMONE, AssetConfig, NetworkDefinition
 from api.cosmos.config import CosmosNetworkConfig
-from api.cosmos.schemas import MarketResponse, OverviewResponse
+from api.cosmos.schemas import MarketHistoryResponse, MarketResponse, OverviewResponse
 from api.cosmos.service import CosmosService, consensus_address
 import httpx
 
@@ -113,6 +113,21 @@ class CosmosRouteTests(unittest.TestCase):
             service.market = AsyncMock(return_value=market)
             self.assertEqual(client.get("/api/networks/atomone-mainnet/market").json(), market)
 
+    def test_market_history_contract_is_bounded_and_failures_are_sanitized(self):
+        history = {"network_id": "atomone-mainnet", "currency": "USD", "points": [
+            {"timestamp": 1788000000000, "price": "1.2"},
+            {"timestamp": 1788000300000, "price": "1.3"}]}
+        with TestClient(self.module.app) as client:
+            service = client.app.state.cosmos_services["atomone-mainnet"]
+            service.market_history = AsyncMock(return_value=history)
+            response = client.get("/api/networks/atomone-mainnet/market/history")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json(), history)
+            service.market_history = AsyncMock(side_effect=RuntimeError("SECRET_MARKET_HISTORY"))
+            response = client.get("/api/networks/atomone-mainnet/market/history")
+            self.assertEqual(response.status_code, 503)
+            self.assertNotIn("SECRET_MARKET_HISTORY", response.text)
+
     def test_blocks_and_lookup_contracts_and_validation(self):
         block = {"height": 42, "hash": "AA", "timestamp": "2026-08-29T12:34:56.123456Z",
                  "proposer": "BB", "transaction_count": 0}
@@ -182,6 +197,8 @@ class CosmosUpstreamIntegrationTests(unittest.TestCase):
             if path == "/cosmos/distribution/v1beta1/community_pool": return httpx.Response(200, json=base["community_pool"])
             if path == "/cosmos/gov/v1/params/voting": return httpx.Response(200, json=governance)
             if path == "/api/v3/simple/price": return httpx.Response(200, json={"atomone":{"usd":-1.2 if negative_market else 1.2,"usd_market_cap":1000,"usd_24h_change":-2.5,"last_updated_at":1788000000}})
+            if path == "/api/v3/coins/atomone/market_chart":
+                return httpx.Response(200, json={"prices": [[1788000000000 + index * 300000, 1 + index / 1000] for index in range(120)]})
             return httpx.Response(501, json={"error":"wrong route"})
         return handle
 
@@ -234,6 +251,28 @@ class CosmosUpstreamIntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.json(), {"detail":"Market data is temporarily unavailable"})
         asyncio.run(upstream.aclose())
+
+    def test_market_history_is_validated_downsampled_and_cached(self):
+        counters = {}
+        upstream, service = self.make_service(self.handler(counters=counters))
+        first = asyncio.run(service.market_history())
+        second = asyncio.run(service.market_history())
+        self.assertEqual(first, second)
+        self.assertEqual(len(first["points"]), 96)
+        self.assertEqual(first["points"][0]["timestamp"], 1788000000000)
+        self.assertEqual(first["points"][-1]["timestamp"], 1788000000000 + 119 * 300000)
+        self.assertEqual(sum(count for url, count in counters.items() if "/market_chart" in url), 1)
+        self.assertEqual(MarketHistoryResponse.model_validate(first).network_id, "atomone-mainnet")
+        asyncio.run(upstream.aclose())
+
+    def test_validator_identity_enrichment_uses_consensus_key_and_falls_back(self):
+        validators = atomone_fixture("validators.json")["validators"]
+        identities = CosmosService._validator_identities(validators)
+        self.assertEqual(len(identities), 1)
+        identity = next(iter(identities.values()))
+        self.assertEqual(identity["proposer_moniker"], "Silk Nodes")
+        self.assertTrue(identity["proposer_operator_address"].startswith("atonevaloper"))
+        self.assertEqual(CosmosService._validator_identities([{"bad": "validator"}]), {})
 
     def test_generic_public_models_accept_one_asset_without_atomone_extensions(self):
         definition = NetworkDefinition(

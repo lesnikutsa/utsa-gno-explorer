@@ -68,6 +68,7 @@ class NetworkOverview(StrictModel):
     generated_at: str = Field(min_length=20, max_length=64)
     block_history_state: Literal["unknown", "available", "unavailable"]
     historical_state: Literal["unknown", "available", "unavailable"]
+    rpc_status_source: str | None = Field(default=None, min_length=1, max_length=253)
 
 
 class NativeAsset(StrictModel):
@@ -195,12 +196,25 @@ class MarketResponse(StrictModel):
     source_last_updated_at: str = Field(min_length=20, max_length=64)
 
 
+class MarketHistoryPoint(StrictModel):
+    timestamp: int = Field(gt=0)
+    price: DecimalString
+
+
+class MarketHistoryResponse(StrictModel):
+    network_id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+    currency: Literal["USD"]
+    points: list[MarketHistoryPoint] = Field(min_length=2, max_length=96)
+
+
 class CosmosBlock(StrictModel):
     height: int = Field(gt=0)
     hash: str = Field(min_length=2, max_length=128)
     timestamp: str = Field(min_length=20, max_length=64)
     proposer: str = Field(min_length=2, max_length=128)
     transaction_count: int = Field(ge=0)
+    proposer_moniker: str | None = Field(default=None, min_length=1, max_length=256)
+    proposer_operator_address: str | None = Field(default=None, min_length=1, max_length=90)
 
 
 class BlocksResponse(StrictModel):

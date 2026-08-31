@@ -19,9 +19,9 @@ test('Cosmos overview renders data, zero values, empty validators, and SectionEr
     distribution: { community_tax: '0', withdraw_address_enabled: false },
     top_active_validators_by_missed_blocks: [],
   }
-  const network = { presentation: { projectName: 'AtomOne' }, assets: [{ symbol: 'ATONE' }] }
+  const network = { id: 'atomone-mainnet', expectedChainId: 'atomone-1', presentation: { projectName: 'AtomOne' }, assets: [{ symbol: 'ATONE' }] }
   const html = renderToStaticMarkup(React.createElement(CosmosOverviewView, { data, network, market: null, marketError: 'offline' }))
-  assert.match(html, /AtomOne Overview/)
+  assert.doesNotMatch(html, /AtomOne Overview|Cosmos network/)
   assert.match(html, /0\.0/)
   assert.match(html, /Section unavailable/)
   assert.match(html, /No active validator misses reported/)
