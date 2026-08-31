@@ -21,6 +21,10 @@ class AllEndpointsUnavailable(CosmosAdapterError):
     """No validated endpoint completed an operation."""
 
 
+class TransactionNotFound(CosmosAdapterError):
+    """Every conclusive transaction lookup reported an unknown hash."""
+
+
 class HistoryUnavailable(CosmosAdapterError):
     """A requested block is outside the connected RPC's retained history."""
 

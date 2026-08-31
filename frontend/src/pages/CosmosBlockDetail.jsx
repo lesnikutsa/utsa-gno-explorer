@@ -9,6 +9,26 @@ const utc = (value) => new Intl.DateTimeFormat('en-GB', { day: '2-digit', month:
 const Hash = ({ value, label, compact = false }) => value ? <span className="cosmos-copy-value"><code className={compact ? undefined : 'cosmos-hash-value'} title={value}>{value}</code><CopyButton value={value} label={`Copy ${label}`} /></span> : <span>—</span>
 const Metric = ({ label, children }) => <div><span>{label}</span><strong>{children}</strong></div>
 
+export const humanDuration = (seconds) => {
+  const value = Math.max(0, Math.round(seconds))
+  if (value >= 31557600) return `About ${Math.round(value / 31557600)} ${Math.round(value / 31557600) === 1 ? 'year' : 'years'}`
+  if (value >= 86400) return `About ${Math.round(value / 86400)} ${Math.round(value / 86400) === 1 ? 'day' : 'days'}`
+  const hours = Math.floor(value / 3600); const minutes = Math.max(1, Math.round((value % 3600) / 60))
+  if (hours) return `~${hours} ${hours === 1 ? 'hour' : 'hours'}${minutes < 60 ? ` ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}` : ''}`
+  return `~${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`
+}
+
+function UnavailableBlock({ data, height, now }) {
+  if (data.state === 'node_not_synced') return <section className="cosmos-card cosmos-block-state"><h2>Block data is not available yet</h2><p>The connected RPC is still syncing. Its current height is {data.local_height.toLocaleString()}.</p></section>
+  if (data.state === 'history_unavailable') return <section className="cosmos-card cosmos-block-state"><h2>Block history is unavailable</h2><p>The connected RPC endpoints have pruned this historical block or cannot provide it.</p></section>
+  const eta = data.eta
+  return <section className="cosmos-card cosmos-block-state"><h2>Block #{Number(height).toLocaleString()} has not been produced yet</h2>
+    <div className="cosmos-detail-summary"><Metric label="Current height">{data.local_height.toLocaleString()}</Metric><Metric label="Blocks remaining">{(eta?.remaining_blocks ?? Math.max(0, Number(height) - data.local_height)).toLocaleString()}</Metric>{eta && <><Metric label="Average block time">{eta.average_block_seconds.toLocaleString()} seconds</Metric><Metric label="Estimated arrival">{utc(eta.estimated_at)}</Metric></>}</div>
+    {eta ? <p className="cosmos-block-state__remaining">{humanDuration((Date.parse(eta.estimated_at) - now) / 1000)}</p> : <p>{data.eta_unavailable_reason === 'network_stalled' ? 'An arrival estimate is unavailable because the network does not appear to be producing new blocks.' : data.eta_unavailable_reason === 'date_overflow' ? 'This block is too far in the future to estimate a calendar arrival time.' : 'An arrival estimate is unavailable until enough recent block history is available.'}</p>}
+    {eta && <p className="muted">Estimate based on the latest {eta.sample_intervals} block intervals. Actual arrival time may change as network block time changes.</p>}
+  </section>
+}
+
 function AvailableBlock({ network, lookup, height }) {
   const detail = useCosmosResource(`/api/networks/${network.id}/blocks/${height}/detail`, null)
   if (!detail.data) return detail.loading ? <p>Loading block detail…</p> : <p className="cosmos-error">{detail.error}</p>
@@ -31,9 +51,8 @@ export function CosmosBlockDetail({ network, height }) {
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer) }, [])
   if (resource.loading) return <p>Looking up block {height}…</p>
   if (!resource.data) return <p className="cosmos-error">{resource.error}</p>
-  const data = resource.data; const eta = data.eta
-  const remainingSeconds = eta ? Math.floor((Date.parse(eta.estimated_at) - now) / 1000) : null
+  const data = resource.data
   return <div className="cosmos-block-detail"><a className="cosmos-back block-detail__back" href={`/networks/${network.id}/blocks`}>← Back to Blocks</a><div className="cosmos-title"><h1>Block #{Number(height).toLocaleString()}</h1>{resource.stale && <span>Stale</span>}</div>
-    {data.state === 'available' ? <AvailableBlock network={network} lookup={data} height={height} /> : <section className="cosmos-card"><h2>{data.state.replaceAll('_', ' ')}</h2><p>Local RPC height: {data.local_height}</p>{data.state === 'future' && (eta ? <><p>Estimated from {eta.sample_intervals} block intervals.</p><p>{utc(eta.estimated_at)} · {eta.remaining_blocks} blocks · {remainingSeconds > 0 ? `${remainingSeconds}s remaining` : 'Overdue / awaiting block'}</p></> : <p>ETA unavailable: {data.eta_unavailable_reason?.replaceAll('_', ' ')}.</p>)}{data.state === 'node_not_synced' && <p>The connected RPC is still syncing and has not reached this height.</p>}{data.state === 'history_unavailable' && <p>Connected RPC endpoints do not provide this historical block.</p>}</section>}
+    {data.state === 'available' ? <AvailableBlock network={network} lookup={data} height={height} /> : <UnavailableBlock data={data} height={height} now={now} />}
   </div>
 }

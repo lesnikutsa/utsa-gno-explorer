@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
 from api.config import ApiConfig
-from api.cosmos.errors import AllEndpointsUnavailable
+from api.cosmos.errors import AllEndpointsUnavailable, TransactionNotFound
 from api.cosmos import RequestCache
 from api.cosmos.registry import ATOMONE, AssetConfig, NetworkDefinition
 from api.cosmos.config import CosmosNetworkConfig
@@ -148,6 +148,21 @@ class CosmosRouteTests(unittest.TestCase):
                 self.assertEqual(lookup.status_code, 200, lookup.text)
                 self.assertEqual(lookup.json()["state"], state)
             self.assertEqual(client.get("/api/networks/atomone-mainnet/blocks/0").status_code, 422)
+
+    def test_transaction_hash_lookup_contract_and_errors(self):
+        tx_hash = "ab" * 32
+        with TestClient(self.module.app) as client:
+            service = client.app.state.cosmos_services["atomone-mainnet"]
+            service.transaction_lookup = AsyncMock(return_value={
+                "height": 42, "index": 3, "tx_hash": tx_hash.upper()})
+            response = client.get(f"/api/networks/atomone-mainnet/transactions/{tx_hash}")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json(), {"height": 42, "index": 3, "tx_hash": tx_hash.upper()})
+            self.assertEqual(client.get("/api/networks/atomone-mainnet/transactions/not-a-hash").status_code, 422)
+            service.transaction_lookup = AsyncMock(side_effect=TransactionNotFound("missing"))
+            self.assertEqual(client.get(f"/api/networks/atomone-mainnet/transactions/{tx_hash}").status_code, 404)
+            service.transaction_lookup = AsyncMock(side_effect=AllEndpointsUnavailable("index disabled"))
+            self.assertEqual(client.get(f"/api/networks/atomone-mainnet/transactions/{tx_hash}").status_code, 503)
 
     def test_block_routes_sanitize_upstream_failures(self):
         with TestClient(self.module.app) as client:

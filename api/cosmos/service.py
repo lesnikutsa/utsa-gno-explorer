@@ -15,11 +15,13 @@ from pydantic import TypeAdapter, ValidationError
 
 from .adapter import CosmosAdapter
 from .cache import RequestCache
-from .errors import AllEndpointsUnavailable, MalformedUpstreamResponse, RejectedEndpoint
+from .errors import (AllEndpointsUnavailable, MalformedUpstreamResponse,
+                     RejectedEndpoint, TransactionNotFound)
 from .parsing import parse_node_status, parse_rest_node_info, parse_rpc_block
 from .registry import NetworkDefinition
 from .schemas import (AssetsSupply, Distribution, Governance, MarketHistoryResponse, MarketResponse,
-                      MissedValidator, Mint, OverviewResponse, Slashing, Staking)
+                      CosmosTransactionsResponse, MissedValidator, Mint,
+                      OverviewResponse, Slashing, Staking)
 from .blocks import estimate_eta_result, metadata, metadata_sample
 from .block_detail import normalize_detail
 from .rfc3339 import parse_rfc3339
@@ -216,16 +218,50 @@ class CosmosService:
                 continue
             try:
                 rows, total = normalize_transactions(payload, limit)
-                return {"state": "available", "transactions": rows, "page": page,
+                candidate = {"state": "available", "transactions": rows, "page": page,
                         "page_size": limit, "total": total,
-                        "has_older": total is not None and page * limit < total,
+                        "has_older": page < 100 and total is not None and page * limit < total,
                         "has_newer": page > 1, "source_host": self.adapter._host(endpoint)}
-            except MalformedUpstreamResponse:
+                return TypeAdapter(CosmosTransactionsResponse).validate_python(candidate).model_dump()
+            except (MalformedUpstreamResponse, ValidationError):
                 continue
         if capability:
             return {"state": "indexing_unavailable", "transactions": [], "page": page,
                     "page_size": limit, "total": None, "has_older": False, "has_newer": page > 1}
         raise AllEndpointsUnavailable("no valid transaction search response")
+
+    async def transaction_lookup(self, tx_hash: str):
+        """Resolve an exact transaction hash through identity-validated RPCs."""
+        if not isinstance(tx_hash, str) or re.fullmatch(r"[0-9A-Fa-f]{64}", tx_hash) is None:
+            raise ValueError("invalid transaction hash")
+        normalized_hash = tx_hash.upper()
+        candidates = await self.adapter._cached_candidates("rpc")
+        not_found = False
+        for candidate in candidates:
+            try:
+                payload = await self.transport.get_object(
+                    candidate.endpoint, f"/tx?hash=0x{normalized_hash}&prove=false",
+                    accept_error_payload=True)
+                error = payload.get("error")
+                if isinstance(error, dict):
+                    message = str(error.get("data") or error.get("message") or "").lower()
+                    if "not found" in message:
+                        not_found = True
+                    continue
+                result = _mapping(payload.get("result"), "transaction lookup result")
+                result_hash = _text(result.get("hash"), "transaction hash", 64).upper()
+                if result_hash != normalized_hash or re.fullmatch(r"[0-9A-F]{64}", result_hash) is None:
+                    raise MalformedUpstreamResponse("transaction hash mismatch")
+                height = _integer(result.get("height"), "transaction height")
+                index = _integer(result.get("index"), "transaction index")
+                if height <= 0 or index > 10_000:
+                    raise MalformedUpstreamResponse("invalid transaction location")
+                return {"height": height, "index": index, "tx_hash": result_hash}
+            except Exception:
+                continue
+        if not_found:
+            raise TransactionNotFound("transaction not found")
+        raise AllEndpointsUnavailable("transaction lookup unavailable")
 
     @staticmethod
     def _validator_identities(validators):

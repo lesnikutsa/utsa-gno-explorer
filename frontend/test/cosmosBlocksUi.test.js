@@ -121,6 +121,20 @@ test('Block Detail handles transaction rows, zero state, optional evidence and c
   assert.match(detail, /<details className="panel cosmos-normalized-json"><summary>Normalized JSON<\/summary>/)
 })
 
+test('future and unavailable blocks use human-friendly state presentation', () => {
+  assert.match(detail, /has not been produced yet/)
+  for (const label of ['Current height', 'Blocks remaining', 'Average block time', 'Estimated arrival']) {
+    assert.match(detail, new RegExp(`label="${label}"`))
+  }
+  assert.match(detail, /About.*year/)
+  assert.match(detail, /Estimate based on the latest \{eta\.sample_intervals\} block intervals/)
+  assert.match(detail, /RPC is still syncing/)
+  assert.match(detail, /pruned this historical block/)
+  assert.match(detail, /network does not appear to be producing new blocks/)
+  assert.doesNotMatch(detail, /replaceAll\('_'/)
+  assert.doesNotMatch(detail, /\$\{remainingSeconds\}s remaining/)
+})
+
 test('Gno Blocks and Block Detail remain outside Cosmos-scoped implementation', () => {
   assert.doesNotMatch(gnoBlocks, /cosmos-blocks|cosmos-detail/)
   assert.doesNotMatch(gnoDetail, /cosmos-blocks|cosmos-detail/)
