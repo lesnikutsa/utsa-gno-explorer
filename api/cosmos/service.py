@@ -21,6 +21,7 @@ from .registry import NetworkDefinition
 from .schemas import (AssetsSupply, Distribution, Governance, MarketHistoryResponse, MarketResponse,
                       MissedValidator, Mint, OverviewResponse, Slashing, Staking)
 from .blocks import estimate_eta_result, metadata, metadata_sample
+from .block_detail import normalize_detail
 from .rfc3339 import parse_rfc3339
 from .errors import HistoryUnavailable
 
@@ -309,6 +310,43 @@ class CosmosService:
             state = "history_unavailable"
         return {"state": state, "local_height": observed_height, "source": "rpc",
                 "block": None, "eta": None, "eta_unavailable_reason": None}
+
+    async def block_detail(self, height: int):
+        """Fetch full immutable detail only for a confirmed, locally available block."""
+        observations = await self._status_observations()
+        local_height = max(status.local_height for _endpoint, status in observations)
+        if height > local_height:
+            raise AllEndpointsUnavailable("block is not locally available")
+        try:
+            raw_identities = self._validator_identities(await self._bonded_validators())
+        except Exception:
+            raw_identities = {}
+        identities = {key: {"moniker": value.get("proposer_moniker"),
+                            "operator_address": value.get("proposer_operator_address"),
+                            "identity": value.get("proposer_identity")}
+                      for key, value in raw_identities.items()}
+
+        async def load():
+            for endpoint, status in sorted(observations, key=lambda item: item[1].local_height, reverse=True):
+                if status.local_height < height:
+                    continue
+                try:
+                    block, commit, results = await asyncio.gather(
+                        self.transport.get_object(endpoint, f"/block?height={height}"),
+                        self.transport.get_object(endpoint, f"/commit?height={height}"),
+                        self.transport.get_object(endpoint, f"/block_results?height={height}"))
+                    detail = normalize_detail(block, commit, results,
+                        network_id=self.definition.transport.network_id,
+                        expected_chain_id=self.definition.transport.chain_id,
+                        requested_height=height, local_height=local_height, identities=identities)
+                    proposer_identity = raw_identities.get(detail["proposer"].upper(), {})
+                    detail.update(proposer_identity)
+                    return detail
+                except Exception:
+                    continue
+            raise AllEndpointsUnavailable("block detail unavailable")
+        return await self.cache.get_or_load(
+            (self.definition.transport.network_id, "block_detail", (height,)), 30.0, load)
 
     async def _rest(self, name: str, path: str, validator=None):
         key = (self.definition.transport.network_id, "overview_rest", (name, path))

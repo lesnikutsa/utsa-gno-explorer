@@ -247,3 +247,70 @@ class BlockLookupResponse(StrictModel):
     block: CosmosBlock | None = None
     eta: HeightEta | None = None
     eta_unavailable_reason: Literal["insufficient_history", "network_stalled", "date_overflow"] | None = None
+
+
+class BlockHashSet(StrictModel):
+    block: str = Field(min_length=2, max_length=128)
+    last_block: str | None = Field(default=None, max_length=128)
+    last_commit: str | None = Field(default=None, max_length=128)
+    data: str | None = Field(default=None, max_length=128)
+    validators: str = Field(min_length=2, max_length=128)
+    next_validators: str = Field(min_length=2, max_length=128)
+    consensus: str = Field(min_length=2, max_length=128)
+    app: str | None = Field(default=None, max_length=128)
+    last_results: str | None = Field(default=None, max_length=128)
+    evidence: str | None = Field(default=None, max_length=128)
+
+
+class CommitSignature(StrictModel):
+    validator_address: str | None = Field(default=None, max_length=128)
+    moniker: str | None = Field(default=None, max_length=256)
+    operator_address: str | None = Field(default=None, max_length=90)
+    identity: str | None = Field(default=None, max_length=128)
+    status: Literal["signed", "nil", "absent", "unknown"]
+    block_id_flag: int = Field(ge=1, le=255)
+    timestamp: str | None = Field(default=None, min_length=20, max_length=64)
+    signature: str | None = Field(default=None, max_length=256)
+
+
+class CommitSummary(StrictModel):
+    validators: int = Field(ge=0, le=200)
+    signed: int = Field(ge=0, le=200)
+    missed: int = Field(ge=0, le=200)
+    nil: int = Field(ge=0, le=200)
+    absent: int = Field(ge=0, le=200)
+    unknown: int = Field(ge=0, le=200)
+
+
+class BlockTransaction(StrictModel):
+    index: int = Field(ge=0, le=9999)
+    hash: str = Field(min_length=64, max_length=64)
+    status: Literal["success", "failed", "unknown"]
+    gas_used: int | None = Field(default=None, ge=0)
+    gas_wanted: int | None = Field(default=None, ge=0)
+
+
+class EvidenceItem(StrictModel):
+    type: str = Field(min_length=1, max_length=128)
+    height: int | None = Field(default=None, ge=1)
+    time: str | None = Field(default=None, min_length=20, max_length=64)
+
+
+class BlockDetailResponse(StrictModel):
+    network_id: str = Field(min_length=1, max_length=64)
+    chain_id: str = Field(min_length=1, max_length=128)
+    local_height: int = Field(gt=0)
+    height: int = Field(gt=0)
+    timestamp: str = Field(min_length=20, max_length=64)
+    transaction_count: int = Field(ge=0, le=10000)
+    block_version: int = Field(ge=0)
+    app_version: int = Field(ge=0)
+    proposer: str = Field(min_length=2, max_length=128)
+    proposer_moniker: str | None = Field(default=None, max_length=256)
+    proposer_operator_address: str | None = Field(default=None, max_length=90)
+    proposer_identity: str | None = Field(default=None, max_length=128)
+    hashes: BlockHashSet
+    commit: CommitSummary
+    signatures: list[CommitSignature] = Field(max_length=200)
+    transactions: list[BlockTransaction] = Field(max_length=10000)
+    evidence: list[EvidenceItem] = Field(max_length=20)

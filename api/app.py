@@ -123,7 +123,7 @@ from api.cosmos import AllEndpointsUnavailable, RejectedEndpoint, RequestCache
 from api.cosmos.registry import (NETWORKS, get_network as get_cosmos_network,
                                  public_networks)
 from api.cosmos.service import CosmosService
-from api.cosmos.schemas import (BlockLookupResponse, BlocksResponse as CosmosBlocksResponse,
+from api.cosmos.schemas import (BlockDetailResponse, BlockLookupResponse, BlocksResponse as CosmosBlocksResponse,
                                 MarketHistoryResponse, MarketResponse, OverviewResponse, PublicNetworksResponse)
 
 LOGGER = logging.getLogger(__name__)
@@ -485,6 +485,17 @@ async def get_cosmos_block(network_id: str, height: int = Path(..., ge=1, le=9_2
     except Exception:
         LOGGER.info("Cosmos block lookup failed network=%s reason=upstream_unavailable", network_id)
         raise HTTPException(status_code=503, detail="Block data is temporarily unavailable") from None
+
+
+@app.get("/api/networks/{network_id}/blocks/{height}/detail", response_model=BlockDetailResponse,
+         response_model_exclude_none=True)
+async def get_cosmos_block_detail(network_id: str, height: int = Path(..., ge=1, le=9_223_372_036_854_775_807)):
+    service = _cosmos_service(network_id)
+    try:
+        return await service.block_detail(height)
+    except Exception:
+        LOGGER.info("Cosmos block detail failed network=%s reason=upstream_unavailable", network_id)
+        raise HTTPException(status_code=503, detail="Block detail is temporarily unavailable") from None
 
 
 def utc_now() -> datetime:

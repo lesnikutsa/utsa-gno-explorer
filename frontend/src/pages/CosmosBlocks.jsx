@@ -1,17 +1,21 @@
-import { useState } from 'react'
-import { navigateInternal } from '../utils/navigation'
+import { CosmosValidatorIdentity } from '../components/CosmosValidatorIdentity'
+import { relativeTime } from '../utils/time'
 
-export function CosmosBlocks({ network, resource: suppliedResource }) {
-  const resource = suppliedResource
-  const [height, setHeight] = useState('')
-  const submit = (event) => {
-    event.preventDefault()
-    if (!/^[1-9]\d{0,18}$/.test(height) || BigInt(height) > 9223372036854775807n) return
-    navigateInternal(`/networks/${network.id}/blocks/${height}`)
-  }
-  return <><div className="cosmos-title"><div><p className="eyebrow">CometBFT metadata</p><h1>Latest blocks</h1></div>{resource.stale && <span>Stale data</span>}</div>
-    <form className="cosmos-height-search" onSubmit={submit}><label>Block height <input value={height} onChange={(event) => setHeight(event.target.value)} inputMode="numeric" /></label><button>Search</button></form>
-    {resource.loading && <p>Loading blocks…</p>}{resource.error && !resource.data && <p className="cosmos-error">{resource.error}</p>}
-    {resource.data && <div className="cosmos-card cosmos-table"><table><thead><tr><th>Height</th><th>Hash</th><th>Time</th><th>Proposer</th><th>Txs</th></tr></thead><tbody>{resource.data.blocks.length ? resource.data.blocks.map((block) => <tr key={block.height}><td><a href={`/networks/${network.id}/blocks/${block.height}`}>{block.height}</a></td><td><code>{block.hash}</code></td><td>{block.timestamp}</td><td><code>{block.proposer}</code></td><td>{block.transaction_count}</td></tr>) : <tr><td colSpan="5">No locally available blocks.</td></tr>}</tbody></table></div>}
-  </>
+const blockHref = (network, height) => `/networks/${network.id}/blocks/${height}`
+const shortHash = (value = '') => value.length > 15 ? `${value.slice(0, 6)}...${value.slice(-6)}` : value
+
+export function CosmosBlocks({ network, resource }) {
+  const rows = resource.data?.blocks || []
+  const newest = rows[0]?.height
+  return <div className="cosmos-blocks"><div className="cosmos-title"><h1>Blocks</h1>{resource.stale
+    ? <span className="cosmos-stale">Stale · last successful data</span>
+    : <span className="panel__meta panel__meta--live"><span className="live-dot" />Live · every 5s</span>}</div>
+    {resource.loading && !resource.data && <p>Loading blocks…</p>}{resource.error && !resource.data && <p className="cosmos-error">{resource.error}</p>}
+    {resource.data && <section className="panel cosmos-blocks-table"><div className="cosmos-table"><table><thead><tr><th>Height</th><th>Time</th><th>Proposer</th><th>Txs</th><th>Block hash</th></tr></thead><tbody>{rows.length ? rows.map((block, index) => <tr key={block.height} className={index === 0 && block.height === newest ? 'is-new-row' : index < 3 ? 'is-settling-row' : ''}>
+      <td><a className="table-link" href={blockHref(network, block.height)}><span className="accent-value mono">#{block.height.toLocaleString()}</span></a></td>
+      <td><time dateTime={block.timestamp} title={block.timestamp}>{relativeTime(block.timestamp)}</time></td>
+      <td><CosmosValidatorIdentity moniker={block.proposer_moniker} address={block.proposer_operator_address || block.proposer} /></td>
+      <td>{block.transaction_count.toLocaleString()}</td><td><code className="muted" title={block.hash}>{shortHash(block.hash)}</code></td>
+    </tr>) : <tr><td colSpan="5">No locally available blocks.</td></tr>}</tbody></table></div></section>}
+  </div>
 }
