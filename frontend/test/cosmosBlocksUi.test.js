@@ -73,7 +73,8 @@ test('Block Detail exposes human and technical information through compact discl
   assert.match(styles, /\.cosmos-copy-value \{[^}]*width: 100%;[^}]*justify-content: space-between;/)
   assert.match(styles, /\.cosmos-detail-summary > div \{[^}]*border: 1px solid var\(--color-border-soft\);[^}]*background: var\(--color-surface-subtle\);/)
   assert.match(detail, /className=\{compact \? undefined : 'cosmos-hash-value'\}/)
-  assert.match(detail, /label="transaction hash" compact/)
+  assert.match(detail, /<Hash value=\{tx\.hash\} label="transaction hash" \/>/)
+  assert.doesNotMatch(detail, /label="transaction hash" compact/)
   assert.doesNotMatch(detail, /shortHash/)
   assert.match(styles, /\.cosmos-detail-card details > summary, \.cosmos-normalized-json > summary \{[^}]*display: inline-flex;[^}]*width: fit-content;[^}]*max-width: calc\(100% - 24px\);[^}]*border: 1px solid var\(--color-accent\);[^}]*background: var\(--color-accent-soft\)/)
   assert.match(styles, /details > summary::after, \.cosmos-normalized-json > summary::after \{[^}]*content: '↓'/)
@@ -86,6 +87,8 @@ test('Block Detail exposes human and technical information through compact discl
 
 test('Block Detail handles transaction rows, zero state, optional evidence and collapsed JSON', () => {
   assert.match(detail, /data\.transactions\.map/)
+  assert.match(detail, /cosmos-tx-status cosmos-tx-status--\$\{tx\.status\}/)
+  assert.match(detail, /tx\.status === 'success' \? 'Success' : 'Failed'/)
   assert.match(detail, /No transactions in this block\./)
   assert.match(detail, /data\.evidence\.length > 0 && <section/)
   assert.doesNotMatch(detail, /<details[^>]*open/)
