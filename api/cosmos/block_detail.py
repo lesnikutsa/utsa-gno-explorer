@@ -45,6 +45,10 @@ def normalize_detail(block_payload, commit_payload, results_payload, *, network_
     commit = _mapping(signed_header.get("commit"))
     if _height(commit.get("height")) != height:
         raise MalformedUpstreamResponse("wrong commit height")
+    block_hash = _hex(block_id.get("hash"), "block hash", 128)
+    commit_block_hash = _hex(_mapping(commit.get("block_id")).get("hash"), "commit block hash", 128)
+    if commit_block_hash != block_hash:
+        raise MalformedUpstreamResponse("commit block hash does not match block")
     raw_signatures = commit.get("signatures", [])
     if not isinstance(raw_signatures, list) or len(raw_signatures) > MAX_SIGNATURES:
         raise MalformedUpstreamResponse("invalid commit signatures")
@@ -120,7 +124,7 @@ def normalize_detail(block_payload, commit_payload, results_payload, *, network_
             "height": height, "timestamp": _timestamp(header.get("time")),
             "transaction_count": len(transactions), "block_version": _integer(version.get("block"), "block version"),
             "app_version": _integer(version.get("app"), "app version"), "proposer": proposer,
-            **proposer_identity, "hashes": {"block": _hex(block_id.get("hash"), "block hash", 128),
+            **proposer_identity, "hashes": {"block": block_hash,
                 "last_block": _optional_hash(_mapping(header.get("last_block_id", {})), "hash"),
                 "last_commit": _optional_hash(header, "last_commit_hash"), "data": _optional_hash(header, "data_hash"),
                 "validators": _hex(header.get("validators_hash"), "validators hash", 128),

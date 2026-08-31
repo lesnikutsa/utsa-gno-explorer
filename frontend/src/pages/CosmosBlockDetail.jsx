@@ -10,7 +10,7 @@ const Hash = ({ value, label }) => value ? <span className="cosmos-copy-value"><
 const Metric = ({ label, children }) => <div><span>{label}</span><strong>{children}</strong></div>
 
 function AvailableBlock({ network, lookup, height }) {
-  const detail = useCosmosResource(`/api/networks/${network.id}/blocks/${height}/detail`, 30000)
+  const detail = useCosmosResource(`/api/networks/${network.id}/blocks/${height}/detail`, null)
   if (!detail.data) return detail.loading ? <p>Loading block detail…</p> : <p className="cosmos-error">{detail.error}</p>
   const data = detail.data
   const primary = [['Block hash', data.hashes.block], ['App hash', data.hashes.app], ['Validators hash', data.hashes.validators]]

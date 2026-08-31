@@ -24,7 +24,7 @@ def payloads(txs=None, tx_results=None, signatures=None, evidence=None):
              "data": {"txs": txs}, "evidence": {"evidence": evidence or []},
              "last_commit": {"signatures": [{"block_id_flag": 2}]}}}}
     current_commit = {"result": {"signed_header": {"header": header,
-                      "commit": {"height": "10", "signatures": signatures}}}}
+                      "commit": {"height": "10", "block_id": {"hash": HEX}, "signatures": signatures}}}}
     results = {"result": {"height": "10", "txs_results": tx_results}}
     return block, current_commit, results
 
@@ -86,3 +86,58 @@ def test_evidence_is_bounded_and_wrong_chain_or_height_is_rejected():
     commit["result"]["signed_header"]["header"]["chain_id"] = "wrong-1"
     with pytest.raises((MalformedUpstreamResponse, RejectedEndpoint)):
         normalize(block, commit, results)
+
+
+def test_same_height_commit_for_a_different_block_is_rejected():
+    block, commit, results = payloads()
+    commit["result"]["signed_header"]["commit"]["block_id"]["hash"] = "CD" * 32
+    with pytest.raises(MalformedUpstreamResponse, match="commit block hash"):
+        normalize(block, commit, results)
+
+
+def test_malformed_first_detail_candidate_falls_through_without_mixing_payloads():
+    import asyncio
+    from copy import deepcopy
+    from types import SimpleNamespace
+
+    from api.cosmos.service import CosmosService
+
+    block, commit, results = payloads()
+
+    class Cache:
+        async def get_or_load(self, _key, _ttl, load):
+            return await load()
+
+    class Transport:
+        def __init__(self):
+            self.calls = []
+
+        async def get_object(self, endpoint, path):
+            self.calls.append((endpoint, path))
+            if path.startswith('/block?'):
+                return deepcopy(block)
+            if path.startswith('/block_results?'):
+                return deepcopy(results)
+            response = deepcopy(commit)
+            if endpoint == 'https://bad.example':
+                response['result']['signed_header']['commit']['block_id']['hash'] = 'CD' * 32
+            return response
+
+    async def run():
+        service = object.__new__(CosmosService)
+        service.definition = SimpleNamespace(transport=SimpleNamespace(
+            network_id='atomone-mainnet', chain_id='atomone-1'))
+        service.cache = Cache()
+        service.transport = Transport()
+        observations = [
+            ('https://bad.example', SimpleNamespace(local_height=12)),
+            ('https://good.example', SimpleNamespace(local_height=11)),
+        ]
+        service._status_observations = lambda: asyncio.sleep(0, result=observations)
+        service._bonded_validators = lambda: asyncio.sleep(0, result=[])
+        detail = await service.block_detail(10)
+        assert detail['hashes']['block'] == HEX
+        assert ('https://bad.example', '/commit?height=10') in service.transport.calls
+        assert ('https://good.example', '/commit?height=10') in service.transport.calls
+
+    asyncio.run(run())
