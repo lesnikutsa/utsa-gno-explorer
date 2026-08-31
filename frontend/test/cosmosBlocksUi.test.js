@@ -77,7 +77,7 @@ test('Block Detail exposes human and technical information through compact discl
   assert.match(styles, /\.cosmos-detail-summary > div \{[^}]*border: 1px solid var\(--color-border-soft\);[^}]*background: var\(--color-surface-subtle\);/)
   assert.match(detail, /className=\{compact \? undefined : 'cosmos-hash-value'\}/)
   assert.match(detail, /blocks\/\$\{data\.height\}\/transactions\/\$\{tx\.index\}/)
-  assert.match(detail, /className="transaction-hash transaction-link mono"[^>]*title=\{tx\.hash\}>\{tx\.hash\}<\/a><CopyButton value=\{tx\.hash\}/)
+  assert.match(detail, /className="transaction-hash transaction-link mono cosmos-hash-value"[^>]*title=\{tx\.hash\}>\{tx\.hash\}<\/a><CopyButton value=\{tx\.hash\}/)
   assert.doesNotMatch(detail, /label="transaction hash" compact/)
   assert.doesNotMatch(detail, /shortHash/)
   assert.match(styles, /\.cosmos-detail-card details > summary, \.cosmos-normalized-json > summary \{[^}]*display: inline-flex;[^}]*width: fit-content;[^}]*max-width: calc\(100% - 24px\);[^}]*border: 1px solid var\(--color-accent\);[^}]*background: var\(--color-accent-soft\)/)
@@ -86,7 +86,9 @@ test('Block Detail exposes human and technical information through compact discl
   assert.doesNotMatch(styles, /details > summary::after[^}]*position: absolute/)
   assert.match(styles, /details\[open\] > summary, \.cosmos-normalized-json\[open\] > summary \{[^}]*background: rgba\(200,75,49,\.18\)/)
   assert.match(styles, /\.cosmos-copy-value code \{[^}]*overflow-wrap: anywhere;[^}]*word-break: break-all;/)
-  assert.match(styles, /code\.cosmos-hash-value \{ font-size: 12px; \}/)
+  assert.match(styles, /\.cosmos-copy-value \.cosmos-hash-value \{ font-size: 12px; \}/)
+  assert.match(styles, /\.cosmos-detail-summary > div > span, \.cosmos-commit-summary > div > span/)
+  assert.doesNotMatch(styles, /\.cosmos-detail-summary span, \.cosmos-commit-summary span/)
 })
 
 test('Cosmos Transaction Detail keeps block-context navigation and readable normalized data', () => {
