@@ -4,31 +4,16 @@ import { CosmosValidatorIdentity } from '../components/CosmosValidatorIdentity'
 import { TransactionExecutionBadge } from '../components/TransactionExecutionBadge'
 import { useCosmosResource } from '../hooks/useCosmosResource'
 import { relativeTime } from '../utils/time'
-import { countdownParts, formatAverageBlockTime, formatEstimatedArrival } from '../utils/futureBlock'
+import { FutureBlockCard } from '../components/FutureBlockCard'
 
 const utc = (value) => new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'UTC' }).format(new Date(value)).replace(',', ' ·') + ' UTC'
 const Hash = ({ value, label, compact = false }) => value ? <span className="cosmos-copy-value"><code className={compact ? undefined : 'cosmos-hash-value'} title={value}>{value}</code><CopyButton value={value} label={`Copy ${label}`} /></span> : <span>—</span>
 const Metric = ({ label, children }) => <div><span>{label}</span><strong>{children}</strong></div>
 
-const Countdown = ({ estimatedAt, now }) => {
-  const countdown = countdownParts(estimatedAt, now)
-  if (!countdown) return null
-  return <div className="cosmos-future-countdown" aria-label="Estimated time until block">
-    <p>Estimated time until block</p>
-    <div className="cosmos-future-countdown__grid">{[['Days', countdown.days], ['Hours', countdown.hours], ['Minutes', countdown.minutes], ['Seconds', countdown.seconds]].map(([label, value]) => <div key={label}><strong>{label === 'Days' ? value.toLocaleString('en-US') : String(value).padStart(2, '0')}</strong><span>{label}</span></div>)}</div>
-  </div>
-}
-
 export function UnavailableBlock({ data, height, now }) {
   if (data.state === 'node_not_synced') return <section className="cosmos-card cosmos-block-state"><h2>Block data is not available yet</h2><p>The connected RPC is still syncing. Its current height is {data.local_height.toLocaleString()}.</p></section>
   if (data.state === 'history_unavailable') return <section className="cosmos-card cosmos-block-state"><h2>Block history is unavailable</h2><p>The connected RPC endpoints have pruned this historical block or cannot provide it.</p></section>
-  const eta = data.eta_unavailable_reason ? null : data.eta
-  const remainingBlocks = eta?.remaining_blocks ?? (Number.isSafeInteger(Number(height)) && Number(height) > data.local_height ? Number(height) - data.local_height : null)
-  return <section className="cosmos-card cosmos-block-state"><h2>Block #{Number(height).toLocaleString()} has not been produced yet</h2>
-    {eta && <Countdown estimatedAt={eta.estimated_at} now={now} />}
-    <div className="cosmos-detail-summary cosmos-future-metrics"><Metric label="Current height">{data.local_height.toLocaleString('en-US')}</Metric><Metric label="Blocks remaining">{remainingBlocks === null ? '—' : remainingBlocks.toLocaleString('en-US')}</Metric><Metric label="Average block time">{eta ? formatAverageBlockTime(eta.average_block_seconds) : '—'}</Metric><Metric label="Estimated arrival">{eta ? formatEstimatedArrival(eta.estimated_at) : '—'}</Metric></div>
-    {eta ? <p className="cosmos-future-note muted">Estimate based on recent network block production.<br />Actual arrival time may vary as block speed changes.</p> : <p className="cosmos-future-unavailable">Estimated arrival is temporarily unavailable.</p>}
-  </section>
+  return <FutureBlockCard data={{ current_height: data.local_height, eta: data.eta_unavailable_reason ? null : data.eta }} height={height} now={now} />
 }
 
 function AvailableBlock({ network, lookup, height }) {

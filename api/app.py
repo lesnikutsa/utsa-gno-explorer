@@ -15,6 +15,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from fastapi import FastAPI, HTTPException, Path, Query
 
 from api.config import ConfigError, load_config
+from api.gno_block_lookup import GnoBlockLookupUnavailable, lookup_future_block
 from api.account_service import AccountUnavailableError, fetch_live_account, public_rpc_url
 from api.network_profile import gno_profile, validate_account_address
 from api.transaction_argument_decoder import decode_transaction_arguments
@@ -39,6 +40,7 @@ from api.schemas import (
     AccountResponse,
     BlockCommitSummary,
     BlockDetailResponse,
+    GnoBlockLookupResponse,
     BlockSummary,
     BlocksPagination,
     BlockTransactionSummary,
@@ -2461,6 +2463,15 @@ def get_transactions(
             next_before_tx_index=last_row["tx_index"] if last_row else None,
         ),
     )
+
+
+@app.get("/api/blocks/{height}/lookup", response_model=GnoBlockLookupResponse)
+def get_gno_block_lookup(height: int = Path(gt=0)) -> GnoBlockLookupResponse:
+    """Classify a DB-missing Gno height against identity-validated live RPC data."""
+    try:
+        return GnoBlockLookupResponse(**lookup_future_block(height, app.state.api_config))
+    except GnoBlockLookupUnavailable:
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
 
 
 @app.get("/api/blocks/{height}", response_model=BlockDetailResponse)

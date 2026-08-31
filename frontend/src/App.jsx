@@ -81,7 +81,7 @@ function BlockDetailPage({ height }) {
 
   return (
     <ExplorerLayout healthState={blockDetail.healthState} showRefreshCountdown={false}>
-      <BlockDetail blockDetail={blockDetail} />
+      <BlockDetail blockDetail={blockDetail} routeHeight={height} />
     </ExplorerLayout>
   )
 }

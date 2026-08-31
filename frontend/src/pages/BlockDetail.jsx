@@ -7,6 +7,7 @@ import { TransactionDecodeBadge } from '../components/TransactionDecodeBadge'
 import { TransactionExecutionBadge } from '../components/TransactionExecutionBadge'
 import { GasValue } from '../components/GasValue'
 import { relativeTime } from '../utils/time'
+import { FutureBlockCard } from '../components/FutureBlockCard'
 
 const transactionColumns = (blockHeight) => [
   {
@@ -93,13 +94,14 @@ function StatePanel({ title, message, retry }) {
   )
 }
 
-export function BlockDetail({ blockDetail }) {
-  const { block, loading, notFound, invalidHeight, error, retry } = blockDetail
+export function BlockDetail({ blockDetail, routeHeight }) {
+  const { block, lookup, loading, notFound, invalidHeight, error, retry } = blockDetail
 
   if (loading) return <StatePanel title="Loading block details…" />
   if (invalidHeight) return <StatePanel title="Invalid block height" message="The requested block height is not valid." />
   if (notFound) return <StatePanel title="Block not found" message="This block has not been indexed or does not exist." />
   if (error) return <StatePanel title="Block details are currently unavailable" message="The Explorer API could not load this block." retry={retry} />
+  if (lookup?.state === 'future') return <GnoFutureBlock lookup={lookup} height={routeHeight} />
 
   return (
     <article className="block-detail" aria-labelledby="block-detail-title">
@@ -140,4 +142,10 @@ export function BlockDetail({ blockDetail }) {
       </section>
     </article>
   )
+}
+
+function GnoFutureBlock({ lookup, height }) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer) }, [])
+  return <article className="cosmos-block-detail"><a className="block-detail__back" href="/blocks">← Back to Blocks</a><div className="cosmos-title"><h1>Block #{Number(height).toLocaleString()}</h1></div><FutureBlockCard data={lookup} height={height} now={now} /></article>
 }
