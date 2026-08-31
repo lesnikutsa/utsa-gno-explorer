@@ -1007,8 +1007,8 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .realm-metadata__source-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .realm-metadata__source-header h3 { margin: 0; }
 .realm-metadata__source > p { margin: 8px 0 0; }
-.realm-metadata__source-toggle { flex: 0 0 auto; padding: 7px 12px; border-color: var(--color-accent); border-radius: 5px; background: var(--color-accent-soft); color: var(--color-text-bright); transition: border-color .15s ease, background-color .15s ease, color .15s ease; }
-.realm-metadata__source-toggle:hover, .realm-metadata__source-toggle:focus-visible { border-color: var(--color-accent); background: rgba(200,75,49,.22); color: var(--color-text-bright); }
+.realm-metadata__source-toggle { flex: 0 0 auto; border-color: var(--color-accent); background: var(--color-accent-soft); color: var(--color-text-bright); }
+.realm-metadata__source-toggle:hover, .realm-metadata__source-toggle:focus-visible { border-color: var(--color-accent); background: var(--color-accent); color: var(--color-text-bright); }
 .realm-metadata__source-toggle:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .realm-metadata__source pre { box-sizing: border-box; width: 100%; max-width: 100%; max-height: min(560px, 65vh); margin: 8px 0 0; padding: 12px; overflow: auto; border: 1px solid var(--color-border-soft); border-radius: 4px; background: var(--color-code-background); color: var(--color-code-text); font: 12px/1.55 var(--font-mono); white-space: pre; tab-size: 4; }
 .realm-detail__message-label { display: block; margin-top: 3px; color: var(--color-text-secondary); font-size: 9px; font-weight: 400; }
@@ -1176,10 +1176,10 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .cosmos-detail-card dd { margin: 0; color: var(--color-text); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 .cosmos-detail-card dd .cosmos-validator-identity { vertical-align: middle; }
 .cosmos-detail-card details { margin: 0; }
-.cosmos-detail-card details > summary, .cosmos-normalized-json > summary { position: relative; margin: 8px 12px; padding: 7px 32px 7px 10px; border: 1px solid var(--color-accent); border-radius: 5px; background: var(--color-accent-soft); color: var(--color-text-bright); font-size: 10px; font-weight: 600; cursor: pointer; list-style: none; transition: border-color .15s ease, background-color .15s ease, color .15s ease; }
+.cosmos-detail-card details > summary, .cosmos-normalized-json > summary { display: inline-flex; width: fit-content; max-width: calc(100% - 24px); align-items: center; gap: 6px; margin: 8px 12px; padding: 7px 10px; border: 1px solid var(--color-accent); border-radius: 5px; background: var(--color-accent-soft); color: var(--color-text-bright); font-size: 10px; font-weight: 600; cursor: pointer; list-style: none; transition: border-color .15s ease, background-color .15s ease, color .15s ease; }
 .cosmos-detail-card details > summary::-webkit-details-marker, .cosmos-normalized-json > summary::-webkit-details-marker { display: none; }
-.cosmos-detail-card details > summary::after, .cosmos-normalized-json > summary::after { position: absolute; top: 50%; right: 10px; content: '›'; font-size: 16px; transform: translateY(-50%) rotate(90deg); transition: transform .15s ease; }
-.cosmos-detail-card details[open] > summary::after, .cosmos-normalized-json[open] > summary::after { transform: translateY(-50%) rotate(-90deg); }
+.cosmos-detail-card details > summary::after, .cosmos-normalized-json > summary::after { flex: 0 0 auto; content: '↓'; font-size: 11px; line-height: 1; }
+.cosmos-detail-card details[open] > summary::after, .cosmos-normalized-json[open] > summary::after { content: '↑'; }
 .cosmos-detail-card details[open] > summary, .cosmos-normalized-json[open] > summary { background: rgba(200,75,49,.18); color: var(--color-text-bright); }
 .cosmos-detail-card details > summary:hover, .cosmos-normalized-json > summary:hover { border-color: var(--color-accent); background: rgba(200,75,49,.22); color: var(--color-text-bright); }
 .cosmos-detail-card details > summary:focus-visible, .cosmos-normalized-json > summary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
