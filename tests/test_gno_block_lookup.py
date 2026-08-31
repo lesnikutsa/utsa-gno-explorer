@@ -52,12 +52,12 @@ def config():
                            rpc_max_height_lag=10, account_rpc_timeout_seconds=3)
 
 
-def run(target, client, *, payload=None, clock=lambda: 0):
+def run(target, client, *, payload=None, clock=lambda: 0, wall_clock=lambda: LATEST):
     probe = SimpleNamespace(latest_height=2_000, status_payload=payload or status(),
                             client=client, healthy=True)
     with patch("api.gno_block_lookup.probe_rpc_endpoints", return_value=[probe]), \
          patch("api.gno_block_lookup.suitable_rpc_probes", return_value=[probe]):
-        return lookup_future_block(target, config(), clock=clock)
+        return lookup_future_block(target, config(), clock=clock, wall_clock=wall_clock)
 
 
 @pytest.fixture(autouse=True)
@@ -134,3 +134,9 @@ def test_status_without_latest_time_fetches_latest_block_and_uses_its_time():
     result = run(2_001, client, payload=status())
     assert client.calls[:2] == [("block", 2_000), ("block", 1_000)]
     assert result["eta"]["estimated_at"] == "2026-08-31T00:00:05.000000Z"
+
+
+def test_stale_latest_block_reports_future_without_eta():
+    result = run(2_100, Client((2000, 1000)),
+                 wall_clock=lambda: LATEST + timedelta(hours=2))
+    assert result == {"state": "future", "current_height": 2_000, "eta": None}

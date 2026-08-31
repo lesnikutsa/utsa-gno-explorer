@@ -5,6 +5,7 @@ import { TransactionExecutionBadge } from '../components/TransactionExecutionBad
 import { useCosmosResource } from '../hooks/useCosmosResource'
 import { relativeTime } from '../utils/time'
 import { FutureBlockCard } from '../components/FutureBlockCard'
+import { futureHeightValues } from '../utils/futureBlock'
 
 const utc = (value) => new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'UTC' }).format(new Date(value)).replace(',', ' ·') + ' UTC'
 const Hash = ({ value, label, compact = false }) => value ? <span className="cosmos-copy-value"><code className={compact ? undefined : 'cosmos-hash-value'} title={value}>{value}</code><CopyButton value={value} label={`Copy ${label}`} /></span> : <span>—</span>
@@ -39,7 +40,8 @@ export function CosmosBlockDetail({ network, height }) {
   if (resource.loading) return <p>Looking up block {height}…</p>
   if (!resource.data) return <p className="cosmos-error">{resource.error}</p>
   const data = resource.data
-  return <div className="cosmos-block-detail"><a className="cosmos-back block-detail__back" href={`/networks/${network.id}/blocks`}>← Back to Blocks</a><div className="cosmos-title"><h1>Block #{Number(height).toLocaleString()}</h1>{resource.stale && <span>Stale</span>}</div>
+  const formattedHeight = futureHeightValues(String(height), data.local_height).height
+  return <div className="cosmos-block-detail"><a className="cosmos-back block-detail__back" href={`/networks/${network.id}/blocks`}>← Back to Blocks</a><div className="cosmos-title"><h1>Block #{formattedHeight}</h1>{resource.stale && <span>Stale</span>}</div>
     {data.state === 'available' ? <AvailableBlock network={network} lookup={data} height={height} /> : <UnavailableBlock data={data} height={height} now={now} />}
   </div>
 }

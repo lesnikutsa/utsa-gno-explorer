@@ -14,6 +14,7 @@ from scripts.inspect_rpc import RpcError, result, to_int
 ETA_CHECKPOINT_SPANS = (1000, 500, 200, 80)
 ETA_CACHE_TTL_SECONDS = 300.0
 MAX_AVERAGE_BLOCK_SECONDS = 3600.0
+MAX_LATEST_BLOCK_AGE_SECONDS = 900.0
 
 _cache: dict[str, tuple[float, dict | None]] = {}
 _inflight: dict[str, Future] = {}
@@ -48,10 +49,12 @@ def _block_header(payload, expected_chain_id: str, expected_height: int) -> tupl
     return height, _timestamp(header.get("time"))
 
 
-def _sample(client, chain_id: str, latest_height: int) -> dict | None:
+def _sample(client, chain_id: str, latest_height: int, now: datetime) -> dict | None:
     _, latest_time = _block_header(
         client.get("block", height=latest_height), chain_id, latest_height,
     )
+    if (now - latest_time).total_seconds() > MAX_LATEST_BLOCK_AGE_SECONDS:
+        return None
     for span in ETA_CHECKPOINT_SPANS:
         checkpoint = latest_height - span
         if checkpoint < 1:
@@ -102,7 +105,8 @@ def clear_gno_eta_cache() -> None:
         _inflight.clear()
 
 
-def lookup_future_block(height: int, config, *, clock=time.monotonic) -> dict:
+def lookup_future_block(height: int, config, *, clock=time.monotonic,
+                        wall_clock=lambda: datetime.now(timezone.utc)) -> dict:
     probes = probe_rpc_endpoints(list(config.rpc_urls), config.chain_id,
                                 config.rpc_max_height_lag, config.account_rpc_timeout_seconds)
     candidates = suitable_rpc_probes(probes)
@@ -116,7 +120,8 @@ def lookup_future_block(height: int, config, *, clock=time.monotonic) -> dict:
         def load_sample():
             for candidate in candidates:
                 try:
-                    return _sample(candidate.client, config.chain_id, candidate.latest_height)
+                    return _sample(candidate.client, config.chain_id, candidate.latest_height,
+                                   wall_clock())
                 except (RpcError, TypeError, ValueError, OSError):
                     continue
             raise GnoBlockLookupUnavailable("validated RPC endpoints did not provide a valid latest block")

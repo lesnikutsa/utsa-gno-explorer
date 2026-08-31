@@ -8,6 +8,7 @@ import { TransactionExecutionBadge } from '../components/TransactionExecutionBad
 import { GasValue } from '../components/GasValue'
 import { relativeTime } from '../utils/time'
 import { FutureBlockCard } from '../components/FutureBlockCard'
+import { futureHeightValues } from '../utils/futureBlock'
 
 const transactionColumns = (blockHeight) => [
   {
@@ -146,6 +147,7 @@ export function BlockDetail({ blockDetail, routeHeight }) {
 
 function GnoFutureBlock({ lookup, height }) {
   const [now, setNow] = useState(Date.now())
+  const formattedHeight = futureHeightValues(String(height), lookup.current_height).height
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer) }, [])
-  return <article className="cosmos-block-detail"><a className="block-detail__back" href="/blocks">← Back to Blocks</a><div className="cosmos-title"><h1>Block #{Number(height).toLocaleString()}</h1></div><FutureBlockCard data={lookup} height={height} now={now} /></article>
+  return <article className="cosmos-block-detail"><a className="block-detail__back" href="/blocks">← Back to Blocks</a><div className="cosmos-title"><h1>Block #{formattedHeight}</h1></div><FutureBlockCard data={lookup} height={height} now={now} /></article>
 }

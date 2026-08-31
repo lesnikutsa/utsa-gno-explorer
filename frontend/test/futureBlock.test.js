@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { countdownParts, formatAverageBlockTime, formatEstimatedArrival } from '../src/utils/futureBlock.js'
+import { countdownParts, formatAverageBlockTime, formatEstimatedArrival, futureHeightValues } from '../src/utils/futureBlock.js'
 
 test('countdown splits a distant ETA into bounded calendar units', () => {
   const now = Date.parse('2026-08-31T00:00:00Z')
@@ -24,4 +24,12 @@ test('future block values use stable English formatting', () => {
   assert.equal(formatAverageBlockTime(Number.NaN), '—')
   assert.equal(formatEstimatedArrival('2026-11-04T07:24:03.123456Z'), '04 Nov 2026 · 07:24:03 UTC')
   assert.equal(formatEstimatedArrival('invalid'), '—')
+})
+
+test('future heights above Number.MAX_SAFE_INTEGER retain exact display values', () => {
+  assert.deepEqual(futureHeightValues('9007199254740993123', 107135), {
+    height: '9,007,199,254,740,993,123',
+    remaining: '9,007,199,254,740,885,988',
+  })
+  assert.deepEqual(futureHeightValues('invalid', 107135), { height: '—', remaining: '—' })
 })

@@ -57,7 +57,8 @@ test('confirmed full Block Detail uses generic no-poll resource mode', () => {
 
 test('Block Detail has navigation, title, summary, and latest behavior', () => {
   assert.match(detail, />← Back to Blocks<\/a>/)
-  assert.match(detail, /<h1>Block #\{Number\(height\)\.toLocaleString\(\)\}<\/h1>/)
+  assert.match(detail, /<h1>Block #\{formattedHeight\}<\/h1>/)
+  assert.match(detail, /futureHeightValues\(String\(height\), data\.local_height\)/)
   for (const label of ['Height', 'Time', 'Transactions', 'Chain ID']) assert.match(detail, new RegExp(`label="${label}"`))
   assert.match(detail, /data\.height - 1/)
   assert.match(detail, /data\.height \+ 1/)
