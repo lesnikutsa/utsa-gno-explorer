@@ -1153,6 +1153,13 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .cosmos-blocks .cosmos-table code { font-size: 10px; }
 .cosmos-blocks .table-link:hover .accent-value { color: var(--color-text-bright); }
 .cosmos-blocks .panel__meta { font-size: 10px; }
+.cosmos-transactions .cosmos-table table { min-width: 760px; }
+.cosmos-tx-more { margin-left: 5px; color: var(--color-text-secondary); }
+.cosmos-tx-status { display: inline-flex; align-items: center; min-height: 24px; padding: 3px 9px; border: 1px solid currentColor; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.cosmos-tx-status--success { color: var(--color-success); background: color-mix(in srgb, var(--color-success) 12%, transparent); }
+.cosmos-tx-status--failed { color: var(--color-error); background: color-mix(in srgb, var(--color-error) 12%, transparent); }
+.cosmos-pagination { display: flex; justify-content: space-between; margin-top: 12px; font-size: 11px; }
+.cosmos-pagination a { color: var(--color-accent); }
 
 .cosmos-block-detail { min-width: 0; }
 .cosmos-block-detail .cosmos-title { margin-bottom: 14px; }
@@ -1163,7 +1170,7 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .cosmos-back { display: inline-flex; margin-bottom: 10px; }
 .cosmos-detail-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; padding: 10px 12px; overflow: hidden; }
 .cosmos-detail-summary > div { display: grid; min-width: 0; align-content: start; gap: 4px; padding: 8px 9px; border: 1px solid var(--color-border-soft); border-radius: 5px; background: var(--color-surface-subtle); }
-.cosmos-detail-summary span, .cosmos-commit-summary span { color: var(--color-text-secondary); font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.cosmos-detail-summary > div > span, .cosmos-commit-summary > div > span { color: var(--color-text-secondary); font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
 .cosmos-detail-summary strong { min-width: 0; color: var(--color-text); font-size: 11px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
 .cosmos-detail-summary small { display: block; margin-top: 3px; color: var(--color-text-secondary); font-size: 9px; font-weight: 400; line-height: 1.45; }
 .cosmos-detail-card { margin-bottom: 10px; overflow: hidden; }
@@ -1185,7 +1192,7 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .cosmos-detail-card details > summary:focus-visible, .cosmos-normalized-json > summary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .cosmos-copy-value { display: flex; width: 100%; max-width: 100%; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .cosmos-copy-value code { min-width: 0; flex: 1 1 auto; color: var(--color-text); font-size: 10px; line-height: 1.55; overflow-wrap: anywhere; white-space: normal; word-break: break-all; }
-.cosmos-copy-value code.cosmos-hash-value { font-size: 12px; }
+.cosmos-copy-value .cosmos-hash-value { font-size: 12px; }
 .cosmos-copy-value .cosmos-validator-identity { min-width: 0; flex: 1 1 auto; }
 .cosmos-detail-card .copy-button { flex-basis: 24px; width: 24px; height: 24px; }
 .cosmos-commit-summary { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; padding: 11px 13px; }
@@ -1196,6 +1203,9 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .cosmos-detail-card .cosmos-table th { padding: 10px 13px; color: var(--color-table-heading); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
 .cosmos-detail-card .cosmos-table td { height: 34px; padding: 6px 12px; border-top: 1px solid var(--color-table-divider); border-bottom: 0; color: var(--color-text); }
 .cosmos-detail-card .cosmos-table tbody tr:hover { background: var(--color-overlay-hover); }
+.cosmos-message { padding: 11px 13px; border-top: 1px solid var(--color-border-soft); }
+.cosmos-message h3 { margin: 0 0 4px; color: var(--color-text-bright); font-size: 12px; }
+.cosmos-message > code, .cosmos-message > p { color: var(--color-text-secondary); font-size: 10px; }
 .cosmos-signature-status { font-size: 10px; text-transform: capitalize; }
 .cosmos-signature-status--signed { color: var(--color-success); }
 .cosmos-signature-status--nil, .cosmos-signature-status--absent { color: var(--color-warning); }

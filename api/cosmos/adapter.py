@@ -137,6 +137,19 @@ class CosmosAdapter:
             raise AllEndpointsUnavailable("no identity-validated RPC status")
         return await self._cache.get_or_load(key, 2.0, load)
 
+    async def rest_failover(self, path: str):
+        """Fetch a validated REST resource, rejecting malformed candidates in the caller."""
+        candidates = await self._cached_candidates("rest")
+        failures = []
+        for candidate in candidates:
+            try:
+                yield candidate.endpoint, await self._transport.get_object(
+                    candidate.endpoint, path, accept_error_payload=True)
+            except Exception as exc:
+                failures.append(exc)
+        if failures and len(failures) == len(candidates):
+            raise AllEndpointsUnavailable("all validated REST endpoints failed")
+
     async def block(self, height: int, *, source: str = "rpc"):
         if type(height) is not int or height <= 0:
             raise ValueError("height must be a positive integer")

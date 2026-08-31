@@ -12,6 +12,7 @@ const layout = read('../src/layouts/ExplorerLayout.jsx')
 const sidebar = read('../src/components/Sidebar.jsx')
 const overview = read('../src/pages/CosmosOverview.jsx')
 const blocks = read('../src/pages/CosmosBlocks.jsx')
+const transactions = read('../src/pages/CosmosTransactions.jsx')
 const cosmosLayout = read('../src/layouts/CosmosExplorerLayout.jsx')
 const topbar = read('../src/components/TopBar.jsx')
 const networkSearch = read('../src/components/NetworkBlockSearch.jsx')
@@ -38,6 +39,21 @@ test('capability menu resolves only implemented AtomOne routes inside the select
   for (const capability of ['transactions', 'validators', 'governance', 'realms', 'tokens']) {
     assert.ok(!networkMetadata.capabilities.includes(capability))
   }
+})
+
+test('Cosmos Transactions route and compact list preserve Explorer contracts', () => {
+  assert.match(app, /<CosmosTransactions network=\{network\}/)
+  assert.match(transactions, /<h1>Transactions<\/h1>/)
+  for (const heading of ['Time', 'Type', 'Tx hash', 'Block', 'Status', 'Fee', 'Gas']) assert.match(transactions, new RegExp(`<th>${heading}`))
+  assert.match(transactions, /dateTime=\{row\.timestamp\} title=\{row\.timestamp\}/)
+  assert.match(transactions, /relativeTime\(row\.timestamp\)/)
+  assert.match(transactions, /Live · every 10s/)
+  assert.match(transactions, /Stale · last successful data/)
+  assert.match(transactions, /indexing_unavailable/)
+  assert.match(transactions, /No transactions in this result window/)
+  assert.match(transactions, /message_count > 1/)
+  assert.match(transactions, /blocks\/\$\{row\.height\}/)
+  assert.doesNotMatch(transactions, /transactions\/\$\{row\.tx_hash\}/)
 })
 
 test('AtomOne overview shares dashboard cards and tables without raw responsive definitions', () => {

@@ -34,7 +34,7 @@ class PublicNetwork(StrictModel):
     logo_url: str = Field(min_length=8, max_length=2048)
     assets: list[PublicNetworkAsset] = Field(min_length=1, max_length=16)
     address_prefixes: PublicAddressPrefixes
-    capabilities: list[Literal["overview", "blocks", "network-parameters"]] = Field(min_length=1)
+    capabilities: list[Literal["overview", "blocks", "transactions", "network-parameters"]] = Field(min_length=1)
 
 
 class PublicNetworksResponse(StrictModel):
@@ -233,6 +233,39 @@ class BlocksResponse(StrictModel):
     blocks: list[CosmosBlock] = Field(max_length=20)
 
 
+class CosmosTransaction(StrictModel):
+    tx_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9A-F]{64}$")
+    height: int = Field(gt=0)
+    timestamp: str = Field(min_length=20, max_length=64)
+    success: bool
+    code: int = Field(ge=0)
+    gas_wanted: int = Field(ge=0)
+    gas_used: int = Field(ge=0)
+    fee_amount: str | None = Field(default=None, pattern=r"^[0-9]+$")
+    fee_denom: str | None = Field(default=None, max_length=128)
+    memo: str | None = Field(default=None, max_length=1024)
+    message_count: int = Field(ge=0, le=100)
+    primary_message_type: str | None = Field(default=None, max_length=256)
+    primary_action: str = Field(min_length=1, max_length=256)
+    sender: str | None = Field(default=None, max_length=128)
+
+
+class CosmosTransactionsResponse(StrictModel):
+    state: Literal["available", "indexing_unavailable"]
+    transactions: list[CosmosTransaction] = Field(max_length=20)
+    page: int = Field(ge=1, le=100)
+    page_size: int = Field(ge=1, le=20)
+    total: int | None = Field(default=None, ge=0)
+    has_older: bool
+    has_newer: bool
+    source_host: str | None = Field(default=None, max_length=253)
+
+
+# Backwards-compatible module export; the distinct class name also keeps the
+# existing Gno OpenAPI component name stable when both families are mounted.
+TransactionsResponse = CosmosTransactionsResponse
+
+
 class HeightEta(StrictModel):
     remaining_blocks: int = Field(gt=0)
     average_block_seconds: float = Field(gt=0)
@@ -296,7 +329,7 @@ class EvidenceItem(StrictModel):
     time: str | None = Field(default=None, min_length=20, max_length=64)
 
 
-class BlockDetailResponse(StrictModel):
+class CosmosBlockDetailResponse(StrictModel):
     network_id: str = Field(min_length=1, max_length=64)
     chain_id: str = Field(min_length=1, max_length=128)
     local_height: int = Field(gt=0)
@@ -314,3 +347,40 @@ class BlockDetailResponse(StrictModel):
     signatures: list[CommitSignature] = Field(max_length=200)
     transactions: list[BlockTransaction] = Field(max_length=10000)
     evidence: list[EvidenceItem] = Field(max_length=20)
+
+
+BlockDetailResponse = CosmosBlockDetailResponse
+
+
+class TransactionMessageField(StrictModel):
+    label: str = Field(min_length=1, max_length=64)
+    value: str | dict[str, str] | list[dict[str, str]]
+
+
+class TransactionMessage(StrictModel):
+    type_url: str = Field(min_length=2, max_length=256)
+    action: str = Field(min_length=1, max_length=256)
+    fields: list[TransactionMessageField] = Field(max_length=16)
+
+
+class TransactionFee(StrictModel):
+    amount: list[dict[str, str]] = Field(max_length=16)
+    gas_limit: int | None = Field(default=None, ge=0)
+
+
+class CosmosTransactionDetailResponse(StrictModel):
+    tx_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9A-F]{64}$")
+    height: int = Field(gt=0)
+    index: int = Field(ge=0, le=9999)
+    timestamp: str = Field(min_length=20, max_length=64)
+    success: bool
+    code: int = Field(ge=0)
+    gas_wanted: int | None = Field(default=None, ge=0)
+    gas_used: int | None = Field(default=None, ge=0)
+    fee: TransactionFee | None = None
+    memo: str | None = Field(default=None, max_length=1024)
+    message_count: int = Field(ge=0, le=256)
+    messages: list[TransactionMessage] = Field(max_length=256)
+
+
+TransactionDetailResponse = CosmosTransactionDetailResponse

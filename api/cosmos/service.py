@@ -24,6 +24,8 @@ from .blocks import estimate_eta_result, metadata, metadata_sample
 from .block_detail import normalize_detail
 from .rfc3339 import parse_rfc3339
 from .errors import HistoryUnavailable
+from .transactions import normalize_transactions
+from .transaction_detail import normalize_transaction_detail
 
 SECTION_TTL = 5.0
 MARKET_TTL = 30.0
@@ -199,6 +201,32 @@ class CosmosService:
             enriched.append({**item, **identity} if identity else item)
         return {"source": "rpc_metadata", "blocks": sorted(enriched, key=lambda item: item["height"], reverse=True)[:limit]}
 
+    async def transactions(self, limit=20, page=1):
+        # Future list fallback: evaluate a separately bounded recent-block scan
+        # (blocks -> tx bytes -> block_results) before exposing this capability.
+        if type(limit) is not int or not 1 <= limit <= 20 or type(page) is not int or not 1 <= page <= 100:
+            raise ValueError("invalid transaction page")
+        path = ("/cosmos/tx/v1beta1/txs?events=tx.height%3E0"
+                f"&pagination.offset={(page - 1) * limit}&pagination.limit={limit}&pagination.count_total=true"
+                "&order_by=ORDER_BY_DESC")
+        capability = False
+        async for endpoint, payload in self.adapter.rest_failover(path):
+            if "code" in payload and "tx" in str(payload.get("message", "")).lower():
+                capability = True
+                continue
+            try:
+                rows, total = normalize_transactions(payload, limit)
+                return {"state": "available", "transactions": rows, "page": page,
+                        "page_size": limit, "total": total,
+                        "has_older": total is not None and page * limit < total,
+                        "has_newer": page > 1, "source_host": self.adapter._host(endpoint)}
+            except MalformedUpstreamResponse:
+                continue
+        if capability:
+            return {"state": "indexing_unavailable", "transactions": [], "page": page,
+                    "page_size": limit, "total": None, "has_older": False, "has_newer": page > 1}
+        raise AllEndpointsUnavailable("no valid transaction search response")
+
     @staticmethod
     def _validator_identities(validators):
         identities = {}
@@ -347,6 +375,31 @@ class CosmosService:
             raise AllEndpointsUnavailable("block detail unavailable")
         return await self.cache.get_or_load(
             (self.definition.transport.network_id, "block_detail", (height,)), 30.0, load)
+
+    async def transaction_detail(self, height: int, index: int):
+        """Decode one transaction directly from its block; no tx index is required."""
+        observations = await self._status_observations()
+        async def load():
+            saw_index_error = False
+            for endpoint, status in sorted(observations, key=lambda item: item[1].local_height, reverse=True):
+                if status.local_height < height:
+                    continue
+                try:
+                    block, results = await asyncio.gather(
+                        self.transport.get_object(endpoint, f"/block?height={height}"),
+                        self.transport.get_object(endpoint, f"/block_results?height={height}"))
+                    return normalize_transaction_detail(block, results,
+                        expected_chain_id=self.definition.transport.chain_id,
+                        requested_height=height, tx_index=index)
+                except IndexError:
+                    saw_index_error = True
+                except Exception:
+                    continue
+            if saw_index_error:
+                raise IndexError("transaction index out of range")
+            raise AllEndpointsUnavailable("transaction detail unavailable")
+        return await self.cache.get_or_load(
+            (self.definition.transport.network_id, "transaction_detail", (height, index)), 30.0, load)
 
     async def _rest(self, name: str, path: str, validator=None):
         key = (self.definition.transport.network_id, "overview_rest", (name, path))

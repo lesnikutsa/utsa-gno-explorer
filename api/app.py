@@ -123,8 +123,17 @@ from api.cosmos import AllEndpointsUnavailable, RejectedEndpoint, RequestCache
 from api.cosmos.registry import (NETWORKS, get_network as get_cosmos_network,
                                  public_networks)
 from api.cosmos.service import CosmosService
-from api.cosmos.schemas import (BlockDetailResponse, BlockLookupResponse, BlocksResponse as CosmosBlocksResponse,
-                                MarketHistoryResponse, MarketResponse, OverviewResponse, PublicNetworksResponse)
+from api.cosmos.schemas import (
+    BlockDetailResponse as CosmosBlockDetailResponse,
+    BlockLookupResponse as CosmosBlockLookupResponse,
+    BlocksResponse as CosmosBlocksResponse,
+    MarketHistoryResponse as CosmosMarketHistoryResponse,
+    MarketResponse as CosmosMarketResponse,
+    OverviewResponse as CosmosOverviewResponse,
+    PublicNetworksResponse as CosmosPublicNetworksResponse,
+    TransactionDetailResponse as CosmosTransactionDetailResponse,
+    TransactionsResponse as CosmosTransactionsResponse,
+)
 
 LOGGER = logging.getLogger(__name__)
 UNAVAILABLE_DETAIL = "Explorer database is unavailable"
@@ -430,12 +439,12 @@ def _cosmos_service(network_id: str) -> CosmosService:
     return services[network_id]
 
 
-@app.get("/api/networks", response_model=PublicNetworksResponse)
+@app.get("/api/networks", response_model=CosmosPublicNetworksResponse)
 async def get_public_cosmos_networks():
     return {"networks": public_networks()}
 
 
-@app.get("/api/networks/{network_id}/overview", response_model=OverviewResponse)
+@app.get("/api/networks/{network_id}/overview", response_model=CosmosOverviewResponse)
 async def get_cosmos_network_overview(network_id: str):
     service = _cosmos_service(network_id)
     try:
@@ -447,7 +456,7 @@ async def get_cosmos_network_overview(network_id: str):
         raise HTTPException(status_code=503, detail="Network data is temporarily unavailable") from None
 
 
-@app.get("/api/networks/{network_id}/market", response_model=MarketResponse)
+@app.get("/api/networks/{network_id}/market", response_model=CosmosMarketResponse)
 async def get_cosmos_network_market(network_id: str):
     service = _cosmos_service(network_id)
     try:
@@ -457,7 +466,7 @@ async def get_cosmos_network_market(network_id: str):
         raise HTTPException(status_code=503, detail="Market data is temporarily unavailable") from None
 
 
-@app.get("/api/networks/{network_id}/market/history", response_model=MarketHistoryResponse)
+@app.get("/api/networks/{network_id}/market/history", response_model=CosmosMarketHistoryResponse)
 async def get_cosmos_network_market_history(network_id: str):
     service = _cosmos_service(network_id)
     try:
@@ -477,7 +486,18 @@ async def get_cosmos_blocks(network_id: str, limit: int = Query(10, ge=1, le=20)
         raise HTTPException(status_code=503, detail="Block data is temporarily unavailable") from None
 
 
-@app.get("/api/networks/{network_id}/blocks/{height}", response_model=BlockLookupResponse)
+@app.get("/api/networks/{network_id}/transactions", response_model=CosmosTransactionsResponse)
+async def get_cosmos_transactions(network_id: str, limit: int = Query(20, ge=1, le=20),
+                                  page: int = Query(1, ge=1, le=100)):
+    service = _cosmos_service(network_id)
+    try:
+        return await service.transactions(limit, page)
+    except Exception:
+        LOGGER.info("Cosmos transactions failed network=%s reason=upstream_unavailable", network_id)
+        raise HTTPException(status_code=503, detail="Transaction data is temporarily unavailable") from None
+
+
+@app.get("/api/networks/{network_id}/blocks/{height}", response_model=CosmosBlockLookupResponse)
 async def get_cosmos_block(network_id: str, height: int = Path(..., ge=1, le=9_223_372_036_854_775_807)):
     service = _cosmos_service(network_id)
     try:
@@ -487,7 +507,7 @@ async def get_cosmos_block(network_id: str, height: int = Path(..., ge=1, le=9_2
         raise HTTPException(status_code=503, detail="Block data is temporarily unavailable") from None
 
 
-@app.get("/api/networks/{network_id}/blocks/{height}/detail", response_model=BlockDetailResponse,
+@app.get("/api/networks/{network_id}/blocks/{height}/detail", response_model=CosmosBlockDetailResponse,
          response_model_exclude_none=True)
 async def get_cosmos_block_detail(network_id: str, height: int = Path(..., ge=1, le=9_223_372_036_854_775_807)):
     service = _cosmos_service(network_id)
@@ -496,6 +516,21 @@ async def get_cosmos_block_detail(network_id: str, height: int = Path(..., ge=1,
     except Exception:
         LOGGER.info("Cosmos block detail failed network=%s reason=upstream_unavailable", network_id)
         raise HTTPException(status_code=503, detail="Block detail is temporarily unavailable") from None
+
+
+@app.get("/api/networks/{network_id}/blocks/{height}/transactions/{index}",
+         response_model=CosmosTransactionDetailResponse)
+async def get_cosmos_transaction_detail(network_id: str,
+        height: int = Path(..., ge=1, le=9_223_372_036_854_775_807),
+        index: int = Path(..., ge=0, le=9999)):
+    service = _cosmos_service(network_id)
+    try:
+        return await service.transaction_detail(height, index)
+    except IndexError:
+        raise HTTPException(status_code=404, detail="Transaction was not found in this block") from None
+    except Exception:
+        LOGGER.info("Cosmos transaction detail failed network=%s reason=upstream_unavailable", network_id)
+        raise HTTPException(status_code=503, detail="Transaction detail is temporarily unavailable") from None
 
 
 def utc_now() -> datetime:
