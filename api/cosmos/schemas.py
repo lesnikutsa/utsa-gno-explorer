@@ -276,7 +276,7 @@ class HeightEta(StrictModel):
     remaining_blocks: int = Field(gt=0)
     average_block_seconds: float = Field(gt=0)
     estimated_at: str = Field(min_length=20, max_length=64)
-    sample_intervals: int = Field(ge=20, le=100)
+    sample_intervals: int = Field(ge=20, le=1000)
 
 
 class BlockLookupResponse(StrictModel):

@@ -99,100 +99,103 @@ class BlockMetadataTests(unittest.TestCase):
         self.assertIsNone(estimate_eta(blocks, 30))
 
 
-class PagedEtaIntegrationTests(unittest.IsolatedAsyncioTestCase):
+class CheckpointEtaIntegrationTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.blockchain_calls = 0
-        self.fail_metadata = False
-        self.head = 100
-        self.lowest_available = None
-        self.now = datetime(2026, 8, 30, 0, 10, tzinfo=timezone.utc)
+        self.clock = 0.0
+        self.head = 2_000
+        self.available_spans = {1000, 500, 200, 80}
+        self.block_calls = []
+        self.now = datetime(2026, 8, 30, 3, 0, tzinfo=timezone.utc)
 
-    def status(self, height=None, catching_up=False):
-        height = self.head if height is None else height
-        timestamp = self.now - timedelta(seconds=(self.head - height) * 5)
+    def status(self):
         return {"result": {"node_info": {"network": "atomone-1", "version": "1", "other": {}},
-            "sync_info": {"latest_block_height": str(height), "latest_block_time": timestamp.isoformat().replace("+00:00", "Z"),
-                          "catching_up": catching_up}}}
+            "sync_info": {"latest_block_height": str(self.head),
+                "latest_block_time": self.now.isoformat().replace("+00:00", "Z"), "catching_up": False}}}
 
-    def meta(self, height):
-        timestamp = self.now - timedelta(seconds=(self.head - height) * 5)
-        return {"block_id": {"hash": f"{height:02X}" if height < 256 else "AA"},
-                "header": {"chain_id": "atomone-1", "height": str(height),
-                           "time": timestamp.isoformat().replace("+00:00", "Z"), "proposer_address": "BB"},
-                "num_txs": "0"}
+    def block(self, height):
+        timestamp = self.now - timedelta(seconds=(self.head - height) * 6)
+        return {"result": {"block_id": {"hash": "AA"}, "block": {"header": {
+            "chain_id": "atomone-1", "height": str(height),
+            "time": timestamp.isoformat().replace("+00:00", "Z"),
+            "proposer_address": "BB"}, "data": {"txs": []}}}}
 
     async def handler(self, request):
         if request.url.path == "/status":
             return httpx.Response(200, json=self.status())
-        if request.url.path == "/blockchain":
-            self.blockchain_calls += 1
-            if self.fail_metadata:
-                return httpx.Response(503, json={"error": "temporary"})
-            low = int(request.url.params["minHeight"])
-            high = int(request.url.params["maxHeight"])
-            if self.lowest_available is not None and low < self.lowest_available:
+        if request.url.path == "/block":
+            height = int(request.url.params["height"])
+            self.block_calls.append(height)
+            span = self.head - height
+            if span and span not in self.available_spans:
                 return httpx.Response(200, json={"error": {"data":
-                    f"height {low} is not available, lowest height is {self.lowest_available}"}})
-            # Model the real CometBFT cap even when the requested range is larger.
-            heights = list(range(max(low, high - 19), high + 1))
-            return httpx.Response(200, json={"result": {"block_metas": [self.meta(height) for height in reversed(heights)]}})
+                    f"height {height} is not available, lowest height is {self.head - max(self.available_spans)}"}})
+            return httpx.Response(200, json=self.block(height))
         return httpx.Response(500, json={"error": "unexpected"})
 
     async def make_service(self):
+        cache = RequestCache(clock=lambda: self.clock)
         client = httpx.AsyncClient(transport=httpx.MockTransport(self.handler), trust_env=False)
-        service = CosmosService(ATOMONE, client=client, cache=RequestCache(), wall_clock=lambda: self.now)
         self.addAsyncCleanup(client.aclose)
-        return service
+        return CosmosService(ATOMONE, client=client, cache=cache, wall_clock=lambda: self.now)
 
-    async def test_single_header_sixth_page_is_accepted_at_multiple_heads(self):
-        for head in (101, 102, 200, 12_345_678):
-            with self.subTest(head=head):
-                self.head = head
-                self.blockchain_calls = 0
-                service = await self.make_service()
-                result = await service.block_lookup(head + 10)
-                self.assertEqual(result["state"], "future")
-                self.assertIsNotNone(result["eta"])
-                self.assertEqual(result["eta"]["remaining_blocks"], 10)
-                self.assertEqual(self.blockchain_calls, 6)
-
-    async def test_pruning_boundary_fetches_sufficient_partial_page(self):
-        self.head = 200
-        self.lowest_available = 176
+    async def assert_span(self, available_spans, expected_span):
+        self.available_spans = set(available_spans)
         service = await self.make_service()
-        result = await service.block_lookup(210)
-        self.assertIsNotNone(result["eta"])
-        self.assertEqual(result["eta"]["sample_intervals"], 20)
-        self.assertLessEqual(self.blockchain_calls, 6)
+        result = await service.block_lookup(self.head + 10)
+        self.assertEqual(result["state"], "future")
+        self.assertEqual(result["eta"]["sample_intervals"], expected_span)
+        self.assertEqual(result["eta"]["average_block_seconds"], 6)
+        self.assertEqual(result["eta"]["remaining_blocks"], 10)
+        self.assertEqual(self.block_calls, [self.head] + [self.head - span for span in (1000, 500, 200, 80)
+            if span >= expected_span])
 
-    async def test_pruning_boundary_reports_insufficient_contiguous_history(self):
-        self.head = 200
-        self.lowest_available = 177
+    async def test_uses_1000_block_checkpoint_when_available(self):
+        await self.assert_span({1000, 500, 200, 80}, 1000)
+
+    async def test_falls_back_to_500_block_checkpoint(self):
+        await self.assert_span({500, 200, 80}, 500)
+
+    async def test_falls_back_to_200_block_checkpoint(self):
+        await self.assert_span({200, 80}, 200)
+
+    async def test_falls_back_to_80_block_checkpoint(self):
+        await self.assert_span({80}, 80)
+
+    async def test_all_checkpoints_unavailable_is_graceful(self):
+        self.available_spans = set()
         service = await self.make_service()
-        result = await service.block_lookup(210)
+        result = await service.block_lookup(self.head + 10)
+        self.assertEqual(result["state"], "future")
         self.assertIsNone(result["eta"])
         self.assertEqual(result["eta_unavailable_reason"], "insufficient_history")
-        self.assertLessEqual(self.blockchain_calls, 6)
+        self.assertEqual(len(self.block_calls), 5)
+        await service.block_lookup(self.head + 20)
+        self.assertEqual(len(self.block_calls), 5)
 
-    async def test_concurrent_targets_share_sample_and_ttl_cache(self):
+    async def test_cache_reuse_and_expiry(self):
         service = await self.make_service()
-        results = await asyncio.gather(*(service.block_lookup(height) for height in (110, 110, 111)))
-        self.assertTrue(all(result["eta"] for result in results))
-        self.assertEqual(self.blockchain_calls, 5)
-        await service.block_lookup(112)
-        self.assertEqual(self.blockchain_calls, 5)
+        first = await service.block_lookup(self.head + 10)
+        calls = list(self.block_calls)
+        second = await service.block_lookup(self.head + 20)
+        self.assertEqual(self.block_calls, calls)
+        self.assertEqual(second["eta"]["remaining_blocks"], 20)
+        self.clock += 301
+        await service.block_lookup(self.head + 30)
+        self.assertGreater(len(self.block_calls), len(calls))
+        self.assertEqual(first["eta"]["sample_intervals"], 1000)
 
-    async def test_failed_sample_is_not_cached_or_left_inflight(self):
+    async def test_very_distant_target_uses_cached_average(self):
         service = await self.make_service()
-        self.fail_metadata = True
-        first = await service.block_lookup(110)
-        self.assertIsNone(first["eta"])
-        failed_calls = self.blockchain_calls
-        self.fail_metadata = False
-        second = await service.block_lookup(110)
-        self.assertIsNotNone(second["eta"])
-        self.assertGreater(self.blockchain_calls, failed_calls)
-        self.assertFalse(service.cache._inflight)
+        result = await service.block_lookup(self.head + 100_000_000)
+        self.assertEqual(result["eta"]["remaining_blocks"], 100_000_000)
+        expected = self.now + timedelta(seconds=600_000_000)
+        self.assertEqual(parse_rfc3339(result["eta"]["estimated_at"]), expected)
+
+    async def test_current_or_past_target_keeps_available_behavior(self):
+        service = await self.make_service()
+        result = await service.block_lookup(self.head)
+        self.assertEqual(result["state"], "available")
+        self.assertIsNone(result["eta"])
 
 
 class ConflictingHeightIntegrationTests(unittest.IsolatedAsyncioTestCase):

@@ -47,7 +47,7 @@ test('future Cosmos block renders countdown and missing ETA fallback safely', as
   assert.match(html, />07<\/strong><span>Hours/)
   assert.match(html, /5\.795 s/)
   assert.match(html, /04 Nov 2026 · 07:24:03 UTC/)
-  assert.match(html, /latest 80 block intervals/)
+  assert.match(html, /recent network block production/)
 
   const fallback = renderToStaticMarkup(React.createElement(UnavailableBlock, {
     data: { ...future, eta: null, eta_unavailable_reason: 'network_stalled' }, height: '11111111', now,

@@ -130,7 +130,7 @@ test('future and unavailable blocks use human-friendly state presentation', () =
   for (const unit of ['Days', 'Hours', 'Minutes', 'Seconds']) assert.match(detail, new RegExp(`'${unit}'`))
   assert.match(detail, /formatAverageBlockTime\(eta\.average_block_seconds\)/)
   assert.match(detail, /formatEstimatedArrival\(eta\.estimated_at\)/)
-  assert.match(detail, /Estimate based on the latest \{eta\.sample_intervals\} block intervals/)
+  assert.match(detail, /Estimate based on recent network block production/)
   assert.match(detail, /Estimated arrival is temporarily unavailable/)
   assert.match(detail, /data\.eta_unavailable_reason \? null : data\.eta/)
   assert.match(detail, /RPC is still syncing/)

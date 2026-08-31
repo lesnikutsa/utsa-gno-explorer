@@ -22,7 +22,7 @@ from .registry import NetworkDefinition
 from .schemas import (AssetsSupply, Distribution, Governance, MarketHistoryResponse, MarketResponse,
                       CosmosTransactionsResponse, MissedValidator, Mint,
                       OverviewResponse, Slashing, Staking)
-from .blocks import estimate_eta_result, metadata, metadata_sample
+from .blocks import checkpoint_average, metadata
 from .block_detail import normalize_detail
 from .rfc3339 import parse_rfc3339
 from .errors import HistoryUnavailable
@@ -31,6 +31,7 @@ from .transaction_detail import normalize_transaction_detail
 
 SECTION_TTL = 5.0
 MARKET_TTL = 30.0
+ETA_SAMPLE_TTL = 300.0
 MAX_PAGES = 10
 PAGE_SIZE = 200
 MAX_LIST_ITEMS = MAX_PAGES * PAGE_SIZE
@@ -351,14 +352,26 @@ class CosmosService:
                         "source": "rpc", "block": None, "eta": None,
                         "eta_unavailable_reason": None}
             try:
-                key = (self.definition.transport.network_id, "eta_sample", (confirmed_height,))
-                history = await self.cache.get_or_load(
-                    key, 2.0, lambda: metadata_sample(self.adapter, confirmed_height))
-                eta, reason = estimate_eta_result(history, height)
-                if eta and history:
-                    latest_time = parse_rfc3339(max(history, key=lambda item: item["height"])["timestamp"])
-                    if self._wall_clock() - latest_time > timedelta(seconds=max(300, eta["average_block_seconds"] * 20)):
-                        eta, reason = None, "network_stalled"
+                sample = await self.cache.get_or_load(
+                    (self.definition.transport.network_id, "eta_checkpoint", ()), ETA_SAMPLE_TTL,
+                    lambda: checkpoint_average(self.adapter, confirmed_height))
+                if sample is None:
+                    raise HistoryUnavailable(confirmed_height)
+                confirmed_status = max(confirmed, key=lambda status: status.local_height)
+                average = sample["average_block_seconds"]
+                latest_time = parse_rfc3339(confirmed_status.latest_block_time)
+                if self._wall_clock() - latest_time > timedelta(seconds=max(300, average * 20)):
+                    eta, reason = None, "network_stalled"
+                else:
+                    remaining = height - confirmed_status.local_height
+                    try:
+                        estimated = latest_time + timedelta(seconds=average * remaining)
+                        eta = {"remaining_blocks": remaining, "average_block_seconds": average,
+                               "estimated_at": estimated.isoformat(timespec="microseconds").replace("+00:00", "Z"),
+                               "sample_intervals": sample["sample_intervals"]}
+                        reason = None
+                    except (OverflowError, ValueError):
+                        eta, reason = None, "date_overflow"
             except (HistoryUnavailable, AllEndpointsUnavailable):
                 eta, reason = None, "insufficient_history"
             return {"state": "future", "local_height": observed_height, "source": "rpc",

@@ -4,10 +4,11 @@ from datetime import timedelta
 import re
 
 from .errors import AllEndpointsUnavailable, HistoryUnavailable, MalformedUpstreamResponse
-from .parsing import _height, _hex, _identity, _mapping, _timestamp
+from .parsing import _height, _hex, _identity, _mapping, _timestamp, parse_rpc_block
 from .rfc3339 import parse_rfc3339
 
 _PRUNED = re.compile(r"height\s+\d+\s+is not available(?:, lowest height is\s+(\d+))?", re.I)
+ETA_CHECKPOINT_SPANS = (1000, 500, 200, 80)
 
 
 def parse_blockchain(payload, *, network_id, expected_chain_id):
@@ -60,6 +61,50 @@ def estimate_eta_result(blocks, target_height):
     return {"remaining_blocks": remaining, "average_block_seconds": seconds,
             "estimated_at": estimated.isoformat(timespec="microseconds").replace("+00:00", "Z"),
             "sample_intervals": len(usable)}, None
+
+
+async def checkpoint_average(adapter, latest_height):
+    """Calculate a bounded long-range average from at most five block lookups."""
+    candidates = await adapter._cached_candidates("rpc")
+    latest = None
+    endpoint = None
+    for candidate in candidates:
+        try:
+            payload = await adapter._transport.get_object(
+                candidate.endpoint, f"/block?height={latest_height}", accept_error_payload=True)
+            if isinstance(payload.get("error"), dict):
+                continue
+            latest = parse_rpc_block(payload, network_id=adapter.config.network_id,
+                                     expected_chain_id=adapter.config.chain_id)
+            if latest.height == latest_height:
+                endpoint = candidate.endpoint
+                break
+        except Exception:
+            continue
+    if latest is None or endpoint is None:
+        return None
+    for span in ETA_CHECKPOINT_SPANS:
+        historical_height = latest.height - span
+        if historical_height < 1:
+            continue
+        try:
+            payload = await adapter._transport.get_object(
+                endpoint, f"/block?height={historical_height}", accept_error_payload=True)
+            if isinstance(payload.get("error"), dict):
+                continue
+            historical = parse_rpc_block(payload, network_id=adapter.config.network_id,
+                                         expected_chain_id=adapter.config.chain_id)
+            if historical.height != historical_height:
+                continue
+            actual_span = latest.height - historical.height
+            elapsed = (parse_rfc3339(latest.block_time)
+                       - parse_rfc3339(historical.block_time)).total_seconds()
+            average = elapsed / actual_span
+            if actual_span > 0 and 0 < average <= 3600:
+                return {"average_block_seconds": average, "sample_intervals": actual_span}
+        except Exception:
+            continue
+    return None
 
 
 async def metadata(adapter, min_height, max_height):

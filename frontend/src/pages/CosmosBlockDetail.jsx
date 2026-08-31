@@ -27,7 +27,7 @@ export function UnavailableBlock({ data, height, now }) {
   return <section className="cosmos-card cosmos-block-state"><h2>Block #{Number(height).toLocaleString()} has not been produced yet</h2>
     {eta && <Countdown estimatedAt={eta.estimated_at} now={now} />}
     <div className="cosmos-detail-summary cosmos-future-metrics"><Metric label="Current height">{data.local_height.toLocaleString('en-US')}</Metric><Metric label="Blocks remaining">{remainingBlocks === null ? '—' : remainingBlocks.toLocaleString('en-US')}</Metric><Metric label="Average block time">{eta ? formatAverageBlockTime(eta.average_block_seconds) : '—'}</Metric><Metric label="Estimated arrival">{eta ? formatEstimatedArrival(eta.estimated_at) : '—'}</Metric></div>
-    {eta ? <p className="cosmos-future-note muted">Estimate based on the latest {eta.sample_intervals} block intervals.<br />Actual arrival time may change as network block time changes.</p> : <p className="cosmos-future-unavailable">Estimated arrival is temporarily unavailable.</p>}
+    {eta ? <p className="cosmos-future-note muted">Estimate based on recent network block production.<br />Actual arrival time may vary as block speed changes.</p> : <p className="cosmos-future-unavailable">Estimated arrival is temporarily unavailable.</p>}
   </section>
 }
 
