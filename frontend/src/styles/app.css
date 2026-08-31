@@ -2,17 +2,17 @@
 .cosmos-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }.cosmos-title h1 { margin: 4px 0 0; font-size: 24px; }
 .cosmos-title > span, .cosmos-stale { color: var(--color-warning); }.cosmos-card { padding: 16px; border: 1px solid var(--color-border-soft); border-radius: 7px; background: var(--color-card); }.cosmos-card h2 { margin-bottom: 12px; }.cosmos-card dl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; }.cosmos-card dt { color: var(--color-text-secondary); }.cosmos-card dd { margin: 0; overflow-wrap: anywhere; font-family: var(--font-mono); }.cosmos-error { color: var(--color-error); }.cosmos-height-search { display: flex; align-items: end; gap: 10px; margin-bottom: 14px; }.cosmos-height-search label { display: grid; gap: 5px; }.cosmos-height-search input, .cosmos-height-search button { padding: 8px; border: 1px solid var(--color-border); border-radius: 5px; background: var(--color-input); color: var(--color-text); }.cosmos-table { overflow-x: auto; }.cosmos-table table { width: 100%; border-collapse: collapse; }.cosmos-table th, .cosmos-table td { max-width: 240px; padding: 10px; overflow: hidden; border-bottom: 1px solid var(--color-border-soft); text-align: left; text-overflow: ellipsis; white-space: nowrap; }.route-error { padding: 40px; }
 .cosmos-dashboard-grid { margin-bottom: 12px; }
-.cosmos-market { display: grid; min-width: 0; grid-template-columns: minmax(260px, .75fr) minmax(320px, 1.25fr); align-items: stretch; margin-bottom: 10px; overflow: hidden; }
-.cosmos-market__summary { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 24px; padding: 18px; }
-.cosmos-market__summary > div { display: grid; gap: 5px; }
+.cosmos-market { display: grid; min-width: 0; grid-template-columns: minmax(190px, .7fr) minmax(180px, .7fr) minmax(360px, 1.6fr); align-items: stretch; margin-bottom: 10px; overflow: hidden; }
+.cosmos-market__summary { display: contents; }
+.cosmos-market__summary > div { display: grid; align-content: center; gap: 5px; padding: 14px 16px; }
 .cosmos-market__summary > div > strong { color: var(--color-text-bright); font-size: clamp(25px, 3vw, 38px); }
-.cosmos-market__summary dl { min-width: 170px; margin: 0; }
+.cosmos-market__summary dl { display: grid; min-width: 0; align-content: center; margin: 0; padding: 12px 16px; border-left: 1px solid var(--color-border-soft); }
 .cosmos-market__summary dl > div { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; }
 .cosmos-market__summary dt { color: var(--color-text-secondary); font-size: 10px; }
 .cosmos-market__summary dd { margin: 0; color: var(--color-text-bright); font: 11px var(--font-mono); }
 .cosmos-market__change { font-size: 11px; font-weight: 700; }.cosmos-market__change--positive { color: var(--color-success); }.cosmos-market__change--negative { color: var(--color-error); }.cosmos-market__change--neutral { color: var(--color-text-secondary); }
 .cosmos-market__source { color: var(--color-text-secondary); font-size: 9px; }
-.cosmos-market__chart { width: 100%; height: 150px; align-self: end; padding: 14px; overflow: visible; }.cosmos-market__guides line { stroke: var(--color-border-soft); stroke-width: 1; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }.cosmos-market__line { fill: none; stroke: var(--color-text-secondary); stroke-width: 2; vector-effect: non-scaling-stroke; }.cosmos-market__area { fill: var(--color-overlay-hover); }.cosmos-market__chart--positive .cosmos-market__line { stroke: var(--color-success); }.cosmos-market__chart--negative .cosmos-market__line { stroke: var(--color-error); }
+.cosmos-market__chart { box-sizing: border-box; width: 100%; height: 132px; align-self: center; padding: 8px 12px 8px 6px; overflow: visible; border-left: 1px solid var(--color-border-soft); }.cosmos-market__guides line { stroke: var(--color-border-soft); stroke-width: 1; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }.cosmos-market__line { fill: none; stroke: var(--color-text-secondary); stroke-width: 2; vector-effect: non-scaling-stroke; }.cosmos-market__area { fill: var(--color-overlay-hover); }.cosmos-market__chart--positive .cosmos-market__line { stroke: var(--color-success); }.cosmos-market__chart--negative .cosmos-market__line { stroke: var(--color-error); }
 .cosmos-parameters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .cosmos-parameter-card { min-width: 0; }
 .cosmos-metrics { display: grid; gap: 1px; margin: 0; }
@@ -22,7 +22,7 @@
 .cosmos-validator { display: grid; min-width: 0; gap: 2px; }
 .cosmos-validator strong, .cosmos-validator span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cosmos-validator-identity { display: flex; min-width: 0; align-items: center; gap: 8px; }.cosmos-validator-avatar { display: grid; width: 26px; height: 26px; flex: 0 0 26px; place-items: center; overflow: hidden; border: 1px solid var(--color-border); border-radius: 50%; background: var(--color-overlay-hover); color: var(--color-text-secondary); font-size: 9px; font-weight: 700; }.cosmos-validator-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.cosmos-risk { display: grid; min-width: 0; grid-template-columns: repeat(3, max-content) 18px; align-items: center; gap: 3px 9px; color: var(--color-text-secondary); font-size: 9px; }.cosmos-risk > strong { color: var(--color-text-bright); font-size: 10px; }.cosmos-risk__bar { display: block; grid-column: 1 / -1; width: 100%; height: 3px; overflow: hidden; border-radius: 2px; background: var(--color-border-soft); }.cosmos-risk__bar i { display: block; height: 100%; background: var(--color-text-secondary); }.cosmos-risk__bar--warning i { background: var(--color-warning); }.cosmos-risk__bar--error i { background: var(--color-error); }
+.cosmos-risk { display: grid; width: 100%; min-width: 0; gap: 4px; color: var(--color-text-secondary); }.cosmos-risk__summary { display: grid; min-width: 0; grid-template-columns: max-content max-content minmax(0, 1fr) 15px; align-items: center; gap: 8px; }.cosmos-risk__summary > strong { color: var(--color-text-bright); font-size: 11px; }.cosmos-risk__secondary, .cosmos-validator > span { overflow: hidden; font-size: 10px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }.cosmos-risk__summary .parameter-help { grid-column: 4; justify-self: end; margin-left: 0; }.cosmos-risk__bar { display: block; width: 100%; height: 3px; overflow: hidden; border-radius: 2px; background: var(--color-border-soft); }.cosmos-risk__bar i { display: block; height: 100%; background: var(--color-success); }.cosmos-risk__bar--warning-low i { background: var(--color-warning); }.cosmos-risk__bar--warning-high i { background: var(--color-accent); }.cosmos-risk__bar--danger i { background: var(--color-error); }
 .cosmos-parameter-note { margin: 0; padding: 9px 13px 12px; border-top: 1px solid var(--color-border-soft); color: var(--color-text-secondary); font-size: 10px; line-height: 1.5; }
 .cosmos-quiet-state { margin: 0; padding: 13px; color: var(--color-text-secondary); font-size: 11px; }
 .cosmos-advanced { border-top: 1px solid var(--color-border-soft); }.cosmos-advanced summary { padding: 9px 13px; color: var(--color-accent); font-size: 10px; font-weight: 700; cursor: pointer; }.cosmos-advanced[open] summary { border-bottom: 1px solid var(--color-border-soft); }
@@ -31,8 +31,9 @@
 .cosmos-footer { margin-top: 12px; }.cosmos-footer .resource-strip { min-height: 0; }.cosmos-footer .page-footer { padding-top: 10px; }
 .cosmos-overview .dashboard-grid__validators .table-scroll { overflow-x: visible; }.cosmos-overview .dashboard-grid__validators .data-table { min-width: 0; table-layout: fixed; }.cosmos-overview .dashboard-grid__validators .data-table th:first-child { width: 36%; }
 @media (max-width: 1100px) { .cosmos-parameters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 800px) { .cosmos-market { grid-template-columns: 1fr; }.cosmos-market__chart { height: 110px; } }
-@media (max-width: 700px) { .cosmos-parameters { grid-template-columns: 1fr; } .cosmos-height-search { align-items: stretch; flex-direction: column; } .cosmos-market__summary { align-items: flex-start; flex-direction: column; gap: 12px; }.cosmos-market__summary dl { width: 100%; } }
+@media (max-width: 1000px) { .cosmos-market { grid-template-columns: minmax(190px, .8fr) minmax(180px, .8fr) minmax(280px, 1.4fr); } }
+@media (max-width: 800px) { .cosmos-market { grid-template-columns: repeat(2, minmax(0, 1fr)); }.cosmos-market__chart { grid-column: 1 / -1; height: 110px; border-top: 1px solid var(--color-border-soft); border-left: 0; }.cosmos-market__summary dl { border-left: 1px solid var(--color-border-soft); } }
+@media (max-width: 700px) { .cosmos-parameters { grid-template-columns: 1fr; } .cosmos-height-search { align-items: stretch; flex-direction: column; gap: 12px; }.cosmos-market__summary dl { width: 100%; } }
 .app-shell.is-sidebar-collapsed { --sidebar-current-width: var(--sidebar-collapsed-width); }
 .rpc-pool { position: relative; min-width: 0; }
 .rpc-pool__trigger { position: relative; display: flex; width: 100%; max-width: 100%; min-width: 0; align-items: center; padding: 0 0 0 10px; border: 0; border-radius: 3px; outline: none; background: none; color: var(--color-text-secondary); cursor: pointer; font: inherit; font-size: 10px; text-align: left; }
@@ -969,8 +970,9 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
   .account-detail__transaction > [data-label]::before { display: block; margin-bottom: 4px; color: var(--color-text-secondary); content: attr(data-label); font-size: 10px; font-weight: 700; text-transform: uppercase; }
 }
 @media (max-width: 520px) {
-  .cosmos-risk { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px 6px; white-space: normal; }
-  .cosmos-risk .parameter-help { position: absolute; right: 8px; }
+  .cosmos-risk__summary { grid-template-columns: minmax(0, 1fr) 15px; gap: 2px 6px; }
+  .cosmos-risk__summary > strong, .cosmos-risk__secondary { grid-column: 1; }
+  .cosmos-risk__summary .parameter-help { grid-column: 2; grid-row: 1; }
   .cosmos-overview .dashboard-grid__validators .data-table th:first-child { width: 42%; }
   .account-detail__transaction { grid-template-columns: minmax(0, 1fr); }
 }

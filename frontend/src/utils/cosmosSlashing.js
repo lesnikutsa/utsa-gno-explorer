@@ -16,7 +16,9 @@ export function cosmosLivenessRisk({ missedBlocks, startHeight, currentHeight, s
   const earliestBlocks = Math.max(thresholdBlocks, missesToCross)
   const overThreshold = currentHeight > startHeight + signedWindow && missedBlocks > maxMissed
   const usage = maxMissed > 0 ? missedBlocks / maxMissed : missedBlocks > 0 ? 1 : 0
-  const tone = overThreshold || usage >= 0.95 ? 'error' : usage >= 0.75 ? 'warning' : 'neutral'
+  const tone = overThreshold || usage >= 0.9 ? 'danger'
+    : usage >= 0.75 ? 'warning-high'
+      : usage >= 0.5 ? 'warning-low' : 'healthy'
   const seconds = Number.isFinite(averageBlockSeconds) && averageBlockSeconds > 0 ? earliestBlocks * averageBlockSeconds : null
   return { minimumSignedBlocks, maxMissed, budgetLeft, earliestBlocks, seconds, overThreshold, tone, usage: Math.min(1, usage) }
 }

@@ -115,7 +115,11 @@ test('Cosmos SDK liveness boundaries preserve strict greater-than semantics', ()
   assert.equal(initialWindow.overThreshold, false)
   assert.equal(initialWindow.earliestBlocks, 51)
   assert.equal(cosmosLivenessRisk({ ...base, missedBlocks: 0 }).budgetLeft, 50)
-  assert.equal(cosmosLivenessRisk({ ...base, missedBlocks: 48 }).tone, 'error')
+  assert.equal(cosmosLivenessRisk({ ...base, missedBlocks: 24 }).tone, 'healthy')
+  assert.equal(cosmosLivenessRisk({ ...base, missedBlocks: 25 }).tone, 'warning-low')
+  assert.equal(cosmosLivenessRisk({ ...base, missedBlocks: 38 }).tone, 'warning-high')
+  assert.equal(cosmosLivenessRisk({ ...base, missedBlocks: 45 }).tone, 'danger')
+  assert.equal(cosmosLivenessRisk({ ...base, missedBlocks: 51 }).tone, 'danger')
 })
 
 test('native and community amounts use configured denom metadata without AtomOne hardcoding', () => {
@@ -154,4 +158,23 @@ test('RPC, edge help, validator risk, chart, and footer polish follow shared int
   assert.match(overview, /cosmos-market__guides/)
   assert.match(overview, /Budget left:/)
   assert.match(footer, /className="page-footer"/)
+})
+
+test('liveness risk layout keeps help, secondary type, and equal tracks scoped to one cell', () => {
+  const styles = read('../src/styles/app.css')
+  assert.match(overview, /className="cosmos-risk__summary"/)
+  assert.match(overview, /className="cosmos-risk__secondary">Budget left:/)
+  assert.match(overview, /className="cosmos-risk__secondary">Penalty ETA:/)
+  assert.match(styles, /cosmos-risk__summary \{[^}]*grid-template-columns: max-content max-content minmax\(0, 1fr\) 15px/)
+  assert.match(styles, /cosmos-risk__summary \.parameter-help \{ grid-column: 4; justify-self: end/)
+  assert.match(styles, /cosmos-risk__bar \{[^}]*width: 100%/)
+  assert.match(styles, /cosmos-risk__secondary, \.cosmos-validator > span/)
+  assert.match(overview, /\.slice\(0, 6\)/)
+})
+
+test('market uses a responsive three-column composition without a chart dependency', () => {
+  const styles = read('../src/styles/app.css')
+  assert.match(styles, /cosmos-market \{[^}]*grid-template-columns: minmax\(190px, \.7fr\) minmax\(180px, \.7fr\) minmax\(360px, 1\.6fr\)/)
+  assert.match(styles, /@media \(max-width: 800px\)[^{]*\{ \.cosmos-market \{ grid-template-columns: repeat\(2/)
+  assert.match(overview, /cosmos-market__guides/)
 })
