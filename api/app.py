@@ -120,10 +120,11 @@ from api.schemas import (
 from api.token_supply import (NATIVE_GNOT_DECIMALS, NATIVE_GNOT_DENOM, decimal_amount,
                               query_native_gnot_supply, query_total_supply, token_supply_cache)
 from api.cosmos import AllEndpointsUnavailable, RejectedEndpoint, RequestCache
-from api.cosmos.registry import NETWORKS, get_network as get_cosmos_network
+from api.cosmos.registry import (NETWORKS, get_network as get_cosmos_network,
+                                 public_networks)
 from api.cosmos.service import CosmosService
 from api.cosmos.schemas import (BlockLookupResponse, BlocksResponse as CosmosBlocksResponse,
-                                MarketResponse, OverviewResponse)
+                                MarketResponse, OverviewResponse, PublicNetworksResponse)
 
 LOGGER = logging.getLogger(__name__)
 UNAVAILABLE_DETAIL = "Explorer database is unavailable"
@@ -427,6 +428,11 @@ def _cosmos_service(network_id: str) -> CosmosService:
     if not isinstance(services, dict) or network_id not in services:
         raise HTTPException(status_code=503, detail="Network data is temporarily unavailable")
     return services[network_id]
+
+
+@app.get("/api/networks", response_model=PublicNetworksResponse)
+async def get_public_cosmos_networks():
+    return {"networks": public_networks()}
 
 
 @app.get("/api/networks/{network_id}/overview", response_model=OverviewResponse)

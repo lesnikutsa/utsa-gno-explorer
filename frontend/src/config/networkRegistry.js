@@ -70,17 +70,6 @@ export const supportedNetworks = Object.freeze([
       NetworkCapability.TELEGRAM_MONITORING,
     ]),
   }),
-  Object.freeze({
-    id: 'atomone-mainnet',
-    family: NetworkFamily.COSMOS,
-    expectedChainId: 'atomone-1',
-    presentation: Object.freeze({ projectName: 'AtomOne', networkName: 'Mainnet',
-      networkIconSrc: '/assets/networks/atomone.png', nativeDenom: 'uatone',
-      nativeToken: Object.freeze({ name: 'ATONE', symbol: 'ATONE', type: 'Native', baseDenom: 'uatone', decimals: 6 }),
-      description: 'AtomOne mainnet explorer', telegramValidatorMonitorEnabled: false, links: Object.freeze({}) }),
-    assets: Object.freeze([{ base: 'uatone', symbol: 'ATONE', exponent: 6 }, { base: 'uphoton', symbol: 'PHOTON', exponent: 6 }]),
-    capabilities: Object.freeze([NetworkCapability.OVERVIEW, NetworkCapability.BLOCKS, NetworkCapability.NETWORK_PARAMETERS]),
-  }),
 ])
 
 export const DEFAULT_NETWORK_ID = 'gno-pearl'
@@ -88,7 +77,6 @@ export const DEFAULT_NETWORK_ID = 'gno-pearl'
 export const getNetworkById = (networkId) => (
   supportedNetworks.find(({ id }) => id === networkId) ?? null
 )
-
 
 export const hasNetworkCapability = (network, capability) => (
   network.capabilities.includes(capability)

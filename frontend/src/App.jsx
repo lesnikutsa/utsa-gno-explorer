@@ -32,7 +32,7 @@ import { useGovernanceDetail } from './hooks/useGovernanceDetail'
 import { useAccountDetail } from './hooks/useAccountDetail'
 import { useRealmDetail } from './hooks/useRealmDetail'
 import { usePathname } from './utils/navigation'
-import { getNetworkById } from './config/networkRegistry'
+import { useSelectedNetwork } from './context/SelectedNetworkContext'
 import { CosmosLayout } from './layouts/CosmosLayout'
 import { CosmosOverview } from './pages/CosmosOverview'
 import { CosmosBlocks } from './pages/CosmosBlocks'
@@ -194,6 +194,7 @@ function GovernanceDetailPage({ proposalId }) {
 
 export default function App() {
   const path = usePathname()
+  const { getNetworkById, networksLoading, networksError } = useSelectedNetwork()
 
   useEffect(() => {
     if (path.startsWith('/networks/')) return
@@ -205,6 +206,8 @@ export default function App() {
   const cosmosMatch = path.match(/^\/networks\/([^/]+)(?:\/(blocks)(?:\/([^/]+))?)?\/?$/)
   if (cosmosMatch) {
     const network = getNetworkById(cosmosMatch[1])
+    if (networksLoading) return <main className="route-error"><p>Loading network registry…</p></main>
+    if (networksError) return <main className="route-error"><h1>Network registry unavailable</h1></main>
     if (!network || network.family !== 'cosmos') return <main className="route-error"><h1>Network not found</h1></main>
     const rawHeight = cosmosMatch[3]
     const content = rawHeight

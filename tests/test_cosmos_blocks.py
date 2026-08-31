@@ -247,7 +247,7 @@ class ObservedBlockCacheIntegrationTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.clock = 0.0
         self.block_calls = 0
-        self.fail_next = False
+        self.fail_remaining = 0
         self.block_gate = None
 
     def status(self):
@@ -267,8 +267,8 @@ class ObservedBlockCacheIntegrationTests(unittest.IsolatedAsyncioTestCase):
             self.block_calls += 1
             if self.block_gate is not None:
                 await self.block_gate.wait()
-            if self.fail_next:
-                self.fail_next = False
+            if self.fail_remaining:
+                self.fail_remaining -= 1
                 return httpx.Response(503, json={"error": "temporary"})
             return httpx.Response(200, json=self.block())
         return httpx.Response(500, json={"error": "unexpected"})
@@ -298,15 +298,16 @@ class ObservedBlockCacheIntegrationTests(unittest.IsolatedAsyncioTestCase):
         cache = RequestCache(clock=lambda: self.clock)
         async with httpx.AsyncClient(transport=httpx.MockTransport(self.handler)) as client:
             service = await self.service(client, cache)
-            self.fail_next = True
+            self.fail_remaining = len(ATOMONE.transport.rpc_endpoints)
             with self.assertRaises(AllEndpointsUnavailable):
                 await service.block_lookup(150)
             self.assertFalse(cache._inflight)
             self.assertEqual((await service.block_lookup(150))["state"], "available")
             self.clock += 3
             self.block_gate = asyncio.Event()
+            calls_before_cancel = self.block_calls
             task = asyncio.create_task(service.block_lookup(150))
-            while self.block_calls < 3:
+            while self.block_calls == calls_before_cancel:
                 await asyncio.sleep(0)
             task.cancel()
             with self.assertRaises(asyncio.CancelledError):

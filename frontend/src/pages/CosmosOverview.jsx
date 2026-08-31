@@ -14,14 +14,16 @@ export function CosmosOverview({ network }) {
   const market = useCosmosResource(`/api/networks/${network.id}/market`, 30000)
   if (overview.loading) return <p>Loading AtomOne overview…</p>
   if (!overview.data) return <div className="cosmos-error"><h2>Overview unavailable</h2><p>{overview.error}</p></div>
-  return <CosmosOverviewView data={overview.data} market={market.data} marketError={market.error} stale={overview.stale} />
+  return <CosmosOverviewView data={overview.data} market={market.data} marketError={market.error} stale={overview.stale} network={network} />
 }
 
-export function CosmosOverviewView({ data, market, marketError, stale = false }) {
-  return <><div className="cosmos-title"><div><p className="eyebrow">Cosmos network</p><h1>AtomOne Overview</h1></div>{stale && <span>Stale data</span>}</div>
+export function CosmosOverviewView({ data, market, marketError, stale = false, network }) {
+  const name = network?.presentation?.projectName || data.network.display_name
+  const marketSymbol = network?.assets?.[0]?.symbol || 'Native token'
+  return <><div className="cosmos-title"><div><p className="eyebrow">Cosmos network</p><h1>{name} Overview</h1></div>{stale && <span>Stale data</span>}</div>
     <div className="cosmos-grid">
       <Section title="Network status"><dl><dt>Status</dt><dd>{data.network.operational_state}</dd><dt>Local RPC height</dt><dd>{data.network.current_local_height}</dd><dt>Latest block time</dt><dd>{data.network.latest_block_time}</dd><dt>Syncing</dt><dd>{data.network.catching_up ? 'Yes' : 'No'}</dd></dl></Section>
-      <Section title="ATONE market"><dl><dt>Price</dt><dd>{market ? `$${market.price}` : unavailable(marketError)}</dd><dt>Market cap</dt><dd>{market ? `$${market.market_cap}` : '—'}</dd><dt>24h</dt><dd>{market?.change_24h ?? '—'}%</dd></dl></Section>
+      <Section title={`${marketSymbol} market`}><dl><dt>Price</dt><dd>{market ? `$${market.price}` : unavailable(marketError)}</dd><dt>Market cap</dt><dd>{market ? `$${market.market_cap}` : '—'}</dd><dt>24h</dt><dd>{market?.change_24h ?? '—'}%</dd></dl></Section>
       <Section title="Supply" value={data.assets_and_supply}><dl>{data.assets_and_supply.assets?.map((asset) => <div key={asset.base}><dt>{asset.symbol}</dt><dd>{amount(asset.total_supply, asset.exponent)}</dd></div>)}</dl></Section>
       <Section title="Staking" value={data.staking}><dl><dt>Bonded</dt><dd>{amount(data.staking.bonded_tokens)}</dd><dt>Bonded ratio</dt><dd>{data.staking.bonded_ratio}</dd><dt>Active validators</dt><dd>{data.staking.active_validator_count}</dd></dl></Section>
       <Section title="Mint" value={data.mint}><dl><dt>Inflation</dt><dd>{data.mint.current_inflation}</dd><dt>Goal bonded</dt><dd>{data.mint.goal_bonded}</dd></dl></Section>

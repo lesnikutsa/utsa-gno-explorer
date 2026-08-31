@@ -12,12 +12,15 @@ const context = read('../src/context/SelectedNetworkContext.jsx')
 const app = read('../src/App.jsx')
 const identity = read('../src/hooks/useChainIdentity.js')
 
-test('registry contains uniquely identified Pearl and AtomOne networks with static identity metadata', () => {
+test('static registry contains only Pearl while Cosmos networks come from public metadata', () => {
   const ids = [...registry.matchAll(/\bid: '([^']+)'/g)].map((match) => match[1])
-  assert.deepEqual(ids, ['gno-pearl', 'atomone-mainnet'])
+  assert.deepEqual(ids, ['gno-pearl'])
   assert.equal(new Set(ids).size, ids.length)
   assert.match(registry, /family: NetworkFamily\.GNO/)
   assert.match(registry, /expectedChainId: 'pearl-1'/)
+  assert.doesNotMatch(registry, /atomone|uatone|uphoton/i)
+  assert.match(context, /fetch\('\/api\/networks'/)
+  assert.match(context, /normalizePublicCosmosNetwork/)
   assert.doesNotMatch(registry, /(?:rpc|rest)(?:Url|Endpoint)|VITE_(?:RPC|REST)/i)
 })
 

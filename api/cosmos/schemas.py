@@ -12,6 +12,35 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class PublicNetworkAsset(StrictModel):
+    base: str = Field(min_length=1, max_length=128)
+    display: str = Field(min_length=1, max_length=128)
+    symbol: str = Field(min_length=1, max_length=32)
+    exponent: int = Field(ge=0, le=18)
+
+
+class PublicAddressPrefixes(StrictModel):
+    account: str = Field(min_length=2, max_length=64)
+    validator_operator: str = Field(min_length=2, max_length=64)
+    validator_consensus: str = Field(min_length=2, max_length=64)
+
+
+class PublicNetwork(StrictModel):
+    id: str = Field(min_length=1, max_length=64)
+    family: Literal["cosmos"]
+    chain_id: str = Field(min_length=1, max_length=128)
+    display_name: str = Field(min_length=1, max_length=64)
+    network_name: str = Field(min_length=1, max_length=64)
+    logo_url: str = Field(min_length=8, max_length=2048)
+    assets: list[PublicNetworkAsset] = Field(min_length=1, max_length=16)
+    address_prefixes: PublicAddressPrefixes
+    capabilities: list[Literal["overview", "blocks", "network-parameters"]] = Field(min_length=1)
+
+
+class PublicNetworksResponse(StrictModel):
+    networks: list[PublicNetwork]
+
+
 class SectionErrorDetail(StrictModel):
     code: Literal["section_unavailable"]
 
