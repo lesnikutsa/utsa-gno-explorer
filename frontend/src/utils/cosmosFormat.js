@@ -1,0 +1,45 @@
+const DECIMAL_PATTERN = /^-?\d+(?:\.\d+)?$/
+
+export function formatProtocolPercent(value, digits = 2) {
+  if (typeof value !== 'string' || !DECIMAL_PATTERN.test(value)) return '—'
+  const negative = value.startsWith('-')
+  const unsigned = negative ? value.slice(1) : value
+  const [whole, fraction = ''] = unsigned.split('.')
+  const raw = BigInt(`${whole}${fraction}` || '0')
+  const divisor = 10n ** BigInt(fraction.length)
+  const scaled = raw * 100n * (10n ** BigInt(digits))
+  const magnitude = (scaled + divisor / 2n) / divisor
+  const rounded = magnitude * (negative ? -1n : 1n)
+  const absolute = (rounded < 0n ? -rounded : rounded).toString().padStart(digits + 1, '0')
+  return `${rounded < 0n ? '-' : ''}${absolute.slice(0, -digits)}.${absolute.slice(-digits)}%`
+}
+
+export function formatProtocolDuration(value) {
+  const match = typeof value === 'string' && value.match(/^(\d+)s$/)
+  if (!match) return value || '—'
+  const seconds = BigInt(match[1])
+  const units = [[86400n, 'day'], [3600n, 'hour'], [60n, 'minute']]
+  for (const [size, label] of units) {
+    if (seconds % size === 0n) {
+      const count = seconds / size
+      return `${count} ${label}${count === 1n ? '' : 's'}`
+    }
+  }
+  return `${seconds} seconds`
+}
+
+export function formatTokenAmount(value, exponent = 6, symbol = '') {
+  if (typeof value !== 'string' || !/^\d+$/.test(value) || !Number.isInteger(exponent)) return '—'
+  const scale = 10n ** BigInt(exponent)
+  const units = [[1_000_000_000n, 'B'], [1_000_000n, 'M'], [1_000n, 'K']]
+  const base = BigInt(value)
+  for (const [unit, suffix] of units) {
+    if (base >= scale * unit) {
+      const hundredths = (base * 100n + scale * unit / 2n) / (scale * unit)
+      return `${hundredths / 100n}.${(hundredths % 100n).toString().padStart(2, '0')}${suffix}${symbol ? ` ${symbol}` : ''}`
+    }
+  }
+  const whole = base / scale
+  const fraction = (base % scale).toString().padStart(exponent, '0').replace(/0+$/, '')
+  return `${whole}${fraction ? `.${fraction}` : ''}${symbol ? ` ${symbol}` : ''}`
+}

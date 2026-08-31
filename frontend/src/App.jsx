@@ -33,7 +33,6 @@ import { useAccountDetail } from './hooks/useAccountDetail'
 import { useRealmDetail } from './hooks/useRealmDetail'
 import { usePathname } from './utils/navigation'
 import { useSelectedNetwork } from './context/SelectedNetworkContext'
-import { CosmosLayout } from './layouts/CosmosLayout'
 import { CosmosOverview } from './pages/CosmosOverview'
 import { CosmosBlocks } from './pages/CosmosBlocks'
 import { CosmosBlockDetail } from './pages/CosmosBlockDetail'
@@ -215,7 +214,7 @@ export default function App() {
         ? <CosmosBlockDetail network={network} height={rawHeight} />
         : <p className="cosmos-error">Invalid block height.</p>)
       : cosmosMatch[2] ? <CosmosBlocks network={network} /> : <CosmosOverview network={network} />
-    return <CosmosLayout network={network} section={cosmosMatch[2] ? 'blocks' : 'overview'}>{content}</CosmosLayout>
+    return <ExplorerLayout chainId={network.expectedChainId} healthState="healthy" showRefreshCountdown={false} searchEnabled={false} documentTitle={`${network.presentation.projectName} Explorer`}>{content}</ExplorerLayout>
   }
   if (path.startsWith('/networks/')) return <main className="route-error"><h1>Route not found</h1></main>
 

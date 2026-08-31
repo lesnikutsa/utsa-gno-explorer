@@ -6,7 +6,7 @@ import { formatAverageBlockTime, normalizeBlockTimeIntervals } from '../utils/bl
 
 const labels = { loading: 'Connecting', healthy: 'Healthy', degraded: 'Degraded', error: 'Unavailable' }
 
-export function TopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefreshCountdown = true, averageBlockTimeSeconds, averageBlockTimeSampleSize, averageBlockTimeIntervalsSeconds, theme, onToggleTheme }) {
+export function TopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefreshCountdown = true, averageBlockTimeSeconds, averageBlockTimeSampleSize, averageBlockTimeIntervalsSeconds, theme, onToggleTheme, searchEnabled = true }) {
   const [clock, setClock] = useState(Date.now())
   const searchInputRef = useRef(null)
   const searchFormRef = useRef(null)
@@ -108,7 +108,7 @@ export function TopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefres
   return (
     <header className="topbar">
       <button className="menu-button" onClick={onMenuClick} aria-label="Open navigation"><MenuIcon /></button>
-      <form ref={searchFormRef} className="global-search" role="search" onSubmit={submitSearch} aria-busy={searching}>
+      {searchEnabled ? <form ref={searchFormRef} className="global-search" role="search" onSubmit={submitSearch} aria-busy={searching}>
         <label className="search-box">
           <SearchIcon />
           <input
@@ -158,7 +158,7 @@ export function TopBar({ onMenuClick, healthState, nextFastRefreshAt, showRefres
             {message}
           </div>
         )}
-      </form>
+      </form> : <div className="topbar__network-title">UTSA Explorer</div>}
       {showAverageBlockTime && (
         <div
           ref={blockTimeControlRef}

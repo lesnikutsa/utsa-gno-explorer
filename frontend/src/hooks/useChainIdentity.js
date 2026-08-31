@@ -3,10 +3,11 @@ import { getHealth } from '../services/api'
 
 export const CHAIN_IDENTITY_POLL_MS = 30_000
 
-export function useChainIdentity() {
+export function useChainIdentity({ enabled = true } = {}) {
   const [chainId, setChainId] = useState(null)
 
   useEffect(() => {
+    if (!enabled) return undefined
     let mounted = true
     let refreshTimer = null
 
@@ -28,7 +29,7 @@ export function useChainIdentity() {
       mounted = false
       if (refreshTimer !== null) window.clearTimeout(refreshTimer)
     }
-  }, [])
+  }, [enabled])
 
   return chainId
 }
