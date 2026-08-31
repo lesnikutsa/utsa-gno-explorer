@@ -1,6 +1,7 @@
 import { ExplorerLayout } from './ExplorerLayout'
 import { useCosmosResource } from '../hooks/useCosmosResource'
 import { deriveBlockTimeMetrics } from '../utils/cosmosBlockTime'
+import { CosmosResourceFooter } from '../components/CosmosResourceFooter'
 
 const healthFor = (resource) => {
   if (!resource.data) return resource.loading ? 'loading' : 'error'
@@ -13,15 +14,17 @@ export function CosmosExplorerLayout({ network, children }) {
   const overview = useCosmosResource(`/api/networks/${network.id}/overview`)
   const blocks = useCosmosResource(`/api/networks/${network.id}/blocks?limit=20`)
   const blockTime = deriveBlockTimeMetrics(blocks.data?.blocks)
+  const healthState = healthFor(overview) === 'healthy' && blocks.stale ? 'degraded' : healthFor(overview)
   return <ExplorerLayout
     chainId={network.expectedChainId}
-    healthState={healthFor(overview)}
+    healthState={healthState}
     nextFastRefreshAt={overview.nextRefreshAt}
     averageBlockTimeSeconds={blockTime.average}
     averageBlockTimeSampleSize={blockTime.sampleSize}
     averageBlockTimeIntervalsSeconds={blockTime.intervals}
     documentTitle={`${network.presentation.projectName} Explorer`}
   >
-    {typeof children === 'function' ? children({ overview, blocks }) : children}
+    {typeof children === 'function' ? children({ overview, blocks, blockTime }) : children}
+    <CosmosResourceFooter />
   </ExplorerLayout>
 }

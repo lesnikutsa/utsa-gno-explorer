@@ -220,6 +220,11 @@ class CosmosUpstreamIntegrationTests(unittest.TestCase):
         self.assertEqual(Decimal(body["staking"]["bonded_ratio"]).quantize(Decimal("0.000001")), Decimal("0.395072"))
         self.assertEqual(body["staking"]["active_validator_count"], 2)
         self.assertEqual(body["staking"]["key_rotation_fee"], {"denom":"uatone","amount":"1000000"})
+        self.assertTrue(body["network"]["rpc_pool"])
+        rpc = body["network"]["rpc_pool"][0]
+        self.assertEqual(set(rpc), {"host", "latency_ms", "height", "state", "selected"})
+        self.assertNotIn("https://", rpc["host"])
+        self.assertNotIn("@", rpc["host"])
         self.assertEqual(body["distribution"]["nakamoto_bonus"]["period_epoch_identifier"], "week")
         self.assertEqual(body["governance"]["advanced"]["quorum_range"], {"min":"0.300000000000000000","max":"0.500000000000000000"})
         self.assertEqual([item["moniker"] for item in body["top_active_validators_by_missed_blocks"]],

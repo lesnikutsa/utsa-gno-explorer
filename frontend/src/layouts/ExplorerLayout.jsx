@@ -13,7 +13,7 @@ export function ExplorerLayout({ children, healthState, nextFastRefreshAt, showR
       return false
     }
   })
-  const chainId = useChainIdentity()
+  const chainId = useChainIdentity({ enabled: chainIdOverride === undefined })
   const resolvedChainId = chainIdOverride ?? chainId
   // The Gno path remains equivalent to chainId={chainId}; Cosmos supplies its validated registry identity.
   const { theme, toggleTheme } = useTheme()

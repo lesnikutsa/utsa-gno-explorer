@@ -210,11 +210,11 @@ export default function App() {
     if (networksError) return <main className="route-error"><h1>Network registry unavailable</h1></main>
     if (!network || network.family !== 'cosmos') return <main className="route-error"><h1>Network not found</h1></main>
     const rawHeight = cosmosMatch[3]
-    const renderContent = ({ overview, blocks }) => rawHeight
+    const renderContent = ({ overview, blocks, blockTime }) => rawHeight
       ? (/^[1-9]\d{0,18}$/.test(rawHeight) && BigInt(rawHeight) <= 9223372036854775807n
         ? <CosmosBlockDetail network={network} height={rawHeight} />
         : <p className="cosmos-error">Invalid block height.</p>)
-      : cosmosMatch[2] ? <CosmosBlocks network={network} resource={blocks} /> : <CosmosOverview network={network} overview={overview} blocks={blocks} />
+      : cosmosMatch[2] ? <CosmosBlocks network={network} resource={blocks} /> : <CosmosOverview network={network} overview={overview} blocks={blocks} averageBlockSeconds={blockTime.average} />
     return <CosmosExplorerLayout network={network}>{renderContent}</CosmosExplorerLayout>
   }
   if (path.startsWith('/networks/')) return <main className="route-error"><h1>Route not found</h1></main>

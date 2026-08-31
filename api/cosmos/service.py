@@ -212,7 +212,12 @@ class CosmosService:
                 moniker = description.get("moniker")
                 if not isinstance(moniker, str) or not moniker.strip() or len(moniker.strip()) > 256 or not moniker.isprintable():
                     continue
-                identities[proposer] = {"proposer_moniker": moniker.strip(), "proposer_operator_address": operator}
+                raw_identity = description.get("identity")
+                identity = raw_identity.strip() if isinstance(raw_identity, str) else ""
+                if len(identity) > 128 or (identity and (not identity.isascii() or not identity.isalnum())):
+                    identity = ""
+                identities[proposer] = {"proposer_moniker": moniker.strip(), "proposer_operator_address": operator,
+                                        **({"proposer_identity": identity} if identity else {})}
             except Exception:
                 continue
         return identities
@@ -491,7 +496,10 @@ class CosmosService:
                 moniker = ""
             bonded[address] = {"moniker": moniker or operator_address,
                                "operator_address": operator_address,
-                               "consensus_address": address, "jailed": _boolean(item.get("jailed"), "jailed")}
+                               "consensus_address": address, "jailed": _boolean(item.get("jailed"), "jailed"),
+                               "identity": (_text(description["identity"], "validator identity", 128)
+                                            if isinstance(description.get("identity"), str)
+                                            and description["identity"].isascii() and description["identity"].isalnum() else None)}
         results = []
         for raw in infos:
             info = _mapping(raw, "signing info")
@@ -508,6 +516,17 @@ class CosmosService:
 
     async def overview(self) -> dict:
         status = await self.adapter.node_status()
+        try:
+            rpc_candidates = await self.adapter._cached_candidates("rpc")
+            highest = max(candidate.height for candidate in rpc_candidates)
+            rpc_pool = [{"host": self.adapter._host(candidate.endpoint),
+                         "latency_ms": min(30000, max(0, round(candidate.latency * 1000))),
+                         "height": candidate.height,
+                         "state": "healthy" if highest - candidate.height <= self.definition.transport.max_height_lag else "degraded",
+                         "selected": self.adapter._host(candidate.endpoint) == status.source_host}
+                        for candidate in rpc_candidates]
+        except Exception:
+            rpc_pool = []
         supply_task = asyncio.create_task(self._supply())
         validators_task = asyncio.create_task(self._bonded_validators())
         slashing_task = asyncio.create_task(self._slashing())
@@ -558,7 +577,7 @@ class CosmosService:
             "cometbft_version": status.cometbft_version,
             "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "block_history_state": "unknown", "historical_state": "unknown",
-            "rpc_status_source": status.source_host}
+            "rpc_status_source": status.source_host, "rpc_pool": rpc_pool}
         return OverviewResponse.model_validate({"network": network, **normalized}).model_dump(mode="json")
 
     async def market(self) -> dict:

@@ -111,7 +111,7 @@ export function Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed }
     <>
       <button className={`sidebar-backdrop ${open ? 'is-visible' : ''}`} onClick={handleSidebarClose} aria-label="Close navigation" />
       <aside className={`sidebar ${open ? 'is-open' : ''}`}>
-        <UtsaLogo />
+        <UtsaLogo projectName={networkProfile.projectName} />
         <div className="chain-select" ref={networkSelector}>
           <span className="sidebar__label">Current chain</span>
           <button ref={networkSelectorTrigger} type="button" data-sidebar-tooltip={collapsed ? chainLabel : undefined} aria-label={`Select network. Current network: ${chainLabel}`} aria-haspopup="listbox" aria-expanded={networkMenuOpen} aria-controls="network-selector-options" onClick={() => networkMenuOpen ? closeNetworkMenu() : openNetworkMenu()} onKeyDown={handleNetworkTriggerKeyDown}>

@@ -49,6 +49,14 @@ class SectionError(StrictModel):
     error: SectionErrorDetail
 
 
+class RpcDiagnostic(StrictModel):
+    host: str = Field(min_length=1, max_length=253)
+    latency_ms: int = Field(ge=0, le=30000)
+    height: int = Field(gt=0)
+    state: Literal["healthy", "degraded"]
+    selected: bool
+
+
 class NetworkOverview(StrictModel):
     network_id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     family: Literal["cosmos"]
@@ -69,6 +77,7 @@ class NetworkOverview(StrictModel):
     block_history_state: Literal["unknown", "available", "unavailable"]
     historical_state: Literal["unknown", "available", "unavailable"]
     rpc_status_source: str | None = Field(default=None, min_length=1, max_length=253)
+    rpc_pool: list[RpcDiagnostic] = Field(default_factory=list, max_length=16)
 
 
 class NativeAsset(StrictModel):
@@ -174,6 +183,7 @@ class MissedValidator(StrictModel):
     jailed: bool
     tombstoned: bool
     remaining_misses_before_threshold: int = Field(ge=0)
+    identity: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class OverviewResponse(StrictModel):
@@ -215,6 +225,7 @@ class CosmosBlock(StrictModel):
     transaction_count: int = Field(ge=0)
     proposer_moniker: str | None = Field(default=None, min_length=1, max_length=256)
     proposer_operator_address: str | None = Field(default=None, min_length=1, max_length=90)
+    proposer_identity: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class BlocksResponse(StrictModel):

@@ -4,6 +4,7 @@ import test from 'node:test'
 import { formatProtocolDuration, formatProtocolPercent, formatTokenAmount } from '../src/utils/cosmosFormat.js'
 import { normalizePublicCosmosNetwork } from '../src/utils/publicNetworkRegistry.js'
 import { deriveBlockTimeMetrics } from '../src/utils/cosmosBlockTime.js'
+import { cosmosLivenessRisk } from '../src/utils/cosmosSlashing.js'
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
 const app = read('../src/App.jsx')
@@ -103,4 +104,38 @@ test('market history and advanced parameter failures stay optional', () => {
   assert.match(overview, /path && <svg/)
   assert.match(overview, /Optional market enrichment/)
   assert.match(overview, /<summary>More parameters<\/summary>/)
+})
+
+test('Cosmos SDK liveness boundaries preserve strict greater-than semantics', () => {
+  const base = { startHeight: 100, currentHeight: 201, signedWindow: 100, minimumSigned: '0.5', averageBlockSeconds: 5 }
+  assert.equal(cosmosLivenessRisk({ ...base, missedBlocks: 50 }).overThreshold, false)
+  assert.equal(cosmosLivenessRisk({ ...base, missedBlocks: 51 }).overThreshold, true)
+  const initialWindow = cosmosLivenessRisk({ ...base, currentHeight: 150, missedBlocks: 50 })
+  assert.equal(initialWindow.overThreshold, false)
+  assert.equal(initialWindow.earliestBlocks, 51)
+  assert.equal(cosmosLivenessRisk({ ...base, missedBlocks: 0 }).budgetLeft, 50)
+  assert.equal(cosmosLivenessRisk({ ...base, missedBlocks: 48 }).tone, 'error')
+})
+
+test('native and community amounts use configured denom metadata without AtomOne hardcoding', () => {
+  assert.equal(formatTokenAmount('4792296226638.817868034474200083', 6, 'COIN'), '4.79M COIN')
+  const stakingSource = overview.slice(overview.indexOf('Staking / Validator Set'), overview.indexOf('Inflation / Mint'))
+  assert.doesNotMatch(stakingSource, /ATONE|, 6,/)
+  assert.match(overview, /network\.assets\?\.find\(\(item\) => item\.base === denom\)/)
+})
+
+test('final Cosmos polish exposes stale, footer, product, Mint, and node strip contracts', () => {
+  const cosmosLayoutSource = read('../src/layouts/CosmosExplorerLayout.jsx')
+  const footer = read('../src/components/CosmosResourceFooter.jsx')
+  const explorerLayout = read('../src/layouts/ExplorerLayout.jsx')
+  assert.match(overview, /Stale · last successful data/)
+  assert.match(cosmosLayoutSource, /blocks\.stale \? 'degraded'/)
+  assert.match(explorerLayout, /enabled: chainIdOverride === undefined/)
+  assert.match(sidebar, /<UtsaLogo projectName=\{networkProfile\.projectName\}/)
+  assert.match(footer, /https:\/\/utsa\.gitbook\.io\/services/)
+  assert.match(footer, /https:\/\/teletype\.media\/@lesnik13utsa/)
+  assert.match(footer, /target="_blank" rel="noopener noreferrer"/)
+  const mintSource = overview.slice(overview.indexOf('Inflation / Mint'), overview.indexOf('Governance'))
+  assert.doesNotMatch(mintSource, /<Advanced>/)
+  assert.match(overview, /className="panel cosmos-node-strip"/)
 })
