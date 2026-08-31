@@ -3,8 +3,10 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
+const app = read('../src/App.jsx')
 const blocks = read('../src/pages/CosmosBlocks.jsx')
 const detail = read('../src/pages/CosmosBlockDetail.jsx')
+const transactionDetail = read('../src/pages/CosmosTransactionDetail.jsx')
 const identity = read('../src/components/CosmosValidatorIdentity.jsx')
 const resource = read('../src/hooks/useCosmosResource.js')
 const styles = read('../src/styles/app.css')
@@ -73,7 +75,8 @@ test('Block Detail exposes human and technical information through compact discl
   assert.match(styles, /\.cosmos-copy-value \{[^}]*width: 100%;[^}]*justify-content: space-between;/)
   assert.match(styles, /\.cosmos-detail-summary > div \{[^}]*border: 1px solid var\(--color-border-soft\);[^}]*background: var\(--color-surface-subtle\);/)
   assert.match(detail, /className=\{compact \? undefined : 'cosmos-hash-value'\}/)
-  assert.match(detail, /<Hash value=\{tx\.hash\} label="transaction hash" \/>/)
+  assert.match(detail, /blocks\/\$\{data\.height\}\/transactions\/\$\{tx\.index\}/)
+  assert.match(detail, /<code className="cosmos-hash-value" title=\{tx\.hash\}>\{tx\.hash\}<\/code><\/a><CopyButton value=\{tx\.hash\}/)
   assert.doesNotMatch(detail, /label="transaction hash" compact/)
   assert.doesNotMatch(detail, /shortHash/)
   assert.match(styles, /\.cosmos-detail-card details > summary, \.cosmos-normalized-json > summary \{[^}]*display: inline-flex;[^}]*width: fit-content;[^}]*max-width: calc\(100% - 24px\);[^}]*border: 1px solid var\(--color-accent\);[^}]*background: var\(--color-accent-soft\)/)
@@ -83,6 +86,23 @@ test('Block Detail exposes human and technical information through compact discl
   assert.match(styles, /details\[open\] > summary, \.cosmos-normalized-json\[open\] > summary \{[^}]*background: rgba\(200,75,49,\.18\)/)
   assert.match(styles, /\.cosmos-copy-value code \{[^}]*overflow-wrap: anywhere;[^}]*word-break: break-all;/)
   assert.match(styles, /code\.cosmos-hash-value \{ font-size: 12px; \}/)
+})
+
+test('Cosmos Transaction Detail keeps block-context navigation and readable normalized data', () => {
+  assert.match(app, /cosmosTxMatch/)
+  assert.match(app, /<CosmosTransactionDetail network=\{network\} height=\{txHeight\} index=\{txIndex\}/)
+  assert.match(transactionDetail, /blocks\/\$\{height\}\/transactions\/\$\{index\}/)
+  assert.match(transactionDetail, /className="cosmos-hash-value" title=\{tx\.tx_hash\}>\{tx\.tx_hash\}/)
+  assert.match(transactionDetail, /CopyButton value=\{tx\.tx_hash\}/)
+  assert.match(transactionDetail, /blocks\/\$\{tx\.height\}/)
+  assert.match(transactionDetail, /dateTime=\{tx\.timestamp\}/)
+  for (const label of ['Gas used', 'Gas wanted', 'Fee', 'Memo']) assert.match(transactionDetail, new RegExp(`<dt>${label}`))
+  assert.match(transactionDetail, /message\.action/)
+  assert.match(transactionDetail, /message\.type_url/)
+  assert.match(transactionDetail, /No safely decoded fields are available/)
+  assert.match(transactionDetail, /<summary>More transaction details<\/summary>/)
+  assert.match(transactionDetail, /<summary>Normalized JSON<\/summary>/)
+  assert.match(transactionDetail, /cosmos-tx-status--\$\{tx\.success \? 'success' : 'failed'\}/)
 })
 
 test('Block Detail handles transaction rows, zero state, optional evidence and collapsed JSON', () => {

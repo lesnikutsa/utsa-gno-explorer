@@ -342,3 +342,34 @@ class BlockDetailResponse(StrictModel):
     signatures: list[CommitSignature] = Field(max_length=200)
     transactions: list[BlockTransaction] = Field(max_length=10000)
     evidence: list[EvidenceItem] = Field(max_length=20)
+
+
+class TransactionMessageField(StrictModel):
+    label: str = Field(min_length=1, max_length=64)
+    value: str | dict[str, str] | list[dict[str, str]]
+
+
+class TransactionMessage(StrictModel):
+    type_url: str = Field(min_length=2, max_length=256)
+    action: str = Field(min_length=1, max_length=256)
+    fields: list[TransactionMessageField] = Field(max_length=16)
+
+
+class TransactionFee(StrictModel):
+    amount: list[dict[str, str]] = Field(max_length=16)
+    gas_limit: int | None = Field(default=None, ge=0)
+
+
+class TransactionDetailResponse(StrictModel):
+    tx_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9A-F]{64}$")
+    height: int = Field(gt=0)
+    index: int = Field(ge=0, le=9999)
+    timestamp: str = Field(min_length=20, max_length=64)
+    success: bool
+    code: int = Field(ge=0)
+    gas_wanted: int | None = Field(default=None, ge=0)
+    gas_used: int | None = Field(default=None, ge=0)
+    fee: TransactionFee | None = None
+    memo: str | None = Field(default=None, max_length=1024)
+    message_count: int = Field(ge=0, le=256)
+    messages: list[TransactionMessage] = Field(max_length=256)
