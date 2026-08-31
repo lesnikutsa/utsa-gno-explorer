@@ -1138,33 +1138,67 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 @media (max-width: 900px) { .realm-detail__overview { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 620px) { .realm-detail__overview, .realm-metadata__grid { grid-template-columns: 1fr; } .realm-detail__header h1 { font-size: 17px; } .realm-metadata__files button { grid-template-columns: minmax(0, 1fr) auto; } .realm-metadata__files small { grid-column: 1 / -1; } }
 
-/* Cosmos block list/detail typography and layout intentionally stays scoped. */
+/* Cosmos block list/detail presentation mirrors the shared Gno Explorer language. */
 .cosmos-blocks-table { overflow: hidden; }
-.cosmos-blocks .cosmos-table { font-size: 1.08rem; }
-.cosmos-blocks .cosmos-table th { font-size: .76rem; letter-spacing: .055em; text-transform: uppercase; }
-.cosmos-blocks .cosmos-table td { padding-block: 11px; }
-.cosmos-blocks .cosmos-validator strong { font-size: 1em; }
-.cosmos-blocks .cosmos-validator > span { font-size: .76em; }
-.cosmos-block-nav { display: flex; justify-content: space-between; margin: 0 0 12px; }
-.cosmos-back { display: inline-block; margin-bottom: 10px; }
-.cosmos-detail-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 14px; padding: 16px; gap: 16px; }
-.cosmos-detail-summary > div, .cosmos-commit-summary > div { display: grid; min-width: 0; gap: 5px; }
-.cosmos-detail-summary span, .cosmos-commit-summary span { color: var(--color-text-secondary); font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
-.cosmos-detail-summary small { display: block; margin-top: 4px; color: var(--color-text-secondary); font-weight: 400; }
-.cosmos-detail-card { margin-bottom: 14px; }
-.cosmos-detail-card > h2 { display: flex; justify-content: space-between; }
-.cosmos-detail-card dl { display: grid; grid-template-columns: minmax(130px, .35fr) minmax(0, 1fr); gap: 10px 16px; }
-.cosmos-detail-card dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
-.cosmos-detail-card details { margin-top: 14px; }
-.cosmos-detail-card summary, .cosmos-normalized-json summary { cursor: pointer; font-weight: 650; }
-.cosmos-copy-value { display: inline-flex; max-width: 100%; align-items: center; gap: 6px; }
-.cosmos-copy-value code { overflow: hidden; text-overflow: ellipsis; }
-.cosmos-commit-summary { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
-.cosmos-signature-status { text-transform: capitalize; }
+.cosmos-blocks .cosmos-title { margin-bottom: 14px; }
+.cosmos-blocks .cosmos-title h1 { margin: 0; color: var(--color-text-bright); font-size: 22px; font-weight: 600; }
+.cosmos-blocks .cosmos-table table { min-width: 620px; font-size: 11px; }
+.cosmos-blocks .cosmos-table th { padding: 10px 16px; color: var(--color-table-heading); font-size: 11px; font-weight: 700; letter-spacing: .1em; text-align: center; text-transform: uppercase; }
+.cosmos-blocks .cosmos-table td { height: 34px; max-width: 240px; padding: 6px 12px; border-top: 1px solid var(--color-table-divider); border-bottom: 0; color: var(--color-text); text-align: center; }
+.cosmos-blocks .cosmos-table tbody tr:hover { background: var(--color-overlay-hover); }
+.cosmos-blocks .cosmos-validator-identity { justify-content: center; }
+.cosmos-blocks .cosmos-validator strong { color: var(--color-text); font-size: 11px; font-weight: 600; }
+.cosmos-blocks .cosmos-validator > span { color: var(--color-text-secondary); font-size: 9px; }
+.cosmos-blocks .cosmos-validator-avatar { width: 24px; height: 24px; font-size: 8px; }
+.cosmos-blocks .cosmos-table code { font-size: 10px; }
+.cosmos-blocks .table-link:hover .accent-value { color: var(--color-text-bright); }
+.cosmos-blocks .panel__meta { font-size: 10px; }
+
+.cosmos-block-detail { min-width: 0; }
+.cosmos-block-detail .cosmos-title { margin-bottom: 14px; }
+.cosmos-block-detail .cosmos-title h1 { margin: 0; color: var(--color-text-bright); font-size: 22px; font-weight: 600; }
+.cosmos-block-nav { display: flex; min-height: 24px; align-items: center; justify-content: space-between; margin: 0 0 10px; color: var(--color-text-secondary); font-size: 10px; }
+.cosmos-block-nav a { color: #dc795e; font-weight: 600; }
+.cosmos-block-nav a:hover { color: var(--color-text-bright); }
+.cosmos-back { display: inline-flex; margin-bottom: 10px; }
+.cosmos-detail-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 10px; padding: 0; overflow: hidden; }
+.cosmos-detail-summary > div { display: grid; min-width: 0; align-content: start; gap: 5px; padding: 11px 13px; }
+.cosmos-detail-summary > div + div { border-left: 1px solid var(--color-border-soft); }
+.cosmos-detail-summary span, .cosmos-commit-summary span { color: var(--color-text-secondary); font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.cosmos-detail-summary strong { min-width: 0; color: var(--color-text); font-size: 11px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+.cosmos-detail-summary small { display: block; margin-top: 3px; color: var(--color-text-secondary); font-size: 9px; font-weight: 400; line-height: 1.45; }
+.cosmos-detail-card { margin-bottom: 10px; overflow: hidden; }
+.cosmos-detail-card > h2 { margin: 0; padding: 10px 13px; border-bottom: 1px solid var(--color-border-soft); color: var(--color-text-bright); font-size: 12px; font-weight: 600; }
+.cosmos-detail-card > h2 > span { color: var(--color-text-secondary); font-size: 10px; font-weight: 500; }
+.cosmos-detail-card > p, .cosmos-detail-card > ul { margin: 0; padding: 11px 13px; color: var(--color-text-secondary); font-size: 10px; line-height: 1.5; }
+.cosmos-detail-card dl { display: grid; grid-template-columns: minmax(130px, .3fr) minmax(0, 1fr); gap: 0; margin: 0; }
+.cosmos-detail-card dt, .cosmos-detail-card dd { min-width: 0; padding: 9px 13px; border-bottom: 1px solid var(--color-border-soft); }
+.cosmos-detail-card dt { color: var(--color-text-secondary); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.cosmos-detail-card dd { margin: 0; color: var(--color-text); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.cosmos-detail-card dd .cosmos-validator-identity { vertical-align: middle; }
+.cosmos-detail-card details { margin: 0; }
+.cosmos-detail-card details > summary, .cosmos-normalized-json > summary { position: relative; padding: 9px 34px 9px 13px; color: var(--color-text-secondary); font-size: 10px; font-weight: 600; cursor: pointer; list-style: none; }
+.cosmos-detail-card details > summary::-webkit-details-marker, .cosmos-normalized-json > summary::-webkit-details-marker { display: none; }
+.cosmos-detail-card details > summary::after, .cosmos-normalized-json > summary::after { position: absolute; top: 50%; right: 13px; content: '›'; font-size: 16px; transform: translateY(-50%) rotate(90deg); transition: transform .15s ease; }
+.cosmos-detail-card details[open] > summary::after, .cosmos-normalized-json[open] > summary::after { transform: translateY(-50%) rotate(-90deg); }
+.cosmos-detail-card details > summary:hover, .cosmos-normalized-json > summary:hover { background: var(--color-overlay-hover); color: var(--color-text); }
+.cosmos-detail-card details > summary:focus-visible, .cosmos-normalized-json > summary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.cosmos-copy-value { display: inline-flex; max-width: 100%; align-items: center; gap: 8px; }
+.cosmos-copy-value code { min-width: 0; overflow: hidden; color: var(--color-text); font-size: 10px; text-overflow: ellipsis; }
+.cosmos-detail-card .copy-button { flex-basis: 24px; width: 24px; height: 24px; }
+.cosmos-commit-summary { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; padding: 11px 13px; }
+.cosmos-commit-summary > div { display: grid; min-width: 0; gap: 5px; padding: 9px; border: 1px solid var(--color-border-soft); border-radius: 5px; background: var(--color-surface-subtle); }
+.cosmos-commit-summary strong { color: var(--color-text-bright); font-size: 14px; }
+.cosmos-detail-card .cosmos-table { border-top: 1px solid var(--color-border-soft); }
+.cosmos-detail-card .cosmos-table table { min-width: 620px; font-size: 11px; }
+.cosmos-detail-card .cosmos-table th { padding: 10px 13px; color: var(--color-table-heading); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.cosmos-detail-card .cosmos-table td { height: 34px; padding: 6px 12px; border-top: 1px solid var(--color-table-divider); border-bottom: 0; color: var(--color-text); }
+.cosmos-detail-card .cosmos-table tbody tr:hover { background: var(--color-overlay-hover); }
+.cosmos-signature-status { font-size: 10px; text-transform: capitalize; }
 .cosmos-signature-status--signed { color: var(--color-success); }
 .cosmos-signature-status--nil, .cosmos-signature-status--absent { color: var(--color-warning); }
-.cosmos-normalized-json { padding: 14px 16px; }
-.cosmos-normalized-json pre { max-height: 420px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
-@media (max-width: 800px) { .cosmos-detail-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cosmos-commit-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 560px) { .cosmos-detail-card dl { grid-template-columns: 1fr; } .cosmos-detail-card dt:not(:first-child) { margin-top: 8px; } }
-@media (prefers-reduced-motion: reduce) { .cosmos-blocks .is-new-row, .cosmos-blocks .is-settling-row { animation: none !important; } }
+.cosmos-normalized-json { margin-bottom: 10px; overflow: hidden; }
+.cosmos-normalized-json pre { max-height: 420px; margin: 0; padding: 11px 13px; overflow: auto; border-top: 1px solid var(--color-border-soft); background: var(--color-surface-subtle); color: var(--color-text); font-size: 10px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 800px) { .cosmos-detail-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cosmos-detail-summary > div:nth-child(3) { border-left: 0; } .cosmos-detail-summary > div:nth-child(n+3) { border-top: 1px solid var(--color-border-soft); } .cosmos-commit-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .cosmos-detail-card dl { grid-template-columns: 1fr; } .cosmos-detail-card dt { padding-bottom: 3px; border-bottom: 0; } .cosmos-detail-card dd { padding-top: 3px; } }
+@media (prefers-reduced-motion: reduce) { .cosmos-blocks .is-new-row, .cosmos-blocks .is-settling-row, .cosmos-detail-card details > summary::after, .cosmos-normalized-json > summary::after { animation: none !important; transition: none; } }

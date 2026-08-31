@@ -31,7 +31,7 @@ test('Cosmos Blocks uses monikers with an address fallback and shortened hashes'
   assert.match(identity, /\{moniker \|\| 'Unknown proposer'\}/)
   assert.match(identity, /shortAddress\(address\)/)
   assert.match(blocks, /value\.slice\(0, 6\).*value\.slice\(-6\)/)
-  assert.match(blocks, /<code title=\{block\.hash\}>/)
+  assert.match(blocks, /<code className="muted" title=\{block\.hash\}>/)
 })
 
 test('stale Cosmos Blocks never claims Live and reuses Explorer row animation classes', () => {
@@ -39,9 +39,9 @@ test('stale Cosmos Blocks never claims Live and reuses Explorer row animation cl
   assert.match(blocks, /'is-new-row'.*'is-settling-row'/s)
 })
 
-test('larger table typography is scoped to Cosmos Blocks only', () => {
+test('shared compact table typography is scoped to Cosmos Blocks only', () => {
   assert.match(blocks, /className="cosmos-blocks"/)
-  assert.match(styles, /\.cosmos-blocks \.cosmos-table \{ font-size: 1\.08rem; \}/)
+  assert.match(styles, /\.cosmos-blocks \.cosmos-table table \{[^}]*font-size: 11px;/)
   assert.match(styles, /prefers-reduced-motion.*\.cosmos-blocks \.is-new-row/s)
 })
 

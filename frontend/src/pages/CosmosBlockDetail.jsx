@@ -33,7 +33,7 @@ export function CosmosBlockDetail({ network, height }) {
   if (!resource.data) return <p className="cosmos-error">{resource.error}</p>
   const data = resource.data; const eta = data.eta
   const remainingSeconds = eta ? Math.floor((Date.parse(eta.estimated_at) - now) / 1000) : null
-  return <div className="cosmos-block-detail"><a className="cosmos-back" href={`/networks/${network.id}/blocks`}>← Back to Blocks</a><div className="cosmos-title"><h1>Block #{Number(height).toLocaleString()}</h1>{resource.stale && <span>Stale</span>}</div>
+  return <div className="cosmos-block-detail"><a className="cosmos-back block-detail__back" href={`/networks/${network.id}/blocks`}>← Back to Blocks</a><div className="cosmos-title"><h1>Block #{Number(height).toLocaleString()}</h1>{resource.stale && <span>Stale</span>}</div>
     {data.state === 'available' ? <AvailableBlock network={network} lookup={data} height={height} /> : <section className="cosmos-card"><h2>{data.state.replaceAll('_', ' ')}</h2><p>Local RPC height: {data.local_height}</p>{data.state === 'future' && (eta ? <><p>Estimated from {eta.sample_intervals} block intervals.</p><p>{utc(eta.estimated_at)} · {eta.remaining_blocks} blocks · {remainingSeconds > 0 ? `${remainingSeconds}s remaining` : 'Overdue / awaiting block'}</p></> : <p>ETA unavailable: {data.eta_unavailable_reason?.replaceAll('_', ' ')}.</p>)}{data.state === 'node_not_synced' && <p>The connected RPC is still syncing and has not reached this height.</p>}{data.state === 'history_unavailable' && <p>Connected RPC endpoints do not provide this historical block.</p>}</section>}
   </div>
 }
