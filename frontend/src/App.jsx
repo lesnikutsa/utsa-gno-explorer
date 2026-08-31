@@ -32,6 +32,11 @@ import { useGovernanceDetail } from './hooks/useGovernanceDetail'
 import { useAccountDetail } from './hooks/useAccountDetail'
 import { useRealmDetail } from './hooks/useRealmDetail'
 import { usePathname } from './utils/navigation'
+import { useSelectedNetwork } from './context/SelectedNetworkContext'
+import { CosmosLayout } from './layouts/CosmosLayout'
+import { CosmosOverview } from './pages/CosmosOverview'
+import { CosmosBlocks } from './pages/CosmosBlocks'
+import { CosmosBlockDetail } from './pages/CosmosBlockDetail'
 
 const NETWORK_MASCOT_SRC = '/assets/network-mascot.png?v=1'
 
@@ -189,12 +194,30 @@ function GovernanceDetailPage({ proposalId }) {
 
 export default function App() {
   const path = usePathname()
+  const { getNetworkById, networksLoading, networksError } = useSelectedNetwork()
 
   useEffect(() => {
+    if (path.startsWith('/networks/')) return
     document.title = `${networkProfile.projectName} Explorer`
     const descriptionMeta = document.querySelector('meta[name="description"]')
     if (descriptionMeta) descriptionMeta.setAttribute('content', networkProfile.description)
-  }, [])
+  }, [path])
+
+  const cosmosMatch = path.match(/^\/networks\/([^/]+)(?:\/(blocks)(?:\/([^/]+))?)?\/?$/)
+  if (cosmosMatch) {
+    const network = getNetworkById(cosmosMatch[1])
+    if (networksLoading) return <main className="route-error"><p>Loading network registry…</p></main>
+    if (networksError) return <main className="route-error"><h1>Network registry unavailable</h1></main>
+    if (!network || network.family !== 'cosmos') return <main className="route-error"><h1>Network not found</h1></main>
+    const rawHeight = cosmosMatch[3]
+    const content = rawHeight
+      ? (/^[1-9]\d{0,18}$/.test(rawHeight) && BigInt(rawHeight) <= 9223372036854775807n
+        ? <CosmosBlockDetail network={network} height={rawHeight} />
+        : <p className="cosmos-error">Invalid block height.</p>)
+      : cosmosMatch[2] ? <CosmosBlocks network={network} /> : <CosmosOverview network={network} />
+    return <CosmosLayout network={network} section={cosmosMatch[2] ? 'blocks' : 'overview'}>{content}</CosmosLayout>
+  }
+  if (path.startsWith('/networks/')) return <main className="route-error"><h1>Route not found</h1></main>
 
   if (path === '/blocks' || path === '/blocks/') {
     return <BlocksPage />

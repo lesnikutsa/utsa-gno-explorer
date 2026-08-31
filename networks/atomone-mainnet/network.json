@@ -1,0 +1,26 @@
+{
+  "id": "atomone-mainnet",
+  "family": "cosmos",
+  "chain_id": "atomone-1",
+  "display_name": "AtomOne",
+  "network_name": "Mainnet",
+  "rpc_endpoints": [
+    "https://m-atomone.rpc.utsa.tech",
+    "https://atomone-mainnet-rpc.itrocket.net"
+  ],
+  "rest_endpoints": [
+    "https://m-atomone.api.utsa.tech",
+    "https://atomone-mainnet-api.itrocket.net"
+  ],
+  "account_prefix": "atone",
+  "validator_operator_prefix": "atonevaloper",
+  "validator_consensus_prefix": "atonevalcons",
+  "coin_type": 118,
+  "assets": [
+    {"base": "uatone", "display": "atone", "symbol": "ATONE", "exponent": 6},
+    {"base": "uphoton", "display": "photon", "symbol": "PHOTON", "exponent": 6}
+  ],
+  "coingecko_id": "atomone",
+  "logo_url": "https://raw.githubusercontent.com/lesnikutsa/explorer/master/public/logos/Atomone.png",
+  "capabilities": ["overview", "blocks", "network-parameters"]
+}

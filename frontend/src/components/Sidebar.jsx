@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { UtsaLogo } from './UtsaLogo'
 import { ChainIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon } from './Icons'
 import { navigationItems } from '../config/navigation'
-import { hasNetworkCapability, supportedNetworks } from '../config/networkRegistry'
+import { hasNetworkCapability } from '../config/networkRegistry'
 import { useSelectedNetwork } from '../context/SelectedNetworkContext'
 import { isInterceptableNavigation, navigateInternal, usePathname } from '../utils/navigation'
 import { adjacentOptionIndex } from '../utils/networkSelector'
@@ -15,7 +15,7 @@ export function Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed }
   const networkSelectorTrigger = useRef(null)
   const networkSelector = useRef(null)
   const previousSidebarOpen = useRef(open)
-  const { selectedNetwork, selectNetwork } = useSelectedNetwork()
+  const { selectedNetwork, selectNetwork, supportedNetworks } = useSelectedNetwork()
   const networkProfile = selectedNetwork.presentation
   const pathname = usePathname()
   const items = navigationItems.filter(({ capability }) => hasNetworkCapability(selectedNetwork, capability))
@@ -82,6 +82,7 @@ export function Sidebar({ open, onClose, chainId, collapsed, onToggleCollapsed }
   const handleNetworkSelection = (networkId) => {
     selectNetwork(networkId)
     closeNetworkMenu()
+    navigateInternal(networkId === 'gno-pearl' ? '/' : `/networks/${networkId}`)
   }
   const isActive = (href) => {
     if (href === '/') return pathname === '/'

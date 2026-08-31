@@ -3,7 +3,7 @@
 import asyncio
 import base64
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_EVEN, localcontext
 import hashlib
 import math
@@ -15,11 +15,14 @@ from pydantic import TypeAdapter, ValidationError
 
 from .adapter import CosmosAdapter
 from .cache import RequestCache
-from .errors import AllEndpointsUnavailable, MalformedUpstreamResponse
-from .parsing import parse_rest_node_info
+from .errors import AllEndpointsUnavailable, MalformedUpstreamResponse, RejectedEndpoint
+from .parsing import parse_node_status, parse_rest_node_info, parse_rpc_block
 from .registry import NetworkDefinition
 from .schemas import (AssetsSupply, Distribution, Governance, MarketResponse,
                       MissedValidator, Mint, OverviewResponse, Slashing, Staking)
+from .blocks import estimate_eta_result, metadata, metadata_sample
+from .rfc3339 import parse_rfc3339
+from .errors import HistoryUnavailable
 
 SECTION_TTL = 5.0
 MARKET_TTL = 30.0
@@ -163,11 +166,117 @@ def consensus_address(public_key: object, prefix: str) -> str:
 
 
 class CosmosService:
-    def __init__(self, definition: NetworkDefinition, *, client: httpx.AsyncClient, cache: RequestCache):
+    def __init__(self, definition: NetworkDefinition, *, client: httpx.AsyncClient,
+                 cache: RequestCache, wall_clock=None):
         self.definition = definition
         self.cache = cache
         self.adapter = CosmosAdapter(definition.transport, client=client, cache=cache)
         self.transport = self.adapter._transport
+        self._wall_clock = wall_clock or (lambda: datetime.now(timezone.utc))
+
+    @staticmethod
+    def _public_block(block):
+        return {"height": block.height, "hash": block.block_hash,
+                "timestamp": block.block_time, "proposer": block.proposer_address,
+                "transaction_count": block.transaction_count}
+
+    async def blocks(self, limit: int = 10):
+        if type(limit) is not int or not 1 <= limit <= 20:
+            raise ValueError("limit must be between 1 and 20")
+        head = await self.adapter.node_status()
+        low = max(1, head.local_height - limit + 1)
+        items = await self.cache.get_or_load(
+            (self.definition.transport.network_id, "blocks", (low, head.local_height)), 2.0,
+            lambda: metadata(self.adapter, low, head.local_height))
+        return {"source": "rpc_metadata", "blocks": sorted(items, key=lambda item: item["height"], reverse=True)[:limit]}
+
+    async def _status_observations(self):
+        async def load():
+            observations = []
+            for endpoint in self.definition.transport.rpc_endpoints:
+                try:
+                    payload = await self.transport.get_object(endpoint, "/status")
+                    status = parse_node_status(
+                        payload, network_id=self.definition.transport.network_id,
+                        expected_chain_id=self.definition.transport.chain_id,
+                        source_host=self.adapter._host(endpoint))
+                    observations.append((endpoint, status))
+                except Exception:
+                    continue
+            if not observations:
+                raise AllEndpointsUnavailable("no identity-validated RPC status")
+            return observations
+        key = (self.definition.transport.network_id, "block_status_observations", ())
+        return await self.cache.get_or_load(key, 2.0, load)
+
+    async def _observed_block(self, height, observations):
+        pruning = []
+        attempted = False
+        for endpoint, status in sorted(observations, key=lambda item: item[1].local_height, reverse=True):
+            if status.local_height < height:
+                continue
+            attempted = True
+            try:
+                payload = await self.transport.get_object(
+                    endpoint, f"/block?height={height}", accept_error_payload=True)
+                error = payload.get("error")
+                if isinstance(error, dict):
+                    message = str(error.get("data") or error.get("message") or "")
+                    match = re.search(
+                        r"height\s+\d+\s+is not available(?:, lowest height is\s+(\d+))?",
+                        message, re.IGNORECASE)
+                    if match:
+                        pruning.append(int(match.group(1)) if match.group(1) else None)
+                        continue
+                    raise RejectedEndpoint("http_status")
+                block = parse_rpc_block(
+                    payload, network_id=self.definition.transport.network_id,
+                    expected_chain_id=self.definition.transport.chain_id)
+                if block.height != height:
+                    raise RejectedEndpoint("wrong_height")
+                return block
+            except (MalformedUpstreamResponse, RejectedEndpoint):
+                continue
+        if pruning and attempted and len(pruning) == sum(
+                status.local_height >= height for _endpoint, status in observations):
+            known = [item for item in pruning if item is not None]
+            raise HistoryUnavailable(height, min(known) if known else None)
+        raise AllEndpointsUnavailable("observed block unavailable")
+
+    async def block_lookup(self, height: int):
+        observations = await self._status_observations()
+        observed_height = max(status.local_height for _endpoint, status in observations)
+        confirmed = [status for _endpoint, status in observations if not status.catching_up]
+        confirmed_height = max((status.local_height for status in confirmed), default=None)
+        if height > observed_height:
+            if confirmed_height is None:
+                return {"state": "node_not_synced", "local_height": observed_height,
+                        "source": "rpc", "block": None, "eta": None,
+                        "eta_unavailable_reason": None}
+            try:
+                key = (self.definition.transport.network_id, "eta_sample", (confirmed_height,))
+                history = await self.cache.get_or_load(
+                    key, 2.0, lambda: metadata_sample(self.adapter, confirmed_height))
+                eta, reason = estimate_eta_result(history, height)
+                if eta and history:
+                    latest_time = parse_rfc3339(max(history, key=lambda item: item["height"])["timestamp"])
+                    if self._wall_clock() - latest_time > timedelta(seconds=max(300, eta["average_block_seconds"] * 20)):
+                        eta, reason = None, "network_stalled"
+            except (HistoryUnavailable, AllEndpointsUnavailable):
+                eta, reason = None, "insufficient_history"
+            return {"state": "future", "local_height": observed_height, "source": "rpc",
+                    "block": None, "eta": eta,
+                    "eta_unavailable_reason": reason}
+        try:
+            key = (self.definition.transport.network_id, "observed_block", (height,))
+            block = await self.cache.get_or_load(
+                key, 2.0, lambda: self._observed_block(height, observations))
+            return {"state": "available", "local_height": observed_height, "source": "rpc",
+                    "block": self._public_block(block), "eta": None, "eta_unavailable_reason": None}
+        except HistoryUnavailable:
+            state = "history_unavailable"
+        return {"state": state, "local_height": observed_height, "source": "rpc",
+                "block": None, "eta": None, "eta_unavailable_reason": None}
 
     async def _rest(self, name: str, path: str, validator=None):
         key = (self.definition.transport.network_id, "overview_rest", (name, path))
