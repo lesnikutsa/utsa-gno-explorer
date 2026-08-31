@@ -250,7 +250,7 @@ class CosmosTransaction(StrictModel):
     sender: str | None = Field(default=None, max_length=128)
 
 
-class TransactionsResponse(StrictModel):
+class CosmosTransactionsResponse(StrictModel):
     state: Literal["available", "indexing_unavailable"]
     transactions: list[CosmosTransaction] = Field(max_length=20)
     page: int = Field(ge=1, le=100)
@@ -259,6 +259,11 @@ class TransactionsResponse(StrictModel):
     has_older: bool
     has_newer: bool
     source_host: str | None = Field(default=None, max_length=253)
+
+
+# Backwards-compatible module export; the distinct class name also keeps the
+# existing Gno OpenAPI component name stable when both families are mounted.
+TransactionsResponse = CosmosTransactionsResponse
 
 
 class HeightEta(StrictModel):
@@ -324,7 +329,7 @@ class EvidenceItem(StrictModel):
     time: str | None = Field(default=None, min_length=20, max_length=64)
 
 
-class BlockDetailResponse(StrictModel):
+class CosmosBlockDetailResponse(StrictModel):
     network_id: str = Field(min_length=1, max_length=64)
     chain_id: str = Field(min_length=1, max_length=128)
     local_height: int = Field(gt=0)
@@ -344,6 +349,9 @@ class BlockDetailResponse(StrictModel):
     evidence: list[EvidenceItem] = Field(max_length=20)
 
 
+BlockDetailResponse = CosmosBlockDetailResponse
+
+
 class TransactionMessageField(StrictModel):
     label: str = Field(min_length=1, max_length=64)
     value: str | dict[str, str] | list[dict[str, str]]
@@ -360,7 +368,7 @@ class TransactionFee(StrictModel):
     gas_limit: int | None = Field(default=None, ge=0)
 
 
-class TransactionDetailResponse(StrictModel):
+class CosmosTransactionDetailResponse(StrictModel):
     tx_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9A-F]{64}$")
     height: int = Field(gt=0)
     index: int = Field(ge=0, le=9999)
@@ -373,3 +381,6 @@ class TransactionDetailResponse(StrictModel):
     memo: str | None = Field(default=None, max_length=1024)
     message_count: int = Field(ge=0, le=256)
     messages: list[TransactionMessage] = Field(max_length=256)
+
+
+TransactionDetailResponse = CosmosTransactionDetailResponse
