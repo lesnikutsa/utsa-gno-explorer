@@ -72,6 +72,10 @@ test('Block Detail exposes human and technical information through compact discl
   assert.match(detail, /<span className="cosmos-copy-value"><CosmosValidatorIdentity/)
   assert.match(styles, /\.cosmos-copy-value \{[^}]*width: 100%;[^}]*justify-content: space-between;/)
   assert.match(styles, /\.cosmos-detail-summary > div \{[^}]*border: 1px solid var\(--color-border-soft\);[^}]*background: var\(--color-surface-subtle\);/)
+  assert.match(detail, /<code title=\{value\}>\{value\}<\/code>/)
+  assert.doesNotMatch(detail, /shortHash/)
+  assert.match(styles, /details\[open\] > summary[^}]*outline: 1px solid var\(--color-accent\)/)
+  assert.match(styles, /\.cosmos-copy-value code \{[^}]*overflow-wrap: anywhere;[^}]*word-break: break-all;/)
 })
 
 test('Block Detail handles transaction rows, zero state, optional evidence and collapsed JSON', () => {

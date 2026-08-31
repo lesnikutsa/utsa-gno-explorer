@@ -4,9 +4,8 @@ import { CosmosValidatorIdentity } from '../components/CosmosValidatorIdentity'
 import { useCosmosResource } from '../hooks/useCosmosResource'
 import { relativeTime } from '../utils/time'
 
-const shortHash = (value = '') => value.length > 23 ? `${value.slice(0, 10)}...${value.slice(-10)}` : value
 const utc = (value) => new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'UTC' }).format(new Date(value)).replace(',', ' ·') + ' UTC'
-const Hash = ({ value, label }) => value ? <span className="cosmos-copy-value"><code title={value}>{shortHash(value)}</code><CopyButton value={value} label={`Copy ${label}`} /></span> : <span>—</span>
+const Hash = ({ value, label }) => value ? <span className="cosmos-copy-value"><code title={value}>{value}</code><CopyButton value={value} label={`Copy ${label}`} /></span> : <span>—</span>
 const Metric = ({ label, children }) => <div><span>{label}</span><strong>{children}</strong></div>
 
 function AvailableBlock({ network, lookup, height }) {
