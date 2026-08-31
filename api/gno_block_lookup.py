@@ -36,17 +36,6 @@ def _timestamp(value) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
-def _status_time(payload, expected_chain_id: str) -> datetime:
-    data = result(payload)
-    node_info = data.get("node_info")
-    sync_info = data.get("sync_info")
-    if not isinstance(node_info, dict) or node_info.get("network") != expected_chain_id:
-        raise RpcError("Wrong-chain RPC status")
-    if not isinstance(sync_info, dict):
-        raise RpcError("Malformed RPC status")
-    return _timestamp(sync_info.get("latest_block_time"))
-
-
 def _block_header(payload, expected_chain_id: str, expected_height: int) -> tuple[int, datetime]:
     data = result(payload)
     block = data.get("block")
@@ -59,7 +48,10 @@ def _block_header(payload, expected_chain_id: str, expected_height: int) -> tupl
     return height, _timestamp(header.get("time"))
 
 
-def _sample(client, chain_id: str, latest_height: int, latest_time: datetime) -> dict | None:
+def _sample(client, chain_id: str, latest_height: int) -> dict | None:
+    _, latest_time = _block_header(
+        client.get("block", height=latest_height), chain_id, latest_height,
+    )
     for span in ETA_CHECKPOINT_SPANS:
         checkpoint = latest_height - span
         if checkpoint < 1:
@@ -69,7 +61,8 @@ def _sample(client, chain_id: str, latest_height: int, latest_time: datetime) ->
             elapsed = (latest_time - old_time).total_seconds()
             average = elapsed / span
             if elapsed > 0 and math.isfinite(average) and 0 < average <= MAX_AVERAGE_BLOCK_SECONDS:
-                return {"average_block_seconds": average, "sample_intervals": span}
+                return {"average_block_seconds": average, "sample_intervals": span,
+                        "latest_height": latest_height, "latest_time": latest_time}
         except (RpcError, TypeError, ValueError, OSError):
             continue
     return None
@@ -115,39 +108,34 @@ def lookup_future_block(height: int, config, *, clock=time.monotonic) -> dict:
     candidates = suitable_rpc_probes(probes)
     if not candidates:
         raise GnoBlockLookupUnavailable("live RPC height unavailable")
-    validated = []
-    for candidate in candidates:
-        try:
-            latest_height = candidate.latest_height
-            if not isinstance(latest_height, int) or isinstance(latest_height, bool) or latest_height <= 0:
-                continue
-            validated.append((candidate, latest_height,
-                              _status_time(candidate.status_payload, config.chain_id)))
-        except (RpcError, TypeError, ValueError):
-            continue
-    if not validated:
-        for item in probes:
-            if item.client is not None:
-                try:
-                    item.client.close()
-                except Exception:
-                    pass
-        raise GnoBlockLookupUnavailable("no identity-validated live RPC status")
-    probe, latest_height, latest_time = max(validated, key=lambda item: item[1])
+    latest_height = max(candidate.latest_height for candidate in candidates)
     try:
         if height <= latest_height:
             return {"state": "not_indexed", "current_height": latest_height, "eta": None}
+
+        def load_sample():
+            for candidate in candidates:
+                try:
+                    return _sample(candidate.client, config.chain_id, candidate.latest_height)
+                except (RpcError, TypeError, ValueError, OSError):
+                    continue
+            raise GnoBlockLookupUnavailable("validated RPC endpoints did not provide a valid latest block")
+
         sample = _cached_sample(
             config.chain_id,
-            lambda: _sample(probe.client, config.chain_id, latest_height, latest_time),
+            load_sample,
             clock,
         )
         remaining = height - latest_height
         eta = None
         if sample is not None:
             try:
-                estimated = latest_time + timedelta(seconds=sample["average_block_seconds"] * remaining)
-                eta = {"remaining_blocks": remaining, **sample,
+                estimated = sample["latest_time"] + timedelta(
+                    seconds=sample["average_block_seconds"] * (height - sample["latest_height"]),
+                )
+                eta = {"remaining_blocks": remaining,
+                       "average_block_seconds": sample["average_block_seconds"],
+                       "sample_intervals": sample["sample_intervals"],
                        "estimated_at": estimated.isoformat(timespec="microseconds").replace("+00:00", "Z")}
             except (OverflowError, ValueError):
                 eta = None

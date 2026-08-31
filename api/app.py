@@ -2471,7 +2471,9 @@ def get_gno_block_lookup(height: int = Path(gt=0)) -> GnoBlockLookupResponse:
     try:
         return GnoBlockLookupResponse(**lookup_future_block(height, app.state.api_config))
     except GnoBlockLookupUnavailable:
-        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from None
+        raise HTTPException(
+            status_code=503, detail="Live Gno RPC data is temporarily unavailable",
+        ) from None
 
 
 @app.get("/api/blocks/{height}", response_model=BlockDetailResponse)
