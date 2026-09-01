@@ -799,6 +799,7 @@ class CosmosService:
                   "signing_history_state": response["signing_history_state"],
                   "rank": category_voting_power_rank(response["validators"], validator),
                   "website": description.get("website") or None,
+                  "contact": description.get("security_contact") or None,
                   "description": description.get("details") or None,
                   "account_address": reencode_bech32_address(operator_address,
                       self.definition.validator_operator_prefix, self.definition.account_prefix),

@@ -112,6 +112,7 @@ class CosmosValidatorDetail(StrictModel):
     identity: str | None = Field(default=None, max_length=128)
     avatar_url: str | None = Field(default=None, max_length=2048, pattern=r"^https://")
     website: str | None = Field(default=None, max_length=2048)
+    contact: str | None = Field(default=None, max_length=512)
     description: str | None = Field(default=None, max_length=4096)
     category: Literal["active", "inactive", "jailed"]
     bond_status: Literal["bonded", "unbonding", "unbonded"]

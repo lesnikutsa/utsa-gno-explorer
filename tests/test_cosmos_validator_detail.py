@@ -1,8 +1,13 @@
 import unittest
 from api.cosmos.service import consensus_address, reencode_bech32_address, valid_bech32_address
 from api.cosmos.validators import category_voting_power_rank
+from api.cosmos.schemas import CosmosValidatorDetail
 
 class CosmosValidatorAddressTests(unittest.TestCase):
+    def test_reusable_detail_contract_exposes_optional_security_contact(self):
+        field = CosmosValidatorDetail.model_fields["contact"]
+        self.assertFalse(field.is_required())
+
     def test_configured_operator_prefix_and_checksum_are_required(self):
         # The encoder hashes a public key, but Bech32 validity is independent of the payload role.
         address = consensus_address({"key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}, "testvaloper")

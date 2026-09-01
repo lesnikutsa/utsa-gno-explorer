@@ -11,13 +11,17 @@ test('Cosmos validator detail route and independent list identity link are prese
   assert.match(list, /<button className=\{`validator-favorite[\s\S]+onClick=\{\(\) => toggleFavorite/)
 })
 test('detail presents validator-only identity, metrics, signing, slashing and parameters', () => {
-  for (const text of ['Account Address', 'Hex Address', 'Bonded', 'Jailed', 'Identity', 'Voting Power', 'Stake Share', '≈24h Change', 'Commission', 'Recent finalized participation', 'Protocol slashing window', 'Validator Parameters', 'Consensus Identity', 'Consensus Public Key']) assert.match(page, new RegExp(text))
+  for (const text of ['Contact', 'Minimum Self Delegation', 'Account Address', 'Hex Address', 'Bonded', 'Jailed', 'Identity', 'Voting Power', 'Stake Share', '≈24h Change', 'Commission', 'Recent finalized participation', 'Protocol slashing window', 'Validator Parameters', 'Consensus Identity', 'Consensus Public Key']) assert.match(page, new RegExp(text))
   assert.match(page, /Recent 50-block canonical signing panel/)
   assert.match(page, /aria-label=\{`Block #\$\{p.height\} · \$\{label\(p.status\)\}/)
   assert.match(page, /CopyButton value=\{value\}/)
   for (const forbidden of ['Delegate', 'Undelegate', 'Withdraw rewards', 'wallet connection']) assert.doesNotMatch(page, new RegExp(forbidden, 'i'))
   assert.match(page, /theme-compatible/)
   assert.match(css, /var\(--color-card\)/)
+  assert.match(page, /Past #\{oldestPoint\.height\.toLocaleString\(\)\}/)
+  assert.match(page, /Latest finalized #\{newestPoint\.height\.toLocaleString\(\)\}/)
+  assert.match(css, /\.cosmos-validator-signing__monitor\s*\{[^}]*margin:\s*0 auto/)
+  assert.match(css, /\.cosmos-validator-hero__main \.cosmos-validator-avatar\s*\{[^}]*width:\s*68px/)
 })
 
 test('validator identities link consistently across Cosmos explorer surfaces', () => {
