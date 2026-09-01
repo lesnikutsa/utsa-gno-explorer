@@ -25,3 +25,11 @@ export function directedValidatorComparison(left, right, field, direction) {
 }
 
 export const missedCountClass = (missed) => `validator-missed-count${missed > 10 ? ' validator-missed-count--alert' : ''}`
+
+export function validatorRankTone(stakeShare) {
+  const share = Number(stakeShare)
+  if (share >= 5) return 'strongest'
+  if (share >= 2) return 'high'
+  if (share >= 1) return 'medium'
+  return 'neutral'
+}

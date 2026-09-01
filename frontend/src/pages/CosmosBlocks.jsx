@@ -14,7 +14,7 @@ export function CosmosBlocks({ network, resource }) {
     {resource.data && <section className="panel cosmos-blocks-table"><div className="cosmos-table"><table><thead><tr><th>Height</th><th>Time</th><th>Proposer</th><th>Txs</th><th>Block hash</th></tr></thead><tbody>{rows.length ? rows.map((block, index) => <tr key={block.height} className={index === 0 && block.height === newest ? 'is-new-row' : index < 3 ? 'is-settling-row' : ''}>
       <td><a className="table-link" href={blockHref(network, block.height)}><span className="accent-value mono">#{block.height.toLocaleString()}</span></a></td>
       <td><time dateTime={block.timestamp} title={block.timestamp}>{relativeTime(block.timestamp)}</time></td>
-      <td><CosmosValidatorIdentity moniker={block.proposer_moniker} address={block.proposer_operator_address || block.proposer} imageSrc={block.proposer_avatar_url} /></td>
+      <td><CosmosValidatorIdentity moniker={block.proposer_moniker} address={block.proposer_operator_address || block.proposer} imageSrc={block.proposer_avatar_url} showTitles={false} /></td>
       <td>{block.transaction_count.toLocaleString()}</td><td><code className="muted" title={block.hash}>{shortHash(block.hash)}</code></td>
     </tr>) : <tr><td colSpan="5">No locally available blocks.</td></tr>}</tbody></table></div></section>}
   </div>

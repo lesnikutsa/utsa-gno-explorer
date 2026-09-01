@@ -32,6 +32,7 @@ test('Cosmos Blocks uses monikers with an address fallback and shortened hashes'
   assert.match(blocks, /moniker=\{block\.proposer_moniker\}/)
   assert.match(blocks, /block\.proposer_operator_address \|\| block\.proposer/)
   assert.match(blocks, /imageSrc=\{block\.proposer_avatar_url\}/)
+  assert.match(blocks, /imageSrc=\{block\.proposer_avatar_url\} showTitles=\{false\}/)
   assert.match(identity, /\{moniker \|\| 'Unknown proposer'\}/)
   assert.match(identity, /shortAddress\(address\)/)
   assert.match(blocks, /value\.slice\(0, 6\).*value\.slice\(-6\)/)
