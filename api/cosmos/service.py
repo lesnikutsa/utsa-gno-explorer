@@ -185,6 +185,7 @@ class CosmosService:
         self._signing_strip = {}
         self._signing_height = 0
         self._signing_warmup = None
+        self._validator_sets_by_hash = {}
         self._avatars = {}
         self._avatar_tasks = {}
 
@@ -546,13 +547,24 @@ class CosmosService:
         except Exception:
             return None
 
+    async def _validator_set_for_hash(self, validators_hash: str, height: int):
+        cached = self._validator_sets_by_hash.get(validators_hash)
+        if cached is not None:
+            return cached
+        rows = await self._rpc_validator_set(height)
+        addresses = [item["address"] for item in rows]
+        self._validator_sets_by_hash[validators_hash] = addresses
+        if len(self._validator_sets_by_hash) > 64:
+            self._validator_sets_by_hash.pop(next(iter(self._validator_sets_by_hash)))
+        return addresses
+
     async def _warm_signing(self, active: set[str], height: int):
         heights = signing_height_range(self._signing_height, height)
         if heights and (not self._signing_height or heights[0] > self._signing_height + 1):
             self._signing_strip = {}
         for block_height in heights:
             commit = None
-            commit_height, block_time = block_height, None
+            commit_height, block_time, validator_addresses = block_height, None, None
             try:
                 candidates = await self.adapter._cached_candidates("rpc")
                 payload = await self.transport.get_object(candidates[0].endpoint, f"/commit?height={block_height}")
@@ -560,10 +572,13 @@ class CosmosService:
                 header = _mapping(signed_header.get("header"), "commit header")
                 commit = signed_header.get("commit")
                 commit_height = _integer(header.get("height"), "commit height")
+                validators_hash = _text(header.get("validators_hash"), "validators hash", 128)
                 block_time = _text(header.get("time"), "commit time", 64)
+                validator_addresses = await self._validator_set_for_hash(validators_hash, commit_height)
             except Exception:
                 pass
-            aggregate_commit(self._signing_strip, active, commit, commit_height, block_time)
+            aggregate_commit(self._signing_strip, active, commit, validator_addresses,
+                             commit_height, block_time)
         for address in active:
             self._signing_strip[address] = self._signing_strip.get(address, [])[-50:]
         self._signing_height = height
