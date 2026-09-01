@@ -80,3 +80,10 @@ test('validator token presentation uses whole numbers and shared Gno card surfac
   assert.match(css, /\.cosmos-validator-summary article::after/)
   assert.doesNotMatch(source, /maximumFractionDigits: 2 \}\)\} \{asset\.symbol\}/)
 })
+
+test('commission and voting power share primary metric typography', () => {
+  assert.equal((source.match(/className="cosmos-validator-primary-metric"/g) || []).length, 2)
+  assert.match(source, /cosmos-validator-primary-metric">\{\(Number\(validator\.commission\) \* 100\)\.toFixed\(2\)\}%/)
+  assert.match(css, /\.cosmos-validator-primary-metric\s*\{[^}]*font-size:\s*12px;[^}]*font-weight:\s*600;/)
+  assert.match(css, /\.cosmos-validator-stake-share[^}]*font-size:\s*9px;/)
+})

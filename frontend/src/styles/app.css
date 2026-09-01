@@ -1250,6 +1250,7 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .cosmos-validator-table th button { border: 0; background: none; color: inherit; cursor: pointer; font: inherit; text-transform: inherit; }
 .cosmos-validator-favorite-identity { display: flex; align-items: center; gap: 5px; }
 .cosmos-validator-table td small, .validator-delta strong, .validator-delta small { display: block; }
+.cosmos-validator-primary-metric { font-size: 12px; font-weight: 600; }
 .cosmos-validator-table td .cosmos-validator-stake-share { color: var(--color-text-secondary); font-size: 9px; }
 .validator-delta.is-positive { color: var(--color-success); } .validator-delta.is-negative { color: var(--color-error); } .validator-delta.is-neutral { color: var(--color-text-secondary); }
 .validator-liveness { width: 330px; line-height: 1.45; } .validator-liveness small { color: var(--color-text-secondary); }
