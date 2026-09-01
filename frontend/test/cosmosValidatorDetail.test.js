@@ -28,3 +28,12 @@ test('validator identities link consistently across Cosmos explorer surfaces', (
     assert.match(source, /\/networks\/\$\{network.id\}\/validators/)
   }
 })
+
+test('shared validator identity owns one semantic color contract', () => {
+  assert.match(css, /\.cosmos-validator strong\s*\{\s*color:\s*var\(--color-text-bright\)/)
+  assert.match(css, /\.cosmos-validator > span\s*\{\s*color:\s*var\(--color-text-secondary\)/)
+  assert.match(css, /\.cosmos-validator-identity-link:hover \.cosmos-validator strong,[\s\S]*?focus-visible \.cosmos-validator strong\s*\{\s*color:\s*var\(--color-accent\)/)
+  assert.match(css, /\.cosmos-validator-identity-link:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--color-accent\)/)
+  assert.doesNotMatch(css, /\.cosmos-blocks \.cosmos-validator strong\s*\{[^}]*color:/)
+  assert.doesNotMatch(css, /\.cosmos-validator-hero__main \.cosmos-validator strong\s*\{[^}]*color:/)
+})
