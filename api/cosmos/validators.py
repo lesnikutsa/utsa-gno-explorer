@@ -29,7 +29,7 @@ def target_height_24h(current_height: int, average_block_seconds: float | None) 
 
 
 def aggregate_commit(strip: dict[str, list[dict]], active_addresses: set[str], commit: dict | None,
-                     validator_addresses: list[str] | None, height: int, block_time: str | None):
+                     height: int, block_time: str | None):
     """Append one block-centric point for every active consensus address."""
     if commit is None:
         for address in active_addresses:
@@ -37,15 +37,15 @@ def aggregate_commit(strip: dict[str, list[dict]], active_addresses: set[str], c
         return
     signatures = commit.get("signatures") if isinstance(commit, dict) else None
     if not isinstance(signatures, list):
-        return aggregate_commit(strip, active_addresses, None, None, height, block_time)
-    if not isinstance(validator_addresses, list) or len(validator_addresses) != len(signatures):
-        return aggregate_commit(strip, active_addresses, None, None, height, block_time)
-    represented = {address: signatures[index].get("block_id_flag")
-                   for index, address in enumerate(validator_addresses) if isinstance(signatures[index], dict)}
+        return aggregate_commit(strip, active_addresses, None, height, block_time)
+    represented = {str(signature.get("validator_address")).upper(): signature.get("block_id_flag")
+                   for signature in signatures if isinstance(signature, dict)
+                   and isinstance(signature.get("validator_address"), str)
+                   and signature.get("validator_address")}
     for address in active_addresses:
         flag = represented.get(address)
-        point = ("signed" if flag in (2, "2", "BLOCK_ID_FLAG_COMMIT") else
-                 "missed" if flag in (1, 3, "1", "3", "BLOCK_ID_FLAG_ABSENT", "BLOCK_ID_FLAG_NIL") else
+        point = ("signed" if flag in (2, 3, "2", "3", "BLOCK_ID_FLAG_COMMIT", "BLOCK_ID_FLAG_NIL") else
+                 "missed" if flag in (1, "1", "BLOCK_ID_FLAG_ABSENT") else
                  "unknown")
         strip.setdefault(address, []).append({"height": height, "status": point, "time": block_time})
 

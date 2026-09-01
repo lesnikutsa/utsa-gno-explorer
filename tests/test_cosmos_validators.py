@@ -27,19 +27,40 @@ def test_slashing_budget_signed_percent_and_eta():
 def test_commit_aggregation_uses_historical_membership_and_block_context():
     strip = {}
     signatures = {"signatures": [
-        {"block_id_flag": 2}, {"block_id_flag": 1}, {"block_id_flag": 3},
+        {"validator_address": "AA", "block_id_flag": 2},
+        {"validator_address": "BB", "block_id_flag": 1},
+        {"validator_address": "CC", "block_id_flag": 3},
     ]}
     aggregate_commit(strip, {"AA", "BB", "CC", "NEW"}, signatures,
-                     ["AA", "BB", "CC"], 10157219, "2026-09-01T07:54:32Z")
+                     10157219, "2026-09-01T07:54:32Z")
     assert strip["AA"] == [{"height": 10157219, "status": "signed", "time": "2026-09-01T07:54:32Z"}]
     assert strip["BB"][0]["status"] == "missed"
-    assert strip["CC"][0]["status"] == "missed"
+    assert strip["CC"][0]["status"] == "signed"
     assert strip["NEW"][0]["status"] == "unknown"
+
+
+def test_nil_precommits_are_participation_not_downtime():
+    strip = {}
+    for height, flag in enumerate((2, 2, 3, 2, 2), 100):
+        aggregate_commit(strip, {"AA"}, {"signatures": [
+            {"validator_address": "AA", "block_id_flag": flag}
+        ]}, height, None)
+    assert [point["status"] for point in strip["AA"]] == ["signed"] * 5
+    assert "missed" not in [point["status"] for point in strip["AA"]]
+
+
+def test_absent_is_missed_and_unknown_flag_is_unknown():
+    strip = {}
+    for height, flag in enumerate((2, 1, 2, 99), 200):
+        aggregate_commit(strip, {"BB"}, {"signatures": [
+            {"validator_address": "BB", "block_id_flag": flag}
+        ]}, height, None)
+    assert [point["status"] for point in strip["BB"]] == ["signed", "missed", "signed", "unknown"]
 
 
 def test_unverifiable_commit_is_unknown_with_height():
     strip = {}
-    aggregate_commit(strip, {"AA"}, None, None, 42, None)
+    aggregate_commit(strip, {"AA"}, None, 42, None)
     assert strip == {"AA": [{"height": 42, "status": "unknown", "time": None}]}
 
 
@@ -125,13 +146,6 @@ class ValidatorSetCacheTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self):
         await self.client.aclose()
-
-    async def test_same_validators_hash_fetches_once_and_distinct_hash_fetches_once_each(self):
-        self.service._rpc_validator_set = AsyncMock(return_value=[{"address": "AA", "voting_power": 10}])
-        assert await self.service._validator_set_for_hash("HASH-A", 10) == ["AA"]
-        assert await self.service._validator_set_for_hash("HASH-A", 11) == ["AA"]
-        assert await self.service._validator_set_for_hash("HASH-B", 12) == ["AA"]
-        assert self.service._rpc_validator_set.await_count == 2
 
     async def test_24h_power_result_cache_prevents_repeated_rpc_queries(self):
         self.service._rpc_validator_set = AsyncMock(side_effect=[
