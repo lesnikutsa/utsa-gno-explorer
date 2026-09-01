@@ -1121,6 +1121,37 @@ class ApiDatabase:
             self.pool.close()
             self.pool = None
 
+    def cosmos_validator_snapshot(self, network_id: str, captured_at: datetime,
+                                  values: dict[str, int]) -> dict[str, int] | None:
+        """Persist a throttled snapshot and return the nearest complete 24h sample."""
+        if self.pool is None:
+            raise RuntimeError("Database pool is not open")
+        target = captured_at - timedelta(hours=24)
+        with self.pool.connection(timeout=2.0) as connection, connection.transaction(), connection.cursor() as cursor:
+            # The transaction-scoped lock makes the 10-minute cadence worker-safe.
+            cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"cosmos-validator-snapshot:{network_id}",))
+            cursor.execute("SELECT max(captured_at) AS captured_at FROM cosmos_validator_power_snapshots WHERE network_id=%s", (network_id,))
+            latest = cursor.fetchone()
+            latest_at = latest.get("captured_at") if latest else None
+            if values and (latest_at is None or captured_at - latest_at >= timedelta(minutes=10)):
+                cursor.executemany(
+                    "INSERT INTO cosmos_validator_power_snapshots(network_id,captured_at,operator_address,tokens) VALUES (%s,%s,%s,%s)",
+                    ((network_id, captured_at, address, tokens) for address, tokens in values.items()),
+                )
+                cursor.execute("DELETE FROM cosmos_validator_power_snapshots WHERE network_id=%s AND captured_at < %s",
+                               (network_id, captured_at - timedelta(days=4)))
+            cursor.execute("""
+                SELECT captured_at FROM cosmos_validator_power_snapshots
+                WHERE network_id=%s AND captured_at BETWEEN %s AND %s
+                ORDER BY abs(extract(epoch FROM (captured_at - %s))) ASC LIMIT 1
+            """, (network_id, target - timedelta(minutes=20), target + timedelta(minutes=20), target))
+            nearest = cursor.fetchone()
+            if not nearest:
+                return None
+            cursor.execute("SELECT operator_address,tokens FROM cosmos_validator_power_snapshots WHERE network_id=%s AND captured_at=%s",
+                           (network_id, nearest["captured_at"]))
+            return {row["operator_address"]: int(row["tokens"]) for row in cursor.fetchall()}
+
     def fetch_health_row(self) -> dict[str, Any]:
         if self.pool is None:
             raise RuntimeError("Database pool is not open")

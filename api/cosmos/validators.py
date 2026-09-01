@@ -18,7 +18,8 @@ def miss_metrics(missed: int, window: int, minimum_signed: str, block_seconds: f
         "signed_percent": float(Decimal(max(0, window - missed)) * 100 / window) if window else None,
         "allowed_misses": allowed,
         "remaining_budget": remaining,
-        "jail_eta_seconds": round(remaining * block_seconds) if block_seconds and remaining else 0,
+        "jail_eta_seconds": (None if block_seconds is None else
+                             round(remaining * block_seconds) if remaining else 0),
     }
 
 
@@ -37,8 +38,18 @@ def aggregate_commit(strip: dict[str, list[str]], active_addresses: set[str], co
     signatures = commit.get("signatures") if isinstance(commit, dict) else None
     if not isinstance(signatures, list):
         return aggregate_commit(strip, active_addresses, None)
-    present = {str(item.get("validator_address", "")).upper() for item in signatures
-               if isinstance(item, dict) and item.get("block_id_flag") in (2, "BLOCK_ID_FLAG_COMMIT")}
+    represented = {str(item.get("validator_address", "")).upper(): item.get("block_id_flag")
+                   for item in signatures if isinstance(item, dict) and item.get("validator_address")}
     for address in active_addresses:
-        strip.setdefault(address, []).append("signed" if address in present else "missed")
+        flag = represented.get(address)
+        point = ("signed" if flag in (2, "2", "BLOCK_ID_FLAG_COMMIT") else
+                 "missed" if flag in (1, 3, "1", "3", "BLOCK_ID_FLAG_ABSENT", "BLOCK_ID_FLAG_NIL") else
+                 "unknown")
+        strip.setdefault(address, []).append(point)
 
+
+def signing_height_range(previous_height: int, latest_height: int) -> range:
+    """Return only useful missing heights, capped to the newest 50 blocks."""
+    if latest_height < 1 or previous_height >= latest_height:
+        return range(0)
+    return range(max(1, previous_height + 1, latest_height - 49), latest_height + 1)

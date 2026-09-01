@@ -18,6 +18,7 @@ EXPECTED_PRIVILEGES = {
         "realm_metadata_files": {"SELECT"},
         "realm_metadata_imports": {"SELECT"},
         "realm_metadata_refresh_state": set(),
+        "cosmos_validator_power_snapshots": {"SELECT", "INSERT", "DELETE"},
     },
     "utsa_gno_indexer": {
         "transaction_participants": {"SELECT", "INSERT", "DELETE"},
@@ -237,6 +238,21 @@ def test_pre_0007_stage_runs_only_execution_result_migration():
     sql = "\n".join(statement for statement, _ in connection.cursor_value.executed)
     assert "CREATE TABLE transaction_execution_results" in sql
     assert "CREATE TABLE IF NOT EXISTS transaction_participants" not in sql
+    assert connection.commits == 1
+
+
+def test_pre_0012_stage_runs_cosmos_snapshot_migration():
+    connection = Connection(init_database.PRE_COSMOS_VALIDATOR_SNAPSHOT_EXPECTATIONS["tables"])
+    snapshots = [
+        snapshot(init_database.PRE_COSMOS_VALIDATOR_SNAPSHOT_EXPECTATIONS),
+        snapshot(init_database.FINAL_SCHEMA_EXPECTATIONS),
+    ]
+    with patch.object(init_database, "fetch_schema_snapshot", side_effect=snapshots):
+        init_database.initialize_or_validate(
+            "postgresql://example.invalid/db", connect=lambda _: connection
+        )
+    sql = "\n".join(statement for statement, _ in connection.cursor_value.executed)
+    assert "CREATE TABLE IF NOT EXISTS cosmos_validator_power_snapshots" in sql
     assert connection.commits == 1
 
 

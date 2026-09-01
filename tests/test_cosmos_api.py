@@ -104,6 +104,11 @@ class CosmosRouteTests(unittest.TestCase):
             self.assertEqual(response.status_code, 503)
             self.assertNotIn("secret market", response.text)
 
+    def test_unknown_validators_network_preserves_not_found(self):
+        with TestClient(self.module.app) as client:
+            response = client.get("/api/networks/unknown/validators")
+            self.assertEqual(response.status_code, 404)
+
     def test_market_exact_contract(self):
         market = {"network_id": "atomone-mainnet", "currency": "USD", "price": "1.25",
                   "market_cap": "1000000", "change_24h": "-2.5",

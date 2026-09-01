@@ -11,4 +11,5 @@ test('Cosmos validator list includes all delta tones and compact strip', () => {
   for (const tone of ['positive', 'negative', 'neutral']) assert.match(source, new RegExp(`is-\\$\\{tone\\}`))
   assert.match(source, /Recent 50-block signing history/)
   assert.match(source, /Liveness unavailable/)
+  assert.match(source, /imageSrc=\{validator\.avatar_url\}/)
 })

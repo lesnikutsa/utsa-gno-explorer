@@ -136,6 +136,7 @@ from api.cosmos.schemas import (
     PublicNetworksResponse as CosmosPublicNetworksResponse,
     TransactionDetailResponse as CosmosTransactionDetailResponse,
     CosmosTransactionLookupResponse,
+    CosmosValidatorsResponse,
     TransactionsResponse as CosmosTransactionsResponse,
 )
 
@@ -411,7 +412,7 @@ async def lifespan(app: FastAPI):
         app.state.cosmos_cache = RequestCache(max_entries=256)
         app.state.cosmos_services = {
             network_id: CosmosService(definition, client=app.state.cosmos_http_client,
-                                      cache=app.state.cosmos_cache)
+                                      cache=app.state.cosmos_cache, snapshot_store=database)
             for network_id, definition in NETWORKS.items()
         }
     except Exception:
@@ -460,10 +461,11 @@ async def get_cosmos_network_overview(network_id: str):
         raise HTTPException(status_code=503, detail="Network data is temporarily unavailable") from None
 
 
-@app.get("/api/networks/{network_id}/validators")
+@app.get("/api/networks/{network_id}/validators", response_model=CosmosValidatorsResponse)
 async def get_cosmos_validators(network_id: str):
+    service = _cosmos_service(network_id)
     try:
-        return await _cosmos_service(network_id).validators()
+        return await service.validators()
     except Exception:
         LOGGER.exception("Cosmos validators failed network=%s", network_id)
         raise HTTPException(status_code=503, detail="Validator data is temporarily unavailable") from None

@@ -41,6 +41,49 @@ class PublicNetworksResponse(StrictModel):
     networks: list[PublicNetwork]
 
 
+class CosmosValidatorLiveness(StrictModel):
+    missed_blocks: int = Field(ge=0)
+    signed_percent: float = Field(ge=0, le=100)
+    allowed_misses: int = Field(ge=0)
+    remaining_budget: int = Field(ge=0)
+    jail_eta_seconds: int | None = Field(default=None, ge=0)
+
+
+class CosmosValidator(StrictModel):
+    operator_address: str = Field(min_length=3, max_length=90)
+    consensus_address: str = Field(min_length=3, max_length=90)
+    category: Literal["active", "inactive", "jailed"]
+    jailed: bool
+    moniker: str = Field(min_length=1, max_length=256)
+    identity: str | None = Field(default=None, max_length=128)
+    avatar_url: str | None = Field(default=None, max_length=2048, pattern=r"^https://")
+    tokens: AmountString
+    stake_share: float = Field(ge=0, le=100)
+    change_24h: SignedDecimalString | None = None
+    change_24h_percent: float | None = None
+    commission: DecimalString
+    liveness: CosmosValidatorLiveness | None = None
+    jailed_until: str | None = Field(default=None, max_length=64)
+    tombstoned: bool | None = None
+    missed_blocks: int | None = Field(default=None, ge=0)
+    signing_strip: list[Literal["signed", "missed", "unknown"]] = Field(default_factory=list, max_length=50)
+
+
+class CosmosValidatorsSummary(StrictModel):
+    active_validators: int = Field(ge=0, le=10000)
+    bonded_tokens: AmountString
+    bonded_ratio: float | None = Field(default=None, ge=0, le=1)
+    bonded_change_24h: SignedDecimalString | None = None
+
+
+class CosmosValidatorsResponse(StrictModel):
+    network_id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+    asset: PublicNetworkAsset
+    summary: CosmosValidatorsSummary
+    signing_history_state: Literal["warming", "ready"]
+    validators: list[CosmosValidator] = Field(max_length=2000)
+
+
 class SectionErrorDetail(StrictModel):
     code: Literal["section_unavailable"]
 
