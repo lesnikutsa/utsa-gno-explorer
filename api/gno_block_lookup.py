@@ -3,6 +3,7 @@
 from concurrent.futures import Future
 from datetime import datetime, timedelta, timezone
 import math
+import re
 from threading import Lock
 import time
 from typing import Callable
@@ -19,17 +20,30 @@ MAX_LATEST_BLOCK_AGE_SECONDS = 900.0
 _cache: dict[str, tuple[float, dict | None]] = {}
 _inflight: dict[str, Future] = {}
 _lock = Lock()
+_LONG_FRACTION = re.compile(
+    r"(?P<prefix>T\d{2}:\d{2}:\d{2}\.)(?P<fraction>\d{7,})(?P<suffix>Z|[+-]\d{2}:\d{2})?$",
+)
 
 
 class GnoBlockLookupUnavailable(RuntimeError):
     """No configured RPC supplied trustworthy live chain data."""
 
 
+def _normalize_timestamp_fraction(value: str) -> str:
+    """Truncate TM2 nanoseconds without modifying an optional timezone suffix."""
+    match = _LONG_FRACTION.search(value)
+    if match is None:
+        return value
+    return (value[:match.start()] + match.group("prefix")
+            + match.group("fraction")[:6] + (match.group("suffix") or ""))
+
+
 def _timestamp(value) -> datetime:
     if not isinstance(value, str) or not value:
         raise RpcError("Malformed RPC timestamp")
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        normalized = _normalize_timestamp_fraction(value)
+        parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
     except ValueError as exc:
         raise RpcError("Malformed RPC timestamp") from exc
     if parsed.tzinfo is None:

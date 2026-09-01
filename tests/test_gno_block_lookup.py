@@ -4,7 +4,8 @@ from unittest.mock import patch
 
 import pytest
 
-from api.gno_block_lookup import (GnoBlockLookupUnavailable, _timestamp,
+from api.gno_block_lookup import (GnoBlockLookupUnavailable,
+                                  _normalize_timestamp_fraction, _timestamp,
                                   clear_gno_eta_cache, lookup_future_block)
 from scripts.inspect_rpc import RpcError
 
@@ -143,11 +144,28 @@ def test_real_timezone_less_gno_timestamp_is_accepted_as_utc():
     assert parsed == datetime(2026, 8, 31, 22, 31, 32, 202247, tzinfo=timezone.utc)
 
 
+@pytest.mark.parametrize(("value", "normalized"), [
+    (REAL_GNO_TIME, "2026-08-31T22:31:32.202247"),
+    (f"{REAL_GNO_TIME}Z", "2026-08-31T22:31:32.202247Z"),
+    ("2026-09-01T00:31:32.202247944+02:00",
+     "2026-09-01T00:31:32.202247+02:00"),
+    ("2026-08-31T22:31:32.202247", "2026-08-31T22:31:32.202247"),
+    ("2026-08-31T22:31:32Z", "2026-08-31T22:31:32Z"),
+    ("2026-08-31T22:31:32", "2026-08-31T22:31:32"),
+])
+def test_timestamp_fraction_normalization_is_python_310_compatible(value, normalized):
+    assert _normalize_timestamp_fraction(value) == normalized
+
+
 @pytest.mark.parametrize(("value", "expected"), [
-    ("2026-08-31T22:31:32.202247Z",
+    ("2026-08-31T22:31:32.202247944Z",
      datetime(2026, 8, 31, 22, 31, 32, 202247, tzinfo=timezone.utc)),
-    ("2026-09-01T00:31:32.202247+02:00",
+    ("2026-09-01T00:31:32.202247944+02:00",
      datetime(2026, 8, 31, 22, 31, 32, 202247, tzinfo=timezone.utc)),
+    ("2026-08-31T22:31:32Z",
+     datetime(2026, 8, 31, 22, 31, 32, tzinfo=timezone.utc)),
+    ("2026-08-31T22:31:32",
+     datetime(2026, 8, 31, 22, 31, 32, tzinfo=timezone.utc)),
 ])
 def test_explicit_timezone_is_accepted_and_normalized(value, expected):
     assert _timestamp(value) == expected
@@ -169,7 +187,7 @@ def test_future_lookup_accepts_real_timezone_less_latest_block_time():
 
 
 def test_stale_latest_block_reports_future_without_eta():
-    latest = datetime.fromisoformat(REAL_GNO_TIME).replace(tzinfo=timezone.utc)
+    latest = _timestamp(REAL_GNO_TIME)
     result = run(2_100, Client((2000, 1000), latest_time=REAL_GNO_TIME),
                  wall_clock=lambda: latest + timedelta(hours=2))
     assert result == {"state": "future", "current_height": 2_000, "eta": None}
