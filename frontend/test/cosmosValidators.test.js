@@ -1,8 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import { directedValidatorComparison, favoriteFirst, missedCountClass } from '../src/utils/cosmosValidators.js'
 
 const source = fs.readFileSync(new URL('../src/pages/CosmosValidators.jsx', import.meta.url), 'utf8')
+const css = fs.readFileSync(new URL('../src/styles/app.css', import.meta.url), 'utf8')
 test('Cosmos validator list exposes tabs, sorting, search and partial states', () => {
   for (const text of ['active', 'inactive', 'jailed', 'Search validators', 'History unavailable', 'Loading recent signing history…']) assert.match(source, new RegExp(text, 'i'))
   for (const key of ['tokens', 'change_24h', 'commission', 'missed_blocks', 'moniker']) assert.match(source, new RegExp(key))
@@ -17,7 +19,7 @@ test('Cosmos validators reuse sort arrows, scoped favorites, and risk tones', ()
   for (const arrow of ['↕', '↑', '↓']) assert.match(source, new RegExp(arrow))
   assert.match(source, /loadValidatorFavorites\(`cosmos:\$\{network\.id\}`\)/)
   assert.match(source, /saveValidatorFavorites\(`cosmos:\$\{network\.id\}`/)
-  assert.match(source, /favorites\.has\(right\.operator_address\)/)
+  assert.match(source, /favoriteFirst\(filtered, favorites, compare\)/)
   assert.match(source, /cosmosRiskToneFromUsage\(usage\)/)
 })
 test('signing points render exact block context without another request', () => {
@@ -26,4 +28,32 @@ test('signing points render exact block context without another request', () => 
   assert.match(source, /title=\{pointTitle\(point\)\}/)
   assert.match(source, /tabIndex="0"/)
   assert.doesNotMatch(source, /fetch\([^)]*point/)
+})
+
+test('rank, explicit comparators, network favorites, inactive columns, and missed severity are stable', () => {
+  assert.match(source, /powerRanks\.get\(validator\.operator_address\)/)
+  assert.doesNotMatch(source, /rows\.map\(\(validator, index\)/)
+  assert.doesNotMatch(source, /a\[sort\].*missed_blocks/)
+  assert.match(source, /useEffect\(\(\) => setFavorites\(loadValidatorFavorites\(`cosmos:\$\{network\.id\}`\)\), \[network\.id\]\)/)
+  assert.match(source, /tab === 'active'.*SortHeader field="change_24h"/)
+  assert.match(source, /tab === 'active'.*<Delta/)
+  assert.match(source, /<strong className=\{missedCountClass\(live\.missed_blocks\)\}>.*missed<\/strong> · \{live\.signed_percent/)
+})
+
+test('comparators preserve large powers, null-last deltas, rank, and favorite groups', () => {
+  const huge = { operator_address: 'huge', tokens: '999999999999999999999999999999', change_24h: null }
+  const small = { operator_address: 'small', tokens: '10', change_24h: '5' }
+  assert.ok(directedValidatorComparison(huge, small, 'tokens', -1) < 0)
+  assert.ok(directedValidatorComparison(huge, small, 'change_24h', -1) > 0)
+  assert.ok(directedValidatorComparison(huge, small, 'change_24h', 1) > 0)
+  const grouped = favoriteFirst([small, huge], new Set(['huge']), (a, b) => directedValidatorComparison(a, b, 'tokens', 1))
+  assert.deepEqual(grouped.map((item) => item.operator_address), ['huge', 'small'])
+})
+
+test('risk cascade and missed threshold retain semantic colors', () => {
+  assert.match(source, /validator-budget cosmos-risk__bar cosmos-risk__bar--\$\{tone\}/)
+  assert.doesNotMatch(css, /\.validator-budget i\s*\{[^}]*background/)
+  assert.equal(missedCountClass(10), 'validator-missed-count')
+  assert.equal(missedCountClass(11), 'validator-missed-count validator-missed-count--alert')
+  assert.match(css, /\.validator-missed-count--alert\s*\{\s*color:\s*var\(--color-error\)/)
 })

@@ -50,6 +50,11 @@ def test_target_height_and_approximate_power_delta():
     assert approximate_token_delta(1_000_000, 0, 90) is None
 
 
+def test_aggregate_bonded_delta_survives_membership_churn():
+    # Aggregate totals do not require identical validator membership.
+    assert approximate_token_delta(1_000_000, 200, 150) == 250_000
+
+
 def test_signing_height_range_caps_large_idle_gap():
     from api.cosmos.validators import signing_height_range
     assert list(signing_height_range(100, 100_000)) == list(range(99_951, 100_001))

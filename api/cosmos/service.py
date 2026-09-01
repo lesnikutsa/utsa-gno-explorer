@@ -689,7 +689,10 @@ class CosmosService:
         power_change = await self._power_change_24h(head.local_height, average) if head else None
         bonded_change = None
         if power_change:
-            changes = []
+            current_total_power = sum(power_change["current"].values())
+            historical_total_power = sum(power_change["historical"].values())
+            aggregate_delta = approximate_token_delta(total_bonded, current_total_power, historical_total_power)
+            bonded_change = str(aggregate_delta) if aggregate_delta is not None else None
             for item in validators:
                 address = consensus_hex_by_operator[item["operator_address"]]
                 current_power = power_change["current"].get(address)
@@ -699,10 +702,6 @@ class CosmosService:
                     item["change_24h"] = str(delta)
                     item["change_24h_percent"] = (None if historical_power == 0 else
                         float(Decimal(current_power - historical_power) * 100 / historical_power))
-                    if item["category"] == "active":
-                        changes.append(delta)
-            if len(changes) == sum(item["category"] == "active" for item in validators):
-                bonded_change = str(sum(changes))
         for item in validators:
             if item["liveness"] is not None:
                 item["liveness"] = {"missed_blocks": item["liveness"]["missed_blocks"],
