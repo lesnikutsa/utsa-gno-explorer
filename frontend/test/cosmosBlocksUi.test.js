@@ -57,7 +57,8 @@ test('confirmed full Block Detail uses generic no-poll resource mode', () => {
 
 test('Block Detail has navigation, title, summary, and latest behavior', () => {
   assert.match(detail, />← Back to Blocks<\/a>/)
-  assert.match(detail, /<h1>Block #\{Number\(height\)\.toLocaleString\(\)\}<\/h1>/)
+  assert.match(detail, /<h1>Block #\{formattedHeight\}<\/h1>/)
+  assert.match(detail, /futureHeightValues\(String\(height\), data\.local_height\)/)
   for (const label of ['Height', 'Time', 'Transactions', 'Chain ID']) assert.match(detail, new RegExp(`label="${label}"`))
   assert.match(detail, /data\.height - 1/)
   assert.match(detail, /data\.height \+ 1/)
@@ -122,16 +123,18 @@ test('Block Detail handles transaction rows, zero state, optional evidence and c
 })
 
 test('future and unavailable blocks use human-friendly state presentation', () => {
-  assert.match(detail, /has not been produced yet/)
+  const futureCard = read('../src/components/FutureBlockCard.jsx')
+  assert.match(detail, /<FutureBlockCard/)
+  assert.match(futureCard, /has not been produced yet/)
   for (const label of ['Current height', 'Blocks remaining', 'Average block time', 'Estimated arrival']) {
-    assert.match(detail, new RegExp(`label="${label}"`))
+    assert.match(futureCard, new RegExp(`label="${label}"`))
   }
-  assert.match(detail, /Estimated time until block/)
-  for (const unit of ['Days', 'Hours', 'Minutes', 'Seconds']) assert.match(detail, new RegExp(`'${unit}'`))
-  assert.match(detail, /formatAverageBlockTime\(eta\.average_block_seconds\)/)
-  assert.match(detail, /formatEstimatedArrival\(eta\.estimated_at\)/)
-  assert.match(detail, /Estimate based on recent network block production/)
-  assert.match(detail, /Estimated arrival is temporarily unavailable/)
+  assert.match(futureCard, /Estimated time until block/)
+  for (const unit of ['Days', 'Hours', 'Minutes', 'Seconds']) assert.match(futureCard, new RegExp(`'${unit}'`))
+  assert.match(futureCard, /formatAverageBlockTime\(eta\.average_block_seconds\)/)
+  assert.match(futureCard, /formatEstimatedArrival\(eta\.estimated_at\)/)
+  assert.match(futureCard, /Estimate based on recent network block production/)
+  assert.match(futureCard, /Estimated arrival is temporarily unavailable/)
   assert.match(detail, /data\.eta_unavailable_reason \? null : data\.eta/)
   assert.match(detail, /RPC is still syncing/)
   assert.match(detail, /pruned this historical block/)
@@ -142,9 +145,9 @@ test('future and unavailable blocks use human-friendly state presentation', () =
   assert.match(styles, /\.cosmos-future-countdown__grid > div \{[^}]*min-width: 0;/)
 })
 
-test('Gno Blocks and Block Detail remain outside Cosmos-scoped implementation', () => {
+test('Gno Blocks preserve normal detail while sharing only the future card', () => {
   assert.doesNotMatch(gnoBlocks, /cosmos-blocks|cosmos-detail/)
-  assert.doesNotMatch(gnoDetail, /cosmos-blocks|cosmos-detail/)
+  assert.match(gnoDetail, /FutureBlockCard/)
   assert.match(gnoBlocks, /<h1 id="blocks-page-title">Blocks<\/h1>/)
   assert.match(gnoDetail, /<h1 id="block-detail-title">Block #/ )
 })

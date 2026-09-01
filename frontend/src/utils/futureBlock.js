@@ -1,5 +1,25 @@
 const SECOND = 1000
 
+const INTEGER_HEIGHT = /^[1-9]\d*$/
+
+export function futureHeightValues(height, currentHeight) {
+  if (typeof height !== 'string' || !INTEGER_HEIGHT.test(height)
+      || !Number.isSafeInteger(currentHeight) || currentHeight < 1) {
+    return { height: '—', remaining: '—' }
+  }
+  try {
+    const requested = BigInt(height)
+    const current = BigInt(currentHeight)
+    if (requested <= current) return { height: requested.toLocaleString('en-US'), remaining: '—' }
+    return {
+      height: requested.toLocaleString('en-US'),
+      remaining: (requested - current).toLocaleString('en-US'),
+    }
+  } catch {
+    return { height: '—', remaining: '—' }
+  }
+}
+
 export function countdownParts(estimatedAt, now = Date.now()) {
   const target = Date.parse(estimatedAt)
   if (!Number.isFinite(target) || !Number.isFinite(now)) return null

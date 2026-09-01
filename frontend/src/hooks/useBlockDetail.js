@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getBlock } from '../services/api'
+import { getBlock, lookupBlock } from '../services/api'
 
 const isValidHeight = (height) => /^[1-9]\d*$/.test(height)
 
@@ -8,6 +8,7 @@ export function useBlockDetail(height) {
   const [retryCount, setRetryCount] = useState(0)
   const [state, setState] = useState({
     block: null,
+    lookup: null,
     loading: true,
     notFound: false,
     invalidHeight: false,
@@ -25,20 +26,20 @@ export function useBlockDetail(height) {
     }
 
     if (!isValidHeight(height)) {
-      update({ block: null, loading: false, notFound: false, invalidHeight: true, error: false, healthState: 'healthy' })
+      update({ block: null, lookup: null, loading: false, notFound: false, invalidHeight: true, error: false, healthState: 'healthy' })
       return () => { mounted = false }
     }
 
-    update({ block: null, loading: true, notFound: false, invalidHeight: false, error: false, healthState: 'loading' })
+    update({ block: null, lookup: null, loading: true, notFound: false, invalidHeight: false, error: false, healthState: 'loading' })
     getBlock(height)
-      .then((block) => update({ block, loading: false, notFound: false, invalidHeight: false, error: false, healthState: 'healthy' }))
+      .then((block) => update({ block, lookup: null, loading: false, notFound: false, invalidHeight: false, error: false, healthState: 'healthy' }))
       .catch((error) => {
         if (error.status === 404) {
-          update({ block: null, loading: false, notFound: true, invalidHeight: false, error: false, healthState: 'healthy' })
+          lookupBlock(height).then((lookup) => update({ block: null, lookup, loading: false, notFound: lookup.state !== 'future', invalidHeight: false, error: false, healthState: 'healthy' })).catch(() => update({ block: null, lookup: null, loading: false, notFound: false, invalidHeight: false, error: true, healthState: 'error' }))
         } else if (error.status === 422) {
-          update({ block: null, loading: false, notFound: false, invalidHeight: true, error: false, healthState: 'healthy' })
+          update({ block: null, lookup: null, loading: false, notFound: false, invalidHeight: true, error: false, healthState: 'healthy' })
         } else {
-          update({ block: null, loading: false, notFound: false, invalidHeight: false, error: true, healthState: 'error' })
+          update({ block: null, lookup: null, loading: false, notFound: false, invalidHeight: false, error: true, healthState: 'error' })
         }
       })
 

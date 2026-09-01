@@ -117,6 +117,7 @@ export const getTopRealmApplications = ({ limit = 3, window = '24h', signal } = 
 }
 
 export const getBlock = (height) => request(`/blocks/${encodeURIComponent(height)}`)
+export const lookupBlock = (height) => request(`/blocks/${encodeURIComponent(height)}/lookup`)
 export const getTransaction = (blockHeight, index) => request(`/blocks/${encodeURIComponent(blockHeight)}/transactions/${encodeURIComponent(index)}`)
 export const getTransactionByHash = (txHash) => request(`/transactions/by-hash/${encodeURIComponent(txHash)}`)
 export const getValidators = () => request('/validators')

@@ -294,6 +294,19 @@ class BlockDetailResponse(BaseModel):
     transactions: list[BlockTransactionSummary]
 
 
+class GnoBlockHeightEta(BaseModel):
+    remaining_blocks: int = Field(gt=0)
+    average_block_seconds: PositiveFiniteFloat
+    estimated_at: str = Field(min_length=20, max_length=64)
+    sample_intervals: int = Field(ge=80, le=1000)
+
+
+class GnoBlockLookupResponse(BaseModel):
+    state: Literal["future", "not_indexed"]
+    current_height: int = Field(gt=0)
+    eta: GnoBlockHeightEta | None = None
+
+
 class BlocksPagination(BaseModel):
     limit: int
     next_before_height: int | None
