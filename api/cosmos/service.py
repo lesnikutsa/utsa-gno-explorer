@@ -177,6 +177,7 @@ class CosmosService:
                  cache: RequestCache, wall_clock=None, snapshot_store=None):
         self.definition = definition
         self.cache = cache
+        self._client = client
         self.adapter = CosmosAdapter(definition.transport, client=client, cache=cache)
         self.transport = self.adapter._transport
         self._wall_clock = wall_clock or (lambda: datetime.now(timezone.utc))
@@ -513,7 +514,7 @@ class CosmosService:
     async def _load_avatar(self, identity: str):
         url = None
         try:
-            response = await self.adapter._client.get(
+            response = await self._client.get(
                 "https://keybase.io/_/api/1.0/user/lookup.json",
                 params={"key_suffix": identity, "fields": "pictures"}, timeout=5.0)
             response.raise_for_status()
@@ -527,10 +528,12 @@ class CosmosService:
                         and (parsed.hostname == "keybase.io" or
                              (parsed.hostname == "s3.amazonaws.com" and parsed.path.startswith("/keybase_processed_uploads/")))):
                     url = candidate
-        except Exception:
-            pass
-        self._avatars[identity] = (self._wall_clock() + timedelta(hours=24), url)
-        self._avatar_tasks.pop(identity, None)
+        except (httpx.HTTPError, ValueError):
+            self._avatars[identity] = (self._wall_clock() + timedelta(hours=24), None)
+        else:
+            self._avatars[identity] = (self._wall_clock() + timedelta(hours=24), url)
+        finally:
+            self._avatar_tasks.pop(identity, None)
 
     def _avatar(self, identity: str | None):
         if not identity:
