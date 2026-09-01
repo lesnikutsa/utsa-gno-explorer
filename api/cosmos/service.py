@@ -210,7 +210,8 @@ class CosmosService:
         enriched = []
         for item in items:
             identity = identities.get(item["proposer"].upper())
-            enriched.append({**item, **identity} if identity else item)
+            enriched.append({**item, **identity,
+                "proposer_avatar_url": self._avatar(identity.get("proposer_identity"))} if identity else item)
         return {"source": "rpc_metadata", "blocks": sorted(enriched, key=lambda item: item["height"], reverse=True)[:limit]}
 
     async def transactions(self, limit=20, page=1):
@@ -897,7 +898,11 @@ class CosmosService:
                             "index_offset": _integer(info.get("index_offset"), "index offset"),
                             "tombstoned": _boolean(info.get("tombstoned"), "tombstoned"),
                             "remaining_misses_before_threshold": max(0, allowed_missed_threshold - missed)})
-        return sorted(results, key=lambda item: (-item["missed_blocks_counter"], item["operator_address"], item["consensus_address"]))[:6]
+        top = sorted(results, key=lambda item: (
+            -item["missed_blocks_counter"], item["operator_address"], item["consensus_address"]))[:6]
+        for item in top:
+            item["avatar_url"] = self._avatar(item.get("identity"))
+        return top
 
     async def overview(self) -> dict:
         status = await self.adapter.node_status()

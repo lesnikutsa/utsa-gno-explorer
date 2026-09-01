@@ -297,6 +297,10 @@ class CosmosUpstreamIntegrationTests(unittest.TestCase):
         identity = next(iter(identities.values()))
         self.assertEqual(identity["proposer_moniker"], "Silk Nodes")
         self.assertTrue(identity["proposer_operator_address"].startswith("atonevaloper"))
+        with_identity = copy.deepcopy(validators[0])
+        with_identity["description"]["identity"] = "9E7A59BBDC93CC32"
+        enriched = next(iter(CosmosService._validator_identities([with_identity]).values()))
+        self.assertEqual(enriched["proposer_identity"], "9E7A59BBDC93CC32")
         self.assertEqual(CosmosService._validator_identities([{"bad": "validator"}]), {})
 
     def test_generic_public_models_accept_one_asset_without_atomone_extensions(self):

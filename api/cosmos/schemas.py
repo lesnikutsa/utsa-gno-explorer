@@ -234,6 +234,7 @@ class MissedValidator(StrictModel):
     tombstoned: bool
     remaining_misses_before_threshold: int = Field(ge=0)
     identity: str | None = Field(default=None, min_length=1, max_length=128)
+    avatar_url: str | None = Field(default=None, max_length=2048, pattern=r"^https://")
 
 
 class OverviewResponse(StrictModel):
@@ -276,6 +277,7 @@ class CosmosBlock(StrictModel):
     proposer_moniker: str | None = Field(default=None, min_length=1, max_length=256)
     proposer_operator_address: str | None = Field(default=None, min_length=1, max_length=90)
     proposer_identity: str | None = Field(default=None, min_length=1, max_length=128)
+    proposer_avatar_url: str | None = Field(default=None, max_length=2048, pattern=r"^https://")
 
 
 class BlocksResponse(StrictModel):

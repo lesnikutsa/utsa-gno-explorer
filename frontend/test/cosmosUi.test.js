@@ -66,6 +66,8 @@ test('AtomOne overview shares dashboard cards and tables without raw responsive 
   assert.doesNotMatch(overview, /AtomOne Overview|Cosmos network/)
   assert.match(overview, /updating=\{updatedHeight === latestHeight\}/)
   assert.match(overview, /'is-new-row' : 'is-settling-row'/)
+  assert.match(overview, /imageSrc=\{row\.avatar_url\}/)
+  assert.match(overview, /imageSrc=\{row\.proposer_avatar_url\}/)
 })
 
 test('Cosmos TopBar keeps the shared search and block-time UI while scoping block navigation', () => {

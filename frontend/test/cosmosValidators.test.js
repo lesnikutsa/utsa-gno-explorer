@@ -77,8 +77,15 @@ test('validator token presentation uses whole numbers and shared Gno card surfac
   assert.match(source, /wholeTokens\(validator\.tokens, asset\.exponent\)\.toLocaleString\(\)/)
   assert.match(source, /wholeTokens\(data\.summary\.bonded_change_24h, asset\.exponent\)/)
   assert.match(source, /className="card status-card cosmos-validator-summary__card"/)
-  assert.match(css, /\.cosmos-validator-summary article::after/)
+  assert.match(css, /\.cosmos-validator-summary article[^}]*background:\s*linear-gradient\(135deg, var\(--color-accent-soft\), var\(--color-card\)\)/)
   assert.doesNotMatch(source, /maximumFractionDigits: 2 \}\)\} \{asset\.symbol\}/)
+})
+
+test('validator toolbar gives remaining desktop width to search and can wrap', () => {
+  assert.match(css, /\.cosmos-validator-toolbar\s*\{[^}]*flex-wrap:\s*wrap;/)
+  assert.match(css, /\.cosmos-validator-tabs\s*\{[^}]*flex:\s*0 0 auto;/)
+  assert.match(css, /\.cosmos-validator-toolbar input\s*\{[^}]*flex:\s*1 1 300px;[^}]*width:\s*auto;/)
+  assert.match(css, /@media \(max-width: 800px\) \{[^\n]*\.cosmos-validator-toolbar \{[^\n]*flex-direction: column;/)
 })
 
 test('commission and voting power share primary metric typography', () => {

@@ -1,6 +1,10 @@
 import asyncio
+import base64
+from datetime import timedelta
+import hashlib
+from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import httpx
 
@@ -134,7 +138,10 @@ class AvatarCacheTests(unittest.IsolatedAsyncioTestCase):
             await service._load_avatar("9E7A59BBDC93CC32")
             self.assertEqual(service._avatar("9E7A59BBDC93CC32"),
                              "https://s3.amazonaws.com/keybase_processed_uploads/test.jpg")
+            self.assertEqual(service._avatar("9E7A59BBDC93CC32"),
+                             "https://s3.amazonaws.com/keybase_processed_uploads/test.jpg")
             self.assertEqual(calls, 1)
+            self.assertFalse(service._avatar_tasks)
 
     async def test_keybase_failure_is_negative_cached_and_nonfatal(self):
         calls = 0
@@ -172,6 +179,27 @@ class AvatarCacheTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(service._avatar_tasks), 8)
             gate.set()
             await asyncio.gather(*service._avatar_tasks.values())
+
+    async def test_repeated_block_proposer_reuses_cached_avatar(self):
+        key = b"validator-consensus-key-000000"
+        proposer = hashlib.sha256(key).digest()[:20].hex().upper()
+        validator = {"consensus_pubkey": {"key": base64.b64encode(key).decode()},
+            "operator_address": "atonevaloper1validator", "description": {
+                "moniker": "Validator", "identity": "9E7A59BBDC93CC32"}}
+        blocks = [{"height": height, "hash": f"HASH{height}",
+                   "timestamp": "2026-09-01T00:00:00Z", "proposer": proposer,
+                   "transaction_count": 0} for height in (10, 9)]
+        avatar = "https://s3.amazonaws.com/keybase_processed_uploads/test.jpg"
+        async with httpx.AsyncClient(transport=httpx.MockTransport(
+                lambda _request: httpx.Response(500))) as client:
+            service = CosmosService(ATOMONE, client=client, cache=RequestCache())
+            service.adapter.node_status = AsyncMock(return_value=SimpleNamespace(local_height=10))
+            service._bonded_validators = AsyncMock(return_value=[validator])
+            service._avatars["9E7A59BBDC93CC32"] = (service._wall_clock() + timedelta(hours=24), avatar)
+            with patch("api.cosmos.service.metadata", new=AsyncMock(return_value=blocks)):
+                result = await service.blocks(2)
+            self.assertEqual([item["proposer_avatar_url"] for item in result["blocks"]], [avatar, avatar])
+            self.assertFalse(service._avatar_tasks)
 
 
 class ValidatorSetCacheTests(unittest.IsolatedAsyncioTestCase):
