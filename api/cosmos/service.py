@@ -28,7 +28,8 @@ from .rfc3339 import parse_rfc3339
 from .errors import HistoryUnavailable
 from .transactions import normalize_transactions
 from .transaction_detail import normalize_transaction_detail
-from .validators import category, miss_metrics, aggregate_commit, signing_height_range
+from .validators import (approximate_token_delta, category, miss_metrics,
+                         aggregate_commit, signing_height_range, target_height_24h)
 
 SECTION_TTL = 5.0
 MARKET_TTL = 30.0
@@ -174,17 +175,17 @@ def consensus_address(public_key: object, prefix: str) -> str:
 
 class CosmosService:
     def __init__(self, definition: NetworkDefinition, *, client: httpx.AsyncClient,
-                 cache: RequestCache, wall_clock=None, snapshot_store=None):
+                 cache: RequestCache, wall_clock=None):
         self.definition = definition
         self.cache = cache
         self._client = client
         self.adapter = CosmosAdapter(definition.transport, client=client, cache=cache)
         self.transport = self.adapter._transport
         self._wall_clock = wall_clock or (lambda: datetime.now(timezone.utc))
-        self._snapshot_store = snapshot_store
         self._signing_strip = {}
         self._signing_height = 0
         self._signing_warmup = None
+        self._validator_sets_by_hash = {}
         self._avatars = {}
         self._avatar_tasks = {}
 
@@ -494,19 +495,90 @@ class CosmosService:
     async def _all_validators(self):
         return await self._paginate("all_validators", "/cosmos/staking/v1beta1/validators", "validators")
 
+    async def _rpc_validator_set(self, height: int):
+        """Fetch one bounded CometBFT validator set through validated RPC failover."""
+        candidates = await self.adapter._cached_candidates("rpc")
+        for candidate in candidates:
+            rows = []
+            try:
+                for page in range(1, MAX_PAGES + 1):
+                    payload = await self.transport.get_object(
+                        candidate.endpoint, f"/validators?height={height}&page={page}&per_page=100",
+                        accept_error_payload=True)
+                    if isinstance(payload.get("error"), dict):
+                        raise MalformedUpstreamResponse("validator set unavailable")
+                    result = _mapping(payload.get("result"), "validator set")
+                    if _integer(result.get("block_height"), "validator set height") != height:
+                        raise MalformedUpstreamResponse("validator set height mismatch")
+                    values = result.get("validators")
+                    if not isinstance(values, list) or len(values) > 100:
+                        raise MalformedUpstreamResponse("invalid validator set")
+                    for value in values:
+                        item = _mapping(value, "consensus validator")
+                        address = _text(item.get("address"), "consensus address", 128).upper()
+                        if re.fullmatch(r"[0-9A-F]{40}", address) is None:
+                            raise MalformedUpstreamResponse("invalid consensus address")
+                        rows.append({"address": address,
+                                     "voting_power": _integer(item.get("voting_power"), "voting power")})
+                    total = _integer(result.get("total"), "validator set total")
+                    if total > MAX_LIST_ITEMS or len(rows) > total:
+                        raise MalformedUpstreamResponse("invalid validator set total")
+                    if len(rows) == total:
+                        return rows
+                    if not values:
+                        raise MalformedUpstreamResponse("incomplete validator set")
+            except Exception:
+                continue
+        raise AllEndpointsUnavailable("validator set unavailable")
+
+    async def _validator_set_for_hash(self, validators_hash: str, height: int):
+        cached = self._validator_sets_by_hash.get(validators_hash)
+        if cached is not None:
+            return cached
+        rows = await self._rpc_validator_set(height)
+        addresses = [item["address"] for item in rows]
+        self._validator_sets_by_hash[validators_hash] = addresses
+        if len(self._validator_sets_by_hash) > 64:
+            self._validator_sets_by_hash.pop(next(iter(self._validator_sets_by_hash)))
+        return addresses
+
+    async def _power_change_24h(self, current_height: int, average: float | None):
+        target = target_height_24h(current_height, average)
+        if target is None:
+            return None
+        async def load():
+            current, historical = await asyncio.gather(
+                self._rpc_validator_set(current_height), self._rpc_validator_set(target))
+            return {"current": {item["address"]: item["voting_power"] for item in current},
+                    "historical": {item["address"]: item["voting_power"] for item in historical},
+                    "target_height": target}
+        try:
+            return await self.cache.get_or_load(
+                (self.definition.transport.network_id, "validator_power_24h", ()), 900.0, load)
+        except Exception:
+            return None
+
     async def _warm_signing(self, active: set[str], height: int):
         heights = signing_height_range(self._signing_height, height)
         if heights and (not self._signing_height or heights[0] > self._signing_height + 1):
             self._signing_strip = {}
         for block_height in heights:
             commit = None
+            commit_height, block_time, validator_addresses = block_height, None, None
             try:
                 candidates = await self.adapter._cached_candidates("rpc")
                 payload = await self.transport.get_object(candidates[0].endpoint, f"/commit?height={block_height}")
-                commit = _mapping(_mapping(payload.get("result"), "commit result").get("signed_header"), "signed header").get("commit")
+                signed_header = _mapping(_mapping(payload.get("result"), "commit result").get("signed_header"), "signed header")
+                header = _mapping(signed_header.get("header"), "commit header")
+                commit = signed_header.get("commit")
+                commit_height = _integer(header.get("height"), "commit height")
+                validators_hash = _text(header.get("validators_hash"), "validators hash", 128)
+                block_time = _text(header.get("time"), "commit time", 64)
+                validator_addresses = await self._validator_set_for_hash(validators_hash, commit_height)
             except Exception:
                 pass
-            aggregate_commit(self._signing_strip, active, commit)
+            aggregate_commit(self._signing_strip, active, commit, validator_addresses,
+                             commit_height, block_time)
         for address in active:
             self._signing_strip[address] = self._signing_strip.get(address, [])[-50:]
         self._signing_height = height
@@ -565,8 +637,6 @@ class CosmosService:
         except Exception: slashing = None
         try: pool = await pool_task
         except Exception: pool = {}
-        now = self._wall_clock()
-        current_values = {}
         validators = []
         active_hex = set()
         consensus_hex_by_operator = {}
@@ -575,7 +645,6 @@ class CosmosService:
             operator = _text(item.get("operator_address"), "operator address", 90)
             if not operator.startswith(self.definition.validator_operator_prefix + "1"): continue
             tokens = _integer(item.get("tokens"), "validator tokens")
-            current_values[operator] = tokens
             pubkey = _mapping(item.get("consensus_pubkey"), "consensus public key")
             key = base64.b64decode(pubkey.get("key"), validate=True)
             consensus_hex = hashlib.sha256(key).digest()[:20].hex().upper()
@@ -603,22 +672,9 @@ class CosmosService:
                 "commission": str(rates.get("rate") or "0"), "liveness": liveness,
                 "jailed_until": info.get("jailed_until"), "tombstoned": info.get("tombstoned"),
                 "missed_blocks": info.get("missed_blocks_counter")})
-        previous = None
-        if self._snapshot_store is not None:
-            try:
-                previous = await asyncio.to_thread(
-                    self._snapshot_store.cosmos_validator_snapshot,
-                    self.definition.transport.network_id, now, current_values)
-            except Exception:
-                previous = None
         total_bonded = sum(int(item["tokens"]) for item in validators if item["category"] == "active")
         for item in validators:
             item["stake_share"] = float(Decimal(item["tokens"]) * 100 / total_bonded) if total_bonded else 0
-            old = previous.get(item["operator_address"]) if previous else None
-            if old is not None:
-                delta = int(item["tokens"]) - old
-                item["change_24h"] = str(delta)
-                item["change_24h_percent"] = None if old == 0 else float(Decimal(delta) * 100 / old)
         try: head = await status_task
         except Exception: head = None
         average = None
@@ -630,6 +686,23 @@ class CosmosService:
                 average = sample["average_block_seconds"] if sample else None
             except Exception:
                 pass
+        power_change = await self._power_change_24h(head.local_height, average) if head else None
+        bonded_change = None
+        if power_change:
+            changes = []
+            for item in validators:
+                address = consensus_hex_by_operator[item["operator_address"]]
+                current_power = power_change["current"].get(address)
+                historical_power = power_change["historical"].get(address)
+                delta = approximate_token_delta(int(item["tokens"]), current_power or 0, historical_power)
+                if delta is not None:
+                    item["change_24h"] = str(delta)
+                    item["change_24h_percent"] = (None if historical_power == 0 else
+                        float(Decimal(current_power - historical_power) * 100 / historical_power))
+                    if item["category"] == "active":
+                        changes.append(delta)
+            if len(changes) == sum(item["category"] == "active" for item in validators):
+                bonded_change = str(sum(changes))
         for item in validators:
             if item["liveness"] is not None:
                 item["liveness"] = {"missed_blocks": item["liveness"]["missed_blocks"],
@@ -649,10 +722,6 @@ class CosmosService:
             bonded_ratio = float(bonded / total_supply) if total_supply else 0.0
         except Exception:
             pass
-        bonded_change = None
-        active = [item for item in validators if item["category"] == "active"]
-        if previous is not None and all(item["operator_address"] in previous for item in active):
-            bonded_change = str(total_bonded - sum(previous[item["operator_address"]] for item in active))
         response = {"network_id": self.definition.transport.network_id, "asset": asset.public(),
             "summary": {"active_validators": sum(v["category"] == "active" for v in validators),
                 "bonded_tokens": str(total_bonded), "bonded_ratio": bonded_ratio,

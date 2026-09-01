@@ -412,7 +412,7 @@ async def lifespan(app: FastAPI):
         app.state.cosmos_cache = RequestCache(max_entries=256)
         app.state.cosmos_services = {
             network_id: CosmosService(definition, client=app.state.cosmos_http_client,
-                                      cache=app.state.cosmos_cache, snapshot_store=database)
+                                      cache=app.state.cosmos_cache)
             for network_id, definition in NETWORKS.items()
         }
     except Exception:

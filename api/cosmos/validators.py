@@ -1,6 +1,5 @@
 """Pure normalization and liveness helpers for Cosmos validator lists."""
 
-from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_CEILING
 
 
@@ -23,29 +22,38 @@ def miss_metrics(missed: int, window: int, minimum_signed: str, block_seconds: f
     }
 
 
-def nearest_snapshot(history: list[tuple[datetime, dict]], now: datetime, tolerance=timedelta(minutes=20)):
-    target = now.astimezone(timezone.utc) - timedelta(hours=24)
-    candidates = [(abs(at - target), values) for at, values in history if abs(at - target) <= tolerance]
-    return min(candidates, default=(None, None), key=lambda item: item[0])[1]
+def target_height_24h(current_height: int, average_block_seconds: float | None) -> int | None:
+    if current_height < 1 or not average_block_seconds or average_block_seconds <= 0:
+        return None
+    return max(1, current_height - round(86400 / average_block_seconds))
 
 
-def aggregate_commit(strip: dict[str, list[str]], active_addresses: set[str], commit: dict | None):
+def aggregate_commit(strip: dict[str, list[dict]], active_addresses: set[str], commit: dict | None,
+                     validator_addresses: list[str] | None, height: int, block_time: str | None):
     """Append one block-centric point for every active consensus address."""
     if commit is None:
         for address in active_addresses:
-            strip.setdefault(address, []).append("unknown")
+            strip.setdefault(address, []).append({"height": height, "status": "unknown", "time": block_time})
         return
     signatures = commit.get("signatures") if isinstance(commit, dict) else None
     if not isinstance(signatures, list):
-        return aggregate_commit(strip, active_addresses, None)
-    represented = {str(item.get("validator_address", "")).upper(): item.get("block_id_flag")
-                   for item in signatures if isinstance(item, dict) and item.get("validator_address")}
+        return aggregate_commit(strip, active_addresses, None, None, height, block_time)
+    if not isinstance(validator_addresses, list) or len(validator_addresses) != len(signatures):
+        return aggregate_commit(strip, active_addresses, None, None, height, block_time)
+    represented = {address: signatures[index].get("block_id_flag")
+                   for index, address in enumerate(validator_addresses) if isinstance(signatures[index], dict)}
     for address in active_addresses:
         flag = represented.get(address)
         point = ("signed" if flag in (2, "2", "BLOCK_ID_FLAG_COMMIT") else
                  "missed" if flag in (1, 3, "1", "3", "BLOCK_ID_FLAG_ABSENT", "BLOCK_ID_FLAG_NIL") else
                  "unknown")
-        strip.setdefault(address, []).append(point)
+        strip.setdefault(address, []).append({"height": height, "status": point, "time": block_time})
+
+
+def approximate_token_delta(tokens: int, current_power: int, historical_power: int | None) -> int | None:
+    if historical_power is None or current_power <= 0 or tokens < 0:
+        return None
+    return int((Decimal(current_power - historical_power) * Decimal(tokens) / Decimal(current_power)).to_integral_value())
 
 
 def signing_height_range(previous_height: int, latest_height: int) -> range:

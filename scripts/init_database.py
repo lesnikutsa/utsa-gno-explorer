@@ -18,7 +18,6 @@ REALM_CATALOG_MIGRATION = REPO_ROOT / "database" / "migrations" / "0008_add_real
 REALM_CALL_INDEX_MIGRATION = REPO_ROOT / "database" / "migrations" / "0009_add_realm_call_index.sql"
 REALM_METADATA_MIGRATION = REPO_ROOT / "database" / "migrations" / "0010_add_realm_metadata.sql"
 REALM_METADATA_API_READ_MIGRATION = REPO_ROOT / "database" / "migrations" / "0011_grant_realm_metadata_api_read.sql"
-COSMOS_VALIDATOR_SNAPSHOT_MIGRATION = REPO_ROOT / "database" / "migrations" / "0012_add_cosmos_validator_snapshots.sql"
 EXPECTED_TABLES = {
     "blocks", "transactions", "validators", "validator_set_members", "validator_signatures", "rpc_endpoints", "rpc_endpoint_checks", "indexer_state", "valoper_profiles", "valopers_snapshot_state",
 }
@@ -368,34 +367,6 @@ EXPECTED_CHECKS.update({
 for metadata_table in METADATA_TABLES:
     EXPECTED_TABLE_PRIVILEGES["utsa_gno_api"][metadata_table] = ({"SELECT"} if metadata_table != "realm_metadata_refresh_state" else set())
     EXPECTED_TABLE_PRIVILEGES["utsa_gno_indexer"][metadata_table] = {"SELECT","INSERT","UPDATE","DELETE"}
-PRE_COSMOS_VALIDATOR_SNAPSHOT_EXPECTATIONS = schema_expectations()
-COSMOS_VALIDATOR_SNAPSHOT_TABLE = "cosmos_validator_power_snapshots"
-EXPECTED_TABLES.add(COSMOS_VALIDATOR_SNAPSHOT_TABLE)
-EXPECTED_COLUMNS[COSMOS_VALIDATOR_SNAPSHOT_TABLE] = {
-    "network_id": ("text", "NO", "", None),
-    "captured_at": ("timestamp with time zone", "NO", "", None),
-    "operator_address": ("text", "NO", "", None),
-    "tokens": ("numeric(78,0)", "NO", "", None),
-}
-EXPECTED_PRIMARY_KEYS[COSMOS_VALIDATOR_SNAPSHOT_TABLE] = (
-    "network_id", "captured_at", "operator_address",
-)
-EXPECTED_CHECKS.update({
-    "cosmos_validator_power_snapshots_network_check": (
-        "CHECK (network_id ~ '^[a-z0-9]+(-[a-z0-9]+)*$' AND char_length(network_id) <= 64)"
-    ),
-    "cosmos_validator_power_snapshots_operator_check": (
-        "CHECK (char_length(operator_address) BETWEEN 3 AND 90)"
-    ),
-    "cosmos_validator_power_snapshots_tokens_check": "CHECK (tokens >= 0)",
-})
-EXPECTED_INDEXES["cosmos_validator_power_snapshots_lookup"] = (
-    COSMOS_VALIDATOR_SNAPSHOT_TABLE, False,
-    (("network_id", "ASC"), ("captured_at", "DESC")), None,
-)
-EXPECTED_TABLE_PRIVILEGES["utsa_gno_api"][COSMOS_VALIDATOR_SNAPSHOT_TABLE] = {
-    "SELECT", "INSERT", "DELETE",
-}
 FINAL_SCHEMA_EXPECTATIONS = schema_expectations()
 
 NETWORK_DISTRIBUTION_TABLES = {
@@ -411,8 +382,7 @@ TRANSACTION_HASH_INDEXES = {"transactions_tx_hash_hex_idx"}
 
 
 LATE_TRANSACTION_TABLES = {TRANSACTION_PARTICIPANT_TABLE, TRANSACTION_EXECUTION_RESULT_TABLE,
-                           "realm_catalog", "realm_catalog_state", "realm_call_index", "realm_call_index_state",
-                           COSMOS_VALIDATOR_SNAPSHOT_TABLE} | METADATA_TABLES
+                           "realm_catalog", "realm_catalog_state", "realm_call_index", "realm_call_index_state"} | METADATA_TABLES
 PRE_NETWORK_DISTRIBUTION_EXPECTATIONS = schema_expectations(excluded_tables=NETWORK_DISTRIBUTION_TABLES | GOVERNANCE_TABLES | LATE_TRANSACTION_TABLES)
 VALOPERS_ONLY_EXPECTATIONS = schema_expectations(
     excluded_tables=NETWORK_DISTRIBUTION_TABLES | GOVERNANCE_TABLES | LATE_TRANSACTION_TABLES, include_transaction_hash=False)
@@ -894,11 +864,6 @@ def initialize_or_validate(database_url: str, schema_path: Path = SCHEMA, connec
                 if existing == PRE_REALM_METADATA_EXPECTATIONS["tables"]:
                     validate_schema_snapshot(snapshot, PRE_REALM_METADATA_EXPECTATIONS)
                     cursor.execute(migration_body_for_outer_transaction(REALM_METADATA_MIGRATION.read_text()))
-                    snapshot = fetch_schema_snapshot(cursor)
-                    existing = snapshot["tables"]
-                if existing == PRE_COSMOS_VALIDATOR_SNAPSHOT_EXPECTATIONS["tables"]:
-                    validate_schema_snapshot(snapshot, PRE_COSMOS_VALIDATOR_SNAPSHOT_EXPECTATIONS)
-                    cursor.execute(migration_body_for_outer_transaction(COSMOS_VALIDATOR_SNAPSHOT_MIGRATION.read_text()))
                     snapshot = fetch_schema_snapshot(cursor)
                     existing = snapshot["tables"]
                 if existing == PRE_GOVERNANCE_SCHEMA_EXPECTATIONS["tables"]:

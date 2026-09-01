@@ -49,6 +49,13 @@ class CosmosValidatorLiveness(StrictModel):
     jail_eta_seconds: int | None = Field(default=None, ge=0)
 
 
+class CosmosSigningPoint(StrictModel):
+    height: int = Field(ge=1)
+    status: Literal["signed", "missed", "unknown"]
+    time: str | None = Field(default=None, min_length=20, max_length=64,
+                             pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$")
+
+
 class CosmosValidator(StrictModel):
     operator_address: str = Field(min_length=3, max_length=90)
     consensus_address: str = Field(min_length=3, max_length=90)
@@ -66,7 +73,7 @@ class CosmosValidator(StrictModel):
     jailed_until: str | None = Field(default=None, max_length=64)
     tombstoned: bool | None = None
     missed_blocks: int | None = Field(default=None, ge=0)
-    signing_strip: list[Literal["signed", "missed", "unknown"]] = Field(default_factory=list, max_length=50)
+    signing_strip: list[CosmosSigningPoint] = Field(default_factory=list, max_length=50)
 
 
 class CosmosValidatorsSummary(StrictModel):

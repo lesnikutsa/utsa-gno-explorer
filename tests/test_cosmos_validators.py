@@ -1,13 +1,14 @@
-from datetime import datetime, timedelta, timezone
 import asyncio
 import unittest
+from unittest.mock import AsyncMock
 
 import httpx
 
 from api.cosmos import RequestCache
 from api.cosmos.registry import ATOMONE
 from api.cosmos.service import CosmosService
-from api.cosmos.validators import aggregate_commit, category, miss_metrics, nearest_snapshot
+from api.cosmos.validators import (aggregate_commit, approximate_token_delta, category,
+    miss_metrics, target_height_24h)
 
 
 def test_categories_keep_jailed_separate():
@@ -23,27 +24,30 @@ def test_slashing_budget_signed_percent_and_eta():
     assert miss_metrics(443, 10000, "0.05", None)["jail_eta_seconds"] is None
 
 
-def test_commit_aggregation_is_block_centric_and_unknown_safe():
+def test_commit_aggregation_uses_historical_membership_and_block_context():
     strip = {}
-    active = {"AA", "BB"}
-    aggregate_commit(strip, active, {"signatures": [{"validator_address": "aa", "block_id_flag": 2}]})
-    aggregate_commit(strip, active, None)
-    assert strip == {"AA": ["signed", "unknown"], "BB": ["unknown", "unknown"]}
-    assert "CC" not in strip  # inactive validators never receive false misses
+    signatures = {"signatures": [
+        {"block_id_flag": 2}, {"block_id_flag": 1}, {"block_id_flag": 3},
+    ]}
+    aggregate_commit(strip, {"AA", "BB", "CC", "NEW"}, signatures,
+                     ["AA", "BB", "CC"], 10157219, "2026-09-01T07:54:32Z")
+    assert strip["AA"] == [{"height": 10157219, "status": "signed", "time": "2026-09-01T07:54:32Z"}]
+    assert strip["BB"][0]["status"] == "missed"
+    assert strip["CC"][0]["status"] == "missed"
+    assert strip["NEW"][0]["status"] == "unknown"
 
 
-def test_snapshot_requires_complete_24_hour_history():
-    now = datetime(2026, 1, 2, tzinfo=timezone.utc)
-    assert nearest_snapshot([(now - timedelta(hours=23), {"v": 1})], now) is None
-    assert nearest_snapshot([(now - timedelta(hours=24, minutes=5), {"v": 2})], now) == {"v": 2}
-
-
-def test_explicit_miss_and_joined_later_are_conservative():
+def test_unverifiable_commit_is_unknown_with_height():
     strip = {}
-    aggregate_commit(strip, {"AA", "NEW"}, {"signatures": [
-        {"validator_address": "AA", "block_id_flag": 1},
-    ]})
-    assert strip == {"AA": ["missed"], "NEW": ["unknown"]}
+    aggregate_commit(strip, {"AA"}, None, None, 42, None)
+    assert strip == {"AA": [{"height": 42, "status": "unknown", "time": None}]}
+
+
+def test_target_height_and_approximate_power_delta():
+    assert target_height_24h(100_000, 6.0) == 85_600
+    assert target_height_24h(100_000, None) is None
+    assert approximate_token_delta(1_000_000, 100, 90) == 100_000
+    assert approximate_token_delta(1_000_000, 0, 90) is None
 
 
 def test_signing_height_range_caps_large_idle_gap():
@@ -106,3 +110,35 @@ class AvatarCacheTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(service._avatar_tasks), 8)
             gate.set()
             await asyncio.gather(*service._avatar_tasks.values())
+
+
+class ValidatorSetCacheTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.client = httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda _request: httpx.Response(500)))
+        self.service = CosmosService(ATOMONE, client=self.client, cache=RequestCache())
+
+    async def asyncTearDown(self):
+        await self.client.aclose()
+
+    async def test_same_validators_hash_fetches_once_and_distinct_hash_fetches_once_each(self):
+        self.service._rpc_validator_set = AsyncMock(return_value=[{"address": "AA", "voting_power": 10}])
+        assert await self.service._validator_set_for_hash("HASH-A", 10) == ["AA"]
+        assert await self.service._validator_set_for_hash("HASH-A", 11) == ["AA"]
+        assert await self.service._validator_set_for_hash("HASH-B", 12) == ["AA"]
+        assert self.service._rpc_validator_set.await_count == 2
+
+    async def test_24h_power_result_cache_prevents_repeated_rpc_queries(self):
+        self.service._rpc_validator_set = AsyncMock(side_effect=[
+            [{"address": "AA", "voting_power": 100}],
+            [{"address": "AA", "voting_power": 90}],
+        ])
+        first = await self.service._power_change_24h(100_000, 6.0)
+        second = await self.service._power_change_24h(100_001, 6.0)
+        assert first == second
+        assert first["historical"]["AA"] == 90
+        assert self.service._rpc_validator_set.await_count == 2
+
+    async def test_unavailable_historical_set_returns_none(self):
+        self.service._rpc_validator_set = AsyncMock(side_effect=RuntimeError("pruned"))
+        assert await self.service._power_change_24h(100_000, 6.0) is None
