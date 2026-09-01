@@ -1,0 +1,40 @@
+import { useEffect, useMemo, useState } from 'react'
+import { useCosmosResource } from '../hooks/useCosmosResource'
+import { CosmosValidatorIdentity } from '../components/CosmosValidatorIdentity'
+import { CopyButton } from '../components/CopyButton'
+import { formatTokenAmount } from '../utils/cosmosFormat'
+import { loadValidatorFavorites, saveValidatorFavorites, toggleValidatorFavorite } from '../utils/validatorFavorites'
+import { validatorRankTone } from '../utils/cosmosValidators'
+
+const pct = (v) => v == null ? '—' : `${(Number(v) * 100).toFixed(2)}%`
+const utc = (v) => !v || v.startsWith('1970-01-01T00:00:00') ? '—' : new Date(v).toLocaleString(undefined, { timeZone: 'UTC', timeZoneName: 'short' })
+const label = (v) => v[0].toUpperCase() + v.slice(1)
+const eta = (v) => v == null ? '—' : v === 0 ? 'Threshold reached' : `≈${Math.floor(v / 3600)}h ${Math.floor(v % 3600 / 60)}m`
+const website = (v) => { try { const u = new URL(v); return ['http:', 'https:'].includes(u.protocol) ? u.href : null } catch { return null } }
+
+export function CosmosValidatorDetail({ network, operatorAddress }) {
+  const resource = useCosmosResource(`/api/networks/${network.id}/validators/${encodeURIComponent(operatorAddress)}`, 5000)
+  const key = `cosmos:${network.id}`
+  const [favorites, setFavorites] = useState(() => loadValidatorFavorites(key))
+  useEffect(() => setFavorites(loadValidatorFavorites(key)), [key])
+  const v = resource.data
+  const counts = useMemo(() => (v?.signing_strip || []).reduce((a, p) => ({ ...a, [p.status]: a[p.status] + 1 }), { commit: 0, nil: 0, absent: 0, unknown: 0 }), [v])
+  if (!v && resource.loading) return <section className="cosmos-validator-detail"><p>Loading validator…</p></section>
+  if (!v) return <section className="cosmos-validator-detail"><a href={`/networks/${network.id}/validators`}>← Back to Validators</a><p className="cosmos-error">Validator not found or temporarily unavailable.</p></section>
+  const asset = v.asset, favorite = favorites.has(v.operator_address), strip = v.signing_strip || [], site = website(v.website)
+  const finalized = counts.commit + counts.nil + counts.absent
+  const participation = finalized ? (counts.commit + counts.nil) * 100 / finalized : null
+  const toggle = () => setFavorites((current) => { const next = toggleValidatorFavorite(current, v.operator_address); saveValidatorFavorites(key, next); return next })
+  return <section className="cosmos-validator-detail theme-compatible">
+    <a className="cosmos-validator-detail__back" href={`/networks/${network.id}/validators`}>← Back to Validators</a>
+    <header className="panel cosmos-validator-hero"><div className="cosmos-validator-hero__identity"><CosmosValidatorIdentity moniker={v.moniker} address={v.operator_address} imageSrc={v.avatar_url} showTitles={false} /><span className={`cosmos-validator-status is-${v.category}`}>{label(v.category)}</span><span className={`cosmos-validator-rank cosmos-validator-rank--${validatorRankTone(v.stake_share)}`}>#{v.rank}</span><button className={`validator-favorite ${favorite ? 'validator-favorite--active' : ''}`} type="button" aria-pressed={favorite} aria-label={`${favorite ? 'Remove' : 'Add'} ${v.moniker} ${favorite ? 'from' : 'to'} favorites`} onClick={toggle}>{favorite ? '★' : '☆'}</button></div>{site && <a className="cosmos-validator-website" href={site} target="_blank" rel="noopener noreferrer">Visit website ↗</a>}{v.description && <p>{v.description}</p>}{v.category === 'jailed' && <div className="cosmos-validator-jailed"><strong>Jailed</strong><span>Until: {utc(v.jailed_until)}</span>{v.tombstoned != null && <span>Tombstoned: {v.tombstoned ? 'Yes' : 'No'}</span>}</div>}</header>
+    <div className="cosmos-validator-summary cosmos-validator-detail__metrics"><Metric label="Voting Power" value={formatTokenAmount(v.tokens, asset.exponent, asset.symbol)} /><Metric label="Stake Share" value={`${v.stake_share.toFixed(4)}%`} /><Metric label="≈24h Change" value={<Delta validator={v} asset={asset} />} /><Metric label="Commission" value={pct(v.commission.rate)} /></div>
+    <section className="panel cosmos-validator-signing"><div className="panel__heading"><div><h2>Signing &amp; Liveness</h2><span className="panel__meta">Canonical finalized consensus participation</span></div></div><div className="cosmos-validator-signing__recent"><h3>Recent finalized participation</h3><div className="cosmos-validator-signing__stats"><Field label="Participation" value={participation == null ? '—' : `${participation.toFixed(2)}%`} /><Field label="Commit" value={counts.commit} /><Field label="Nil" value={counts.nil} /><Field label="Absent" value={counts.absent} />{counts.unknown > 0 && <Field label="Unknown" value={counts.unknown} />}</div>{strip.length ? <div className="cosmos-validator-signing__strip" aria-label="Recent 50-block canonical signing panel">{strip.map((p) => <span key={p.height} tabIndex="0" className={`is-${p.status}`} aria-label={`Block #${p.height} · ${label(p.status)}${p.time ? ` · ${new Date(p.time).toISOString()}` : ''}`} />)}</div> : <p className="muted">{v.signing_history_state === 'warming' ? 'Loading recent signing history…' : 'Recent participation unavailable for this validator.'}</p>}</div><div className="cosmos-validator-signing__protocol"><div><h3>Protocol slashing window</h3><p>Values come from x/slashing SigningInfo and are separate from the visible 50 blocks.</p></div>{v.liveness ? <div className="cosmos-validator-signing__stats"><Field label="Missed blocks counter" value={v.liveness.missed_blocks.toLocaleString()} /><Field label="Signed percent" value={`${v.liveness.signed_percent.toFixed(2)}%`} /><Field label="Remaining budget" value={v.liveness.remaining_budget.toLocaleString()} /><Field label="Jail ETA" value={eta(v.liveness.jail_eta_seconds)} /></div> : <span className="muted">Protocol liveness unavailable</span>}</div></section>
+    <div className="cosmos-validator-detail__secondary"><Panel title="Validator Parameters"><Field label="Bonded Tokens" value={formatTokenAmount(v.tokens, asset.exponent, asset.symbol)} /><Field label="Delegator Shares" value={v.delegator_shares} />{v.min_self_delegation != null && <Field label="Minimum Self Delegation" value={v.min_self_delegation} />}<Field label="Commission Rate" value={pct(v.commission.rate)} />{v.commission.max_rate != null && <Field label="Max Commission" value={pct(v.commission.max_rate)} />}{v.commission.max_change_rate != null && <Field label="Max Daily Change" value={pct(v.commission.max_change_rate)} />}{v.commission.update_time && <Field label="Commission Updated" value={utc(v.commission.update_time)} />}</Panel><Panel title="Consensus Identity"><Address label="Operator Address" value={v.operator_address} /><Address label="Consensus Address" value={v.consensus_address} />{v.consensus_pubkey && <Address label="Consensus Public Key" value={v.consensus_pubkey} />}</Panel></div>
+  </section>
+}
+function Metric({ label, value }) { return <article className="card status-card cosmos-validator-summary__card"><span>{label}</span><strong>{value}</strong></article> }
+function Field({ label, value }) { return <div><dt>{label}</dt><dd>{value}</dd></div> }
+function Panel({ title, children }) { return <section className="panel cosmos-validator-fields"><h2>{title}</h2><dl>{children}</dl></section> }
+function Address({ label, value }) { return <div><dt>{label}</dt><dd className="cosmos-copy-value"><code>{value}</code><CopyButton value={value} label={label.toLowerCase()} /></dd></div> }
+function Delta({ validator: v, asset }) { if (v.change_24h == null || Number(v.change_24h) === 0) return '—'; const positive = Number(v.change_24h) > 0; return <span className={`validator-delta is-${positive ? 'positive' : 'negative'}`}>{positive ? '+' : ''}{formatTokenAmount(v.change_24h, asset.exponent, asset.symbol)}{v.change_24h_percent != null && <small>{v.change_24h_percent > 0 ? '+' : ''}{v.change_24h_percent.toFixed(2)}%</small>}</span> }

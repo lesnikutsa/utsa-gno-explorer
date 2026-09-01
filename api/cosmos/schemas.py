@@ -91,6 +91,41 @@ class CosmosValidatorsResponse(StrictModel):
     validators: list[CosmosValidator] = Field(max_length=2000)
 
 
+class CosmosValidatorCommission(StrictModel):
+    rate: DecimalString
+    max_rate: DecimalString | None = None
+    max_change_rate: DecimalString | None = None
+    update_time: str | None = Field(default=None, max_length=64)
+
+
+class CosmosValidatorDetail(StrictModel):
+    network_id: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+    asset: PublicNetworkAsset
+    signing_history_state: Literal["warming", "ready"]
+    operator_address: str = Field(min_length=3, max_length=90)
+    consensus_address: str = Field(min_length=3, max_length=90)
+    consensus_pubkey: str | None = Field(default=None, max_length=256)
+    moniker: str = Field(min_length=1, max_length=256)
+    identity: str | None = Field(default=None, max_length=128)
+    avatar_url: str | None = Field(default=None, max_length=2048, pattern=r"^https://")
+    website: str | None = Field(default=None, max_length=2048)
+    description: str | None = Field(default=None, max_length=4096)
+    category: Literal["active", "inactive", "jailed"]
+    jailed: bool
+    jailed_until: str | None = Field(default=None, max_length=64)
+    tombstoned: bool | None = None
+    rank: int = Field(gt=0, le=2000)
+    tokens: AmountString
+    delegator_shares: DecimalString
+    stake_share: float = Field(ge=0, le=100)
+    change_24h: SignedDecimalString | None = None
+    change_24h_percent: float | None = None
+    commission: CosmosValidatorCommission
+    min_self_delegation: AmountString | None = None
+    liveness: CosmosValidatorLiveness | None = None
+    signing_strip: list[CosmosSigningPoint] = Field(default_factory=list, max_length=50)
+
+
 class SectionErrorDetail(StrictModel):
     code: Literal["section_unavailable"]
 

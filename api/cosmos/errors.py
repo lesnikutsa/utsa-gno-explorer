@@ -25,6 +25,14 @@ class TransactionNotFound(CosmosAdapterError):
     """Every conclusive transaction lookup reported an unknown hash."""
 
 
+class ValidatorNotFound(CosmosAdapterError):
+    """The requested validator is not present in the staking validator set."""
+
+
+class InvalidValidatorAddress(CosmosAdapterError):
+    """The requested operator address is malformed or uses another prefix."""
+
+
 class HistoryUnavailable(CosmosAdapterError):
     """A requested block is outside the connected RPC's retained history."""
 

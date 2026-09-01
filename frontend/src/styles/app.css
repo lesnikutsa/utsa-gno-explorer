@@ -1268,3 +1268,36 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 @media (max-width: 800px) { .cosmos-validator-summary { grid-template-columns: repeat(2,1fr); } .cosmos-validator-toolbar { align-items: stretch; flex-direction: column; } .cosmos-validator-search, .cosmos-validator-toolbar input { width: 100%; } }
 
 .cosmos-validator-toolbar input { font-size: 12px; }
+
+/* Cosmos validator detail uses the shared theme surfaces and status-card language. */
+.cosmos-validator-detail { display: grid; gap: 14px; }
+.cosmos-validator-detail__back, .cosmos-validator-identity-link { color: var(--color-text-secondary); text-decoration: none; }
+.cosmos-validator-detail__back:hover, .cosmos-validator-identity-link:hover { color: var(--color-accent); }
+.cosmos-validator-hero { display: grid; gap: 12px; padding: 16px; }
+.cosmos-validator-hero__identity { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.cosmos-validator-hero__identity .cosmos-validator-identity { margin-right: auto; }
+.cosmos-validator-status { padding: 3px 7px; border-radius: 5px; background: var(--color-surface-subtle); color: var(--color-text-secondary); font-size: 10px; font-weight: 700; }
+.cosmos-validator-status.is-active { background: color-mix(in srgb, var(--color-success) 14%, var(--color-card)); color: var(--color-success); }
+.cosmos-validator-status.is-jailed { background: color-mix(in srgb, var(--color-error) 14%, var(--color-card)); color: var(--color-error); }
+.cosmos-validator-hero > p, .cosmos-validator-signing p { margin: 0; color: var(--color-text-secondary); font-size: 11px; line-height: 1.6; }
+.cosmos-validator-website { width: fit-content; color: var(--color-accent); font-size: 11px; }
+.cosmos-validator-jailed { display: flex; gap: 14px; padding: 9px 11px; border-radius: 6px; background: color-mix(in srgb, var(--color-error) 12%, var(--color-card)); color: var(--color-text); font-size: 11px; }
+.cosmos-validator-jailed strong { color: var(--color-error); }
+.cosmos-validator-signing { overflow: hidden; }
+.cosmos-validator-signing h3 { margin: 0; color: var(--color-text-bright); font-size: 12px; }
+.cosmos-validator-signing__recent, .cosmos-validator-signing__protocol { display: grid; gap: 12px; padding: 14px; }
+.cosmos-validator-signing__protocol { border-top: 1px solid var(--color-border-soft); background: var(--color-surface-subtle); }
+.cosmos-validator-signing__stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.cosmos-validator-signing__stats > div { display: grid; gap: 3px; }
+.cosmos-validator-signing dt, .cosmos-validator-fields dt { color: var(--color-table-heading); font-size: 9px; letter-spacing: .05em; text-transform: uppercase; }
+.cosmos-validator-signing dd, .cosmos-validator-fields dd { margin: 0; color: var(--color-text-bright); font-size: 12px; }
+.cosmos-validator-signing__strip { display: grid; grid-template-columns: repeat(50, minmax(4px, 1fr)); gap: 2px; min-height: 24px; }
+.cosmos-validator-signing__strip span { border-radius: 2px; background: #60798d; }
+.cosmos-validator-signing__strip span.is-commit { background: var(--color-success); } .cosmos-validator-signing__strip span.is-nil { background: var(--color-warning); } .cosmos-validator-signing__strip span.is-absent { background: var(--color-error); }
+.cosmos-validator-signing__strip span:focus-visible { outline: 2px solid var(--color-text-bright); outline-offset: 1px; }
+.cosmos-validator-detail__secondary { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.cosmos-validator-fields { padding: 14px; }
+.cosmos-validator-fields h2 { margin: 0 0 10px; font-size: 14px; }
+.cosmos-validator-fields dl { display: grid; margin: 0; }
+.cosmos-validator-fields dl > div { display: grid; grid-template-columns: minmax(120px, .7fr) minmax(0, 1.3fr); gap: 12px; padding: 9px 0; border-top: 1px solid var(--color-border-soft); }
+@media (max-width: 800px) { .cosmos-validator-detail__secondary { grid-template-columns: 1fr; } .cosmos-validator-signing__stats { grid-template-columns: repeat(2, 1fr); } .cosmos-validator-signing__strip { overflow-x: auto; } }
