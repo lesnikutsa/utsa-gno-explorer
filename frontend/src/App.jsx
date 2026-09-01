@@ -37,6 +37,7 @@ import { CosmosOverview } from './pages/CosmosOverview'
 import { CosmosBlocks } from './pages/CosmosBlocks'
 import { CosmosBlockDetail } from './pages/CosmosBlockDetail'
 import { CosmosTransactions } from './pages/CosmosTransactions'
+import { CosmosValidators } from './pages/CosmosValidators'
 import { CosmosTransactionDetail } from './pages/CosmosTransactionDetail'
 import { CosmosExplorerLayout } from './layouts/CosmosExplorerLayout'
 
@@ -206,7 +207,7 @@ export default function App() {
   }, [path])
 
   const cosmosTxMatch = path.match(/^\/networks\/([^/]+)\/blocks\/([1-9]\d{0,18})\/transactions\/(\d{1,4})\/?$/)
-  const cosmosMatch = path.match(/^\/networks\/([^/]+)(?:\/(blocks|transactions)(?:\/([^/]+))?)?\/?$/)
+  const cosmosMatch = path.match(/^\/networks\/([^/]+)(?:\/(blocks|transactions|validators)(?:\/([^/]+))?)?\/?$/)
   const cosmosNetworkId = cosmosTxMatch?.[1] || cosmosMatch?.[1]
   if (cosmosNetworkId) {
     const network = getNetworkById(cosmosNetworkId)
@@ -225,6 +226,7 @@ export default function App() {
         ? <CosmosBlockDetail network={network} height={rawHeight} />
         : <p className="cosmos-error">Invalid block height.</p>)
       : cosmosMatch[2] === 'transactions' ? <CosmosTransactions network={network} />
+      : cosmosMatch[2] === 'validators' ? <CosmosValidators network={network} />
       : cosmosMatch[2] === 'blocks' ? <CosmosBlocks network={network} resource={blocks} /> : <CosmosOverview network={network} overview={overview} blocks={blocks} averageBlockSeconds={blockTime.average} />
     return <CosmosExplorerLayout network={network}>{renderContent}</CosmosExplorerLayout>
   }

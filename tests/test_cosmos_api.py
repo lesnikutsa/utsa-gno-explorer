@@ -104,6 +104,11 @@ class CosmosRouteTests(unittest.TestCase):
             self.assertEqual(response.status_code, 503)
             self.assertNotIn("secret market", response.text)
 
+    def test_unknown_validators_network_preserves_not_found(self):
+        with TestClient(self.module.app) as client:
+            response = client.get("/api/networks/unknown/validators")
+            self.assertEqual(response.status_code, 404)
+
     def test_market_exact_contract(self):
         market = {"network_id": "atomone-mainnet", "currency": "USD", "price": "1.25",
                   "market_cap": "1000000", "change_24h": "-2.5",
@@ -292,6 +297,10 @@ class CosmosUpstreamIntegrationTests(unittest.TestCase):
         identity = next(iter(identities.values()))
         self.assertEqual(identity["proposer_moniker"], "Silk Nodes")
         self.assertTrue(identity["proposer_operator_address"].startswith("atonevaloper"))
+        with_identity = copy.deepcopy(validators[0])
+        with_identity["description"]["identity"] = "9E7A59BBDC93CC32"
+        enriched = next(iter(CosmosService._validator_identities([with_identity]).values()))
+        self.assertEqual(enriched["proposer_identity"], "9E7A59BBDC93CC32")
         self.assertEqual(CosmosService._validator_identities([{"bad": "validator"}]), {})
 
     def test_generic_public_models_accept_one_asset_without_atomone_extensions(self):

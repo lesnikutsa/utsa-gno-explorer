@@ -35,8 +35,9 @@ test('capability menu resolves only implemented AtomOne routes inside the select
   assert.match(sidebar, /hasNetworkCapability\(selectedNetwork, capability\)/)
   assert.match(sidebar, /selectedNetwork\.family === 'cosmos'/)
   assert.match(sidebar, /`\/networks\/\$\{selectedNetwork\.id\}/)
-  assert.deepEqual(networkMetadata.capabilities, ['overview', 'blocks', 'network-parameters'])
-  for (const capability of ['transactions', 'validators', 'governance', 'realms', 'tokens']) {
+  assert.deepEqual(networkMetadata.capabilities, ['overview', 'blocks', 'validators', 'network-parameters'])
+  assert.match(app, /<CosmosValidators network=\{network\}/)
+  for (const capability of ['transactions', 'governance', 'realms', 'tokens']) {
     assert.ok(!networkMetadata.capabilities.includes(capability))
   }
 })
@@ -65,6 +66,11 @@ test('AtomOne overview shares dashboard cards and tables without raw responsive 
   assert.doesNotMatch(overview, /AtomOne Overview|Cosmos network/)
   assert.match(overview, /updating=\{updatedHeight === latestHeight\}/)
   assert.match(overview, /'is-new-row' : 'is-settling-row'/)
+  assert.match(overview, /imageSrc=\{row\.avatar_url\}/)
+  assert.match(overview, /imageSrc=\{row\.proposer_avatar_url\}/)
+  assert.match(overview, /imageSrc=\{row\.avatar_url\} showTitles=\{false\}/)
+  assert.match(overview, /imageSrc=\{row\.proposer_avatar_url\} showTitles=\{false\}/)
+  assert.doesNotMatch(overview, /title=\{row\.proposer\}/)
 })
 
 test('Cosmos TopBar keeps the shared search and block-time UI while scoping block navigation', () => {

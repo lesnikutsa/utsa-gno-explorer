@@ -35,7 +35,7 @@ class CosmosRegistryTests(unittest.TestCase):
         self.assertNotIn("rpc_endpoints", public[0])
         self.assertNotIn("rest_endpoints", public[0])
         self.assertNotIn("coingecko_id", public[0])
-        self.assertEqual(public[0]["capabilities"], ["overview", "blocks", "network-parameters"])
+        self.assertEqual(public[0]["capabilities"], ["overview", "blocks", "validators", "network-parameters"])
 
     def test_loader_rejects_unknown_fields_insecure_logo_and_directory_mismatch(self):
         original = json.loads(CONFIG_PATH.read_text())
