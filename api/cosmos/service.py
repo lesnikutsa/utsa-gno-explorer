@@ -28,7 +28,7 @@ from .rfc3339 import parse_rfc3339
 from .errors import HistoryUnavailable
 from .transactions import normalize_transactions
 from .transaction_detail import normalize_transaction_detail
-from .validators import (approximate_token_delta, category, miss_metrics,
+from .validators import (approximate_token_delta, category, category_voting_power_rank, miss_metrics,
                          aggregate_commit, signing_height_range, target_height_24h)
 
 SECTION_TTL = 5.0
@@ -182,6 +182,18 @@ def valid_bech32_address(value: str, prefix: str) -> bool:
         return False
     expanded = [ord(char) >> 5 for char in prefix] + [0] + [ord(char) & 31 for char in prefix]
     return _bech32_polymod(expanded + [charset.index(char) for char in payload]) == 1
+
+
+def reencode_bech32_address(value: str, source_prefix: str, target_prefix: str) -> str:
+    """Re-encode the same Bech32 payload with another configured registry prefix."""
+    if not valid_bech32_address(value, source_prefix):
+        raise InvalidValidatorAddress("invalid validator operator address")
+    charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+    words = [charset.index(char) for char in value[len(source_prefix) + 1:-6]]
+    expanded = [ord(char) >> 5 for char in target_prefix] + [0] + [ord(char) & 31 for char in target_prefix]
+    polymod = _bech32_polymod(expanded + words + [0] * 6) ^ 1
+    checksum = [(polymod >> 5 * (5 - index)) & 31 for index in range(6)]
+    return target_prefix + "1" + "".join(charset[item] for item in words + checksum)
 
 
 class CosmosService:
@@ -778,16 +790,24 @@ class CosmosService:
         description = source.get("description") if isinstance(source.get("description"), dict) else {}
         commission = source.get("commission") if isinstance(source.get("commission"), dict) else {}
         rates = commission.get("commission_rates") if isinstance(commission.get("commission_rates"), dict) else {}
-        ordered = sorted(response["validators"], key=lambda item: (-int(item["tokens"]), item["operator_address"]))
+        pubkey = _mapping(source.get("consensus_pubkey"), "consensus public key")
+        raw_pubkey = base64.b64decode(pubkey.get("key"), validate=True)
+        consensus_hex = hashlib.sha256(raw_pubkey).digest()[:20].hex().upper()
+        bond_status = {"BOND_STATUS_BONDED": "bonded", "BOND_STATUS_UNBONDING": "unbonding",
+                       "BOND_STATUS_UNBONDED": "unbonded"}.get(source.get("status"), "unbonded")
         result = {**validator, "network_id": response["network_id"], "asset": response["asset"],
                   "signing_history_state": response["signing_history_state"],
-                  "rank": next(index for index, item in enumerate(ordered, 1)
-                               if item["operator_address"] == operator_address),
+                  "rank": category_voting_power_rank(response["validators"], validator),
                   "website": description.get("website") or None,
                   "description": description.get("details") or None,
+                  "account_address": reencode_bech32_address(operator_address,
+                      self.definition.validator_operator_prefix, self.definition.account_prefix),
+                  "hex_address": consensus_hex,
+                  "evm_address": None,
+                  "bond_status": bond_status,
                   "delegator_shares": _decimal(source.get("delegator_shares"), "delegator shares"),
                   "min_self_delegation": str(source.get("min_self_delegation")) if source.get("min_self_delegation") is not None else None,
-                  "consensus_pubkey": (_mapping(source.get("consensus_pubkey"), "consensus public key").get("key")),
+                  "consensus_pubkey": pubkey.get("key"),
                   "commission": {"rate": str(rates.get("rate") or "0"),
                                  "max_rate": rates.get("max_rate"),
                                  "max_change_rate": rates.get("max_change_rate"),

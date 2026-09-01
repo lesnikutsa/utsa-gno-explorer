@@ -103,14 +103,18 @@ class CosmosValidatorDetail(StrictModel):
     asset: PublicNetworkAsset
     signing_history_state: Literal["warming", "ready"]
     operator_address: str = Field(min_length=3, max_length=90)
+    account_address: str = Field(min_length=3, max_length=90)
     consensus_address: str = Field(min_length=3, max_length=90)
     consensus_pubkey: str | None = Field(default=None, max_length=256)
+    hex_address: str = Field(min_length=40, max_length=40, pattern=r"^[0-9A-F]{40}$")
+    evm_address: str | None = Field(default=None, min_length=42, max_length=42, pattern=r"^0x[0-9a-fA-F]{40}$")
     moniker: str = Field(min_length=1, max_length=256)
     identity: str | None = Field(default=None, max_length=128)
     avatar_url: str | None = Field(default=None, max_length=2048, pattern=r"^https://")
     website: str | None = Field(default=None, max_length=2048)
     description: str | None = Field(default=None, max_length=4096)
     category: Literal["active", "inactive", "jailed"]
+    bond_status: Literal["bonded", "unbonding", "unbonded"]
     jailed: bool
     jailed_until: str | None = Field(default=None, max_length=64)
     tombstoned: bool | None = None
