@@ -460,6 +460,15 @@ async def get_cosmos_network_overview(network_id: str):
         raise HTTPException(status_code=503, detail="Network data is temporarily unavailable") from None
 
 
+@app.get("/api/networks/{network_id}/validators")
+async def get_cosmos_validators(network_id: str):
+    try:
+        return await _cosmos_service(network_id).validators()
+    except Exception:
+        LOGGER.exception("Cosmos validators failed network=%s", network_id)
+        raise HTTPException(status_code=503, detail="Validator data is temporarily unavailable") from None
+
+
 @app.get("/api/networks/{network_id}/market", response_model=CosmosMarketResponse)
 async def get_cosmos_network_market(network_id: str):
     service = _cosmos_service(network_id)

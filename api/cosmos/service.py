@@ -28,6 +28,7 @@ from .rfc3339 import parse_rfc3339
 from .errors import HistoryUnavailable
 from .transactions import normalize_transactions
 from .transaction_detail import normalize_transaction_detail
+from .validators import category, miss_metrics, nearest_snapshot, aggregate_commit
 
 SECTION_TTL = 5.0
 MARKET_TTL = 30.0
@@ -179,6 +180,10 @@ class CosmosService:
         self.adapter = CosmosAdapter(definition.transport, client=client, cache=cache)
         self.transport = self.adapter._transport
         self._wall_clock = wall_clock or (lambda: datetime.now(timezone.utc))
+        self._validator_snapshots = []
+        self._signing_strip = {}
+        self._signing_height = 0
+        self._signing_warmup = None
 
     @staticmethod
     def _public_block(block):
@@ -482,6 +487,96 @@ class CosmosService:
     async def _bonded_validators(self):
         return await self._paginate(
             "bonded_validators", "/cosmos/staking/v1beta1/validators?status=BOND_STATUS_BONDED", "validators")
+
+    async def _all_validators(self):
+        return await self._paginate("all_validators", "/cosmos/staking/v1beta1/validators", "validators")
+
+    async def _warm_signing(self, active: set[str], height: int):
+        low = self._signing_height + 1 if self._signing_height else max(1, height - 49)
+        for block_height in range(low, height + 1):
+            commit = None
+            try:
+                candidates = await self.adapter._cached_candidates("rpc")
+                payload = await self.transport.get_object(candidates[0].endpoint, f"/commit?height={block_height}")
+                commit = _mapping(_mapping(payload.get("result"), "commit result").get("signed_header"), "signed header").get("commit")
+            except Exception:
+                pass
+            aggregate_commit(self._signing_strip, active, commit)
+        for address in active:
+            self._signing_strip[address] = self._signing_strip.get(address, [])[-50:]
+        self._signing_height = height
+
+    async def validators(self):
+        """Return cached generic Cosmos staking data; secondary sections are best effort."""
+        raw = await self.cache.get_or_load((self.definition.transport.network_id, "validator_set"), 15.0, self._all_validators)
+        pool_task = asyncio.create_task(self._rest("validator_pool", "/cosmos/staking/v1beta1/pool"))
+        slashing_task = asyncio.create_task(self._slashing())
+        infos_task = asyncio.create_task(self._paginate("validator_signing_infos", "/cosmos/slashing/v1beta1/signing_infos", "info"))
+        status_task = asyncio.create_task(self.adapter.node_status())
+        infos = {}
+        try:
+            for item in await infos_task:
+                if isinstance(item, dict) and isinstance(item.get("address"), str): infos[item["address"]] = item
+        except Exception:
+            pass
+        try: slashing = await slashing_task
+        except Exception: slashing = None
+        try: pool = await pool_task
+        except Exception: pool = {}
+        now = self._wall_clock()
+        previous = nearest_snapshot(self._validator_snapshots, now)
+        current_values = {}
+        validators = []
+        active_hex = set()
+        for raw_item in raw:
+            item = _mapping(raw_item, "validator")
+            operator = _text(item.get("operator_address"), "operator address", 90)
+            if not operator.startswith(self.definition.validator_operator_prefix + "1"): continue
+            tokens = _integer(item.get("tokens"), "validator tokens")
+            current_values[operator] = tokens
+            pubkey = _mapping(item.get("consensus_pubkey"), "consensus public key")
+            key = base64.b64decode(pubkey.get("key"), validate=True)
+            consensus_hex = hashlib.sha256(key).digest()[:20].hex().upper()
+            consensus = consensus_address(pubkey, self.definition.validator_consensus_prefix)
+            info = infos.get(consensus, {})
+            description = item.get("description") if isinstance(item.get("description"), dict) else {}
+            commission = item.get("commission") if isinstance(item.get("commission"), dict) else {}
+            rates = commission.get("commission_rates") if isinstance(commission.get("commission_rates"), dict) else {}
+            delta = None if previous is None or operator not in previous else tokens - previous[operator]
+            kind = category(item)
+            liveness = None
+            if kind == "active":
+                active_hex.add(consensus_hex)
+                missed = int(info.get("missed_blocks_counter", 0)) if info else None
+                liveness = ({"missed_blocks": missed, **miss_metrics(missed, slashing["signed_blocks_window"], slashing["minimum_signed_per_window"], 5.0)}
+                            if missed is not None and slashing else None)
+            validators.append({"operator_address": operator, "consensus_address": consensus,
+                "consensus_hex": consensus_hex, "category": kind, "jailed": item.get("jailed") is True,
+                "moniker": str(description.get("moniker") or operator)[:256],
+                "identity": str(description.get("identity") or "")[:128] or None,
+                "tokens": str(tokens), "stake_share": 0, "change_24h": None if delta is None else str(delta),
+                "change_24h_percent": None if delta is None or previous[operator] == 0 else float(Decimal(delta) * 100 / previous[operator]),
+                "commission": str(rates.get("rate") or "0"), "liveness": liveness,
+                "jailed_until": info.get("jailed_until"), "tombstoned": info.get("tombstoned"),
+                "missed_blocks": info.get("missed_blocks_counter")})
+        total_bonded = sum(int(item["tokens"]) for item in validators if item["category"] == "active")
+        for item in validators:
+            item["stake_share"] = float(Decimal(item["tokens"]) * 100 / total_bonded) if total_bonded else 0
+        if not self._validator_snapshots or now - self._validator_snapshots[-1][0] >= timedelta(minutes=10):
+            self._validator_snapshots.append((now, current_values))
+            self._validator_snapshots = [(at, values) for at, values in self._validator_snapshots if now - at <= timedelta(days=4)]
+        try: head = await status_task
+        except Exception: head = None
+        if head and (self._signing_warmup is None or self._signing_warmup.done()) and self._signing_height < head.local_height:
+            self._signing_warmup = asyncio.create_task(self._warm_signing(active_hex, head.local_height))
+        for item in validators:
+            if item["category"] == "active": item["signing_strip"] = self._signing_strip.get(item["consensus_hex"], [])
+        asset = self.definition.assets[0]
+        return {"network_id": self.definition.transport.network_id, "asset": asset.public(),
+            "summary": {"active_validators": sum(v["category"] == "active" for v in validators),
+                "bonded_tokens": str(total_bonded), "bonded_ratio": None,
+                "bonded_change_24h": None if previous is None else str(total_bonded - sum(previous.get(v["operator_address"], 0) for v in validators if v["category"] == "active"))},
+            "signing_history_state": "ready" if self._signing_height else "warming", "validators": validators}
 
     async def _staking(self, supply: dict, validators: list):
         pool, params_payload = await self._rest_many((
