@@ -1242,11 +1242,12 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .cosmos-validator-tabs button.is-active { color: var(--color-text-bright); }
 .cosmos-validator-tabs button.is-active::after { position: absolute; right: 8px; bottom: -1px; left: 8px; height: 2px; background: var(--color-accent); content: ''; }
 .cosmos-validator-tabs b { margin-left: 4px; color: var(--color-table-heading); font-size: 10px; }
-.cosmos-validator-search { display: flex; min-width: 220px; flex: 1 1 300px; gap: 6px; margin-bottom: 4px; }
-.cosmos-validator-toolbar input { min-width: 0; flex: 1 1 auto; width: 100%; padding: 6px 10px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-input); color: var(--color-text); }
-.cosmos-validator-search button { flex: 0 0 auto; padding: 5px 9px; border: 1px solid var(--color-border); border-radius: 5px; background: var(--color-input); color: var(--color-text-secondary); font-size: 11px; font-weight: 600; cursor: pointer; }
-.cosmos-validator-search button:hover { border-color: var(--color-text-secondary); background: var(--color-surface-hover); color: var(--color-text-bright); }
-.cosmos-validator-search button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+.cosmos-validator-search { position: relative; display: flex; min-width: 220px; flex: 1 1 300px; margin-bottom: 4px; }
+.cosmos-validator-toolbar input { min-width: 0; flex: 1 1 auto; width: 100%; padding: 6px 32px 6px 10px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-input); color: var(--color-text); }
+.cosmos-validator-toolbar input::-webkit-search-cancel-button { appearance: none; }
+.cosmos-validator-search .cosmos-validator-search__clear { position: absolute; top: 50%; right: 5px; display: grid; width: 23px; height: 23px; padding: 0; place-items: center; border: 0; border-radius: 4px; background: transparent; color: var(--color-text-secondary); font-size: 17px; line-height: 1; cursor: pointer; transform: translateY(-50%); }
+.cosmos-validator-search .cosmos-validator-search__clear:hover { background: var(--color-surface-hover); color: var(--color-text-bright); }
+.cosmos-validator-search .cosmos-validator-search__clear:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 .cosmos-validator-table { border: 1px solid var(--color-border-soft); border-radius: 8px; background: var(--color-card); }
 .cosmos-validator-table .data-table { min-width: 1100px; }
 .cosmos-validator-table th button { border: 0; background: none; color: inherit; cursor: pointer; font: inherit; text-transform: inherit; }

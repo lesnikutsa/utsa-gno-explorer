@@ -96,7 +96,9 @@ test('validator toolbar gives remaining desktop width to search and can wrap', (
 })
 
 test('validator search is clearable only while a query is present', () => {
-  assert.match(source, /\{query && <button type="button" onClick=\{\(\) => setQuery\(''\)\} aria-label="Clear validator search">Clear<\/button>\}/)
+  assert.match(source, /\{query && <button className="cosmos-validator-search__clear" type="button" onClick=\{\(\) => setQuery\(''\)\} aria-label="Clear validator search">×<\/button>\}/)
+  assert.doesNotMatch(source, />Clear<\/button>/)
+  assert.match(css, /\.cosmos-validator-search \.cosmos-validator-search__clear\s*\{[^}]*position:\s*absolute;[^}]*right:\s*5px;/)
   assert.match(source, /const filtered = .*\.includes\(query\.toLowerCase\(\)\)/)
 })
 
