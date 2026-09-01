@@ -185,6 +185,7 @@ class CosmosService:
         self._signing_strip = {}
         self._signing_height = 0
         self._signing_warmup = None
+        self._signing_blocks = {}
         self._validator_sets_by_hash = {}
         self._avatars = {}
         self._avatar_tasks = {}
@@ -561,28 +562,47 @@ class CosmosService:
 
     async def _warm_signing(self, active: set[str], height: int):
         heights = signing_height_range(self._signing_height, height)
+        if not heights:
+            return
         if heights and (not self._signing_height or heights[0] > self._signing_height + 1):
             self._signing_strip = {}
-        for block_height in heights:
-            commit = None
-            commit_height, block_time, validator_addresses = block_height, None, None
+            self._signing_blocks = {}
+        candidates = await self.adapter._cached_candidates("rpc")
+        for block_height in range(heights[0], heights[-1] + 2):
+            if block_height in self._signing_blocks:
+                continue
             try:
-                candidates = await self.adapter._cached_candidates("rpc")
-                payload = await self.transport.get_object(candidates[0].endpoint, f"/commit?height={block_height}")
-                signed_header = _mapping(_mapping(payload.get("result"), "commit result").get("signed_header"), "signed header")
-                header = _mapping(signed_header.get("header"), "commit header")
-                commit = signed_header.get("commit")
-                commit_height = _integer(header.get("height"), "commit height")
+                payload = await self.transport.get_object(candidates[0].endpoint, f"/block?height={block_height}")
+                block = _mapping(_mapping(payload.get("result"), "block result").get("block"), "block")
+                header = _mapping(block.get("header"), "block header")
+                normalized_height = _integer(header.get("height"), "block height")
+                if normalized_height != block_height:
+                    raise MalformedUpstreamResponse("block height mismatch")
+                self._signing_blocks[block_height] = {"header": header, "last_commit": block.get("last_commit")}
+            except Exception:
+                self._signing_blocks[block_height] = None
+        for participation_height in heights:
+            commit = None
+            block_time, validator_addresses = None, None
+            try:
+                block = _mapping(self._signing_blocks.get(participation_height), "participation block")
+                successor = _mapping(self._signing_blocks.get(participation_height + 1), "successor block")
+                header = _mapping(block.get("header"), "participation header")
+                commit = _mapping(successor.get("last_commit"), "canonical last commit")
+                if _integer(commit.get("height"), "commit height") != participation_height:
+                    raise MalformedUpstreamResponse("last commit height mismatch")
                 validators_hash = _text(header.get("validators_hash"), "validators hash", 128)
                 block_time = _text(header.get("time"), "commit time", 64)
-                validator_addresses = await self._validator_set_for_hash(validators_hash, commit_height)
+                validator_addresses = await self._validator_set_for_hash(validators_hash, participation_height)
             except Exception:
                 pass
             aggregate_commit(self._signing_strip, active, commit, validator_addresses,
-                             commit_height, block_time)
+                             participation_height, block_time)
         for address in active:
             self._signing_strip[address] = self._signing_strip.get(address, [])[-50:]
-        self._signing_height = height
+        self._signing_blocks = {key: value for key, value in self._signing_blocks.items()
+                                if key >= heights[-1] - 49}
+        self._signing_height = heights[-1]
 
     async def _load_avatar(self, identity: str):
         url = None
@@ -708,7 +728,8 @@ class CosmosService:
                 item["liveness"] = {"missed_blocks": item["liveness"]["missed_blocks"],
                     **miss_metrics(item["liveness"]["missed_blocks"], slashing["signed_blocks_window"],
                                  slashing["minimum_signed_per_window"], average)}
-        if head and (self._signing_warmup is None or self._signing_warmup.done()) and self._signing_height < head.local_height:
+        if (head and (self._signing_warmup is None or self._signing_warmup.done())
+                and self._signing_height < head.local_height - 1):
             self._signing_warmup = asyncio.create_task(self._warm_signing(active_hex, head.local_height))
         for item in validators:
             if item["category"] == "active": item["signing_strip"] = self._signing_strip.get(

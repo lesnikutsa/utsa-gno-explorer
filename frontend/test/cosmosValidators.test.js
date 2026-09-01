@@ -14,6 +14,9 @@ test('Cosmos validator list includes all delta tones and compact strip', () => {
   assert.match(source, /Recent 50-block signing history/)
   assert.match(source, /Liveness unavailable/)
   assert.match(source, /imageSrc=\{validator\.avatar_url\}/)
+  assert.match(css, /\.validator-signing-strip i\.is-commit\s*\{\s*background:\s*var\(--color-success\)/)
+  assert.match(css, /\.validator-signing-strip i\.is-nil\s*\{\s*background:\s*var\(--color-warning\)/)
+  assert.match(css, /\.validator-signing-strip i\.is-absent\s*\{\s*background:\s*var\(--color-error\)/)
 })
 test('Cosmos validators reuse sort arrows, scoped favorites, and risk tones', () => {
   for (const arrow of ['↕', '↑', '↓']) assert.match(source, new RegExp(arrow))

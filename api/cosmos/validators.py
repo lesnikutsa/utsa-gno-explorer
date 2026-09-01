@@ -28,43 +28,48 @@ def target_height_24h(current_height: int, average_block_seconds: float | None) 
     return max(1, current_height - round(86400 / average_block_seconds))
 
 
-def aggregate_commit(strip: dict[str, list[dict]], active_addresses: set[str], commit: dict | None,
-                     validator_addresses: list[str] | None, height: int, block_time: str | None):
-    """Append one block-centric point for every active consensus address."""
+def normalize_commit_participation(commit: dict | None,
+                                   validator_addresses: list[str] | None) -> dict[str, str] | None:
+    """Normalize one finalized commit without relying on signature ordering."""
     if commit is None:
-        for address in active_addresses:
-            strip.setdefault(address, []).append({"height": height, "status": "unknown", "time": block_time})
-        return
+        return None
     signatures = commit.get("signatures") if isinstance(commit, dict) else None
     if not isinstance(signatures, list):
-        return aggregate_commit(strip, active_addresses, None, None, height, block_time)
+        return None
     if (not isinstance(validator_addresses, list) or not validator_addresses
             or len(set(validator_addresses)) != len(validator_addresses)):
-        return aggregate_commit(strip, active_addresses, None, None, height, block_time)
+        return None
     validator_set = set(validator_addresses)
-    participating = set()
+    participating = {}
     absent_count = 0
     for signature in signatures:
         if not isinstance(signature, dict):
-            return aggregate_commit(strip, active_addresses, None, None, height, block_time)
+            return None
         flag = signature.get("block_id_flag")
         reported = signature.get("validator_address")
         if flag in (2, 3, "2", "3", "BLOCK_ID_FLAG_COMMIT", "BLOCK_ID_FLAG_NIL"):
             if not isinstance(reported, str) or not reported:
-                return aggregate_commit(strip, active_addresses, None, None, height, block_time)
+                return None
             address = reported.upper()
             if address not in validator_set or address in participating:
-                return aggregate_commit(strip, active_addresses, None, None, height, block_time)
-            participating.add(address)
+                return None
+            participating[address] = ("commit" if flag in (2, "2", "BLOCK_ID_FLAG_COMMIT") else "nil")
         elif flag in (1, "1", "BLOCK_ID_FLAG_ABSENT"):
             absent_count += 1
         else:
-            return aggregate_commit(strip, active_addresses, None, None, height, block_time)
-    missed = validator_set - participating
+            return None
+    missed = validator_set - participating.keys()
     if len(participating) + absent_count != len(validator_set) or len(missed) != absent_count:
-        return aggregate_commit(strip, active_addresses, None, None, height, block_time)
+        return None
+    return {**participating, **{address: "absent" for address in missed}}
+
+
+def aggregate_commit(strip: dict[str, list[dict]], active_addresses: set[str], commit: dict | None,
+                     validator_addresses: list[str] | None, height: int, block_time: str | None):
+    """Append one finalized block-centric point for every active consensus address."""
+    participation = normalize_commit_participation(commit, validator_addresses)
     for address in active_addresses:
-        point = "signed" if address in participating else "missed" if address in missed else "unknown"
+        point = participation.get(address, "unknown") if participation is not None else "unknown"
         strip.setdefault(address, []).append({"height": height, "status": point, "time": block_time})
 
 
@@ -74,8 +79,9 @@ def approximate_token_delta(tokens: int, current_power: int, historical_power: i
     return int((Decimal(current_power - historical_power) * Decimal(tokens) / Decimal(current_power)).to_integral_value())
 
 
-def signing_height_range(previous_height: int, latest_height: int) -> range:
-    """Return only useful missing heights, capped to the newest 50 blocks."""
+def signing_height_range(previous_height: int, head_height: int) -> range:
+    """Return at most 50 finalized heights; the current head is never classified."""
+    latest_height = head_height - 1
     if latest_height < 1 or previous_height >= latest_height:
         return range(0)
     return range(max(1, previous_height + 1, latest_height - 49), latest_height + 1)

@@ -39,7 +39,7 @@ def test_commit_aggregation_is_set_based_and_order_independent():
     aggregate_commit(strip, {"AA", "BB", "CC", "DD", "NEW"}, signatures,
                      ["CC", "AA", "DD", "BB"], 10157219, "2026-09-01T07:54:32Z")
     assert {address: strip[address][0]["status"] for address in ("AA", "BB", "CC", "DD", "NEW")} == {
-        "AA": "signed", "BB": "signed", "CC": "missed", "DD": "signed", "NEW": "unknown"}
+        "AA": "commit", "BB": "commit", "CC": "absent", "DD": "nil", "NEW": "unknown"}
 
 
 def test_two_addressless_absences_are_set_difference_misses():
@@ -51,7 +51,7 @@ def test_two_addressless_absences_are_set_difference_misses():
         {"validator_address": "", "block_id_flag": 1},
     ]}, ["AA", "BB", "CC", "DD"], 9, None)
     assert {address: strip[address][0]["status"] for address in ("AA", "BB", "CC", "DD")} == {
-        "AA": "signed", "BB": "missed", "CC": "missed", "DD": "signed"}
+        "AA": "commit", "BB": "absent", "CC": "absent", "DD": "nil"}
 
 
 def test_nil_precommits_are_participation_not_downtime():
@@ -60,8 +60,8 @@ def test_nil_precommits_are_participation_not_downtime():
         aggregate_commit(strip, {"AA"}, {"signatures": [
             {"validator_address": "AA", "block_id_flag": flag}
         ]}, ["AA"], height, None)
-    assert [point["status"] for point in strip["AA"]] == ["signed"] * 5
-    assert "missed" not in [point["status"] for point in strip["AA"]]
+    assert [point["status"] for point in strip["AA"]] == ["commit", "commit", "nil", "commit", "commit"]
+    assert "absent" not in [point["status"] for point in strip["AA"]]
 
 
 def test_absent_is_missed_and_unknown_flag_is_unknown():
@@ -70,7 +70,7 @@ def test_absent_is_missed_and_unknown_flag_is_unknown():
         aggregate_commit(strip, {"BB"}, {"signatures": [
             {"validator_address": "" if flag == 1 else "BB", "block_id_flag": flag}
         ]}, ["BB"], height, None)
-    assert [point["status"] for point in strip["BB"]] == ["signed", "missed", "signed", "unknown"]
+    assert [point["status"] for point in strip["BB"]] == ["commit", "absent", "commit", "unknown"]
 
 
 def test_signature_count_mismatch_is_unknown_not_guessed():
@@ -118,8 +118,9 @@ def test_aggregate_bonded_delta_survives_membership_churn():
 
 def test_signing_height_range_caps_large_idle_gap():
     from api.cosmos.validators import signing_height_range
-    assert list(signing_height_range(100, 100_000)) == list(range(99_951, 100_001))
-    assert list(signing_height_range(100, 103)) == [101, 102, 103]
+    assert list(signing_height_range(100, 100_000)) == list(range(99_950, 100_000))
+    assert list(signing_height_range(100, 103)) == [101, 102]
+    assert list(signing_height_range(0, 101)) == list(range(51, 101))
 
 
 class AvatarCacheTests(unittest.IsolatedAsyncioTestCase):
@@ -232,3 +233,55 @@ class ValidatorSetCacheTests(unittest.IsolatedAsyncioTestCase):
     async def test_unavailable_historical_set_returns_none(self):
         self.service._rpc_validator_set = AsyncMock(side_effect=RuntimeError("pruned"))
         assert await self.service._power_change_24h(100_000, 6.0) is None
+
+    async def test_current_subjective_commit_is_skipped_then_canonical_last_commit_is_used(self):
+        addresses = [f"{index:040X}" for index in range(100)]
+        self.service._signing_height = 100
+        self.service._signing_blocks[101] = {"header": {
+            "height": "101", "validators_hash": "HASH101", "time": "2026-09-01T00:00:00Z"},
+            "last_commit": None}
+        self.service.adapter._cached_candidates = AsyncMock(
+            return_value=[SimpleNamespace(endpoint="https://rpc.example")])
+        subjective = [{"validator_address": address, "block_id_flag": 2} for address in addresses[:70]]
+        subjective += [{"validator_address": "", "block_id_flag": 1} for _ in range(30)]
+        canonical = [{"validator_address": address, "block_id_flag": 2} for address in addresses]
+
+        async def get_object(_endpoint, path):
+            if path == "/commit?height=101":
+                return {"result": {"canonical": False, "signed_header": {"commit": {
+                    "height": "101", "signatures": subjective}}}}
+            assert path == "/block?height=102"
+            return {"result": {"block": {"header": {"height": "102"}, "last_commit": {
+                "height": "101", "round": "0", "signatures": canonical}}}}
+
+        self.service.transport.get_object = AsyncMock(side_effect=get_object)
+        self.service._validator_set_for_hash = AsyncMock(return_value=addresses)
+        await self.service._warm_signing(set(addresses), 101)
+        assert self.service.transport.get_object.await_count == 0
+        assert self.service._signing_strip == {}
+        await self.service._warm_signing(set(addresses), 102)
+        assert [call.args[1] for call in self.service.transport.get_object.await_args_list] == [
+            "/block?height=102"]
+        assert all(self.service._signing_strip[address] == [{
+            "height": 101, "status": "commit", "time": "2026-09-01T00:00:00Z"}]
+                   for address in addresses)
+        assert self.service._signing_height == 101
+
+    async def test_canonical_last_commit_preserves_one_real_absence_at_previous_height(self):
+        addresses = ["AA", "BB", "CC"]
+        self.service._signing_height = 100
+        self.service._signing_blocks[101] = {"header": {
+            "height": "101", "validators_hash": "HASH101", "time": "2026-09-01T00:00:00Z"},
+            "last_commit": None}
+        self.service.adapter._cached_candidates = AsyncMock(
+            return_value=[SimpleNamespace(endpoint="https://rpc.example")])
+        self.service.transport.get_object = AsyncMock(return_value={"result": {"block": {
+            "header": {"height": "102"}, "last_commit": {"height": "101", "round": "0",
+                "signatures": [{"validator_address": "AA", "block_id_flag": 2},
+                               {"validator_address": "", "block_id_flag": 1},
+                               {"validator_address": "CC", "block_id_flag": 3}]}}}})
+        self.service._validator_set_for_hash = AsyncMock(return_value=addresses)
+        await self.service._warm_signing(set(addresses), 102)
+        assert {address: self.service._signing_strip[address][0]["status"] for address in addresses} == {
+            "AA": "commit", "BB": "absent", "CC": "nil"}
+        assert all(self.service._signing_strip[address][0]["height"] == 101 for address in addresses)

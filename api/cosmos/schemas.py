@@ -51,7 +51,7 @@ class CosmosValidatorLiveness(StrictModel):
 
 class CosmosSigningPoint(StrictModel):
     height: int = Field(ge=1)
-    status: Literal["signed", "missed", "unknown"]
+    status: Literal["commit", "nil", "absent", "unknown"]
     time: str | None = Field(default=None, min_length=20, max_length=64,
                              pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$")
 
