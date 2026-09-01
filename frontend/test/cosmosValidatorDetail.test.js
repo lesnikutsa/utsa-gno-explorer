@@ -21,7 +21,18 @@ test('detail presents validator-only identity, metrics, signing, slashing and pa
   assert.match(page, /Past #\{oldestPoint\.height\.toLocaleString\(\)\}/)
   assert.match(page, /Latest finalized #\{newestPoint\.height\.toLocaleString\(\)\}/)
   assert.match(css, /\.cosmos-validator-signing__monitor\s*\{[^}]*margin:\s*0 auto/)
-  assert.match(css, /\.cosmos-validator-hero__main \.cosmos-validator-avatar\s*\{[^}]*width:\s*68px/)
+  assert.match(css, /\.cosmos-validator-hero__main \.cosmos-validator-avatar\s*\{[^}]*width:\s*86px/)
+  assert.match(css, /\.cosmos-validator-hero__main \.cosmos-validator-avatar\s*\{[^}]*border-radius:\s*11px/)
+  assert.match(page, /cosmos-validator-hero__metrics/)
+  assert.doesNotMatch(page, /cosmos-validator-detail__metrics/)
+  assert.match(page, /minimumSelfDelegation\(v\.min_self_delegation, asset\)/)
+  assert.match(page, /formatSignedTokenAmount\(v\.change_24h, asset\.exponent, asset\.symbol\)/)
+})
+
+test('missed counters reuse the shared semantic threshold class', () => {
+  const overview = fs.readFileSync(new URL('../src/pages/CosmosOverview.jsx', import.meta.url), 'utf8')
+  assert.match(overview, /className=\{missedCountClass\(row\.missed_blocks_counter\)\}/)
+  assert.match(page, /className=\{missedCountClass\(v\.liveness\.missed_blocks\)\}/)
 })
 
 test('validator identities link consistently across Cosmos explorer surfaces', () => {

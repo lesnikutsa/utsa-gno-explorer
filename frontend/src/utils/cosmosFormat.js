@@ -49,6 +49,14 @@ export function formatTokenAmount(value, exponent = 6, symbol = '') {
   return `${displayWhole}${displayFraction ? `.${displayFraction}` : ''}${symbol ? ` ${symbol}` : ''}`
 }
 
+export function formatSignedTokenAmount(value, exponent = 6, symbol = '') {
+  if (typeof value !== 'string' || !/^-?\d+(?:\.\d+)?$/.test(value)) return '—'
+  const negative = value.startsWith('-')
+  const formatted = formatTokenAmount(negative ? value.slice(1) : value, exponent, symbol)
+  if (formatted === '—') return formatted
+  return `${negative ? '-' : Number(value) > 0 ? '+' : ''}${formatted}`
+}
+
 export function formatCompactDecimal(value, { prefix = '', suffix = '', digits = 2 } = {}) {
   if (typeof value !== 'string' || !DECIMAL_PATTERN.test(value)) return '—'
   const number = Number(value)
