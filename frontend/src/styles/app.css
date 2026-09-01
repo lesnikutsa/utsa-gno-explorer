@@ -1230,7 +1230,7 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .cosmos-validators__heading h1 { margin: 0; color: var(--color-text-bright); font-size: 22px; font-weight: 600; }
 .cosmos-validators__heading p { margin: 4px 0 0; color: var(--color-text-secondary); font-size: 11px; }
 .cosmos-validator-summary { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; }
-.cosmos-validator-summary article { padding: 13px 15px; border: 1px solid var(--color-border-soft); border-radius: 8px; background: var(--color-card); }
+.cosmos-validator-summary article { padding: 13px 15px; border: 1px solid var(--color-border-soft); border-radius: 8px; background: linear-gradient(135deg, var(--color-card-gradient-start), var(--color-card-gradient-end)); box-shadow: 0 5px 14px var(--color-shadow); }
 .cosmos-validator-summary span, .cosmos-validator-summary strong { display: block; }
 .cosmos-validator-summary span { color: var(--color-table-heading); font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
 .cosmos-validator-summary strong { margin-top: 5px; color: var(--color-text-bright); font-size: 18px; }
@@ -1248,6 +1248,7 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .cosmos-validator-table th button { border: 0; background: none; color: inherit; cursor: pointer; font: inherit; text-transform: inherit; }
 .cosmos-validator-favorite-identity { display: flex; align-items: center; gap: 5px; }
 .cosmos-validator-table td small, .validator-delta strong, .validator-delta small { display: block; }
+.cosmos-validator-table td .cosmos-validator-stake-share { color: var(--color-text-secondary); font-size: 9px; }
 .validator-delta.is-positive { color: var(--color-success); } .validator-delta.is-negative { color: var(--color-error); } .validator-delta.is-neutral { color: var(--color-text-secondary); }
 .validator-liveness { width: 330px; line-height: 1.45; } .validator-liveness small { color: var(--color-text-secondary); }
 .validator-budget { margin: 4px 0 6px; }
@@ -1256,15 +1257,4 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .validator-signing-strip i { min-width: 3px; border-radius: 1px; background: var(--color-placeholder); } .validator-signing-strip i:focus-visible { outline: 1px solid var(--color-text-bright); outline-offset: 1px; } .validator-signing-strip i.is-signed { background: var(--color-success); } .validator-signing-strip i.is-missed { background: var(--color-error); }
 @media (max-width: 800px) { .cosmos-validator-summary { grid-template-columns: repeat(2,1fr); } .cosmos-validator-toolbar { align-items: stretch; flex-direction: column; } .cosmos-validator-toolbar input { width: 100%; } }
 
-.info-tooltip { position: relative; display: inline-flex; align-items: center; vertical-align: middle; }
-.info-tooltip > button { display: grid; width: 16px; height: 16px; padding: 0; place-items: center; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-surface-subtle); color: var(--color-text-secondary); cursor: help; }
-.info-tooltip > button svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.4; }
-.info-tooltip > button:focus-visible, .info-tooltip__target:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
-.info-tooltip__popover { position: fixed; z-index: 1000; display: grid; max-width: 320px; gap: 2px; padding: 9px 11px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-popover); color: var(--color-text); font-size: 11px; font-weight: 400; line-height: 1.45; box-shadow: 0 8px 22px var(--color-shadow); pointer-events: none; white-space: normal; }
-.info-tooltip__popover strong { color: var(--color-text-bright); }
-.info-tooltip--target { display: contents; }
-.info-tooltip__target { display: block; }
-.validator-signing-strip .info-tooltip__target > i { display: block; min-width: 3px; height: 8px; border-radius: 1px; background: var(--color-placeholder); }
-.validator-signing-strip .info-tooltip__target > i.is-signed { background: var(--color-success); }
-.validator-signing-strip .info-tooltip__target > i.is-missed { background: var(--color-error); }
 .cosmos-validator-toolbar input { font-size: 12px; }

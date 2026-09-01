@@ -38,21 +38,33 @@ def aggregate_commit(strip: dict[str, list[dict]], active_addresses: set[str], c
     signatures = commit.get("signatures") if isinstance(commit, dict) else None
     if not isinstance(signatures, list):
         return aggregate_commit(strip, active_addresses, None, None, height, block_time)
-    if not isinstance(validator_addresses, list) or len(validator_addresses) != len(signatures):
+    if (not isinstance(validator_addresses, list) or not validator_addresses
+            or len(set(validator_addresses)) != len(validator_addresses)):
         return aggregate_commit(strip, active_addresses, None, None, height, block_time)
-    represented = {}
-    for address, signature in zip(validator_addresses, signatures):
+    validator_set = set(validator_addresses)
+    participating = set()
+    absent_count = 0
+    for signature in signatures:
         if not isinstance(signature, dict):
-            continue
+            return aggregate_commit(strip, active_addresses, None, None, height, block_time)
+        flag = signature.get("block_id_flag")
         reported = signature.get("validator_address")
-        if reported not in (None, "") and (not isinstance(reported, str) or reported.upper() != address):
-            continue
-        represented[address] = signature.get("block_id_flag")
+        if flag in (2, 3, "2", "3", "BLOCK_ID_FLAG_COMMIT", "BLOCK_ID_FLAG_NIL"):
+            if not isinstance(reported, str) or not reported:
+                return aggregate_commit(strip, active_addresses, None, None, height, block_time)
+            address = reported.upper()
+            if address not in validator_set or address in participating:
+                return aggregate_commit(strip, active_addresses, None, None, height, block_time)
+            participating.add(address)
+        elif flag in (1, "1", "BLOCK_ID_FLAG_ABSENT"):
+            absent_count += 1
+        else:
+            return aggregate_commit(strip, active_addresses, None, None, height, block_time)
+    missed = validator_set - participating
+    if len(participating) + absent_count != len(validator_set) or len(missed) != absent_count:
+        return aggregate_commit(strip, active_addresses, None, None, height, block_time)
     for address in active_addresses:
-        flag = represented.get(address)
-        point = ("signed" if flag in (2, 3, "2", "3", "BLOCK_ID_FLAG_COMMIT", "BLOCK_ID_FLAG_NIL") else
-                 "missed" if flag in (1, "1", "BLOCK_ID_FLAG_ABSENT") else
-                 "unknown")
+        point = "signed" if address in participating else "missed" if address in missed else "unknown"
         strip.setdefault(address, []).append({"height": height, "status": point, "time": block_time})
 
 

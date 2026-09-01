@@ -24,19 +24,30 @@ def test_slashing_budget_signed_percent_and_eta():
     assert miss_metrics(443, 10000, "0.05", None)["jail_eta_seconds"] is None
 
 
-def test_commit_aggregation_uses_historical_membership_and_block_context():
+def test_commit_aggregation_is_set_based_and_order_independent():
     strip = {}
     signatures = {"signatures": [
         {"validator_address": "AA", "block_id_flag": 2},
         {"validator_address": "", "block_id_flag": 1},
-        {"validator_address": "CC", "block_id_flag": 3},
+        {"validator_address": "DD", "block_id_flag": 3},
+        {"validator_address": "BB", "block_id_flag": 2},
     ]}
-    aggregate_commit(strip, {"AA", "BB", "CC", "NEW"}, signatures,
-                     ["AA", "BB", "CC"], 10157219, "2026-09-01T07:54:32Z")
-    assert strip["AA"] == [{"height": 10157219, "status": "signed", "time": "2026-09-01T07:54:32Z"}]
-    assert strip["BB"][0]["status"] == "missed"
-    assert strip["CC"][0]["status"] == "signed"
-    assert strip["NEW"][0]["status"] == "unknown"
+    aggregate_commit(strip, {"AA", "BB", "CC", "DD", "NEW"}, signatures,
+                     ["CC", "AA", "DD", "BB"], 10157219, "2026-09-01T07:54:32Z")
+    assert {address: strip[address][0]["status"] for address in ("AA", "BB", "CC", "DD", "NEW")} == {
+        "AA": "signed", "BB": "signed", "CC": "missed", "DD": "signed", "NEW": "unknown"}
+
+
+def test_two_addressless_absences_are_set_difference_misses():
+    strip = {}
+    aggregate_commit(strip, {"AA", "BB", "CC", "DD"}, {"signatures": [
+        {"validator_address": "AA", "block_id_flag": 2},
+        {"validator_address": "", "block_id_flag": 1},
+        {"validator_address": "DD", "block_id_flag": 3},
+        {"validator_address": "", "block_id_flag": 1},
+    ]}, ["AA", "BB", "CC", "DD"], 9, None)
+    assert {address: strip[address][0]["status"] for address in ("AA", "BB", "CC", "DD")} == {
+        "AA": "signed", "BB": "missed", "CC": "missed", "DD": "signed"}
 
 
 def test_nil_precommits_are_participation_not_downtime():
@@ -64,6 +75,23 @@ def test_signature_count_mismatch_is_unknown_not_guessed():
         {"validator_address": "AA", "block_id_flag": 2}
     ]}, ["AA", "BB"], 41, None)
     assert [strip[address][0]["status"] for address in ("AA", "BB")] == ["unknown", "unknown"]
+
+
+def test_duplicate_or_foreign_participant_makes_block_unknown():
+    for signatures in (
+        [
+            {"validator_address": "AA", "block_id_flag": 2},
+            {"validator_address": "AA", "block_id_flag": 3},
+        ],
+        [
+            {"validator_address": "AA", "block_id_flag": 2},
+            {"validator_address": "CC", "block_id_flag": 3},
+        ],
+    ):
+        strip = {}
+        aggregate_commit(strip, {"AA", "BB"}, {"signatures": signatures},
+                         ["AA", "BB"], 42, None)
+        assert [strip[address][0]["status"] for address in ("AA", "BB")] == ["unknown", "unknown"]
 
 
 def test_unverifiable_commit_is_unknown_with_height():
