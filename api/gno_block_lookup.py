@@ -33,7 +33,8 @@ def _timestamp(value) -> datetime:
     except ValueError as exc:
         raise RpcError("Malformed RPC timestamp") from exc
     if parsed.tzinfo is None:
-        raise RpcError("Malformed RPC timestamp")
+        # TM2 emits otherwise valid block times without an explicit UTC suffix.
+        parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
 
 
