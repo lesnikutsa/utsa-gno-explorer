@@ -594,15 +594,19 @@ class CosmosService:
         for block_height in range(heights[0], heights[-1] + 2):
             if block_height in self._signing_blocks:
                 continue
-            try:
-                payload = await self.transport.get_object(candidates[0].endpoint, f"/block?height={block_height}")
-                block = _mapping(_mapping(payload.get("result"), "block result").get("block"), "block")
-                header = _mapping(block.get("header"), "block header")
-                normalized_height = _integer(header.get("height"), "block height")
-                if normalized_height != block_height:
-                    raise MalformedUpstreamResponse("block height mismatch")
-                self._signing_blocks[block_height] = {"header": header, "last_commit": block.get("last_commit")}
-            except Exception:
+            for candidate in candidates:
+                try:
+                    payload = await self.transport.get_object(candidate.endpoint, f"/block?height={block_height}")
+                    block = _mapping(_mapping(payload.get("result"), "block result").get("block"), "block")
+                    header = _mapping(block.get("header"), "block header")
+                    normalized_height = _integer(header.get("height"), "block height")
+                    if normalized_height != block_height:
+                        raise MalformedUpstreamResponse("block height mismatch")
+                    self._signing_blocks[block_height] = {"header": header, "last_commit": block.get("last_commit")}
+                    break
+                except Exception:
+                    continue
+            else:
                 self._signing_blocks[block_height] = None
         for participation_height in heights:
             commit = None

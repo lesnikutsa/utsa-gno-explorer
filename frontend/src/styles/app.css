@@ -1277,9 +1277,6 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 
 /* Cosmos validator detail uses the shared theme surfaces and status-card language. */
 .cosmos-validator-detail { display: grid; gap: 14px; }
-.cosmos-validator-detail__back { color: var(--color-text-secondary); text-decoration: none; }
-.cosmos-validator-detail__back { width: fit-content; padding: 7px 10px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-card); font-size: 11px; font-weight: 600; }
-.cosmos-validator-detail__back:hover { color: var(--color-accent); }
 .cosmos-validator-hero { display: grid; gap: 14px; padding: 18px; background: radial-gradient(circle at 48px 44px, var(--color-accent-soft), transparent 150px), var(--color-card); box-shadow: 0 6px 18px var(--color-shadow); }
 .cosmos-validator-hero__profile { display: grid; min-width: 0; gap: 7px; }
 .cosmos-validator-hero__main { display: flex; align-items: center; gap: 12px; }
@@ -1288,21 +1285,23 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .cosmos-validator-hero__main .cosmos-validator-avatar img { border-radius: 10px; }
 .cosmos-validator-hero__main .cosmos-validator strong { font-size: 22px; font-weight: 700; line-height: 1.2; }
 .cosmos-validator-hero__main .cosmos-validator > span { margin-top: 4px; font-size: 11px; }
-.cosmos-validator-hero__description { max-width: none; margin: -25px 42px 0 98px !important; padding-right: 12px; }
-.cosmos-validator-hero__metadata { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 2px 42px 0 98px; }
+.cosmos-validator-hero__main .cosmos-validator > .mono { overflow: visible; white-space: normal; overflow-wrap: anywhere; text-overflow: clip; }
+.cosmos-validator-hero__main .cosmos-validator__title { display: flex; align-items: center; gap: 7px; margin: 0; }
+.cosmos-validator-hero__main .cosmos-validator__metadata { color: var(--color-text-secondary); font-size: 10px; }
+.cosmos-validator-hero__description { max-width: none; margin: 3px 0 0 !important; padding: 9px 12px 0; border-top: 1px solid var(--color-border-soft); color: var(--color-text-secondary); }
+.cosmos-validator-hero__metadata { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 4px 0 0 98px; }
 .cosmos-validator-hero__metadata > div { display: grid; min-width: 0; grid-template-columns: 64px minmax(0, 1fr); align-items: baseline; gap: 10px; padding: 7px 9px; border: 1px solid var(--color-border-soft); border-radius: 5px; background: var(--color-surface-subtle); }
 .cosmos-validator-hero__metadata dt { color: var(--color-table-heading); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .cosmos-validator-hero__metadata dd { min-width: 0; margin: 0; overflow: hidden; color: var(--color-text-secondary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .cosmos-validator-hero__metadata a { color: var(--color-accent); text-decoration: none; }
 .cosmos-validator-hero__metadata a:hover { text-decoration: underline; }
 .cosmos-validator-hero__metadata a:focus-visible { border-radius: 2px; outline: 2px solid var(--color-accent); outline-offset: 2px; }
-.cosmos-validator-hero__facts { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1px; overflow: hidden; border: 1px solid var(--color-border-soft); border-radius: 6px; background: var(--color-border-soft); }
+.cosmos-validator-hero__facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; overflow: hidden; border: 1px solid var(--color-border-soft); border-radius: 6px; background: var(--color-border-soft); }
 .cosmos-validator-hero__facts > div { display: grid; gap: 4px; padding: 9px 10px; border-radius: 5px; background: var(--color-surface-subtle); }
 .cosmos-validator-hero__facts dt { color: var(--color-table-heading); font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
 .cosmos-validator-hero__facts dd { margin: 0; color: var(--color-text-bright); font-size: 12px; font-weight: 600; }
-.cosmos-validator-hero__facts code { color: var(--color-text-secondary); font-size: 10px; font-weight: 400; overflow-wrap: anywhere; }
-.cosmos-validator-hero__metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0; padding-top: 2px; }
-.cosmos-validator-hero__metrics article { min-width: 0; padding: 11px 12px; border: 1px solid var(--color-border-soft); border-radius: 6px; background: var(--color-surface-subtle); box-shadow: inset 0 0 0 1px var(--color-card); }
+.cosmos-validator-hero__metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; overflow: hidden; margin: 0; border: 1px solid var(--color-border-soft); border-radius: 6px; background: var(--color-border-soft); }
+.cosmos-validator-hero__metrics article { min-width: 0; padding: 9px 10px; border: 0; border-radius: 5px; background: var(--color-surface-subtle); box-shadow: none; }
 .cosmos-validator-hero__metrics article + article { border-left: 1px solid var(--color-border-soft); }
 .cosmos-validator-hero__metrics span, .cosmos-validator-hero__metrics strong { display: block; }
 .cosmos-validator-hero__metrics > article > span { color: var(--color-table-heading); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
@@ -1340,4 +1339,4 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .cosmos-validator-address.is-full code { white-space: normal; word-break: break-all; }
 .cosmos-validator-fields dt { align-self: center; font-weight: 700; }
 @media (max-width: 800px) { .cosmos-validator-detail__secondary { grid-template-columns: 1fr; } .cosmos-validator-signing__stats, .cosmos-validator-hero__facts { grid-template-columns: repeat(2, 1fr); } .cosmos-validator-hero__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cosmos-validator-hero__metrics article:nth-child(3), .cosmos-validator-hero__metrics article:nth-child(4) { border-top: 1px solid var(--color-border-soft); } .cosmos-validator-signing__mini-metrics { grid-template-columns: repeat(2, minmax(90px, 1fr)); } .cosmos-validator-signing__strip { overflow-x: auto; } }
-@media (max-width: 560px) { .cosmos-validator-hero__main .cosmos-validator-avatar { width: 62px; height: 62px; flex-basis: 62px; border-radius: 10px; } .cosmos-validator-hero__description { margin: 0 !important; padding-right: 0; } .cosmos-validator-hero__metadata { grid-template-columns: 1fr; margin: 0 !important; } }
+@media (max-width: 560px) { .cosmos-validator-hero__main .cosmos-validator-avatar { width: 62px; height: 62px; flex-basis: 62px; border-radius: 10px; } .cosmos-validator-hero__metadata { grid-template-columns: 1fr; margin-left: 0; } }

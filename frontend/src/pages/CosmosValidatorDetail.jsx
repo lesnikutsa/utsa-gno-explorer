@@ -24,21 +24,21 @@ export function CosmosValidatorDetail({ network, operatorAddress }) {
   const v = resource.data
   const counts = useMemo(() => (v?.signing_strip || []).reduce((a, p) => ({ ...a, [p.status]: a[p.status] + 1 }), { commit: 0, nil: 0, absent: 0, unknown: 0 }), [v])
   if (!v && resource.loading) return <section className="cosmos-validator-detail"><p>Loading validator…</p></section>
-  if (!v) return <section className="cosmos-validator-detail"><a href={`/networks/${network.id}/validators`}>← Back to Validators</a><p className="cosmos-error">Validator not found or temporarily unavailable.</p></section>
+  if (!v) return <section className="cosmos-validator-detail"><a className="cosmos-back block-detail__back" href={`/networks/${network.id}/validators`}>← Back to Validators</a><p className="cosmos-error">Validator not found or temporarily unavailable.</p></section>
   const asset = v.asset, favorite = favorites.has(v.operator_address), strip = v.signing_strip || [], site = website(v.website)
   const finalized = counts.commit + counts.nil + counts.absent
   const participation = finalized ? (counts.commit + counts.nil) * 100 / finalized : null
   const oldestPoint = strip[0], newestPoint = strip[strip.length - 1]
   const toggle = () => setFavorites((current) => { const next = toggleValidatorFavorite(current, v.operator_address); saveValidatorFavorites(key, next); return next })
   return <section className="cosmos-validator-detail theme-compatible">
-    <a className="button button--secondary cosmos-validator-detail__back" href={`/networks/${network.id}/validators`} aria-label="Back to Validators"><span aria-hidden="true">←</span> Back to Validators</a>
+    <a className="cosmos-back block-detail__back" href={`/networks/${network.id}/validators`}>← Back to Validators</a>
     <header className="panel cosmos-validator-hero">
       <div className="cosmos-validator-hero__profile">
-        <div className="cosmos-validator-hero__main"><CosmosValidatorIdentity moniker={v.moniker} address={v.operator_address} imageSrc={v.avatar_url} showTitles={false} /><button className={`validator-favorite ${favorite ? 'validator-favorite--active' : ''}`} type="button" aria-pressed={favorite} aria-label={`${favorite ? 'Remove' : 'Add'} ${v.moniker} ${favorite ? 'from' : 'to'} favorites`} onClick={toggle}>{favorite ? '★' : '☆'}</button></div>
-        {v.description && <p className="cosmos-validator-hero__description">{v.description}</p>}
+        <div className="cosmos-validator-hero__main"><CosmosValidatorIdentity moniker={v.moniker} address={v.operator_address} imageSrc={v.avatar_url} showTitles={false} fullAddress metadata={v.identity} action={<button className={`validator-favorite ${favorite ? 'validator-favorite--active' : ''}`} type="button" aria-pressed={favorite} aria-label={`${favorite ? 'Remove' : 'Add'} ${v.moniker} ${favorite ? 'from' : 'to'} favorites`} onClick={toggle}>{favorite ? '★' : '☆'}</button>} /></div>
         {(site || v.contact) && <dl className="cosmos-validator-hero__metadata">{site && <div><dt>Website</dt><dd><a href={site} target="_blank" rel="noopener noreferrer">{websiteText(site)} ↗</a></dd></div>}{v.contact && <div><dt>Contact</dt><dd>{emailHref(v.contact) ? <a href={emailHref(v.contact)}>{v.contact}</a> : v.contact}</dd></div>}</dl>}
+        {v.description && <p className="cosmos-validator-hero__description">{v.description}</p>}
       </div>
-      <div className="cosmos-validator-hero__facts"><Field label="Status" value={label(v.bond_status)} /><Field label="Jailed" value={v.jailed ? 'Yes' : 'No'} /><Field label="Rank" value={<span className={`cosmos-validator-rank cosmos-validator-rank--${validatorRankTone(v.stake_share)}`}>#{v.rank}</span>} /><Field label="Minimum Self Delegation" value={minimumSelfDelegation(v.min_self_delegation, asset)} />{v.identity && <Field label="Identity" value={<code>{v.identity}</code>} />}</div>
+      <div className="cosmos-validator-hero__facts"><Field label="Status" value={label(v.bond_status)} /><Field label="Jailed" value={v.jailed ? 'Yes' : 'No'} /><Field label="Rank" value={<span className={`cosmos-validator-rank cosmos-validator-rank--${validatorRankTone(v.stake_share)}`}>#{v.rank}</span>} /><Field label="Minimum Self Delegation" value={minimumSelfDelegation(v.min_self_delegation, asset)} /></div>
       {v.jailed && <div className="cosmos-validator-jailed"><strong>Jailed</strong><span>Until: {utc(v.jailed_until)}</span>{v.tombstoned != null && <span>Tombstoned: {v.tombstoned ? 'Yes' : 'No'}</span>}</div>}
       <div className="cosmos-validator-hero__metrics"><Metric label="Voting Power" value={formatTokenAmount(v.tokens, asset.exponent, asset.symbol)} /><Metric label="Stake Share" value={`${v.stake_share.toFixed(4)}%`} /><Metric label="≈24h Change" value={<Delta validator={v} asset={asset} />} /><Metric label="Commission" value={pct(v.commission.rate)} /></div>
     </header>
