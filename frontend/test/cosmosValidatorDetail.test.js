@@ -25,7 +25,8 @@ test('detail presents validator-only identity, metrics, signing, slashing and pa
   assert.match(css, /\.cosmos-validator-hero__main \.cosmos-validator-avatar\s*\{[^}]*border-radius:\s*11px/)
   assert.match(page, /cosmos-validator-hero__metrics/)
   assert.doesNotMatch(page, /cosmos-validator-detail__metrics/)
-  assert.match(css, /\.cosmos-validator-hero__metadata\s*\{[^}]*grid-template-columns:\s*repeat\(2/)
+  assert.match(css, /\.cosmos-validator-hero__profile\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(220px, \.42fr\)/)
+  assert.match(css, /\.cosmos-validator-hero__metadata > div\s*\{[^}]*grid-template-columns:\s*64px minmax\(0, 1fr\)/)
   assert.match(css, /\.cosmos-validator-hero__metrics\s*\{[^}]*border:\s*1px solid var\(--color-border-soft\)[^}]*border-radius:\s*6px/)
   assert.match(css, /\.cosmos-validator-hero__metrics article\s*\{[^}]*padding:\s*9px 10px[^}]*border-radius:\s*5px[^}]*background:\s*var\(--color-surface-subtle\)/)
   assert.match(page, /fullAddress metadata=\{v\.identity\} action=/)
@@ -33,6 +34,8 @@ test('detail presents validator-only identity, metrics, signing, slashing and pa
   assert.match(page, /className="cosmos-back block-detail__back"/)
   assert.match(page, /minimumSelfDelegation\(v\.min_self_delegation, asset\)/)
   assert.match(page, /formatSignedTokenAmount\(v\.change_24h, asset\.exponent, asset\.symbol\)/)
+  assert.doesNotMatch(page, /v\.change_24h_percent/)
+  assert.ok(page.indexOf('cosmos-validator-hero__description') > page.indexOf('cosmos-validator-hero__metrics'))
 })
 
 test('missed counters reuse the shared semantic threshold class', () => {
