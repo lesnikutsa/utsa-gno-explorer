@@ -36,6 +36,12 @@ test('detail presents validator-only identity, metrics, signing, slashing and pa
   assert.match(page, /formatSignedTokenAmount\(v\.change_24h, asset\.exponent, asset\.symbol\)/)
   assert.doesNotMatch(page, /v\.change_24h_percent/)
   assert.ok(page.indexOf('cosmos-validator-hero__description') > page.indexOf('cosmos-validator-hero__metrics'))
+  assert.match(page, /hero__facts"><Field label="Rank"[\s\S]*Field label="Commission"/)
+  assert.match(page, /hero__metrics"><Metric label="Voting Power"[\s\S]*Metric label="Minimum Self Delegation"/)
+  assert.match(page, /cosmos-validator-detail__primary[\s\S]*Signing &amp; Liveness[\s\S]*Panel title="Consensus Identity"/)
+  assert.match(page, /Panel title="Validator Parameters"[\s\S]*Panel title="Validator Economics"/)
+  assert.match(page, /Address label="EVM Address" value=\{v\.evm_address\}/)
+  assert.match(css, /\.cosmos-validator-detail__primary, \.cosmos-validator-detail__secondary\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1\.12fr\) minmax\(0, \.88fr\)/)
 })
 
 test('missed counters reuse the shared semantic threshold class', () => {
