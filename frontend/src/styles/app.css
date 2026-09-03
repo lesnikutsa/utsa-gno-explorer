@@ -1313,18 +1313,19 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .cosmos-validator-website { width: fit-content; color: var(--color-accent); font-size: 11px; }
 .cosmos-validator-jailed { display: flex; gap: 14px; padding: 9px 11px; border-radius: 6px; background: color-mix(in srgb, var(--color-error) 12%, var(--color-card)); color: var(--color-text); font-size: 11px; }
 .cosmos-validator-jailed strong { color: var(--color-error); }
-.cosmos-validator-signing { overflow: hidden; }
+.cosmos-validator-signing { --signing-inline-padding: 14px; overflow: hidden; }
+.cosmos-validator-signing > .panel__heading { padding-right: var(--signing-inline-padding); padding-left: var(--signing-inline-padding); }
 .cosmos-validator-signing h3 { margin: 0; color: var(--color-text-bright); font-size: 12px; }
-.cosmos-validator-signing__recent, .cosmos-validator-signing__protocol { display: grid; gap: 12px; padding: 14px; }
+.cosmos-validator-signing__recent, .cosmos-validator-signing__protocol { display: grid; gap: 12px; padding: 14px var(--signing-inline-padding); }
 .cosmos-validator-signing__protocol { border-top: 1px solid var(--color-border-soft); background: var(--color-surface-subtle); }
 .cosmos-validator-signing__stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
 .cosmos-validator-signing__stats > div { display: grid; gap: 3px; }
-.cosmos-validator-signing__mini-metrics { grid-template-columns: repeat(5, minmax(90px, 130px)); justify-content: center; }
+.cosmos-validator-signing__mini-metrics { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .cosmos-validator-signing__mini-metrics > div { padding: 8px 10px; border: 1px solid var(--color-border-soft); border-radius: 5px; background: var(--color-surface-subtle); text-align: center; }
 .cosmos-validator-signing__mini-metrics dd { font-size: 13px; font-weight: 700; }
 .cosmos-validator-signing dt, .cosmos-validator-fields dt { color: var(--color-table-heading); font-size: 9px; letter-spacing: .05em; text-transform: uppercase; }
 .cosmos-validator-signing dd, .cosmos-validator-fields dd { margin: 0; color: var(--color-text-bright); font-size: 12px; }
-.cosmos-validator-signing__monitor { width: min(100%, 620px); margin: 0 auto; }
+.cosmos-validator-signing__monitor { width: 100%; margin: 0; }
 .cosmos-validator-signing__strip { display: grid; grid-template-columns: repeat(50, minmax(2px, 1fr)); gap: 2px; height: 8px; }
 .cosmos-validator-signing__strip span { border-radius: 2px; background: var(--color-placeholder); }
 .cosmos-validator-signing__strip span.is-commit { background: var(--color-success); } .cosmos-validator-signing__strip span.is-nil { background: var(--color-warning); } .cosmos-validator-signing__strip span.is-absent { background: var(--color-error); }
@@ -1337,6 +1338,10 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .cosmos-validator-fields dl { display: grid; margin: 0; }
 .cosmos-validator-fields dl > div { display: grid; grid-template-columns: minmax(120px, .7fr) minmax(0, 1.3fr); gap: 12px; padding: 9px 0; border-top: 1px solid var(--color-border-soft); }
 .cosmos-validator-address code { color: var(--color-text-bright); font-size: 12px; line-height: 1.55; }
+.cosmos-validator-address a { min-width: 0; color: inherit; text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 2px; }
+.cosmos-validator-address.is-accent a code { color: var(--color-accent); }
+.cosmos-validator-address a:hover { text-decoration-color: currentColor; }
+.cosmos-validator-address a:focus-visible { border-radius: 2px; outline: 2px solid var(--color-accent); outline-offset: 2px; text-decoration-color: currentColor; }
 .cosmos-validator-address.is-full code { white-space: normal; word-break: break-all; }
 .cosmos-validator-fields dt { align-self: center; font-weight: 700; }
 @media (max-width: 800px) { .cosmos-validator-detail__primary, .cosmos-validator-detail__secondary { grid-template-columns: 1fr; } .cosmos-validator-hero__profile { grid-template-columns: 1fr; gap: 12px; } .cosmos-validator-signing__stats, .cosmos-validator-hero__facts { grid-template-columns: repeat(2, 1fr); } .cosmos-validator-hero__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cosmos-validator-hero__metrics article:nth-child(3), .cosmos-validator-hero__metrics article:nth-child(4) { border-top: 1px solid var(--color-border-soft); } .cosmos-validator-signing__mini-metrics { grid-template-columns: repeat(2, minmax(90px, 1fr)); } .cosmos-validator-signing__strip { overflow-x: auto; } }

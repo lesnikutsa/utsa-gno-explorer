@@ -8,6 +8,10 @@ class CosmosValidatorAddressTests(unittest.TestCase):
         field = CosmosValidatorDetail.model_fields["contact"]
         self.assertFalse(field.is_required())
 
+    def test_reusable_detail_contract_exposes_optional_reward_fields(self):
+        self.assertFalse(CosmosValidatorDetail.model_fields["commission_earned"].is_required())
+        self.assertFalse(CosmosValidatorDetail.model_fields["delegators_total_rewards"].is_required())
+
     def test_configured_operator_prefix_and_checksum_are_required(self):
         # The encoder hashes a public key, but Bech32 validity is independent of the payload role.
         address = consensus_address({"key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}, "testvaloper")

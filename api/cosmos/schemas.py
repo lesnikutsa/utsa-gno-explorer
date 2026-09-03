@@ -127,6 +127,8 @@ class CosmosValidatorDetail(StrictModel):
     change_24h_percent: float | None = None
     commission: CosmosValidatorCommission
     min_self_delegation: AmountString | None = None
+    commission_earned: DecimalString | None = None
+    delegators_total_rewards: DecimalString | None = None
     liveness: CosmosValidatorLiveness | None = None
     signing_strip: list[CosmosSigningPoint] = Field(default_factory=list, max_length=50)
 
