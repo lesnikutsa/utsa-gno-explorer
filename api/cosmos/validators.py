@@ -79,6 +79,14 @@ def approximate_token_delta(tokens: int, current_power: int, historical_power: i
     return int((Decimal(current_power - historical_power) * Decimal(tokens) / Decimal(current_power)).to_integral_value())
 
 
+def category_voting_power_rank(validators: list[dict], target: dict) -> int:
+    """Return the category-local voting-power rank used by the validator list."""
+    ordered = sorted((item for item in validators if item["category"] == target["category"]),
+                     key=lambda item: (-int(item["tokens"]), item["operator_address"]))
+    return next(index for index, item in enumerate(ordered, 1)
+                if item["operator_address"] == target["operator_address"])
+
+
 def signing_height_range(previous_height: int, head_height: int) -> range:
     """Return at most 50 finalized heights; the current head is never classified."""
     latest_height = head_height - 1

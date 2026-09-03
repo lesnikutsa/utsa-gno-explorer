@@ -285,3 +285,26 @@ class ValidatorSetCacheTests(unittest.IsolatedAsyncioTestCase):
         assert {address: self.service._signing_strip[address][0]["status"] for address in addresses} == {
             "AA": "commit", "BB": "absent", "CC": "nil"}
         assert all(self.service._signing_strip[address][0]["height"] == 101 for address in addresses)
+
+    async def test_signing_warmup_uses_remaining_healthy_rpc_before_marking_unknown(self):
+        self.service._signing_height = 100
+        self.service._signing_blocks[101] = {"header": {
+            "height": "101", "validators_hash": "HASH101", "time": "2026-09-01T00:00:00Z"},
+            "last_commit": None}
+        self.service.adapter._cached_candidates = AsyncMock(return_value=[
+            SimpleNamespace(endpoint="https://failed.example"),
+            SimpleNamespace(endpoint="https://healthy.example"),
+        ])
+
+        async def get_object(endpoint, _path):
+            if endpoint == "https://failed.example":
+                raise RuntimeError("endpoint unavailable")
+            return {"result": {"block": {"header": {"height": "102"}, "last_commit": {
+                "height": "101", "signatures": [{"validator_address": "AA", "block_id_flag": 2}]}}}}
+
+        self.service.transport.get_object = AsyncMock(side_effect=get_object)
+        self.service._validator_set_for_hash = AsyncMock(return_value=["AA"])
+        await self.service._warm_signing({"AA"}, 102)
+        assert self.service._signing_strip["AA"][0]["status"] == "commit"
+        assert [call.args[0] for call in self.service.transport.get_object.await_args_list] == [
+            "https://failed.example", "https://healthy.example"]

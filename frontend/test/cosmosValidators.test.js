@@ -63,7 +63,7 @@ test('risk cascade and missed threshold retain semantic colors', () => {
   assert.doesNotMatch(css, /\.validator-budget i\s*\{[^}]*background/)
   assert.equal(missedCountClass(10), 'validator-missed-count')
   assert.equal(missedCountClass(11), 'validator-missed-count validator-missed-count--alert')
-  assert.match(css, /\.validator-missed-count--alert\s*\{\s*color:\s*var\(--color-error\)/)
+  assert.match(css, /\.validator-missed-count\.validator-missed-count--alert\s*\{\s*color:\s*var\(--color-error\)/)
 })
 
 test('clean UI, zero delta, compact search, and jailed layout are retained', () => {

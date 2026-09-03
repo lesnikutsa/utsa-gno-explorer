@@ -15,12 +15,12 @@ from pydantic import TypeAdapter, ValidationError
 
 from .adapter import CosmosAdapter
 from .cache import RequestCache
-from .errors import (AllEndpointsUnavailable, MalformedUpstreamResponse,
-                     RejectedEndpoint, TransactionNotFound)
+from .errors import (AllEndpointsUnavailable, InvalidValidatorAddress, MalformedUpstreamResponse,
+                     RejectedEndpoint, TransactionNotFound, ValidatorNotFound)
 from .parsing import parse_node_status, parse_rest_node_info, parse_rpc_block
 from .registry import NetworkDefinition
 from .schemas import (AssetsSupply, Distribution, Governance, MarketHistoryResponse, MarketResponse,
-                      CosmosTransactionsResponse, MissedValidator, Mint,
+                      CosmosTransactionsResponse, CosmosValidatorDetail, MissedValidator, Mint,
                       OverviewResponse, Slashing, Staking, CosmosValidatorsResponse)
 from .blocks import checkpoint_average, metadata
 from .block_detail import normalize_detail
@@ -28,7 +28,7 @@ from .rfc3339 import parse_rfc3339
 from .errors import HistoryUnavailable
 from .transactions import normalize_transactions
 from .transaction_detail import normalize_transaction_detail
-from .validators import (approximate_token_delta, category, miss_metrics,
+from .validators import (approximate_token_delta, category, category_voting_power_rank, miss_metrics,
                          aggregate_commit, signing_height_range, target_height_24h)
 
 SECTION_TTL = 5.0
@@ -78,6 +78,24 @@ def _decimal(value: object, name: str, *, nonnegative: bool = True) -> str:
     if not number.is_finite() or (nonnegative and number < 0):
         raise MalformedUpstreamResponse(f"invalid {name}")
     return format(number, "f")
+
+
+def validator_reward_amount(payload: object, wrapper: str, denom: str) -> str | None:
+    """Read one native-denom amount from an optional distribution response."""
+    if isinstance(payload, BaseException) or not isinstance(payload, dict):
+        return None
+    container = payload.get(wrapper)
+    coins = container.get(wrapper) if isinstance(container, dict) else None
+    if not isinstance(coins, list):
+        return None
+    coin = next((item for item in coins
+                 if isinstance(item, dict) and item.get("denom") == denom), None)
+    if coin is None:
+        return None
+    try:
+        return _decimal(coin.get("amount"), "validator reward")
+    except MalformedUpstreamResponse:
+        return None
 
 
 def _integer(value: object, name: str, *, nonnegative: bool = True) -> int:
@@ -171,6 +189,29 @@ def consensus_address(public_key: object, prefix: str) -> str:
     checksum = [(polymod >> 5 * (5 - index)) & 31 for index in range(6)]
     charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
     return prefix + "1" + "".join(charset[item] for item in words + checksum)
+
+
+def valid_bech32_address(value: str, prefix: str) -> bool:
+    charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+    if not isinstance(value, str) or value.lower() != value or not value.startswith(prefix + "1") or len(value) > 90:
+        return False
+    payload = value[len(prefix) + 1:]
+    if len(payload) < 7 or any(char not in charset for char in payload):
+        return False
+    expanded = [ord(char) >> 5 for char in prefix] + [0] + [ord(char) & 31 for char in prefix]
+    return _bech32_polymod(expanded + [charset.index(char) for char in payload]) == 1
+
+
+def reencode_bech32_address(value: str, source_prefix: str, target_prefix: str) -> str:
+    """Re-encode the same Bech32 payload with another configured registry prefix."""
+    if not valid_bech32_address(value, source_prefix):
+        raise InvalidValidatorAddress("invalid validator operator address")
+    charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+    words = [charset.index(char) for char in value[len(source_prefix) + 1:-6]]
+    expanded = [ord(char) >> 5 for char in target_prefix] + [0] + [ord(char) & 31 for char in target_prefix]
+    polymod = _bech32_polymod(expanded + words + [0] * 6) ^ 1
+    checksum = [(polymod >> 5 * (5 - index)) & 31 for index in range(6)]
+    return target_prefix + "1" + "".join(charset[item] for item in words + checksum)
 
 
 class CosmosService:
@@ -571,15 +612,19 @@ class CosmosService:
         for block_height in range(heights[0], heights[-1] + 2):
             if block_height in self._signing_blocks:
                 continue
-            try:
-                payload = await self.transport.get_object(candidates[0].endpoint, f"/block?height={block_height}")
-                block = _mapping(_mapping(payload.get("result"), "block result").get("block"), "block")
-                header = _mapping(block.get("header"), "block header")
-                normalized_height = _integer(header.get("height"), "block height")
-                if normalized_height != block_height:
-                    raise MalformedUpstreamResponse("block height mismatch")
-                self._signing_blocks[block_height] = {"header": header, "last_commit": block.get("last_commit")}
-            except Exception:
+            for candidate in candidates:
+                try:
+                    payload = await self.transport.get_object(candidate.endpoint, f"/block?height={block_height}")
+                    block = _mapping(_mapping(payload.get("result"), "block result").get("block"), "block")
+                    header = _mapping(block.get("header"), "block header")
+                    normalized_height = _integer(header.get("height"), "block height")
+                    if normalized_height != block_height:
+                        raise MalformedUpstreamResponse("block height mismatch")
+                    self._signing_blocks[block_height] = {"header": header, "last_commit": block.get("last_commit")}
+                    break
+                except Exception:
+                    continue
+            else:
                 self._signing_blocks[block_height] = None
         for participation_height in heights:
             commit = None
@@ -749,6 +794,58 @@ class CosmosService:
                 "bonded_change_24h": bonded_change},
             "signing_history_state": "ready" if self._signing_height else "warming", "validators": validators}
         return TypeAdapter(CosmosValidatorsResponse).validate_python(response).model_dump()
+
+    async def validator_detail(self, operator_address: str):
+        """Build one validator view from the cached list and its cached staking record."""
+        if not valid_bech32_address(operator_address, self.definition.validator_operator_prefix):
+            raise InvalidValidatorAddress("invalid validator operator address")
+        response = await self.validators()
+        validator = next((item for item in response["validators"]
+                          if item["operator_address"] == operator_address), None)
+        if validator is None:
+            raise ValidatorNotFound("validator not found")
+        raw = await self.cache.get_or_load((self.definition.transport.network_id, "validator_set"), 15.0, self._all_validators)
+        source = next((_mapping(item, "validator") for item in raw
+                       if isinstance(item, dict) and item.get("operator_address") == operator_address), None)
+        if source is None:
+            raise ValidatorNotFound("validator not found")
+        description = source.get("description") if isinstance(source.get("description"), dict) else {}
+        commission = source.get("commission") if isinstance(source.get("commission"), dict) else {}
+        rates = commission.get("commission_rates") if isinstance(commission.get("commission_rates"), dict) else {}
+        pubkey = _mapping(source.get("consensus_pubkey"), "consensus public key")
+        raw_pubkey = base64.b64decode(pubkey.get("key"), validate=True)
+        consensus_hex = hashlib.sha256(raw_pubkey).digest()[:20].hex().upper()
+        bond_status = {"BOND_STATUS_BONDED": "bonded", "BOND_STATUS_UNBONDING": "unbonding",
+                       "BOND_STATUS_UNBONDED": "unbonded"}.get(source.get("status"), "unbonded")
+        rewards_path = quote(operator_address, safe="")
+        commission_result, rewards_result = await asyncio.gather(
+            self._rest("validator_commission", f"/cosmos/distribution/v1beta1/validators/{rewards_path}/commission"),
+            self._rest("validator_outstanding_rewards", f"/cosmos/distribution/v1beta1/validators/{rewards_path}/outstanding_rewards"),
+            return_exceptions=True)
+        asset = self.definition.assets[0]
+
+        result = {**validator, "network_id": response["network_id"], "asset": response["asset"],
+                  "signing_history_state": response["signing_history_state"],
+                  "rank": category_voting_power_rank(response["validators"], validator),
+                  "website": description.get("website") or None,
+                  "contact": description.get("security_contact") or None,
+                  "description": description.get("details") or None,
+                  "account_address": reencode_bech32_address(operator_address,
+                      self.definition.validator_operator_prefix, self.definition.account_prefix),
+                  "hex_address": consensus_hex,
+                  "evm_address": None,
+                  "bond_status": bond_status,
+                  "delegator_shares": _decimal(source.get("delegator_shares"), "delegator shares"),
+                  "min_self_delegation": str(source.get("min_self_delegation")) if source.get("min_self_delegation") is not None else None,
+                  "commission_earned": validator_reward_amount(commission_result, "commission", asset.base),
+                  "delegators_total_rewards": validator_reward_amount(rewards_result, "rewards", asset.base),
+                  "consensus_pubkey": pubkey.get("key"),
+                  "commission": {"rate": str(rates.get("rate") or "0"),
+                                 "max_rate": rates.get("max_rate"),
+                                 "max_change_rate": rates.get("max_change_rate"),
+                                 "update_time": commission.get("update_time")}}
+        result.pop("missed_blocks", None)
+        return TypeAdapter(CosmosValidatorDetail).validate_python(result).model_dump()
 
     async def _staking(self, supply: dict, validators: list):
         pool, params_payload = await self._rest_many((

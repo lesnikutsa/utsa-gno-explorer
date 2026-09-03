@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { formatProtocolDuration, formatProtocolPercent, formatTokenAmount } from '../src/utils/cosmosFormat.js'
+import { formatProtocolDuration, formatProtocolPercent, formatSignedTokenAmount, formatTokenAmount } from '../src/utils/cosmosFormat.js'
 import { normalizePublicCosmosNetwork } from '../src/utils/publicNetworkRegistry.js'
 import { deriveBlockTimeMetrics } from '../src/utils/cosmosBlockTime.js'
 import { cosmosLivenessRisk } from '../src/utils/cosmosSlashing.js'
@@ -105,6 +105,8 @@ test('Cosmos protocol values format readably without floating point arithmetic',
   assert.equal(formatProtocolPercent('0.200435214001358364'), '20.04%')
   assert.equal(formatProtocolDuration('1814400s'), '21 days')
   assert.equal(formatTokenAmount('60810000000000', 6, 'ATONE'), '60.81M ATONE')
+  assert.equal(formatSignedTokenAmount('-40000', 6, 'ATONE'), '-0.04 ATONE')
+  assert.equal(formatSignedTokenAmount('40000', 6, 'ATONE'), '+0.04 ATONE')
 })
 
 test('external AtomOne logo remains configuration-driven and normalizes into selector metadata', () => {
