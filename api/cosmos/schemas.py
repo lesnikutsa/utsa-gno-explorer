@@ -91,6 +91,15 @@ class CosmosValidatorsResponse(StrictModel):
     validators: list[CosmosValidator] = Field(max_length=2000)
 
 
+class CosmosValidatorSearchItem(StrictModel):
+    moniker: str = Field(min_length=1, max_length=256)
+    operator_address: str = Field(min_length=3, max_length=90)
+
+
+class CosmosValidatorSearchResponse(StrictModel):
+    items: list[CosmosValidatorSearchItem] = Field(max_length=6)
+
+
 class CosmosRewardCoin(StrictModel):
     denom: str = Field(min_length=1, max_length=128)
     amount: DecimalString

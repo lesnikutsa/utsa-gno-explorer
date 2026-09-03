@@ -550,6 +550,42 @@ class CosmosService:
     async def _all_validators(self):
         return await self._paginate("all_validators", "/cosmos/staking/v1beta1/validators", "validators")
 
+    async def search_validators(self, query: str, limit: int = 6):
+        """Search lightweight validator identities from the shared staking-set cache."""
+        if not isinstance(query, str) or not 1 <= len(query) <= 128 or query != query.strip():
+            raise ValueError("query must contain between 1 and 128 trimmed characters")
+        if type(limit) is not int or not 1 <= limit <= 6:
+            raise ValueError("limit must be between 1 and 6")
+        raw = await self.cache.get_or_load(
+            (self.definition.transport.network_id, "validator_set"), 15.0, self._all_validators)
+        folded_query = query.casefold()
+        prefix = self.definition.validator_operator_prefix + "1"
+        matches = []
+        for raw_item in raw:
+            item = _mapping(raw_item, "validator")
+            operator = _text(item.get("operator_address"), "operator address", 90)
+            if not operator.startswith(prefix):
+                continue
+            description = item.get("description") if isinstance(item.get("description"), dict) else {}
+            moniker = str(description.get("moniker") or operator)[:256]
+            folded_moniker = moniker.casefold()
+            if operator == query:
+                rank = 0
+            elif folded_moniker == folded_query:
+                rank = 1
+            elif folded_moniker.startswith(folded_query):
+                rank = 2
+            elif folded_query in folded_moniker:
+                rank = 3
+            elif operator.startswith(query):
+                rank = 4
+            else:
+                continue
+            matches.append((rank, folded_moniker, operator, {
+                "moniker": moniker, "operator_address": operator}))
+        matches.sort(key=lambda item: item[:3])
+        return {"items": [item[3] for item in matches[:limit]]}
+
     async def _rpc_validator_set(self, height: int):
         """Fetch one bounded CometBFT validator set through validated RPC failover."""
         candidates = await self.adapter._cached_candidates("rpc")
