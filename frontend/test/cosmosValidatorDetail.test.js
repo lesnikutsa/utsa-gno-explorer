@@ -102,7 +102,7 @@ test('missed counters reuse the shared semantic threshold class', () => {
 })
 
 test('delegators section is independently paginated and preserves all states', () => {
-  for (const text of ['Delegators', 'Current delegations to this validator', 'Loading delegators…', 'No delegations found.', 'Delegator data is temporarily unavailable.', '▸ Show 10 more', '▾ Show less']) assert.match(page, new RegExp(text))
+  for (const text of ['Delegators', 'Current delegations to this validator', 'Loading delegators…', 'No delegations found.', 'Delegator data is temporarily unavailable.', 'Show 10 more ↓', 'Show less ↑']) assert.match(page, new RegExp(text))
   assert.match(page, /limit: 10/)
   assert.match(page, /items: \[\.\.\.current\.items, \.\.\.data\.items\]/)
   assert.match(page, /nextKey: data\.next_key \?\? null/)
@@ -111,6 +111,7 @@ test('delegators section is independently paginated and preserves all states', (
   assert.match(page, /<code>\{item\.delegator_address\}<\/code>/)
   assert.doesNotMatch(page, /shortAddress/)
   assert.match(page, /CopyButton value=\{item\.delegator_address\}/)
+  assert.match(page, /item\.delegator_address === validatorAccountAddress \? ' is-self-delegation' : ''/)
   assert.match(page, /formatDelegationBalance\(item\.balance, assets\)/)
   assert.match(page, /title=\{`Exact shares: \$\{item\.shares\}`\}/)
   assert.match(page, /formatDelegationShare\(item\.shares, totalShares\)/)
@@ -119,8 +120,13 @@ test('delegators section is independently paginated and preserves all states', (
   assert.match(page, /`\$\{readableDecimal\(balance\.amount\)\} \$\{balance\.denom\}`/)
   assert.ok(page.indexOf('<Delegators network=') > page.indexOf('Validator Economics'))
   assert.match(detailCss, /cosmos-validator-delegators__scroll\s*\{[^}]*overflow-x:\s*auto/)
-  assert.match(detailCss, /cosmos-validator-delegators__actions button\s*\{[^}]*font-size:\s*10px;[^}]*font-weight:\s*700/)
+  assert.match(page, /button className="cosmos-detail-toggle" type="button"/)
+  assert.match(css, /\.cosmos-detail-card details > summary, \.cosmos-normalized-json > summary, \.cosmos-detail-toggle\s*\{[^}]*border: 1px solid var\(--color-accent\);[^}]*background: var\(--color-accent-soft\);[^}]*font-size: 10px;[^}]*font-weight: 600/)
   assert.match(detailCss, /cosmos-validator-delegated,[^}]*color:\s*var\(--color-text-bright\)/)
+  assert.doesNotMatch(detailCss, /cosmos-validator-delegated,[^}]*font-weight:\s*600/)
+  assert.match(detailCss, /cosmos-validator-delegator code\s*\{[^}]*color:\s*var\(--color-text-bright\)/)
+  assert.match(detailCss, /cosmos-validator-delegator:hover code,[^}]*focus-within code,[^}]*is-self-delegation code\s*\{\s*color:\s*var\(--color-accent\)/)
+  assert.doesNotMatch(page, /\.sort\(|sortBy|Top delegators/i)
   assert.doesNotMatch(page, /formatSignedTokenAmount\(item\.balance/)
 })
 

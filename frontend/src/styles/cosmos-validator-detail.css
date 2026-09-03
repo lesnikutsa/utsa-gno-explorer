@@ -308,12 +308,12 @@
 .cosmos-validator-delegators th, .cosmos-validator-delegators td { padding: 7px 12px; border-bottom: 1px solid var(--color-border-soft); text-align: left; white-space: nowrap; }
 .cosmos-validator-delegators th { color: var(--color-text-secondary); font-size: 10px; font-weight: 700; text-transform: uppercase; }
 .cosmos-validator-delegator { display: inline-flex; align-items: center; gap: 8px; }
-.cosmos-validator-delegator code { color: var(--color-accent); font-size: 11.5px; }
+.cosmos-validator-delegator code { color: var(--color-text-bright); font-size: 11.5px; transition: color .15s ease; }
+.cosmos-validator-delegator:hover code, .cosmos-validator-delegator:focus-within code, .cosmos-validator-delegator.is-self-delegation code { color: var(--color-accent); }
 .cosmos-validator-delegator .copy-button { width: 23px; height: 23px; flex: 0 0 23px; }
-.cosmos-validator-delegated, .cosmos-validator-delegation-share { color: var(--color-text-bright); font-size: 12px; font-weight: 600; }
+.cosmos-validator-delegated, .cosmos-validator-delegation-share { color: var(--color-text-bright); font-size: 12px; }
 .cosmos-validator-delegators__actions { display: flex; gap: 18px; margin-top: 4px; padding: 9px 13px 0; border-top: 1px solid var(--color-border-soft); }
-.cosmos-validator-delegators__actions button { padding: 0; border: 0; background: transparent; color: var(--color-accent); font: inherit; font-size: 10px; font-weight: 700; cursor: pointer; }
-.cosmos-validator-delegators__actions button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.cosmos-validator-delegators__actions .cosmos-detail-toggle { margin: 0; }
 .cosmos-validator-delegators__actions button:disabled { cursor: wait; opacity: .6; }
 
 @media (max-width: 1100px) {
