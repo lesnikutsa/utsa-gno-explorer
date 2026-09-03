@@ -5,24 +5,39 @@
 }
 
 .cosmos-validator-detail .cosmos-validator-hero__metadata {
-  width: min(100%, 360px);
+  width: min(100%, 330px);
   justify-self: end;
+  align-self: center;
+  transform: translateY(9px);
 }
 
 .cosmos-validator-detail .cosmos-validator-hero__metadata > div {
   grid-template-columns: 76px minmax(0, 1fr);
   align-items: baseline;
+  min-height: 18px;
 }
 
 .cosmos-validator-detail .cosmos-validator-hero__metadata dt {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 5px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: .06em;
 }
 
 .cosmos-validator-detail .cosmos-validator-hero__metadata dd,
 .cosmos-validator-detail .cosmos-validator-hero__metadata a {
   color: var(--color-text-secondary);
+}
+
+.cosmos-validator-detail .cosmos-validator-hero__metadata dd,
+.cosmos-validator-detail .cosmos-validator-hero__metadata a {
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: normal;
 }
 
 .cosmos-validator-detail .cosmos-validator-hero__metadata a:hover,
@@ -34,7 +49,7 @@
   width: 17px;
   height: 17px;
   flex: 0 0 17px;
-  transform: translateY(3px);
+  align-self: center;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.6;
@@ -98,9 +113,65 @@
 }
 
 .cosmos-validator-detail .cosmos-validator-signing__strip span {
+  position: relative;
   width: 100%;
   aspect-ratio: 1;
   border-radius: 3px;
+}
+
+.cosmos-validator-detail .cosmos-validator-signing__strip span::before,
+.cosmos-validator-detail .cosmos-validator-signing__strip span::after {
+  position: absolute;
+  left: 50%;
+  z-index: 20;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 4px);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.cosmos-validator-detail .cosmos-validator-signing__strip span::before {
+  content: '';
+  bottom: calc(100% + 5px);
+  border: 5px solid transparent;
+  border-top-color: var(--color-border);
+}
+
+.cosmos-validator-detail .cosmos-validator-signing__strip span::after {
+  content: attr(data-tooltip);
+  bottom: calc(100% + 14px);
+  width: max-content;
+  max-width: 220px;
+  padding: 7px 9px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-card);
+  box-shadow: 0 7px 20px var(--color-shadow);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.45;
+  text-align: left;
+  white-space: pre-line;
+}
+
+.cosmos-validator-detail .cosmos-validator-signing__strip span:hover,
+.cosmos-validator-detail .cosmos-validator-signing__strip span:focus-visible {
+  z-index: 21;
+  outline: 2px solid var(--color-text-bright);
+  outline-offset: 2px;
+  box-shadow: 0 0 10px var(--color-accent);
+  filter: brightness(1.35);
+  transform: scale(1.16);
+}
+
+.cosmos-validator-detail .cosmos-validator-signing__strip span:hover::before,
+.cosmos-validator-detail .cosmos-validator-signing__strip span:hover::after,
+.cosmos-validator-detail .cosmos-validator-signing__strip span:focus-visible::before,
+.cosmos-validator-detail .cosmos-validator-signing__strip span:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
 }
 
 .cosmos-validator-detail .cosmos-validator-signing__strip span.is-latest {
@@ -163,6 +234,7 @@
 
 .cosmos-validator-detail .cosmos-validator-address code {
   min-width: 0;
+  font-size: 12.5px;
 }
 
 .cosmos-validator-detail .cosmos-validator-address .copy-button {
@@ -252,6 +324,7 @@
   .cosmos-validator-detail .cosmos-validator-hero__metadata {
     width: 100%;
     justify-self: stretch;
+    transform: none;
   }
 
   .cosmos-validator-detail .cosmos-validator-signing__strip {
