@@ -984,11 +984,14 @@ class CosmosService:
             operator_address, account_address)), return_exceptions=True)
         successful = []
         account_validator = lambda address: valid_bech32_address(address, self.definition.account_prefix)
+        operator_validator = lambda address: valid_bech32_address(
+            address, self.definition.validator_operator_prefix)
         for item in outcomes:
             if not isinstance(item, dict):
                 continue
             try:
-                merge_activity([item], operator_address, account_address, account_validator)
+                merge_activity([item], operator_address, account_address,
+                               account_validator, operator_validator)
                 successful.append(item)
             except MalformedUpstreamResponse:
                 continue
@@ -996,7 +999,8 @@ class CosmosService:
             result = {"state": "indexing_unavailable", "items": [], "page": page,
                       "page_size": limit, "has_more": False}
         else:
-            items = merge_activity(successful, operator_address, account_address, account_validator)
+            items = merge_activity(successful, operator_address, account_address,
+                                   account_validator, operator_validator)
             start = (page - 1) * limit
             result = {"state": "partial" if len(successful) < len(outcomes) else "available",
                       "items": items[start:start + limit], "page": page, "page_size": limit,
@@ -1008,8 +1012,13 @@ class CosmosService:
         cache_key = (self.definition.transport.network_id, "validator_event_search", (expression, limit))
 
         def valid(payload):
-            return (isinstance(payload, dict) and isinstance(payload.get("txs"), list)
-                    and isinstance(payload.get("tx_responses"), list))
+            if not isinstance(payload, dict):
+                return False
+            txs, responses, pagination = (payload.get("txs"), payload.get("tx_responses"),
+                                          payload.get("pagination"))
+            return (isinstance(txs, list) and isinstance(responses, list)
+                    and len(txs) == len(responses) and len(txs) <= limit
+                    and (pagination is None or isinstance(pagination, dict)))
 
         def error_text(payload):
             if not isinstance(payload, dict):

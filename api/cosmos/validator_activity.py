@@ -13,6 +13,13 @@ EVENT_KEYS = (
 )
 _COIN = re.compile(r"^([0-9]+)([A-Za-z][A-Za-z0-9/:._-]{0,127})$")
 _HASH = re.compile(r"^[0-9A-Fa-f]{64}$")
+MSG_DELEGATE = "/cosmos.staking.v1beta1.MsgDelegate"
+MSG_UNDELEGATE = "/cosmos.staking.v1beta1.MsgUndelegate"
+MSG_REDELEGATE = "/cosmos.staking.v1beta1.MsgBeginRedelegate"
+MSG_WITHDRAW_REWARD = "/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward"
+MSG_WITHDRAW_COMMISSION = "/cosmos.distribution.v1beta1.MsgWithdrawValidatorCommission"
+MSG_EDIT_VALIDATOR = "/cosmos.staking.v1beta1.MsgEditValidator"
+MSG_UNJAIL = "/cosmos.slashing.v1beta1.MsgUnjail"
 
 
 def event_queries(operator_address: str, account_address: str):
@@ -30,6 +37,24 @@ def _coins(value):
             return []
         result.append({"denom": match.group(2), "amount": match.group(1)})
     return result
+
+
+def _required_coin(value):
+    if not isinstance(value, dict) or set(value) != {"denom", "amount"}:
+        raise MalformedUpstreamResponse("invalid activity amount")
+    denom, amount = value.get("denom"), value.get("amount")
+    if (not isinstance(denom, str) or not 1 <= len(denom) <= 128 or not denom.isprintable()
+            or not isinstance(amount, str) or not 1 <= len(amount) <= 128
+            or not amount.isascii() or not amount.isdigit()):
+        raise MalformedUpstreamResponse("invalid activity amount")
+    return {"denom": denom, "amount": amount}
+
+
+def _required_address(value, validator, name):
+    if (not isinstance(value, str) or not 3 <= len(value) <= 90
+            or (validator is not None and not validator(value))):
+        raise MalformedUpstreamResponse(f"invalid {name}")
+    return value
 
 
 def _withdrawal_amounts(response, message_index, event_type, validator_address=None):
@@ -59,7 +84,8 @@ def _withdrawal_amounts(response, message_index, event_type, validator_address=N
     return candidates[0] if len(candidates) == 1 else []
 
 
-def normalize_transaction(tx, response, operator_address, account_address, account_validator=None):
+def normalize_transaction(tx, response, operator_address, account_address,
+                          account_validator=None, operator_validator=None):
     if not isinstance(tx, dict) or not isinstance(response, dict):
         raise MalformedUpstreamResponse("invalid transaction search result")
     if response.get("code", 0) not in (0, "0", None):
@@ -87,35 +113,49 @@ def normalize_transaction(tx, response, operator_address, account_address, accou
     for index, message in enumerate(messages):
         if not isinstance(message, dict):
             raise MalformedUpstreamResponse("invalid transaction message")
-        kind = message.get("@type", "").rsplit(".", 1)[-1]
+        kind = message.get("@type")
         action = direction = address = detail = None
         amounts = []
-        if kind == "MsgDelegate" and message.get("validator_address") == operator_address:
-            action, direction, address, amounts = "delegate", "positive", message.get("delegator_address"), [message.get("amount")]
-        elif kind == "MsgUndelegate" and message.get("validator_address") == operator_address:
-            action, direction, address, amounts = "undelegate", "negative", message.get("delegator_address"), [message.get("amount")]
-        elif kind == "MsgBeginRedelegate":
+        if kind == MSG_DELEGATE and message.get("validator_address") == operator_address:
+            action, direction = "delegate", "positive"
+            address = _required_address(message.get("delegator_address"), account_validator, "delegator address")
+            amounts = [_required_coin(message.get("amount"))]
+        elif kind == MSG_UNDELEGATE and message.get("validator_address") == operator_address:
+            action, direction = "undelegate", "negative"
+            address = _required_address(message.get("delegator_address"), account_validator, "delegator address")
+            amounts = [_required_coin(message.get("amount"))]
+        elif kind == MSG_REDELEGATE:
             source, destination = message.get("validator_src_address"), message.get("validator_dst_address")
             if source == operator_address:
                 action, direction = "redelegate_out", "negative"
             elif destination == operator_address:
                 action, direction = "redelegate_in", "positive"
             if action:
-                address, amounts = message.get("delegator_address"), [message.get("amount")]
-        elif kind == "MsgWithdrawDelegatorReward" and message.get("validator_address") == operator_address:
-            action, direction, address = "withdraw_reward", "neutral", message.get("delegator_address")
+                _required_address(source, operator_validator, "source validator address")
+                _required_address(destination, operator_validator, "destination validator address")
+                address = _required_address(message.get("delegator_address"), account_validator, "delegator address")
+                amounts = [_required_coin(message.get("amount"))]
+        elif kind == MSG_WITHDRAW_REWARD and message.get("validator_address") == operator_address:
+            action, direction = "withdraw_reward", "neutral"
+            address = _required_address(message.get("delegator_address"), account_validator, "delegator address")
             amounts = _withdrawal_amounts(response, index, "withdraw_rewards", operator_address)
-        elif kind == "MsgWithdrawValidatorCommission" and message.get("validator_address") == operator_address:
+        elif kind == MSG_WITHDRAW_COMMISSION and message.get("validator_address") == operator_address:
             action, direction, address = "withdraw_commission", "neutral", account_address
             amounts = _withdrawal_amounts(response, index, "withdraw_commission")
-        elif kind == "MsgEditValidator" and message.get("validator_address") == operator_address:
+        elif kind == MSG_EDIT_VALIDATOR and message.get("validator_address") == operator_address:
             action, direction, address = "edit_validator", "neutral", account_address
             rate = message.get("commission_rate")
-            try:
-                detail = f"Commission → {Decimal(rate) * 100:.2f}%" if isinstance(rate, str) and rate else "Validator metadata updated"
-            except InvalidOperation:
+            if rate not in (None, ""):
+                try:
+                    commission = Decimal(rate) if isinstance(rate, str) else Decimal("NaN")
+                except InvalidOperation:
+                    commission = Decimal("NaN")
+                if not commission.is_finite() or not Decimal("0") <= commission <= Decimal("1"):
+                    raise MalformedUpstreamResponse("invalid validator commission rate")
+                detail = f"Commission → {commission * 100:.2f}%"
+            else:
                 detail = "Validator metadata updated"
-        elif kind == "MsgUnjail" and message.get("validator_addr") == operator_address:
+        elif kind == MSG_UNJAIL and message.get("validator_addr") == operator_address:
             action, direction, address = "unjail", "neutral", account_address
         if not action:
             continue
@@ -135,14 +175,16 @@ def normalize_transaction(tx, response, operator_address, account_address, accou
     return result
 
 
-def merge_activity(results, operator_address, account_address, account_validator=None):
+def merge_activity(results, operator_address, account_address,
+                   account_validator=None, operator_validator=None):
     items = {}
     for payload in results:
         txs, responses = payload.get("txs"), payload.get("tx_responses")
         if not isinstance(txs, list) or not isinstance(responses, list) or len(txs) != len(responses):
             raise MalformedUpstreamResponse("invalid transaction search response")
         for tx, response in zip(txs, responses):
-            for item in normalize_transaction(tx, response, operator_address, account_address, account_validator):
+            for item in normalize_transaction(tx, response, operator_address, account_address,
+                                               account_validator, operator_validator):
                 key = (item["tx_hash"], item["message_index"], item["action"])
                 items[key] = item
     return sorted(items.values(), key=lambda item: (-item["height"], item["tx_hash"], item["message_index"], item["action"]))[:MAX_ACTIVITY]
