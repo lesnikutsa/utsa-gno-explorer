@@ -136,6 +136,7 @@ from api.cosmos.schemas import (
     PublicNetworksResponse as CosmosPublicNetworksResponse,
     TransactionDetailResponse as CosmosTransactionDetailResponse,
     CosmosTransactionLookupResponse,
+    CosmosValidatorSearchResponse,
     CosmosValidatorsResponse,
     CosmosValidatorDetail,
     TransactionsResponse as CosmosTransactionsResponse,
@@ -470,6 +471,19 @@ async def get_cosmos_validators(network_id: str):
     except Exception:
         LOGGER.exception("Cosmos validators failed network=%s", network_id)
         raise HTTPException(status_code=503, detail="Validator data is temporarily unavailable") from None
+
+
+@app.get("/api/networks/{network_id}/search/validators", response_model=CosmosValidatorSearchResponse)
+async def search_cosmos_validators(
+        network_id: str,
+        q: str = Query(min_length=1, max_length=128, pattern=r"^\S(?:.*\S)?$"),
+        limit: int = Query(default=6, ge=1, le=6)):
+    service = _cosmos_service(network_id)
+    try:
+        return await service.search_validators(q, limit)
+    except Exception:
+        LOGGER.exception("Cosmos validator search failed network=%s", network_id)
+        raise HTTPException(status_code=503, detail="Validator search is temporarily unavailable") from None
 
 
 @app.get("/api/networks/{network_id}/validators/{operator_address}", response_model=CosmosValidatorDetail,
