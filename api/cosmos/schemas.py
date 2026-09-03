@@ -91,6 +91,11 @@ class CosmosValidatorsResponse(StrictModel):
     validators: list[CosmosValidator] = Field(max_length=2000)
 
 
+class CosmosRewardCoin(StrictModel):
+    denom: str = Field(min_length=1, max_length=128)
+    amount: DecimalString
+
+
 class CosmosValidatorCommission(StrictModel):
     rate: DecimalString
     max_rate: DecimalString | None = None
@@ -129,6 +134,8 @@ class CosmosValidatorDetail(StrictModel):
     min_self_delegation: AmountString | None = None
     commission_earned: DecimalString | None = None
     delegators_total_rewards: DecimalString | None = None
+    commission_rewards: list[CosmosRewardCoin] = Field(default_factory=list)
+    outstanding_rewards: list[CosmosRewardCoin] = Field(default_factory=list)
     liveness: CosmosValidatorLiveness | None = None
     signing_strip: list[CosmosSigningPoint] = Field(default_factory=list, max_length=50)
 

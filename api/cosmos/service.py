@@ -80,22 +80,34 @@ def _decimal(value: object, name: str, *, nonnegative: bool = True) -> str:
     return format(number, "f")
 
 
-def validator_reward_amount(payload: object, wrapper: str, denom: str) -> str | None:
-    """Read one native-denom amount from an optional distribution response."""
+def validator_reward_coins(payload: object, wrapper: str) -> list[dict[str, str]]:
+    """Preserve every valid coin from an optional distribution response."""
     if isinstance(payload, BaseException) or not isinstance(payload, dict):
-        return None
+        return []
     container = payload.get(wrapper)
     coins = container.get(wrapper) if isinstance(container, dict) else None
     if not isinstance(coins, list):
-        return None
-    coin = next((item for item in coins
-                 if isinstance(item, dict) and item.get("denom") == denom), None)
-    if coin is None:
-        return None
-    try:
-        return _decimal(coin.get("amount"), "validator reward")
-    except MalformedUpstreamResponse:
-        return None
+        return []
+    result = []
+    for coin in coins:
+        if not isinstance(coin, dict):
+            continue
+        denom = coin.get("denom")
+        if not isinstance(denom, str) or not denom or len(denom) > 128:
+            continue
+        try:
+            amount = _decimal(coin.get("amount"), "validator reward")
+        except MalformedUpstreamResponse:
+            continue
+        result.append({"denom": denom, "amount": amount})
+    return result
+
+
+def validator_reward_amount(payload: object, wrapper: str, denom: str) -> str | None:
+    """Read one native-denom amount from an optional distribution response."""
+    coin = next((item for item in validator_reward_coins(payload, wrapper)
+                 if item["denom"] == denom), None)
+    return coin["amount"] if coin else None
 
 
 def _integer(value: object, name: str, *, nonnegative: bool = True) -> int:
@@ -839,6 +851,8 @@ class CosmosService:
                   "min_self_delegation": str(source.get("min_self_delegation")) if source.get("min_self_delegation") is not None else None,
                   "commission_earned": validator_reward_amount(commission_result, "commission", asset.base),
                   "delegators_total_rewards": validator_reward_amount(rewards_result, "rewards", asset.base),
+                  "commission_rewards": validator_reward_coins(commission_result, "commission"),
+                  "outstanding_rewards": validator_reward_coins(rewards_result, "rewards"),
                   "consensus_pubkey": pubkey.get("key"),
                   "commission": {"rate": str(rates.get("rate") or "0"),
                                  "max_rate": rates.get("max_rate"),

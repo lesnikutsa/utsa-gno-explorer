@@ -1,6 +1,7 @@
 import unittest
 from api.cosmos.service import (consensus_address, reencode_bech32_address,
-                                valid_bech32_address, validator_reward_amount)
+                                valid_bech32_address, validator_reward_amount,
+                                validator_reward_coins)
 from api.cosmos.validators import category_voting_power_rank
 from api.cosmos.schemas import CosmosValidatorDetail
 
@@ -12,6 +13,26 @@ class CosmosValidatorAddressTests(unittest.TestCase):
     def test_reusable_detail_contract_exposes_optional_reward_fields(self):
         self.assertFalse(CosmosValidatorDetail.model_fields["commission_earned"].is_required())
         self.assertFalse(CosmosValidatorDetail.model_fields["delegators_total_rewards"].is_required())
+        self.assertFalse(CosmosValidatorDetail.model_fields["commission_rewards"].is_required())
+        self.assertFalse(CosmosValidatorDetail.model_fields["outstanding_rewards"].is_required())
+
+    def test_distribution_reward_payloads_preserve_every_valid_denom(self):
+        commission = {"commission": {"commission": [
+            {"denom": "uatone", "amount": "103280000.125000000000000000"},
+            {"denom": "uphoton", "amount": "990000.500000000000000000"},
+        ]}}
+        rewards = {"rewards": {"rewards": [
+            {"denom": "uatone", "amount": "415040000.0"},
+            {"denom": "factory/example/reward", "amount": "7.25"},
+        ]}}
+        self.assertEqual(validator_reward_coins(commission, "commission"), [
+            {"denom": "uatone", "amount": "103280000.125000000000000000"},
+            {"denom": "uphoton", "amount": "990000.500000000000000000"},
+        ])
+        self.assertEqual(validator_reward_coins(rewards, "rewards"), [
+            {"denom": "uatone", "amount": "415040000.0"},
+            {"denom": "factory/example/reward", "amount": "7.25"},
+        ])
 
     def test_distribution_reward_payloads_select_configured_native_denom(self):
         commission = {"commission": {"commission": [
@@ -30,6 +51,7 @@ class CosmosValidatorAddressTests(unittest.TestCase):
         self.assertIsNone(validator_reward_amount(
             {"rewards": {"rewards": [{"denom": "unative", "amount": "invalid"}]}},
             "rewards", "unative"))
+        self.assertEqual(validator_reward_coins(RuntimeError("unavailable"), "rewards"), [])
 
     def test_configured_operator_prefix_and_checksum_are_required(self):
         # The encoder hashes a public key, but Bech32 validity is independent of the payload role.
