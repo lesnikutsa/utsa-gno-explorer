@@ -117,3 +117,8 @@ test('commission and voting power share primary metric typography', () => {
   assert.match(css, /\.cosmos-validator-primary-metric\s*\{[^}]*font-size:\s*12px;[^}]*font-weight:\s*600;/)
   assert.match(css, /\.cosmos-validator-stake-share[^}]*font-size:\s*9px;/)
 })
+
+test('validator list monikers match primary metric typography without changing shared identities', () => {
+  assert.match(css, /\.cosmos-validator-table \.cosmos-validator strong\s*\{[^}]*font-size:\s*12px;[^}]*font-weight:\s*600;/)
+  assert.doesNotMatch(css, /(?:^|\n)\.cosmos-validator strong\s*\{[^}]*font-size:/)
+})

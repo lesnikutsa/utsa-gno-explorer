@@ -1256,6 +1256,7 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .cosmos-validator-search .cosmos-validator-search__clear:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 .cosmos-validator-table { border: 1px solid var(--color-border-soft); border-radius: 8px; background: var(--color-card); }
 .cosmos-validator-table .data-table { min-width: 1100px; }
+.cosmos-validator-table .cosmos-validator strong { font-size: 12px; font-weight: 600; }
 .cosmos-validator-table th button { border: 0; background: none; color: inherit; cursor: pointer; font: inherit; text-transform: inherit; }
 .cosmos-validator-favorite-identity { display: flex; align-items: center; gap: 5px; }
 .cosmos-validator-rank { display: inline-grid; min-width: 23px; height: 19px; padding: 0 5px; place-items: center; border: 1px solid var(--color-border-soft); border-radius: 5px; background: var(--color-surface-subtle); color: var(--color-text-secondary); font-size: 10px; font-weight: 700; }
