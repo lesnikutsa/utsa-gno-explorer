@@ -1,0 +1,231 @@
+/* Cosmos validator detail refinements kept separate from the shared explorer surface rules. */
+.cosmos-validator-detail .cosmos-validator-hero__profile {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, .36fr);
+  gap: 28px;
+}
+
+.cosmos-validator-detail .cosmos-validator-hero__metadata {
+  width: min(100%, 430px);
+  justify-self: end;
+}
+
+.cosmos-validator-detail .cosmos-validator-hero__metadata > div {
+  grid-template-columns: 76px minmax(0, 1fr);
+}
+
+.cosmos-validator-detail .cosmos-validator-hero__metadata dt {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.cosmos-validator-detail .cosmos-validator-hero__metadata dd,
+.cosmos-validator-detail .cosmos-validator-hero__metadata a {
+  color: var(--color-text-secondary);
+}
+
+.cosmos-validator-detail .cosmos-validator-hero__metadata a:hover,
+.cosmos-validator-detail .cosmos-validator-hero__metadata a:focus-visible {
+  color: var(--color-accent);
+}
+
+.cosmos-validator-meta-icon {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cosmos-validator-detail .cosmos-validator-hero__metrics > article > strong {
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.cosmos-validator-detail__primary,
+.cosmos-validator-detail__secondary {
+  grid-template-columns: minmax(0, .8fr) minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.cosmos-validator-detail__primary > *,
+.cosmos-validator-detail__secondary > * {
+  min-width: 0;
+  height: 100%;
+}
+
+.cosmos-validator-detail .cosmos-validator-signing {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+}
+
+.cosmos-validator-detail .cosmos-validator-signing__recent {
+  gap: 14px;
+}
+
+.cosmos-validator-detail .cosmos-validator-signing__monitor {
+  width: 100%;
+  max-width: 560px;
+  justify-self: center;
+  margin: 0 auto;
+}
+
+.cosmos-validator-detail .cosmos-validator-signing__strip {
+  display: grid;
+  width: fit-content;
+  max-width: 100%;
+  grid-template-columns: repeat(25, 11px);
+  grid-auto-rows: 11px;
+  justify-content: center;
+  gap: 7px 4px;
+  height: auto;
+  margin: 0 auto;
+  overflow: visible;
+}
+
+.cosmos-validator-detail .cosmos-validator-signing__strip span {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+}
+
+.cosmos-validator-detail .cosmos-validator-signing__strip span.is-latest {
+  outline: 1px solid var(--color-text-bright);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 1px var(--color-accent-soft);
+}
+
+.cosmos-validator-detail .cosmos-validator-signing__range {
+  width: min(100%, 394px);
+  margin: 8px auto 0;
+}
+
+.cosmos-validator-detail .cosmos-validator-signing__protocol {
+  margin-top: auto;
+}
+
+.cosmos-validator-detail .cosmos-validator-fields {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+}
+
+.cosmos-validator-detail .cosmos-validator-fields dl {
+  flex: 1 1 auto;
+}
+
+.cosmos-validator-detail__primary .cosmos-validator-address:not(.is-full) code {
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+.cosmos-validator-detail .cosmos-validator-shares {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 7px;
+}
+
+.cosmos-validator-detail .cosmos-validator-shares > span {
+  white-space: nowrap;
+}
+
+.cosmos-validator-detail .cosmos-validator-shares .copy-button {
+  width: 23px;
+  height: 23px;
+  flex: 0 0 23px;
+}
+
+.cosmos-validator-detail .cosmos-validator-rewards {
+  display: grid;
+  gap: 5px;
+}
+
+.cosmos-validator-detail .cosmos-validator-rewards > span {
+  display: block;
+  color: var(--color-text-bright);
+  white-space: nowrap;
+}
+
+.cosmos-validator-detail .cosmos-validator-rewards__toggle {
+  width: fit-content;
+  margin-top: 3px;
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-accent);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.cosmos-validator-detail .cosmos-validator-rewards__toggle:hover {
+  color: var(--color-text-bright);
+}
+
+.cosmos-validator-detail .cosmos-validator-rewards__toggle:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 1100px) {
+  .cosmos-validator-detail .cosmos-validator-hero__profile {
+    grid-template-columns: minmax(0, 1fr) minmax(250px, .5fr);
+    gap: 18px;
+  }
+
+  .cosmos-validator-detail__primary .cosmos-validator-address:not(.is-full) code {
+    white-space: normal;
+    word-break: break-all;
+  }
+}
+
+@media (max-width: 800px) {
+  .cosmos-validator-detail__primary,
+  .cosmos-validator-detail__secondary,
+  .cosmos-validator-detail .cosmos-validator-hero__profile {
+    grid-template-columns: 1fr;
+  }
+
+  .cosmos-validator-detail .cosmos-validator-hero__metadata {
+    width: 100%;
+    justify-self: stretch;
+  }
+
+  .cosmos-validator-detail .cosmos-validator-signing__strip {
+    grid-template-columns: repeat(25, 9px);
+    grid-auto-rows: 9px;
+    gap: 6px 3px;
+  }
+
+  .cosmos-validator-detail .cosmos-validator-signing__strip span {
+    width: 9px;
+    height: 9px;
+  }
+
+  .cosmos-validator-detail .cosmos-validator-signing__range {
+    width: min(100%, 297px);
+  }
+}
+
+@media (max-width: 560px) {
+  .cosmos-validator-detail .cosmos-validator-signing__strip {
+    grid-template-columns: repeat(25, 7px);
+    grid-auto-rows: 7px;
+    gap: 5px 2px;
+  }
+
+  .cosmos-validator-detail .cosmos-validator-signing__strip span {
+    width: 7px;
+    height: 7px;
+  }
+
+  .cosmos-validator-detail .cosmos-validator-signing__range {
+    width: min(100%, 223px);
+  }
+}
