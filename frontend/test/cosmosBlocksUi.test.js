@@ -83,7 +83,7 @@ test('Block Detail exposes human and technical information through compact discl
   assert.match(detail, /className="transaction-hash transaction-link mono cosmos-hash-value"[^>]*title=\{tx\.hash\}>\{tx\.hash\}<\/a><CopyButton value=\{tx\.hash\}/)
   assert.doesNotMatch(detail, /label="transaction hash" compact/)
   assert.doesNotMatch(detail, /shortHash/)
-  assert.match(styles, /\.cosmos-detail-card details > summary, \.cosmos-normalized-json > summary \{[^}]*display: inline-flex;[^}]*width: fit-content;[^}]*max-width: calc\(100% - 24px\);[^}]*border: 1px solid var\(--color-accent\);[^}]*background: var\(--color-accent-soft\)/)
+  assert.match(styles, /\.cosmos-detail-card details > summary, \.cosmos-normalized-json > summary, \.cosmos-detail-toggle \{[^}]*display: inline-flex;[^}]*width: fit-content;[^}]*max-width: calc\(100% - 24px\);[^}]*border: 1px solid var\(--color-accent\);[^}]*background: var\(--color-accent-soft\)/)
   assert.match(styles, /details > summary::after, \.cosmos-normalized-json > summary::after \{[^}]*content: '↓'/)
   assert.match(styles, /details\[open\] > summary::after, \.cosmos-normalized-json\[open\] > summary::after \{ content: '↑'; \}/)
   assert.doesNotMatch(styles, /details > summary::after[^}]*position: absolute/)
