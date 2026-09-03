@@ -5,6 +5,7 @@ import { CopyButton } from '../components/CopyButton'
 import { formatCompactDecimal, formatSignedTokenAmount, formatTokenAmount } from '../utils/cosmosFormat'
 import { loadValidatorFavorites, saveValidatorFavorites, toggleValidatorFavorite } from '../utils/validatorFavorites'
 import { missedCountClass, validatorRankTone } from '../utils/cosmosValidators'
+import '../styles/cosmos-validator-detail.css'
 
 const pct = (v) => v == null ? '—' : `${(Number(v) * 100).toFixed(2)}%`
 const utc = (v) => !v || v.startsWith('1970-01-01T00:00:00') ? '—' : new Date(v).toLocaleString(undefined, { timeZone: 'UTC', timeZoneName: 'short' })
