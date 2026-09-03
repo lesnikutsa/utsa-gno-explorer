@@ -57,6 +57,25 @@ export function formatSignedTokenAmount(value, exponent = 6, symbol = '') {
   return `${negative ? '-' : Number(value) > 0 ? '+' : ''}${formatted}`
 }
 
+export function formatDelegationShare(shares, totalShares) {
+  const parse = (value) => {
+    if (typeof value !== 'string' || value.length > 128 || !/^\d+(?:\.\d+)?$/.test(value)) return null
+    const [whole, fraction = ''] = value.split('.')
+    return { value: BigInt(`${whole}${fraction}`), scale: 10n ** BigInt(fraction.length) }
+  }
+  const numerator = parse(shares)
+  const denominator = parse(totalShares)
+  if (!numerator || !denominator || denominator.value === 0n) return '—'
+  if (numerator.value === 0n) return '0%'
+  const scaledNumerator = numerator.value * denominator.scale * 1_000_000n
+  const scaledDenominator = denominator.value * numerator.scale
+  const tenThousandths = (scaledNumerator + scaledDenominator / 2n) / scaledDenominator
+  if (tenThousandths === 0n) return '<0.0001%'
+  const whole = tenThousandths / 10_000n
+  const fraction = (tenThousandths % 10_000n).toString().padStart(4, '0').replace(/0+$/, '')
+  return `${whole}${fraction ? `.${fraction}` : ''}%`
+}
+
 export function formatCompactDecimal(value, { prefix = '', suffix = '', digits = 2 } = {}) {
   if (typeof value !== 'string' || !DECIMAL_PATTERN.test(value)) return '—'
   const number = Number(value)
