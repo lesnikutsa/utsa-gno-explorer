@@ -119,6 +119,17 @@ test('delegators section is independently paginated and preserves all states', (
   assert.match(detailCss, /cosmos-validator-delegators__scroll\s*\{[^}]*overflow-x:\s*auto/)
 })
 
+test('delegator pagination rejects stale validator and network responses', () => {
+  assert.match(page, /requestScope = useRef\(\{ generation: 0, identity: null, controller: null \}\)/)
+  assert.match(page, /requestScope\.current\.controller\?\.abort\(\)/)
+  assert.match(page, /const identity = `\$\{network\.id\}:\$\{operatorAddress\}`/)
+  assert.match(page, /requestScope\.current\.generation === generation && requestScope\.current\.identity === identity && requestScope\.current\.controller === controller/)
+  assert.match(page, /paginationKey: state\.nextKey, signal: controller\.signal/)
+  assert.match(page, /if \(isCurrent\(\)\) setState\(\(current\) => \(\{ \.\.\.current, items: \[\.\.\.current\.items, \.\.\.data\.items\]/)
+  assert.match(page, /error\.name !== 'AbortError' && isCurrent\(\)/)
+  assert.match(page, /if \(requestScope\.current\.identity === identity\) \{[\s\S]*requestScope\.current\.controller\?\.abort\(\)[\s\S]*generation: requestScope\.current\.generation \+ 1, identity: null, controller: null/)
+})
+
 test('validator identities link consistently across Cosmos explorer surfaces', () => {
   const files = ['CosmosOverview.jsx', 'CosmosBlocks.jsx', 'CosmosBlockDetail.jsx']
   for (const file of files) {

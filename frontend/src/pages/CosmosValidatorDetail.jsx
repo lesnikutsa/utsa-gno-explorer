@@ -78,21 +78,41 @@ function Delta({ validator: v, asset }) { if (v.change_24h == null || Number(v.c
 function DelegatorShares({ value }) { if (value == null) return '—'; return <span className="cosmos-validator-shares" title="Internal staking shares used by the Cosmos staking module. They are not token units."><span>{compactShares(String(value))} shares</span><CopyButton value={String(value)} label="delegator shares" /></span> }
 function Delegators({ network, operatorAddress, assets }) {
   const [state, setState] = useState({ items: [], nextKey: null, loading: true, loadingMore: false, error: false, expanded: false })
+  const requestScope = useRef({ generation: 0, identity: null, controller: null })
   useEffect(() => {
+    requestScope.current.controller?.abort()
     const controller = new AbortController()
+    const generation = requestScope.current.generation + 1
+    const identity = `${network.id}:${operatorAddress}`
+    requestScope.current = { generation, identity, controller }
+    const isCurrent = () => requestScope.current.generation === generation && requestScope.current.identity === identity && requestScope.current.controller === controller
     setState({ items: [], nextKey: null, loading: true, loadingMore: false, error: false, expanded: false })
     getCosmosValidatorDelegations({ networkId: network.id, operatorAddress, limit: 10, signal: controller.signal })
-      .then((data) => setState({ items: data.items, nextKey: data.next_key ?? null, loading: false, loadingMore: false, error: false, expanded: false }))
-      .catch((error) => { if (error.name !== 'AbortError') setState((current) => ({ ...current, loading: false, error: true })) })
-    return () => controller.abort()
+      .then((data) => { if (isCurrent()) setState({ items: data.items, nextKey: data.next_key ?? null, loading: false, loadingMore: false, error: false, expanded: false }) })
+      .catch((error) => { if (error.name !== 'AbortError' && isCurrent()) setState((current) => ({ ...current, loading: false, error: true })) })
+    return () => {
+      controller.abort()
+      if (requestScope.current.identity === identity) {
+        requestScope.current.controller?.abort()
+        requestScope.current = { generation: requestScope.current.generation + 1, identity: null, controller: null }
+      }
+    }
   }, [network.id, operatorAddress])
   const showMore = async () => {
     if (!state.nextKey || state.loadingMore) return
+    requestScope.current.controller?.abort()
+    const controller = new AbortController()
+    const generation = requestScope.current.generation + 1
+    const identity = `${network.id}:${operatorAddress}`
+    requestScope.current = { generation, identity, controller }
+    const isCurrent = () => requestScope.current.generation === generation && requestScope.current.identity === identity && requestScope.current.controller === controller
     setState((current) => ({ ...current, loadingMore: true, error: false }))
     try {
-      const data = await getCosmosValidatorDelegations({ networkId: network.id, operatorAddress, limit: 10, paginationKey: state.nextKey })
-      setState((current) => ({ ...current, items: [...current.items, ...data.items], nextKey: data.next_key ?? null, loadingMore: false, expanded: true }))
-    } catch { setState((current) => ({ ...current, loadingMore: false, error: true })) }
+      const data = await getCosmosValidatorDelegations({ networkId: network.id, operatorAddress, limit: 10, paginationKey: state.nextKey, signal: controller.signal })
+      if (isCurrent()) setState((current) => ({ ...current, items: [...current.items, ...data.items], nextKey: data.next_key ?? null, loadingMore: false, expanded: true }))
+    } catch (error) {
+      if (error.name !== 'AbortError' && isCurrent()) setState((current) => ({ ...current, loadingMore: false, error: true }))
+    }
   }
   const visible = state.expanded ? state.items : state.items.slice(0, 10)
   return <section className="panel cosmos-validator-delegators"><div className="panel__heading"><div><h2>Delegators</h2><span className="panel__meta">Current x/staking delegations in upstream order</span></div></div>
