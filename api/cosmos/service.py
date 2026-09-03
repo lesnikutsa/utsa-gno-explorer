@@ -42,6 +42,10 @@ PAGE_SIZE = 200
 MAX_LIST_ITEMS = MAX_PAGES * PAGE_SIZE
 _UNSIGNED_DECIMAL = re.compile(r"^[0-9]+(?:\.[0-9]+)?$")
 _SIGNED_DECIMAL = re.compile(r"^-?[0-9]+(?:\.[0-9]+)?$")
+_QUERY_FIELD_UNSUPPORTED = re.compile(
+    r"(?:unknown|unsupported|unrecognized|cannot find|no such)\s+(?:query\s+)?(?:parameter|field)?\s*[`'\"]?query",
+    re.IGNORECASE,
+)
 
 
 def _mapping(value: object, name: str = "object") -> dict:
@@ -974,19 +978,17 @@ class CosmosService:
         upstream_limit = min(MAX_ACTIVITY, page * limit + 1)
 
         async def stream(key, address):
-            event = quote(f"{key}='{address}'", safe="")
-            path = (f"/cosmos/tx/v1beta1/txs?events={event}&order_by=ORDER_BY_DESC"
-                    f"&pagination.limit={upstream_limit}")
-            return await self._rest(f"validator_activity_{key}", path)
+            return await self._validator_event_search(f"{key}='{address}'", upstream_limit)
 
         outcomes = await asyncio.gather(*(stream(*query) for query in event_queries(
             operator_address, account_address)), return_exceptions=True)
         successful = []
+        account_validator = lambda address: valid_bech32_address(address, self.definition.account_prefix)
         for item in outcomes:
             if not isinstance(item, dict):
                 continue
             try:
-                merge_activity([item], operator_address, account_address)
+                merge_activity([item], operator_address, account_address, account_validator)
                 successful.append(item)
             except MalformedUpstreamResponse:
                 continue
@@ -994,12 +996,53 @@ class CosmosService:
             result = {"state": "indexing_unavailable", "items": [], "page": page,
                       "page_size": limit, "has_more": False}
         else:
-            items = merge_activity(successful, operator_address, account_address)
+            items = merge_activity(successful, operator_address, account_address, account_validator)
             start = (page - 1) * limit
             result = {"state": "partial" if len(successful) < len(outcomes) else "available",
                       "items": items[start:start + limit], "page": page, "page_size": limit,
                       "has_more": start + limit < len(items)}
         return TypeAdapter(CosmosValidatorActivityResponse).validate_python(result).model_dump()
+
+    async def _validator_event_search(self, expression: str, limit: int):
+        """Use the SDK v0.50 query shape, with an explicit v0.47 compatibility fallback."""
+        cache_key = (self.definition.transport.network_id, "validator_event_search", (expression, limit))
+
+        def valid(payload):
+            return (isinstance(payload, dict) and isinstance(payload.get("txs"), list)
+                    and isinstance(payload.get("tx_responses"), list))
+
+        def error_text(payload):
+            if not isinstance(payload, dict):
+                return ""
+            return " ".join(str(payload.get(key, "")) for key in ("message", "details", "error"))
+
+        async def load():
+            candidates = await self.adapter._cached_candidates("rest")
+            encoded = quote(expression, safe="")
+            modern = (f"/cosmos/tx/v1beta1/txs?query={encoded}&order_by=ORDER_BY_DESC"
+                      f"&page=1&limit={limit}")
+            legacy = (f"/cosmos/tx/v1beta1/txs?events={encoded}&order_by=ORDER_BY_DESC"
+                      f"&page=1&limit={limit}")
+            for candidate in candidates:
+                try:
+                    payload = await self.transport.get_object(
+                        candidate.endpoint, modern, accept_error_payload=True)
+                except Exception:
+                    continue
+                if valid(payload):
+                    return payload
+                if _QUERY_FIELD_UNSUPPORTED.search(error_text(payload)) is None:
+                    continue
+                try:
+                    fallback = await self.transport.get_object(
+                        candidate.endpoint, legacy, accept_error_payload=True)
+                except Exception:
+                    continue
+                if valid(fallback):
+                    return fallback
+            raise AllEndpointsUnavailable("validator event search unavailable")
+
+        return await self.cache.get_or_load(cache_key, SECTION_TTL, load)
 
     async def _staking(self, supply: dict, validators: list):
         pool, params_payload = await self._rest_many((

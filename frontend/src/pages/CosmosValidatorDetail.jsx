@@ -94,6 +94,7 @@ function Delegators({ network, operatorAddress, assets, totalShares, validatorAc
       .catch((error) => { if (error.name !== 'AbortError' && isCurrent()) setState((current) => ({ ...current, loading: false, error: true })) })
     return () => {
       controller.abort()
+      requestScope.current.controller?.abort()
       if (requestScope.current.identity === identity) {
         requestScope.current.controller?.abort()
         requestScope.current = { generation: requestScope.current.generation + 1, identity: null, controller: null }
@@ -116,20 +117,74 @@ function Delegators({ network, operatorAddress, assets, totalShares, validatorAc
       if (error.name !== 'AbortError' && isCurrent()) setState((current) => ({ ...current, loadingMore: false, error: true }))
     }
   }
-  const ordered = useMemo(() => sort === 'delegated' ? [...state.items].sort((a, b) => { const left = BigInt(a.balance.amount); const right = BigInt(b.balance.amount); return left === right ? 0 : left > right ? -1 : 1 }) : state.items, [sort, state.items])
+  const ordered = useMemo(() => sort === 'delegated' ? [...state.items].sort((a, b) => compareIntegerAmountsDescending(a.balance.amount, b.balance.amount)) : state.items, [sort, state.items])
   const visible = state.expanded ? ordered : ordered.slice(0, 10)
   return <section className="panel cosmos-validator-delegators"><div className="panel__heading"><div><h2>Delegators</h2><span className="panel__meta">Current delegations to this validator</span></div></div><div className="cosmos-validator-delegators__sort" title="Sorts currently loaded delegators only."><span>Sort loaded:</span><button type="button" className={sort === 'network' ? 'is-active' : ''} onClick={() => setSort('network')}>Network order</button><button type="button" className={sort === 'delegated' ? 'is-active' : ''} onClick={() => setSort('delegated')}>Delegated ↓</button></div>
     {state.loading ? <p className="muted">Loading delegators…</p> : state.error && !state.items.length ? <p className="cosmos-error">Delegator data is temporarily unavailable.</p> : !state.items.length ? <p className="muted">No delegations found.</p> : <><div className="cosmos-validator-delegators__scroll"><table><thead><tr><th>Delegator</th><th>Delegated</th><th title="Share of this validator's total delegator shares.">Share</th></tr></thead><tbody>{visible.map((item) => <tr key={`${item.delegator_address}:${item.validator_address}`}><td><span className={`cosmos-validator-delegator${item.delegator_address === validatorAccountAddress ? ' is-self-delegation' : ''}`}><code>{item.delegator_address}</code><CopyButton value={item.delegator_address} label="delegator address" /></span></td><td className="cosmos-validator-delegated" title={`${item.balance.amount} ${item.balance.denom}`}>{formatDelegationBalance(item.balance, assets)}</td><td className="cosmos-validator-delegation-share" title={`Exact shares: ${item.shares}`}>{formatDelegationShare(item.shares, totalShares)}</td></tr>)}</tbody></table></div><div className="cosmos-validator-delegators__actions">{state.expanded && state.items.length > 10 && <button className="cosmos-detail-toggle" type="button" onClick={() => setState((current) => ({ ...current, expanded: false }))}>Show less ↑</button>}{state.expanded && state.nextKey && <button className="cosmos-detail-toggle" type="button" disabled={state.loadingMore} onClick={showMore}>{state.loadingMore ? 'Loading delegators…' : 'Show 10 more ↓'}</button>}{!state.expanded && state.items.length > 10 && <button className="cosmos-detail-toggle" type="button" onClick={() => setState((current) => ({ ...current, expanded: true }))}>Show 10 more ↓</button>}{!state.expanded && state.items.length <= 10 && state.nextKey && <button className="cosmos-detail-toggle" type="button" onClick={showMore}>Show 10 more ↓</button>}</div>{state.error && <p className="cosmos-error">Delegator data is temporarily unavailable.</p>}</>}
   </section>
 }
 function ValidatorActivity({ network, operatorAddress, assets }) {
-  const [state, setState] = useState({ status: 'loading', items: [], page: 1, hasMore: false, expanded: false })
-  useEffect(() => { const controller = new AbortController(); setState({ status: 'loading', items: [], page: 1, hasMore: false, expanded: false }); getCosmosValidatorActivity({ networkId: network.id, operatorAddress, signal: controller.signal }).then((data) => setState({ status: data.state, items: data.items, page: 1, hasMore: data.has_more, expanded: false })).catch((error) => { if (error.name !== 'AbortError') setState({ status: 'error', items: [], page: 1, hasMore: false, expanded: false }) }); return () => controller.abort() }, [network.id, operatorAddress])
-  const more = async () => { const next = state.page + 1; try { const data = await getCosmosValidatorActivity({ networkId: network.id, operatorAddress, page: next }); setState((current) => ({ ...current, status: data.state, items: [...current.items, ...data.items], page: next, hasMore: data.has_more, expanded: true })) } catch { setState((current) => ({ ...current, status: 'error' })) } }
+  const [state, setState] = useState({ status: 'loading', items: [], page: 1, hasMore: false, expanded: false, loadingMore: false })
+  const requestScope = useRef({ generation: 0, identity: null, controller: null, loadingMore: false })
+  const txLookup = useRef({ generation: 0, identity: null, controller: null })
+  useEffect(() => {
+    requestScope.current.controller?.abort()
+    txLookup.current.controller?.abort()
+    const controller = new AbortController()
+    const generation = requestScope.current.generation + 1
+    const identity = `${network.id}:${operatorAddress}`
+    requestScope.current = { generation, identity, controller, loadingMore: false }
+    txLookup.current = { generation: txLookup.current.generation + 1, identity, controller: null }
+    const isCurrent = () => requestScope.current.generation === generation && requestScope.current.identity === identity && requestScope.current.controller === controller
+    setState({ status: 'loading', items: [], page: 1, hasMore: false, expanded: false, loadingMore: false })
+    getCosmosValidatorActivity({ networkId: network.id, operatorAddress, signal: controller.signal })
+      .then((data) => { if (isCurrent()) setState({ status: data.state, items: data.items, page: 1, hasMore: data.has_more, expanded: false, loadingMore: false }) })
+      .catch((error) => { if (error.name !== 'AbortError' && isCurrent()) setState({ status: 'error', items: [], page: 1, hasMore: false, expanded: false, loadingMore: false }) })
+    return () => {
+      controller.abort()
+      txLookup.current.controller?.abort()
+      if (requestScope.current.identity === identity) requestScope.current = { generation: requestScope.current.generation + 1, identity: null, controller: null, loadingMore: false }
+      if (txLookup.current.identity === identity) txLookup.current = { generation: txLookup.current.generation + 1, identity: null, controller: null }
+    }
+  }, [network.id, operatorAddress])
+  const more = async () => {
+    if (!state.hasMore || state.loadingMore || requestScope.current.loadingMore) return
+    requestScope.current.controller?.abort()
+    const controller = new AbortController()
+    const generation = requestScope.current.generation + 1
+    const identity = `${network.id}:${operatorAddress}`
+    const next = state.page + 1
+    requestScope.current = { generation, identity, controller, loadingMore: true }
+    const isCurrent = () => requestScope.current.generation === generation && requestScope.current.identity === identity && requestScope.current.controller === controller
+    setState((current) => ({ ...current, loadingMore: true }))
+    try {
+      const data = await getCosmosValidatorActivity({ networkId: network.id, operatorAddress, page: next, signal: controller.signal })
+      if (isCurrent()) {
+        requestScope.current.loadingMore = false
+        setState((current) => ({ ...current, status: data.state, items: mergeActivityItems(current.items, data.items), page: next, hasMore: data.has_more, expanded: true, loadingMore: false }))
+      }
+    } catch (error) {
+      if (isCurrent()) requestScope.current.loadingMore = false
+      if (error.name !== 'AbortError' && isCurrent()) setState((current) => ({ ...current, status: 'error', loadingMore: false }))
+    }
+  }
   const rows = state.expanded ? state.items : state.items.slice(0, 10)
-  const openTx = async (event, hash) => { event.preventDefault(); try { const tx = await getCosmosTransactionByHash({ networkId: network.id, txHash: hash }); navigateInternal(`/networks/${network.id}/blocks/${tx.height}/transactions/${tx.index}`) } catch { /* Keep the independent panel usable. */ } }
-  return <section className="panel cosmos-validator-activity"><div className="panel__heading"><div><h2>Validator Activity</h2><span className="panel__meta">Recent validator-related transactions</span></div></div>{state.status === 'indexing_unavailable' ? <p className="muted">Validator activity is unavailable from the current RPC/API.</p> : <>{state.status === 'partial' && <p className="muted">Some validator activity types are unavailable from the current RPC/API.</p>}{state.status === 'error' && !state.items.length ? <p className="cosmos-error">Validator activity is temporarily unavailable.</p> : state.status === 'loading' ? <p className="muted">Loading validator activity…</p> : !rows.length ? <p className="muted">No recent validator activity found.</p> : <div className="cosmos-validator-activity__scroll"><table><thead><tr><th>Activity</th><th>Amount / detail</th><th>Height / time</th><th>TX</th></tr></thead><tbody>{rows.map((item) => <tr key={`${item.tx_hash}:${item.message_index}:${item.action}`}><td><strong className={`is-${item.direction}`}>{activityLabel(item.action)}</strong><code title={item.account_address || ''}>{shortValue(item.account_address)}</code></td><td className={`is-${item.direction}`}>{item.amounts.length ? item.amounts.map((coin) => <span key={coin.denom}>{item.direction === 'positive' ? '+' : item.direction === 'negative' ? '−' : ''}{formatDelegationBalance(coin, assets)}</span>) : item.detail || '—'}</td><td><a href={`/networks/${network.id}/blocks/${item.height}`}>#{item.height}</a><time>{utc(item.timestamp)}</time></td><td><a href="#" className="mono" title={item.tx_hash} onClick={(event) => openTx(event, item.tx_hash)}>{shortValue(item.tx_hash)}</a></td></tr>)}</tbody></table></div>}<div className="cosmos-validator-delegators__actions">{state.expanded && state.items.length > 10 && <button className="cosmos-detail-toggle" type="button" onClick={() => setState((current) => ({ ...current, expanded: false }))}>Show less ↑</button>}{state.hasMore && <button className="cosmos-detail-toggle" type="button" onClick={more}>Show 10 more ↓</button>}{!state.expanded && state.items.length > 10 && <button className="cosmos-detail-toggle" type="button" onClick={() => setState((current) => ({ ...current, expanded: true }))}>Show 10 more ↓</button>}</div></>}</section>
+  const openTx = async (event, hash) => {
+    event.preventDefault()
+    txLookup.current.controller?.abort()
+    const controller = new AbortController(), identity = `${network.id}:${operatorAddress}`, generation = txLookup.current.generation + 1
+    txLookup.current = { generation, identity, controller }
+    try {
+      const tx = await getCosmosTransactionByHash({ networkId: network.id, txHash: hash, signal: controller.signal })
+      if (txLookup.current.generation === generation && txLookup.current.identity === identity && txLookup.current.controller === controller) navigateInternal(`/networks/${network.id}/blocks/${tx.height}/transactions/${tx.index}`)
+    } catch { /* Keep the independent panel usable. */ }
+  }
+  const hiddenLoadedRows = !state.expanded && state.items.length > 10
+  return <section className="panel cosmos-validator-activity"><div className="panel__heading"><div><h2>Validator Activity</h2><span className="panel__meta">Recent validator-related transactions</span></div></div>{state.status === 'indexing_unavailable' ? <p className="muted">Validator activity is unavailable from the current RPC/API.</p> : <>{state.status === 'partial' && <p className="muted">Some validator activity types are unavailable from the current RPC/API.</p>}{state.status === 'error' && !state.items.length ? <p className="cosmos-error">Validator activity is temporarily unavailable.</p> : state.status === 'loading' ? <p className="muted">Loading validator activity…</p> : !rows.length ? <p className="muted">No recent validator activity found.</p> : <div className="cosmos-validator-activity__scroll"><table><thead><tr><th>Activity</th><th>Amount / detail</th><th>Height / time</th><th>TX</th></tr></thead><tbody>{rows.map((item) => <tr key={`${item.tx_hash}:${item.message_index}:${item.action}`}><td><strong className={`is-${item.direction}`}>{activityLabel(item.action)}</strong><code title={item.account_address || ''}>{shortValue(item.account_address)}</code></td><td className={`is-${item.direction}`}>{item.amounts.length ? item.amounts.map((coin) => <span key={coin.denom}>{item.direction === 'positive' ? '+' : item.direction === 'negative' ? '−' : ''}{formatDelegationBalance(coin, assets)}</span>) : item.detail || '—'}</td><td><a href={`/networks/${network.id}/blocks/${item.height}`}>#{item.height}</a><time>{utc(item.timestamp)}</time></td><td><a href="#" className="mono" title={item.tx_hash} onClick={(event) => openTx(event, item.tx_hash)}>{shortValue(item.tx_hash)}</a></td></tr>)}</tbody></table></div>}<div className="cosmos-validator-delegators__actions">{state.expanded && state.items.length > 10 && <button className="cosmos-detail-toggle" type="button" onClick={() => setState((current) => ({ ...current, expanded: false }))}>Show less ↑</button>}{hiddenLoadedRows ? <button className="cosmos-detail-toggle" type="button" onClick={() => setState((current) => ({ ...current, expanded: true }))}>Show 10 more ↓</button> : state.hasMore && <button className="cosmos-detail-toggle" type="button" disabled={state.loadingMore} onClick={more}>{state.loadingMore ? 'Loading activity…' : 'Show 10 more ↓'}</button>}</div></>}</section>
 }
+const activityIdentity = (item) => `${item.tx_hash}:${item.message_index}:${item.action}`
+const mergeActivityItems = (current, incoming) => [...new Map([...current, ...incoming].map((item) => [activityIdentity(item), item])).values()].sort((a, b) => compareIntegerAmountsDescending(String(a.height), String(b.height)) || a.tx_hash.localeCompare(b.tx_hash) || a.message_index - b.message_index || a.action.localeCompare(b.action)).slice(0, 50)
+const compareIntegerAmountsDescending = (left, right) => { const valid = /^\d+$/; if (!valid.test(left) || !valid.test(right)) return String(right).localeCompare(String(left)); const a = BigInt(left), b = BigInt(right); return a === b ? 0 : a > b ? -1 : 1 }
 const shortValue = (value) => !value ? '—' : value.length > 18 ? `${value.slice(0, 10)}…${value.slice(-6)}` : value
 const activityLabel = (value) => ({ delegate: 'Delegate', undelegate: 'Undelegate', redelegate_in: 'Redelegate in', redelegate_out: 'Redelegate out', withdraw_reward: 'Withdraw reward', withdraw_commission: 'Withdraw commission', edit_validator: 'Edit validator', unjail: 'Unjail' })[value] || value
 function formatDelegationBalance(balance, assets) { const asset = assets.find((item) => item.base === balance.denom); return asset ? formatTokenAmount(balance.amount, asset.exponent, asset.symbol) : `${readableDecimal(balance.amount)} ${balance.denom}` }
