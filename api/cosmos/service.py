@@ -21,6 +21,7 @@ from .parsing import parse_node_status, parse_rest_node_info, parse_rpc_block
 from .registry import NetworkDefinition
 from .schemas import (AssetsSupply, Distribution, Governance, MarketHistoryResponse, MarketResponse,
                       CosmosTransactionsResponse, CosmosValidatorDelegationsResponse,
+                      CosmosValidatorActivityResponse,
                       CosmosValidatorDetail, MissedValidator, Mint,
                       OverviewResponse, Slashing, Staking, CosmosValidatorsResponse)
 from .blocks import checkpoint_average, metadata
@@ -31,6 +32,7 @@ from .transactions import normalize_transactions
 from .transaction_detail import normalize_transaction_detail
 from .validators import (approximate_token_delta, category, category_voting_power_rank, miss_metrics,
                          aggregate_commit, signing_height_range, target_height_24h)
+from .validator_activity import event_queries, merge_activity, MAX_ACTIVITY
 
 SECTION_TTL = 5.0
 MARKET_TTL = 30.0
@@ -960,6 +962,44 @@ class CosmosService:
         async def load():
             return await self._rest("validator_delegations", path, normalize)
         return await self.cache.get_or_load(key, SECTION_TTL, load)
+
+    async def validator_activity(self, operator_address: str, limit: int = 10, page: int = 1):
+        """Merge a bounded set of live, validator-targeted transaction searches."""
+        if not valid_bech32_address(operator_address, self.definition.validator_operator_prefix):
+            raise InvalidValidatorAddress("invalid validator operator address")
+        if type(limit) is not int or not 1 <= limit <= 10 or type(page) is not int or not 1 <= page <= 5:
+            raise ValueError("invalid activity pagination")
+        account_address = reencode_bech32_address(
+            operator_address, self.definition.validator_operator_prefix, self.definition.account_prefix)
+        upstream_limit = min(MAX_ACTIVITY, page * limit + 1)
+
+        async def stream(key, address):
+            event = quote(f"{key}='{address}'", safe="")
+            path = (f"/cosmos/tx/v1beta1/txs?events={event}&order_by=ORDER_BY_DESC"
+                    f"&pagination.limit={upstream_limit}")
+            return await self._rest(f"validator_activity_{key}", path)
+
+        outcomes = await asyncio.gather(*(stream(*query) for query in event_queries(
+            operator_address, account_address)), return_exceptions=True)
+        successful = []
+        for item in outcomes:
+            if not isinstance(item, dict):
+                continue
+            try:
+                merge_activity([item], operator_address, account_address)
+                successful.append(item)
+            except MalformedUpstreamResponse:
+                continue
+        if not successful:
+            result = {"state": "indexing_unavailable", "items": [], "page": page,
+                      "page_size": limit, "has_more": False}
+        else:
+            items = merge_activity(successful, operator_address, account_address)
+            start = (page - 1) * limit
+            result = {"state": "partial" if len(successful) < len(outcomes) else "available",
+                      "items": items[start:start + limit], "page": page, "page_size": limit,
+                      "has_more": start + limit < len(items)}
+        return TypeAdapter(CosmosValidatorActivityResponse).validate_python(result).model_dump()
 
     async def _staking(self, supply: dict, validators: list):
         pool, params_payload = await self._rest_many((

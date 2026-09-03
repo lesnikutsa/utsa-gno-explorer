@@ -140,6 +140,7 @@ from api.cosmos.schemas import (
     CosmosValidatorDelegationsResponse,
     CosmosValidatorsResponse,
     CosmosValidatorDetail,
+    CosmosValidatorActivityResponse,
     TransactionsResponse as CosmosTransactionsResponse,
 )
 
@@ -518,6 +519,23 @@ async def get_cosmos_validator_delegations(
     except Exception:
         LOGGER.info("Cosmos validator delegations failed network=%s reason=upstream_unavailable", network_id)
         raise HTTPException(status_code=503, detail="Delegator data is temporarily unavailable") from None
+
+
+@app.get("/api/networks/{network_id}/validators/{operator_address}/activity",
+         response_model=CosmosValidatorActivityResponse, response_model_exclude_none=True)
+async def get_cosmos_validator_activity(network_id: str, operator_address: str,
+                                        limit: int = Query(default=10, ge=1, le=10),
+                                        page: int = Query(default=1, ge=1, le=5)):
+    service = _cosmos_service(network_id)
+    try:
+        return await service.validator_activity(operator_address, limit, page)
+    except InvalidValidatorAddress:
+        raise HTTPException(status_code=400, detail="Invalid validator operator address") from None
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid activity pagination") from None
+    except Exception:
+        LOGGER.info("Cosmos validator activity failed network=%s reason=upstream_unavailable", network_id)
+        raise HTTPException(status_code=503, detail="Validator activity is temporarily unavailable") from None
 
 
 @app.get("/api/networks/{network_id}/market", response_model=CosmosMarketResponse)

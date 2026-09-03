@@ -136,6 +136,11 @@ export const getCosmosValidatorDelegations = ({ networkId, operatorAddress, limi
   if (paginationKey) params.set('pagination_key', paginationKey)
   return request(`/networks/${encodeURIComponent(networkId)}/validators/${encodeURIComponent(operatorAddress)}/delegations?${params.toString()}`, { signal })
 }
+export const getCosmosValidatorActivity = ({ networkId, operatorAddress, limit = 10, page = 1, signal }) => {
+  const params = new URLSearchParams({ limit, page })
+  return request(`/networks/${encodeURIComponent(networkId)}/validators/${encodeURIComponent(operatorAddress)}/activity?${params.toString()}`, { signal })
+}
+export const getCosmosTransactionByHash = ({ networkId, txHash, signal }) => request(`/networks/${encodeURIComponent(networkId)}/transactions/${encodeURIComponent(txHash)}`, { signal })
 export const getValidator = (address) => request(`/validators/${encodeURIComponent(address)}`)
 export const getAccount = (address) => request(`/accounts/${encodeURIComponent(address)}`)
 export const getAccountTransactions = (address, { limit, beforeHeight, beforeTxIndex, signal } = {}) => {
