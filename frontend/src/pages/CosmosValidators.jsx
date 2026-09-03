@@ -14,13 +14,10 @@ const duration = (seconds) => seconds == null ? '—' : `≈${Math.floor(seconds
 const arrow = (key, sort, direction) => key !== sort ? '↕' : direction > 0 ? '↑' : '↓'
 const pointTime = (point) => point.time ? `${new Date(point.time).toISOString().slice(11, 19)} UTC` : null
 const jailedUntil = (value) => !value || value.startsWith('1970-01-01T00:00:00') ? '—' : new Date(value).toLocaleString()
-const listParams = () => typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(window.location.search)
-
-
 export function CosmosValidators({ network }) {
   const resource = useCosmosResource(`/api/networks/${network.id}/validators`, 5000)
-  const [tab, setTab] = useState(() => TABS.includes(listParams().get('category')) ? listParams().get('category') : 'active')
-  const [query, setQuery] = useState(() => listParams().get('search') || '')
+  const [tab, setTab] = useState('active')
+  const [query, setQuery] = useState('')
   const [sort, setSort] = useState('tokens')
   const [direction, setDirection] = useState(-1)
   const [favorites, setFavorites] = useState(() => loadValidatorFavorites(`cosmos:${network.id}`))

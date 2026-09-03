@@ -1,5 +1,6 @@
 import unittest
-from api.cosmos.service import consensus_address, reencode_bech32_address, valid_bech32_address
+from api.cosmos.service import (consensus_address, reencode_bech32_address,
+                                valid_bech32_address, validator_reward_amount)
 from api.cosmos.validators import category_voting_power_rank
 from api.cosmos.schemas import CosmosValidatorDetail
 
@@ -11,6 +12,24 @@ class CosmosValidatorAddressTests(unittest.TestCase):
     def test_reusable_detail_contract_exposes_optional_reward_fields(self):
         self.assertFalse(CosmosValidatorDetail.model_fields["commission_earned"].is_required())
         self.assertFalse(CosmosValidatorDetail.model_fields["delegators_total_rewards"].is_required())
+
+    def test_distribution_reward_payloads_select_configured_native_denom(self):
+        commission = {"commission": {"commission": [
+            {"denom": "uother", "amount": "99.0"},
+            {"denom": "unative", "amount": "12.3400"},
+        ]}}
+        rewards = {"rewards": {"rewards": [
+            {"denom": "unative", "amount": "56.7800"},
+        ]}}
+        self.assertEqual(validator_reward_amount(commission, "commission", "unative"), "12.3400")
+        self.assertEqual(validator_reward_amount(rewards, "rewards", "unative"), "56.7800")
+
+    def test_optional_distribution_payload_failures_return_none(self):
+        self.assertIsNone(validator_reward_amount(RuntimeError("unavailable"), "rewards", "unative"))
+        self.assertIsNone(validator_reward_amount({"rewards": {}}, "rewards", "unative"))
+        self.assertIsNone(validator_reward_amount(
+            {"rewards": {"rewards": [{"denom": "unative", "amount": "invalid"}]}},
+            "rewards", "unative"))
 
     def test_configured_operator_prefix_and_checksum_are_required(self):
         # The encoder hashes a public key, but Bech32 validity is independent of the payload role.

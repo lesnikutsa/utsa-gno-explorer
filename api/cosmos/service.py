@@ -80,6 +80,24 @@ def _decimal(value: object, name: str, *, nonnegative: bool = True) -> str:
     return format(number, "f")
 
 
+def validator_reward_amount(payload: object, wrapper: str, denom: str) -> str | None:
+    """Read one native-denom amount from an optional distribution response."""
+    if isinstance(payload, BaseException) or not isinstance(payload, dict):
+        return None
+    container = payload.get(wrapper)
+    coins = container.get(wrapper) if isinstance(container, dict) else None
+    if not isinstance(coins, list):
+        return None
+    coin = next((item for item in coins
+                 if isinstance(item, dict) and item.get("denom") == denom), None)
+    if coin is None:
+        return None
+    try:
+        return _decimal(coin.get("amount"), "validator reward")
+    except MalformedUpstreamResponse:
+        return None
+
+
 def _integer(value: object, name: str, *, nonnegative: bool = True) -> int:
     if isinstance(value, bool) or not isinstance(value, (str, int)):
         raise MalformedUpstreamResponse(f"invalid {name}")
@@ -800,20 +818,11 @@ class CosmosService:
         bond_status = {"BOND_STATUS_BONDED": "bonded", "BOND_STATUS_UNBONDING": "unbonding",
                        "BOND_STATUS_UNBONDED": "unbonded"}.get(source.get("status"), "unbonded")
         rewards_path = quote(operator_address, safe="")
-        commission_result = await asyncio.gather(
+        commission_result, rewards_result = await asyncio.gather(
             self._rest("validator_commission", f"/cosmos/distribution/v1beta1/validators/{rewards_path}/commission"),
+            self._rest("validator_outstanding_rewards", f"/cosmos/distribution/v1beta1/validators/{rewards_path}/outstanding_rewards"),
             return_exceptions=True)
         asset = self.definition.assets[0]
-
-        def reward_amount(payload, wrapper):
-            if isinstance(payload, BaseException) or not isinstance(payload, dict):
-                return None
-            container = payload.get(wrapper)
-            coins = container.get(wrapper) if isinstance(container, dict) else None
-            if not isinstance(coins, list):
-                return None
-            coin = next((item for item in coins if isinstance(item, dict) and item.get("denom") == asset.base), None)
-            return _decimal(coin.get("amount"), "validator reward") if coin else None
 
         result = {**validator, "network_id": response["network_id"], "asset": response["asset"],
                   "signing_history_state": response["signing_history_state"],
@@ -828,8 +837,8 @@ class CosmosService:
                   "bond_status": bond_status,
                   "delegator_shares": _decimal(source.get("delegator_shares"), "delegator shares"),
                   "min_self_delegation": str(source.get("min_self_delegation")) if source.get("min_self_delegation") is not None else None,
-                  "commission_earned": reward_amount(commission_result[0], "commission"),
-                  "delegators_total_rewards": None,
+                  "commission_earned": validator_reward_amount(commission_result, "commission", asset.base),
+                  "delegators_total_rewards": validator_reward_amount(rewards_result, "rewards", asset.base),
                   "consensus_pubkey": pubkey.get("key"),
                   "commission": {"rate": str(rates.get("rate") or "0"),
                                  "max_rate": rates.get("max_rate"),
