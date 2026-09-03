@@ -5,15 +5,14 @@
 }
 
 .cosmos-validator-detail .cosmos-validator-hero__metadata {
-  width: min(100%, 330px);
+  width: min(100%, 300px);
   justify-self: end;
   align-self: center;
-  transform: translateY(9px);
 }
 
 .cosmos-validator-detail .cosmos-validator-hero__metadata > div {
   grid-template-columns: 76px minmax(0, 1fr);
-  align-items: baseline;
+  align-items: center;
   min-height: 18px;
 }
 
@@ -98,6 +97,7 @@
 
 .cosmos-validator-detail .cosmos-validator-signing__monitor {
   margin-top: 2px;
+  transform: translateX(-35px);
 }
 
 .cosmos-validator-detail .cosmos-validator-signing__strip {
@@ -312,6 +312,10 @@
     white-space: normal;
     word-break: break-all;
   }
+
+  .cosmos-validator-detail .cosmos-validator-signing__monitor {
+    transform: translateX(-18px);
+  }
 }
 
 @media (max-width: 960px) {
@@ -324,6 +328,10 @@
   .cosmos-validator-detail .cosmos-validator-hero__metadata {
     width: 100%;
     justify-self: stretch;
+  }
+
+  .cosmos-validator-detail .cosmos-validator-signing__monitor,
+  .cosmos-validator-detail .cosmos-validator-signing__strip {
     transform: none;
   }
 

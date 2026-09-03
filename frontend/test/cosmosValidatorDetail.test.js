@@ -15,6 +15,16 @@ test('Cosmos validator detail route and independent list identity link are prese
   assert.match(list, /<button className=\{`validator-favorite[\s\S]+onClick=\{\(\) => toggleFavorite/)
 })
 
+test('validator metadata rows and signing monitor retain accessible alignment contracts', () => {
+  assert.match(page, /useCosmosResource\([^,]+, 5000\)/)
+  assert.match(page, /<dl className="cosmos-validator-hero__metadata">/)
+  assert.match(page, /<dt><MetaIcon type="website" \/>Website<\/dt><dd><a href=\{site\}/)
+  assert.match(page, /<dt><MetaIcon type="contact" \/>Contact<\/dt><dd>/)
+  assert.match(detailCss, /hero__metadata > div\s*\{[^}]*align-items:\s*center/)
+  assert.match(detailCss, /signing__monitor\s*\{[^}]*transform:\s*translateX\(-35px\)/)
+  assert.match(detailCss, /@media \(max-width: 960px\)[\s\S]*signing__monitor,[\s\S]*transform:\s*none/)
+})
+
 test('detail presents validator-only identity, metrics, signing, slashing and economics', () => {
   for (const text of ['Contact', 'Minimum Self Delegation', 'Account Address', 'Consensus Hex Address', 'Jailed', 'Voting Power', 'Stake Share', '≈24h Change', 'Commission', 'Recent finalized participation', 'Protocol slashing window', 'Rewards & Commission', 'Validator Commission', 'Rewards', 'Consensus Identity', 'Consensus Public Key', 'Delegator Shares']) assert.match(page, new RegExp(text))
   assert.match(page, /Recent 50-block canonical signing panel/)
