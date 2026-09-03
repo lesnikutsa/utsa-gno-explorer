@@ -5,7 +5,7 @@
 }
 
 .cosmos-validator-detail .cosmos-validator-hero__metadata {
-  width: min(100%, 430px);
+  width: min(100%, 390px);
   justify-self: end;
 }
 
@@ -30,9 +30,9 @@
 }
 
 .cosmos-validator-meta-icon {
-  width: 12px;
-  height: 12px;
-  flex: 0 0 12px;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.6;
@@ -47,7 +47,7 @@
 
 .cosmos-validator-detail__primary,
 .cosmos-validator-detail__secondary {
-  grid-template-columns: minmax(0, .8fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 39fr) minmax(0, 61fr);
   align-items: stretch;
 }
 
@@ -116,12 +116,38 @@
 
 .cosmos-validator-detail .cosmos-validator-fields dl {
   flex: 1 1 auto;
+  align-content: start;
+  grid-auto-rows: max-content;
+}
+
+.cosmos-validator-detail .cosmos-validator-identity-fields dl > .cosmos-validator-address-row {
+  grid-template-columns: minmax(128px, .36fr) minmax(0, 1fr);
+}
+
+.cosmos-validator-detail .cosmos-validator-address {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) 25px;
+  align-items: center;
+  gap: 10px;
+}
+
+.cosmos-validator-detail .cosmos-validator-address code {
+  min-width: 0;
+}
+
+.cosmos-validator-detail .cosmos-validator-address .copy-button {
+  grid-column: 2;
 }
 
 .cosmos-validator-detail__primary .cosmos-validator-address:not(.is-full) code {
   white-space: nowrap;
   word-break: normal;
   overflow-wrap: normal;
+}
+
+.cosmos-validator-detail .cosmos-validator-reward-fields dl {
+  flex: 0 0 auto;
 }
 
 .cosmos-validator-detail .cosmos-validator-shares {
@@ -185,7 +211,7 @@
   }
 }
 
-@media (max-width: 800px) {
+@media (max-width: 960px) {
   .cosmos-validator-detail__primary,
   .cosmos-validator-detail__secondary,
   .cosmos-validator-detail .cosmos-validator-hero__profile {
