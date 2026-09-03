@@ -100,6 +100,24 @@ class CosmosValidatorSearchResponse(StrictModel):
     items: list[CosmosValidatorSearchItem] = Field(max_length=6)
 
 
+class CosmosDelegationBalance(StrictModel):
+    denom: str = Field(min_length=1, max_length=128)
+    amount: AmountString
+
+
+class CosmosValidatorDelegation(StrictModel):
+    delegator_address: str = Field(min_length=3, max_length=90)
+    validator_address: str = Field(min_length=3, max_length=90)
+    shares: DecimalString
+    balance: CosmosDelegationBalance
+
+
+class CosmosValidatorDelegationsResponse(StrictModel):
+    items: list[CosmosValidatorDelegation] = Field(max_length=20)
+    next_key: str | None = Field(default=None, min_length=1, max_length=512)
+    total: int | None = Field(default=None, ge=0)
+
+
 class CosmosRewardCoin(StrictModel):
     denom: str = Field(min_length=1, max_length=128)
     amount: DecimalString

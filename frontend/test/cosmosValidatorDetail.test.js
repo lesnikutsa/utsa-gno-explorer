@@ -33,7 +33,7 @@ test('detail presents validator-only identity, metrics, signing, slashing and ec
   assert.doesNotMatch(page, /title=\{pointLabel\}/)
   assert.match(page, /data-tooltip=\{pointLabel\.replaceAll\(' · ', '\\n'\)\}/)
   assert.match(page, /CopyButton value=\{value\}/)
-  for (const forbidden of ['Delegate', 'Undelegate', 'Withdraw rewards', 'wallet connection']) assert.doesNotMatch(page, new RegExp(forbidden, 'i'))
+  for (const forbidden of ['>Delegate<', '>Undelegate<', 'Withdraw rewards', 'wallet connection']) assert.doesNotMatch(page, new RegExp(forbidden, 'i'))
   assert.match(page, /theme-compatible/)
   assert.match(css, /var\(--color-card\)/)
   assert.match(page, /Past #\{oldestPoint\.height\.toLocaleString\(\)\}/)
@@ -99,6 +99,24 @@ test('missed counters reuse the shared semantic threshold class', () => {
   const overview = fs.readFileSync(new URL('../src/pages/CosmosOverview.jsx', import.meta.url), 'utf8')
   assert.match(overview, /className=\{missedCountClass\(row\.missed_blocks_counter\)\}/)
   assert.match(page, /className=\{missedCountClass\(v\.liveness\.missed_blocks\)\}/)
+})
+
+test('delegators section is independently paginated and preserves all states', () => {
+  for (const text of ['Delegators', 'Loading delegators…', 'No delegations found.', 'Delegator data is temporarily unavailable.', 'Show 10 more ↓', 'Show less ↑']) assert.match(page, new RegExp(text))
+  assert.match(page, /limit: 10/)
+  assert.match(page, /items: \[\.\.\.current\.items, \.\.\.data\.items\]/)
+  assert.match(page, /nextKey: data\.next_key \?\? null/)
+  assert.match(page, /state\.items\.slice\(0, 10\)/)
+  assert.match(page, /<th>Delegator<\/th><th>Delegated<\/th><th>Shares<\/th>/)
+  assert.match(page, /title=\{item\.delegator_address\}/)
+  assert.match(page, /CopyButton value=\{item\.delegator_address\}/)
+  assert.match(page, /formatDelegationBalance\(item\.balance, assets\)/)
+  assert.match(page, /title=\{item\.shares\}/)
+  assert.match(page, /readableDecimal\(item\.shares\)/)
+  assert.match(page, /assets\.find\(\(item\) => item\.base === balance\.denom\)/)
+  assert.match(page, /`\$\{readableDecimal\(balance\.amount\)\} \$\{balance\.denom\}`/)
+  assert.ok(page.indexOf('<Delegators network=') > page.indexOf('Validator Economics'))
+  assert.match(detailCss, /cosmos-validator-delegators__scroll\s*\{[^}]*overflow-x:\s*auto/)
 })
 
 test('validator identities link consistently across Cosmos explorer surfaces', () => {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useCosmosResource } from '../hooks/useCosmosResource'
 import { CosmosValidatorIdentity } from '../components/CosmosValidatorIdentity'
 import { CopyButton } from '../components/CopyButton'
+import { getCosmosValidatorDelegations } from '../services/api'
 import { formatSignedTokenAmount, formatTokenAmount } from '../utils/cosmosFormat'
 import { loadValidatorFavorites, saveValidatorFavorites, toggleValidatorFavorite } from '../utils/validatorFavorites'
 import { missedCountClass, validatorRankTone } from '../utils/cosmosValidators'
@@ -65,6 +66,7 @@ export function CosmosValidatorDetail({ network, operatorAddress }) {
       <Panel title="Consensus Identity" className="cosmos-validator-identity-fields"><Address label="Account Address" value={v.account_address} accent /><Address label="Operator Address" value={v.operator_address} /><Address label="Consensus Address (ValCons)" value={v.consensus_address} /><Address label="Consensus Public Key" value={v.consensus_pubkey} full /><Address label="Consensus Hex Address" value={v.hex_address} /><Address label="EVM Address" value={v.evm_address} /></Panel>
     </div>
     <div className="cosmos-validator-detail__secondary"><Panel title="Rewards & Commission" className="cosmos-validator-reward-fields"><RewardRows commissionCoins={commissionRewards} rewardCoins={outstandingRewards} assets={registeredAssets} /></Panel><Panel title="Validator Economics"><Field label="Delegator Shares" value={<DelegatorShares value={v.delegator_shares} />} /><Field label="Commission Rate" value={pct(v.commission.rate)} />{v.commission.max_rate != null && <Field label="Max Commission" value={pct(v.commission.max_rate)} />}{v.commission.max_change_rate != null && <Field label="Max Daily Change" value={pct(v.commission.max_change_rate)} />}{v.commission.update_time && <Field label="Commission Updated" value={utc(v.commission.update_time)} />}</Panel></div>
+    <Delegators network={network} operatorAddress={v.operator_address} assets={registeredAssets} />
   </section>
 }
 
@@ -74,6 +76,31 @@ function Panel({ title, children, className = '' }) { return <section className=
 function Address({ label, value, full = false, accent = false }) { const display = value || '—'; return <div className="cosmos-validator-address-row"><dt>{label}</dt><dd className={`cosmos-copy-value cosmos-validator-address${full ? ' is-full' : ''}${accent ? ' is-accent' : ''}`}><code>{display}</code>{value && <CopyButton value={value} label={label.toLowerCase()} />}</dd></div> }
 function Delta({ validator: v, asset }) { if (v.change_24h == null || Number(v.change_24h) === 0) return '—'; const positive = Number(v.change_24h) > 0; return <span className={`validator-delta is-${positive ? 'positive' : 'negative'}`}>{formatSignedTokenAmount(v.change_24h, asset.exponent, asset.symbol)}</span> }
 function DelegatorShares({ value }) { if (value == null) return '—'; return <span className="cosmos-validator-shares" title="Internal staking shares used by the Cosmos staking module. They are not token units."><span>{compactShares(String(value))} shares</span><CopyButton value={String(value)} label="delegator shares" /></span> }
+function Delegators({ network, operatorAddress, assets }) {
+  const [state, setState] = useState({ items: [], nextKey: null, loading: true, loadingMore: false, error: false, expanded: false })
+  useEffect(() => {
+    const controller = new AbortController()
+    setState({ items: [], nextKey: null, loading: true, loadingMore: false, error: false, expanded: false })
+    getCosmosValidatorDelegations({ networkId: network.id, operatorAddress, limit: 10, signal: controller.signal })
+      .then((data) => setState({ items: data.items, nextKey: data.next_key ?? null, loading: false, loadingMore: false, error: false, expanded: false }))
+      .catch((error) => { if (error.name !== 'AbortError') setState((current) => ({ ...current, loading: false, error: true })) })
+    return () => controller.abort()
+  }, [network.id, operatorAddress])
+  const showMore = async () => {
+    if (!state.nextKey || state.loadingMore) return
+    setState((current) => ({ ...current, loadingMore: true, error: false }))
+    try {
+      const data = await getCosmosValidatorDelegations({ networkId: network.id, operatorAddress, limit: 10, paginationKey: state.nextKey })
+      setState((current) => ({ ...current, items: [...current.items, ...data.items], nextKey: data.next_key ?? null, loadingMore: false, expanded: true }))
+    } catch { setState((current) => ({ ...current, loadingMore: false, error: true })) }
+  }
+  const visible = state.expanded ? state.items : state.items.slice(0, 10)
+  return <section className="panel cosmos-validator-delegators"><div className="panel__heading"><div><h2>Delegators</h2><span className="panel__meta">Current x/staking delegations in upstream order</span></div></div>
+    {state.loading ? <p className="muted">Loading delegators…</p> : state.error && !state.items.length ? <p className="cosmos-error">Delegator data is temporarily unavailable.</p> : !state.items.length ? <p className="muted">No delegations found.</p> : <><div className="cosmos-validator-delegators__scroll"><table><thead><tr><th>Delegator</th><th>Delegated</th><th>Shares</th></tr></thead><tbody>{visible.map((item) => <tr key={`${item.delegator_address}:${item.validator_address}`}><td><span className="cosmos-validator-delegator" title={item.delegator_address}><code>{shortAddress(item.delegator_address)}</code><CopyButton value={item.delegator_address} label="delegator address" /></span></td><td title={`${item.balance.amount} ${item.balance.denom}`}>{formatDelegationBalance(item.balance, assets)}</td><td><span className="cosmos-validator-delegation-shares" title={item.shares}>{readableDecimal(item.shares)}<CopyButton value={item.shares} label="delegation shares" /></span></td></tr>)}</tbody></table></div><div className="cosmos-validator-delegators__actions">{state.expanded && state.items.length > 10 && <button type="button" onClick={() => setState((current) => ({ ...current, expanded: false }))}>Show less ↑</button>}{state.expanded && state.nextKey && <button type="button" disabled={state.loadingMore} onClick={showMore}>{state.loadingMore ? 'Loading delegators…' : 'Show 10 more ↓'}</button>}{!state.expanded && state.items.length > 10 && <button type="button" onClick={() => setState((current) => ({ ...current, expanded: true }))}>Show 10 more ↓</button>}{!state.expanded && state.items.length <= 10 && state.nextKey && <button type="button" onClick={showMore}>Show 10 more ↓</button>}</div>{state.error && <p className="cosmos-error">Delegator data is temporarily unavailable.</p>}</>}
+  </section>
+}
+function shortAddress(value) { return value.length <= 22 ? value : `${value.slice(0, 12)}…${value.slice(-8)}` }
+function formatDelegationBalance(balance, assets) { const asset = assets.find((item) => item.base === balance.denom); return asset ? formatTokenAmount(balance.amount, asset.exponent, asset.symbol) : `${readableDecimal(balance.amount)} ${balance.denom}` }
 function RewardRows({ commissionCoins, rewardCoins, assets }) {
   const [expanded, setExpanded] = useState(false)
   const rows = [...(commissionCoins || []).map((coin) => ({ label: 'Validator Commission', coin })), ...(rewardCoins || []).map((coin) => ({ label: 'Rewards', coin }))]

@@ -302,6 +302,18 @@
   outline-offset: 2px;
 }
 
+.cosmos-validator-delegators { min-width: 0; }
+.cosmos-validator-delegators__scroll { max-width: 100%; overflow-x: auto; }
+.cosmos-validator-delegators table { width: 100%; border-collapse: collapse; }
+.cosmos-validator-delegators th, .cosmos-validator-delegators td { padding: 9px 12px; border-bottom: 1px solid var(--color-border); text-align: left; white-space: nowrap; }
+.cosmos-validator-delegators th { color: var(--color-text-secondary); font-size: 11px; text-transform: uppercase; }
+.cosmos-validator-delegator, .cosmos-validator-delegation-shares { display: inline-flex; align-items: center; gap: 8px; }
+.cosmos-validator-delegator code { color: var(--color-accent); }
+.cosmos-validator-delegator .copy-button, .cosmos-validator-delegation-shares .copy-button { width: 23px; height: 23px; flex: 0 0 23px; }
+.cosmos-validator-delegators__actions { display: flex; gap: 18px; padding-top: 12px; }
+.cosmos-validator-delegators__actions button { padding: 3px 0; border: 0; background: transparent; color: var(--color-accent); font: inherit; cursor: pointer; }
+.cosmos-validator-delegators__actions button:disabled { cursor: wait; opacity: .6; }
+
 @media (max-width: 1100px) {
   .cosmos-validator-detail .cosmos-validator-hero__profile {
     grid-template-columns: minmax(0, 1fr) minmax(250px, .5fr);

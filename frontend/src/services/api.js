@@ -131,6 +131,11 @@ export const searchCosmosValidators = ({ networkId, query, limit = 6, signal }) 
   const params = new URLSearchParams({ q: query, limit })
   return request(`/networks/${encodeURIComponent(networkId)}/search/validators?${params.toString()}`, { signal })
 }
+export const getCosmosValidatorDelegations = ({ networkId, operatorAddress, limit = 10, paginationKey, signal }) => {
+  const params = new URLSearchParams({ limit })
+  if (paginationKey) params.set('pagination_key', paginationKey)
+  return request(`/networks/${encodeURIComponent(networkId)}/validators/${encodeURIComponent(operatorAddress)}/delegations?${params.toString()}`, { signal })
+}
 export const getValidator = (address) => request(`/validators/${encodeURIComponent(address)}`)
 export const getAccount = (address) => request(`/accounts/${encodeURIComponent(address)}`)
 export const getAccountTransactions = (address, { limit, beforeHeight, beforeTxIndex, signal } = {}) => {

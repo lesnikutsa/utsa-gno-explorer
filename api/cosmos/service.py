@@ -20,7 +20,8 @@ from .errors import (AllEndpointsUnavailable, InvalidValidatorAddress, Malformed
 from .parsing import parse_node_status, parse_rest_node_info, parse_rpc_block
 from .registry import NetworkDefinition
 from .schemas import (AssetsSupply, Distribution, Governance, MarketHistoryResponse, MarketResponse,
-                      CosmosTransactionsResponse, CosmosValidatorDetail, MissedValidator, Mint,
+                      CosmosTransactionsResponse, CosmosValidatorDelegationsResponse,
+                      CosmosValidatorDetail, MissedValidator, Mint,
                       OverviewResponse, Slashing, Staking, CosmosValidatorsResponse)
 from .blocks import checkpoint_average, metadata
 from .block_detail import normalize_detail
@@ -896,6 +897,69 @@ class CosmosService:
                                  "update_time": commission.get("update_time")}}
         result.pop("missed_blocks", None)
         return TypeAdapter(CosmosValidatorDetail).validate_python(result).model_dump()
+
+    async def validator_delegations(self, operator_address: str, limit: int = 10,
+                                    pagination_key: str | None = None):
+        """Return one live, upstream-ordered x/staking delegation page."""
+        if not valid_bech32_address(operator_address, self.definition.validator_operator_prefix):
+            raise InvalidValidatorAddress("invalid validator operator address")
+        if type(limit) is not int or not 1 <= limit <= 20:
+            raise ValueError("limit must be between 1 and 20")
+        if pagination_key is not None:
+            if (not isinstance(pagination_key, str) or not pagination_key
+                    or len(pagination_key) > 512):
+                raise ValueError("invalid pagination key")
+            try:
+                base64.b64decode(pagination_key, validate=True)
+            except (ValueError, TypeError):
+                raise ValueError("invalid pagination key") from None
+
+        encoded_operator = quote(operator_address, safe="")
+        query = f"pagination.limit={limit}&pagination.count_total={'true' if pagination_key is None else 'false'}"
+        if pagination_key is not None:
+            query += f"&pagination.key={quote(pagination_key, safe='')}"
+        path = f"/cosmos/staking/v1beta1/validators/{encoded_operator}/delegations?{query}"
+
+        def normalize(payload):
+            rows = payload.get("delegation_responses") if isinstance(payload, dict) else None
+            if not isinstance(rows, list) or len(rows) > limit:
+                raise MalformedUpstreamResponse("invalid delegation responses")
+            items = []
+            for row in rows:
+                row = _mapping(row, "delegation response")
+                delegation = _mapping(row.get("delegation"), "delegation")
+                balance = _mapping(row.get("balance"), "delegation balance")
+                delegator = _text(delegation.get("delegator_address"), "delegator address", 90)
+                validator = _text(delegation.get("validator_address"), "validator address", 90)
+                if (not valid_bech32_address(delegator, self.definition.account_prefix)
+                        or validator != operator_address):
+                    raise MalformedUpstreamResponse("invalid delegation address")
+                items.append({"delegator_address": delegator, "validator_address": validator,
+                    "shares": _decimal(delegation.get("shares"), "delegation shares"),
+                    "balance": {"denom": _text(balance.get("denom"), "delegation denom", 128),
+                                "amount": _decimal(balance.get("amount"), "delegation amount")}})
+            pagination = payload.get("pagination")
+            if pagination is None:
+                pagination = {}
+            pagination = _mapping(pagination, "delegation pagination")
+            next_key = pagination.get("next_key") or None
+            if next_key is not None:
+                if not isinstance(next_key, str) or len(next_key) > 512:
+                    raise MalformedUpstreamResponse("invalid next key")
+                try:
+                    base64.b64decode(next_key, validate=True)
+                except (ValueError, TypeError):
+                    raise MalformedUpstreamResponse("invalid next key") from None
+            total = pagination.get("total") if pagination_key is None else None
+            normalized = {"items": items, "next_key": next_key,
+                          "total": _integer(total, "delegation total") if total is not None else None}
+            return TypeAdapter(CosmosValidatorDelegationsResponse).validate_python(normalized).model_dump()
+
+        key = (self.definition.transport.network_id, "validator_delegations",
+               (operator_address, limit, pagination_key))
+        async def load():
+            return await self._rest("validator_delegations", path, normalize)
+        return await self.cache.get_or_load(key, SECTION_TTL, load)
 
     async def _staking(self, supply: dict, validators: list):
         pool, params_payload = await self._rest_many((
