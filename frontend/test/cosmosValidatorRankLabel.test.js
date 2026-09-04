@@ -12,7 +12,7 @@ test('validator detail makes category-local rank explicit', () => {
   assert.match(page, /Field label="Rank" displayLabel=\{rankLabel\(v\.category\)\}/)
 })
 
-test('validator hero fact and metric tiles reuse the shared light hover surface', () => {
+test('validator hero tiles reuse the shared light hover surface', () => {
   assert.match(styles, /cosmos-validator-hero__facts > div:hover/)
   assert.match(styles, /cosmos-validator-hero__metrics > article:hover/)
   assert.match(styles, /background:\s*var\(--color-overlay-hover\)/)
