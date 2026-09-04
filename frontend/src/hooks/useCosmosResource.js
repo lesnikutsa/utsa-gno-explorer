@@ -5,7 +5,7 @@ export function useCosmosResource(url, interval = 5000) {
   const [state, setState] = useState({ url, data: null, loading: true, error: null, stale: false })
   const scope = useRef(new CosmosRequestScope())
   const load = useCallback(async (background = false) => {
-    if (scope.current.current || document.hidden) return
+    if (scope.current.current || (background && document.hidden)) return
     const controller = new AbortController()
     const request = scope.current.begin(url, controller)
     if (!request) return
