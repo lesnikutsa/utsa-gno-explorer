@@ -15,8 +15,15 @@ test('validator activity TX links have a real hash URL for native browser naviga
 test('Cosmos transaction hash route resolves and replaces itself with canonical block transaction URL', () => {
   assert.match(app, /cosmosTxHashMatch = path\.match/)
   assert.match(app, /CosmosTransactionHashRoute network=\{network\} txHash=\{cosmosTxHashMatch\[2\]\.toUpperCase\(\)\}/)
-  assert.match(resolver, /\/api\/networks\/\$\{network\.id\}\/transactions\/\$\{encodeURIComponent\(txHash\)\}/)
+  assert.match(resolver, /getCosmosTransactionByHash\(\{ networkId: network\.id, txHash, signal: controller\.signal \}\)/)
   assert.match(resolver, /window\.history\.replaceState/)
-  assert.match(resolver, /blocks\/\$\{resource\.data\.height\}\/transactions\/\$\{resource\.data\.index\}/)
+  assert.match(resolver, /blocks\/\$\{data\.height\}\/transactions\/\$\{data\.index\}/)
   assert.match(resolver, /INTERNAL_NAVIGATION_EVENT/)
+})
+
+test('hash route initial lookup is not suppressed when a middle-click opens a background tab', () => {
+  assert.doesNotMatch(resolver, /useCosmosResource/)
+  assert.doesNotMatch(resolver, /document\.hidden/)
+  assert.match(resolver, /new AbortController\(\)/)
+  assert.match(resolver, /getCosmosTransactionByHash/)
 })
