@@ -9,6 +9,7 @@ import { formatDelegationShare, formatSignedTokenAmount, formatTokenAmount } fro
 import { loadValidatorFavorites, saveValidatorFavorites, toggleValidatorFavorite } from '../utils/validatorFavorites'
 import { missedCountClass, validatorRankTone } from '../utils/cosmosValidators'
 import '../styles/cosmos-validator-detail.css'
+import '../styles/cosmos-validator-reward-usd.css'
 
 const pct = (v) => v == null ? '—' : `${(Number(v) * 100).toFixed(2)}%`
 const utc = (v) => !v || v.startsWith('1970-01-01T00:00:00') ? '—' : new Date(v).toLocaleString(undefined, { timeZone: 'UTC', timeZoneName: 'short' })
@@ -24,6 +25,7 @@ const signingPointLabel = (point) => `Block #${point.height} · ${label(point.st
 
 export function CosmosValidatorDetail({ network, operatorAddress }) {
   const resource = useCosmosResource(`/api/networks/${network.id}/validators/${encodeURIComponent(operatorAddress)}`, 5000)
+  const market = useCosmosResource(`/api/networks/${network.id}/market`, 30000)
   const key = `cosmos:${network.id}`
   const [favorites, setFavorites] = useState(() => loadValidatorFavorites(key))
   useEffect(() => setFavorites(loadValidatorFavorites(key)), [key])
@@ -67,7 +69,7 @@ export function CosmosValidatorDetail({ network, operatorAddress }) {
       <section className="panel cosmos-validator-signing"><div className="panel__heading"><div><h2>Signing &amp; Liveness</h2><span className="panel__meta">Canonical finalized consensus participation</span></div></div><div className="cosmos-validator-signing__recent"><h3>Recent finalized participation</h3><div className="cosmos-validator-signing__stats cosmos-validator-signing__mini-metrics"><Field label="Participation" value={participation == null ? '—' : `${participation.toFixed(2)}%`} /><Field label="Commit" value={counts.commit} /><Field label="Nil" value={counts.nil} /><Field label="Absent" value={counts.absent} /></div>{strip.length ? <div className="cosmos-validator-signing__monitor"><div className="cosmos-validator-signing__strip" aria-label="Recent 50-block canonical signing panel">{strip.map((p, index) => { const pointLabel = signingPointLabel(p); return <span key={p.height} tabIndex="0" data-tooltip={pointLabel.replaceAll(' · ', '\n')} className={`is-${p.status}${index === strip.length - 1 ? ' is-latest' : ''}${p.height === animatedHeight ? ' is-new' : ''}`} aria-label={pointLabel} /> })}</div><div className="cosmos-validator-signing__range"><span>Past #{oldestPoint.height.toLocaleString()}</span><span className={newestPoint.height === animatedHeight ? 'is-new' : ''}>Latest finalized #{newestPoint.height.toLocaleString()}</span></div></div> : <p className="muted">{v.signing_history_state === 'warming' ? 'Loading recent signing history…' : 'Recent participation unavailable for this validator.'}</p>}</div><div className="cosmos-validator-signing__protocol"><div><h3>Protocol slashing window</h3><p>Values come from x/slashing SigningInfo and are separate from the visible 50 blocks.</p></div>{v.liveness ? <div className="cosmos-validator-signing__stats"><Field label="Missed blocks counter" value={<span className={missedCountClass(v.liveness.missed_blocks)}>{v.liveness.missed_blocks.toLocaleString()}</span>} /><Field label="Signed percent" value={`${v.liveness.signed_percent.toFixed(2)}%`} /><Field label="Remaining budget" value={v.liveness.remaining_budget.toLocaleString()} /><Field label="Jail ETA" value={eta(v.liveness.jail_eta_seconds)} /></div> : <span className="muted">Protocol liveness unavailable</span>}</div></section>
       <Panel title="Consensus Identity" className="cosmos-validator-identity-fields"><Address label="Account Address" value={v.account_address} accent /><Address label="Operator Address" value={v.operator_address} /><Address label="Consensus Address (ValCons)" value={v.consensus_address} /><Address label="Consensus Public Key" value={v.consensus_pubkey} full /><Address label="Consensus Hex Address" value={v.hex_address} /><Address label="EVM Address" value={v.evm_address} /></Panel>
     </div>
-    <div className="cosmos-validator-detail__secondary"><Panel title="Rewards & Commission" className="cosmos-validator-reward-fields"><RewardRows commissionCoins={commissionRewards} rewardCoins={outstandingRewards} assets={registeredAssets} /></Panel><Panel title="Validator Economics"><Field label="Delegator Shares" value={<DelegatorShares value={v.delegator_shares} />} /><Field label="Commission Rate" value={pct(v.commission.rate)} />{v.commission.max_rate != null && <Field label="Max Commission" value={pct(v.commission.max_rate)} />}{v.commission.max_change_rate != null && <Field label="Max Daily Change" value={pct(v.commission.max_change_rate)} />}{v.commission.update_time && <Field label="Commission Updated" value={utc(v.commission.update_time)} />}</Panel></div>
+    <div className="cosmos-validator-detail__secondary"><Panel title="Rewards & Commission" className="cosmos-validator-reward-fields"><RewardRows commissionCoins={commissionRewards} rewardCoins={outstandingRewards} assets={registeredAssets} market={market.data} /></Panel><Panel title="Validator Economics"><Field label="Delegator Shares" value={<DelegatorShares value={v.delegator_shares} />} /><Field label="Commission Rate" value={pct(v.commission.rate)} />{v.commission.max_rate != null && <Field label="Max Commission" value={pct(v.commission.max_rate)} />}{v.commission.max_change_rate != null && <Field label="Max Daily Change" value={pct(v.commission.max_change_rate)} />}{v.commission.update_time && <Field label="Commission Updated" value={utc(v.commission.update_time)} />}</Panel></div>
     <div className="cosmos-validator-detail__lower"><Delegators network={network} operatorAddress={v.operator_address} assets={registeredAssets} totalShares={v.delegator_shares} validatorAccountAddress={v.account_address} /><ValidatorActivity network={network} operatorAddress={v.operator_address} assets={registeredAssets} /></div>
   </section>
 }
@@ -192,13 +194,28 @@ const compareIntegerAmountsDescending = (left, right) => { const valid = /^\d+$/
 const shortValue = (value) => !value ? '—' : value.length > 18 ? `${value.slice(0, 10)}…${value.slice(-6)}` : value
 const activityLabel = (value) => ({ delegate: 'Delegate', undelegate: 'Undelegate', redelegate_in: 'Redelegate in', redelegate_out: 'Redelegate out', withdraw_reward: 'Withdraw reward', withdraw_commission: 'Withdraw commission', edit_validator: 'Edit validator', unjail: 'Unjail' })[value] || value
 function formatDelegationBalance(balance, assets) { const asset = assets.find((item) => item.base === balance.denom); return asset ? formatTokenAmount(balance.amount, asset.exponent, asset.symbol) : `${readableDecimal(balance.amount)} ${balance.denom}` }
-function RewardRows({ commissionCoins, rewardCoins, assets }) {
+function RewardRows({ commissionCoins, rewardCoins, assets, market }) {
   const [expanded, setExpanded] = useState(false)
   const rows = [...(commissionCoins || []).map((coin) => ({ label: 'Validator Commission', coin })), ...(rewardCoins || []).map((coin) => ({ label: 'Rewards', coin }))]
   if (!rows.length) return <><Field label="Validator Commission" value="—" /><Field label="Rewards" value="—" /></>
   const visible = expanded ? rows : rows.slice(0, 4)
   const remaining = Math.max(0, rows.length - 4)
-  return <>{visible.map((row, index) => <Field key={`${row.label}:${row.coin.denom}:${index}`} label={row.label} value={formatRewardCoin(row.coin, assets)} />)}{remaining > 0 && <div className="cosmos-validator-rewards__more"><dt><span className="sr-only">Additional reward assets</span></dt><dd><button type="button" className="cosmos-validator-rewards__toggle" onClick={() => setExpanded((value) => !value)}>{expanded ? 'Show less ↑' : `Show ${remaining} more ↓`}</button></dd></div>}</>
+  return <>{visible.map((row, index) => <Field key={`${row.label}:${row.coin.denom}:${index}`} label={row.label} value={<RewardValue coin={row.coin} assets={assets} market={market} />} />)}{remaining > 0 && <div className="cosmos-validator-rewards__more"><dt><span className="sr-only">Additional reward assets</span></dt><dd><button type="button" className="cosmos-validator-rewards__toggle" onClick={() => setExpanded((value) => !value)}>{expanded ? 'Show less ↑' : `Show ${remaining} more ↓`}</button></dd></div>}</>
+}
+function RewardValue({ coin, assets, market }) { const usd = approximateRewardUsd(coin, assets, market); return <span className="cosmos-validator-reward-value"><span>{formatRewardCoin(coin, assets)}</span>{usd && <span className="cosmos-validator-reward-usd" title="Approximate USD value · CoinGecko">{usd}</span>}</span> }
+function approximateRewardUsd(coin, assets, market) {
+  // Network-level CoinGecko pricing follows the primary configured Cosmos asset, matching the Overview market card.
+  const marketAsset = assets?.[0]
+  const price = Number(market?.price)
+  const amount = Number(coin?.amount)
+  const exponent = marketAsset?.exponent
+  if (!marketAsset || coin?.denom !== marketAsset.base || !Number.isFinite(price) || price <= 0 || !Number.isFinite(amount) || amount < 0 || !Number.isInteger(exponent) || exponent < 0 || exponent > 30) return null
+  const usd = amount / (10 ** exponent) * price
+  if (!Number.isFinite(usd) || usd <= 0) return null
+  if (usd >= 1000) return `$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  if (usd >= 1) return `$${usd.toFixed(2)}`
+  const digits = usd >= 0.01 ? 4 : 8
+  return `$${usd.toFixed(digits).replace(/0+$/, '').replace(/\.$/, '')}`
 }
 function formatRewardCoin(coin, assets) { const registered = assets.find((item) => item.base === coin.denom); return registered ? formatTokenAmount(String(coin.amount), registered.exponent, registered.symbol) : `${readableDecimal(coin.amount)} ${coin.denom}` }
 function MetaIcon({ type }) { return type === 'website' ? <svg className="cosmos-validator-meta-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a3 3 0 0 0 4.2 0l3-3a3 3 0 0 0-4.2-4.2l-1.1 1.1"/><path d="M14 10a3 3 0 0 0-4.2 0l-3 3A3 3 0 0 0 11 17.2l1.1-1.1"/></svg> : <svg className="cosmos-validator-meta-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg> }
