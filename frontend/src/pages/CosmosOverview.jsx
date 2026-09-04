@@ -33,12 +33,13 @@ const Advanced = ({ children }) => <details className="cosmos-advanced"><summary
 function ParameterCard({ title, value, children }) { return <section className="panel cosmos-parameter-card"><div className="panel__heading"><h2>{title}</h2></div>{sectionUnavailable(value) ? <p className="cosmos-quiet-state">Section unavailable</p> : children}</section> }
 
 function MarketPanel({ network, market, marketError, history }) {
-  const points = history?.points || []
-  const prices = points.map((point) => Number(point.price)).filter(Number.isFinite)
+  const chartPoints = (history?.points || []).map((point) => ({ timestamp: Number(point.timestamp), price: Number(point.price) })).filter((point) => Number.isFinite(point.timestamp) && point.timestamp > 0 && Number.isFinite(point.price))
+  const prices = chartPoints.map((point) => point.price)
   const min = prices.length ? Math.min(...prices) : 0
   const max = prices.length ? Math.max(...prices) : 0
   const range = max - min || 1
-  const path = prices.map((price, index) => `${index ? 'L' : 'M'}${(index / Math.max(1, prices.length - 1) * 300).toFixed(2)},${(72 - ((price - min) / range) * 60).toFixed(2)}`).join(' ')
+  const path = chartPoints.map((point, index) => `${index ? 'L' : 'M'}${(index / Math.max(1, chartPoints.length - 1) * 300).toFixed(2)},${(72 - ((point.price - min) / range) * 60).toFixed(2)}`).join(' ')
+  const [hoverIndex, setHoverIndex] = useState(null)
   const numericChange = (value) => value === null || value === undefined ? null : Number(value)
   const change24h = numericChange(market?.change_24h)
   const toneFor = (change) => change > 0 ? 'positive' : change < 0 ? 'negative' : 'neutral'
@@ -49,8 +50,25 @@ function MarketPanel({ network, market, marketError, history }) {
     ['30d', numericChange(market.change_30d)],
   ].filter(([, change]) => Number.isFinite(change)) : []
   const symbol = network.assets?.[0]?.symbol || network.presentation.nativeToken?.symbol || 'Token'
+  const hoveredPoint = hoverIndex === null ? null : chartPoints[hoverIndex]
+  const hoverX = hoveredPoint ? hoverIndex / Math.max(1, chartPoints.length - 1) * 300 : 0
+  const hoverY = hoveredPoint ? 72 - ((hoveredPoint.price - min) / range) * 60 : 0
+  const tooltipWidth = 104
+  const tooltipHeight = 28
+  const tooltipX = Math.min(300 - tooltipWidth - 2, Math.max(2, hoverX - tooltipWidth / 2))
+  const tooltipY = hoveredPoint ? (hoverY < 39 ? hoverY + 6 : hoverY - tooltipHeight - 6) : 0
+  const hoverPrice = hoveredPoint ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumSignificantDigits: 6 }).format(hoveredPoint.price) : ''
+  const hoverDate = hoveredPoint ? new Date(hoveredPoint.timestamp) : null
+  const hoverTime = hoverDate && Number.isFinite(hoverDate.getTime()) ? `${hoverDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' })} · ${hoverDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC' })} UTC` : ''
+  const handleChartPointer = (event) => {
+    if (!chartPoints.length) return
+    const bounds = event.currentTarget.getBoundingClientRect()
+    if (!bounds.width) return
+    const ratio = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width))
+    setHoverIndex(Math.round(ratio * Math.max(0, chartPoints.length - 1)))
+  }
   return <section className="panel cosmos-market"><div className="cosmos-market__summary"><div><span className="eyebrow">Market · {symbol}</span><strong>{market ? `$${Number(market.price).toFixed(6).replace(/0+$/, '').replace(/\.$/, '')}` : marketError ? 'Unavailable' : '—'}</strong>{market ? <span style={{ display: 'inline-flex', flexWrap: 'wrap', columnGap: '18px', rowGap: '4px' }}>{changes.map(([period, change]) => <span key={period} className={`cosmos-market__change cosmos-market__change--${toneFor(change)}`}>{`${change > 0 ? '+' : ''}${change.toFixed(2)}% (${period})`}</span>)}</span> : <span className="cosmos-market__change cosmos-market__change--neutral">Optional market enrichment</span>}<small className="cosmos-market__source">{market?.source_last_updated_at ? `CoinGecko · updated ${relativeTime(market.source_last_updated_at)}` : 'CoinGecko · unavailable'}</small></div><dl><Detail label="Market cap" value={market ? formatCompactDecimal(market.market_cap, { prefix: '$' }) : '—'} />{prices.length > 1 && <><Detail label="24h low" value={`$${min.toFixed(6)}`} /><Detail label="24h high" value={`$${max.toFixed(6)}`} /></>}</dl></div>
-    {path && <svg className={`cosmos-market__chart cosmos-market__chart--${tone}`} viewBox="0 0 300 80" role="img" aria-label={`${network.presentation.projectName} 24 hour USD price history`}><g className="cosmos-market__guides"><line x1="0" x2="300" y1="20" y2="20" /><line x1="0" x2="300" y1="40" y2="40" /><line x1="0" x2="300" y1="60" y2="60" /></g><path className="cosmos-market__area" d={`${path} L300,80 L0,80 Z`} /><path className="cosmos-market__line" d={path} /></svg>}
+    {path && <svg className={`cosmos-market__chart cosmos-market__chart--${tone}`} viewBox="0 0 300 80" role="img" aria-label={`${network.presentation.projectName} 24 hour USD price history`}><g className="cosmos-market__guides"><line x1="0" x2="300" y1="20" y2="20" /><line x1="0" x2="300" y1="40" y2="40" /><line x1="0" x2="300" y1="60" y2="60" /></g><path className="cosmos-market__area" d={`${path} L300,80 L0,80 Z`} /><path className="cosmos-market__line" d={path} />{hoveredPoint && <g pointerEvents="none"><line x1={hoverX} x2={hoverX} y1="8" y2="72" style={{ stroke: 'var(--color-text-secondary)', strokeWidth: 1, strokeDasharray: '2 3', vectorEffect: 'non-scaling-stroke', opacity: .8 }} /><circle cx={hoverX} cy={hoverY} r="2.8" style={{ fill: 'var(--color-card)', stroke: 'var(--color-text-bright)', strokeWidth: 1.5, vectorEffect: 'non-scaling-stroke' }} /><g transform={`translate(${tooltipX} ${tooltipY})`}><rect width={tooltipWidth} height={tooltipHeight} rx="4" style={{ fill: 'var(--color-popover)', stroke: 'var(--color-border)', strokeWidth: 1, vectorEffect: 'non-scaling-stroke' }} /><text x="6" y="11" style={{ fill: 'var(--color-text-bright)', fontFamily: 'var(--font-mono)', fontSize: '7px', fontWeight: 700 }}>{hoverPrice}</text><text x="6" y="22" style={{ fill: 'var(--color-text-secondary)', fontFamily: 'var(--font-mono)', fontSize: '6px' }}>{hoverTime}</text></g></g>}<rect x="0" y="0" width="300" height="80" fill="transparent" style={{ cursor: 'crosshair', touchAction: 'pan-y' }} onPointerMove={handleChartPointer} onPointerDown={handleChartPointer} onPointerLeave={() => setHoverIndex(null)} onPointerCancel={() => setHoverIndex(null)} /></svg>}
   </section>
 }
 
