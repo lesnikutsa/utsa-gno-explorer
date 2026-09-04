@@ -1333,7 +1333,7 @@ h2 { color: var(--color-text-bright); font-size: 16px; font-weight: 600; }
 .cosmos-validator-signing__strip span:focus-visible { outline: 2px solid var(--color-text-bright); outline-offset: 1px; }
 .cosmos-validator-signing__range { display: flex; justify-content: space-between; margin-top: 7px; color: var(--color-text-secondary); font-size: 9px; }
 .cosmos-validator-fields { padding: 14px; }
-.cosmos-validator-fields h2 { margin: 0 0 10px; font-size: 14px; }
+.cosmos-validator-fields h2 { margin: 0 0 10px; }
 .cosmos-validator-fields dl { display: grid; margin: 0; }
 .cosmos-validator-fields dl > div { display: grid; grid-template-columns: minmax(120px, .7fr) minmax(0, 1.3fr); gap: 12px; padding: 9px 0; border-top: 1px solid var(--color-border-soft); }
 .cosmos-validator-address code { color: var(--color-text-bright); font-size: 12px; line-height: 1.55; }
