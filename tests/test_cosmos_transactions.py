@@ -42,6 +42,21 @@ class TransactionNormalizationTests(unittest.TestCase):
     def test_empty_result(self):
         self.assertEqual(normalize_transactions({"txs": [], "tx_responses": [], "pagination": {"total": "0"}}, 20), ([], 0))
 
+    def test_v050_top_level_total_is_supported(self):
+        data = payload()
+        data["pagination"] = None
+        data["total"] = "37"
+        _rows, total = normalize_transactions(data, 20)
+        self.assertEqual(total, 37)
+
+    def test_matching_modern_and_legacy_totals_are_allowed_but_conflicts_are_rejected(self):
+        data = payload()
+        data["total"] = "1"
+        self.assertEqual(normalize_transactions(data, 20)[1], 1)
+        data["total"] = "2"
+        with self.assertRaises(MalformedUpstreamResponse):
+            normalize_transactions(data, 20)
+
 
 class TransactionServiceTests(unittest.TestCase):
     @staticmethod
@@ -71,15 +86,56 @@ class TransactionServiceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             asyncio.run(unavailable.transaction_lookup("not-a-hash"))
 
+    def test_v050_transaction_search_uses_query_page_limit_and_top_level_total(self):
+        response = payload()
+        response["pagination"] = None
+        response["total"] = "41"
+        service = self.service(response)
+        calls = []
+
+        async def get_object(_endpoint, path, **_kwargs):
+            calls.append(path)
+            return response
+
+        service.transport = SimpleNamespace(get_object=get_object)
+        result = asyncio.run(service.transactions(20, 2))
+        self.assertEqual(calls, [
+            "/cosmos/tx/v1beta1/txs?query=tx.height%3E0&order_by=ORDER_BY_DESC&page=2&limit=20"
+        ])
+        self.assertEqual(result["total"], 41)
+        self.assertTrue(result["has_older"])
+        self.assertTrue(result["has_newer"])
+
+    def test_pre_v050_query_field_error_falls_back_to_events_with_page_limit(self):
+        response = payload()
+        service = self.service(response)
+        calls = []
+
+        async def get_object(_endpoint, path, **_kwargs):
+            calls.append(path)
+            if "?query=" in path:
+                return {"code": 3, "message": "unknown field query"}
+            return response
+
+        service.transport = SimpleNamespace(get_object=get_object)
+        result = asyncio.run(service.transactions(10, 3))
+        self.assertEqual(calls, [
+            "/cosmos/tx/v1beta1/txs?query=tx.height%3E0&order_by=ORDER_BY_DESC&page=3&limit=10",
+            "/cosmos/tx/v1beta1/txs?events=tx.height%3E0&order_by=ORDER_BY_DESC&page=3&limit=10",
+        ])
+        self.assertEqual(result["state"], "available")
+        self.assertNotIn("pagination.offset", calls[1])
+
+    def test_transaction_indexing_disabled_is_reported_without_legacy_retry(self):
+        service = self.service({"code": 13, "message": "transaction indexing is disabled"})
+        result = asyncio.run(service.transactions(20, 1))
+        self.assertEqual(result["state"], "indexing_unavailable")
+        self.assertEqual(result["transactions"], [])
+
     def test_transaction_page_100_never_exposes_older_page(self):
         response = payload()
         response["pagination"]["total"] = "999999"
         service = self.service(response)
-
-        async def failover(_path):
-            yield "https://rest.example", response
-
-        service.adapter.rest_failover = failover
         result = asyncio.run(service.transactions(20, 100))
         self.assertFalse(result["has_older"])
 
@@ -87,10 +143,5 @@ class TransactionServiceTests(unittest.TestCase):
         response = payload()
         response["txs"][0]["body"]["messages"][0]["from_address"] = "x" * 129
         service = self.service(response)
-
-        async def failover(_path):
-            yield "https://rest.example", response
-
-        service.adapter.rest_failover = failover
         with self.assertRaises(AllEndpointsUnavailable):
             asyncio.run(service.transactions(20, 1))
