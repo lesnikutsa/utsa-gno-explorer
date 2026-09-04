@@ -46,6 +46,11 @@ class CosmosAccountDelegation(StrictModel):
     rewards: list[CosmosAccountCoin] = Field(default_factory=list, max_length=32)
 
 
+class CosmosAccountReward(StrictModel):
+    validator: CosmosAccountValidatorRef
+    rewards: list[CosmosAccountCoin] = Field(max_length=32)
+
+
 class CosmosAccountUnbondingEntry(StrictModel):
     creation_height: int = Field(ge=0)
     completion_time: str = Field(min_length=20, max_length=64)
@@ -56,6 +61,7 @@ class CosmosAccountUnbondingEntry(StrictModel):
 
 class CosmosAccountUnbonding(StrictModel):
     validator: CosmosAccountValidatorRef
+    denom: str | None = Field(default=None, min_length=1, max_length=128)
     entries: list[CosmosAccountUnbondingEntry] = Field(max_length=MAX_UNBONDING_ENTRIES)
 
 
@@ -76,9 +82,12 @@ class CosmosAccountDetailResponse(StrictModel):
     account_number: int | None = Field(default=None, ge=0)
     sequence: int | None = Field(default=None, ge=0)
     public_key: CosmosAccountPublicKey | None = None
+    bond_denom: str | None = Field(default=None, min_length=1, max_length=128)
     balances: list[CosmosAccountCoin] = Field(max_length=MAX_ACCOUNT_ROWS)
+    balances_truncated: bool
     delegated_total: list[CosmosAccountCoin] = Field(max_length=32)
     rewards_total: list[CosmosAccountCoin] = Field(max_length=32)
+    rewards_by_validator: list[CosmosAccountReward] = Field(max_length=MAX_ACCOUNT_ROWS)
     delegations: list[CosmosAccountDelegation] = Field(max_length=MAX_ACCOUNT_ROWS)
     delegations_truncated: bool
     unbonding: list[CosmosAccountUnbonding] = Field(max_length=MAX_ACCOUNT_ROWS)
@@ -202,30 +211,42 @@ def _account_identity(payload: object, expected_address: str) -> dict:
             try:
                 base64.b64decode(key_value, validate=True)
             except (ValueError, TypeError):
-                pass
+                raise MalformedUpstreamResponse("invalid public key") from None
             public_key = {"type": key_type, "value": key_value}
     return {"account_type": account_type, "account_number": account_number,
             "sequence": sequence, "public_key": public_key}
 
 
-def _validator_refs(service, validators_payload: object) -> dict[str, dict]:
-    if not isinstance(validators_payload, dict):
-        return {}
-    rows = validators_payload.get("validators")
-    if not isinstance(rows, list):
+def _bank_balances(payload: object) -> tuple[list[dict], bool]:
+    payload = _mapping(payload, "bank response")
+    balances = _coins(payload.get("balances"), integer_only=True)
+    pagination = payload.get("pagination") if isinstance(payload.get("pagination"), dict) else {}
+    return balances, bool(pagination.get("next_key"))
+
+
+def _validator_refs(service, raw_validators: object) -> dict[str, dict]:
+    from .validators import category
+
+    if not isinstance(raw_validators, list):
         return {}
     result = {}
-    for row in rows:
-        if not isinstance(row, dict):
+    for raw in raw_validators:
+        if not isinstance(raw, dict):
             continue
-        operator = row.get("operator_address")
-        if not isinstance(operator, str):
+        operator = raw.get("operator_address")
+        if not isinstance(operator, str) or not operator.startswith(service.definition.validator_operator_prefix + "1"):
             continue
+        description = raw.get("description") if isinstance(raw.get("description"), dict) else {}
+        moniker = description.get("moniker")
+        identity = description.get("identity")
+        if not isinstance(moniker, str) or not moniker.strip():
+            moniker = operator
+        avatar = service._avatar(identity) if isinstance(identity, str) and identity.isascii() and identity.isalnum() else None
         result[operator] = {
             "operator_address": operator,
-            "moniker": row.get("moniker") if isinstance(row.get("moniker"), str) else None,
-            "category": row.get("category") if row.get("category") in {"active", "inactive", "jailed"} else None,
-            "avatar_url": row.get("avatar_url") if isinstance(row.get("avatar_url"), str) else None,
+            "moniker": moniker[:256],
+            "category": category(raw),
+            "avatar_url": avatar,
         }
     return result
 
@@ -304,8 +325,22 @@ def _reward_map(payload: object) -> tuple[dict[str, list[dict]], list[dict]]:
     for raw in rows:
         raw = _mapping(raw, "delegation reward")
         operator = _text(raw.get("validator_address"), "reward validator", 90)
+        if operator in result:
+            raise MalformedUpstreamResponse("duplicate reward validator")
         result[operator] = _coins(raw.get("reward"), maximum=32)
     return result, _coins(payload.get("total"), maximum=32)
+
+
+def _bond_denom(payload: object) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    params = payload.get("params")
+    if not isinstance(params, dict):
+        return None
+    try:
+        return _text(params.get("bond_denom"), "bond denom", 128)
+    except MalformedUpstreamResponse:
+        return None
 
 
 async def load_account_snapshot(service, address: str) -> dict:
@@ -314,7 +349,7 @@ async def load_account_snapshot(service, address: str) -> dict:
     The function intentionally contains no transaction-history lookup and no database/indexer dependency.
     Individual optional Cosmos sections degrade independently so one unsupported module does not hide balances.
     """
-    from .service import valid_bech32_address
+    from .service import reencode_bech32_address, valid_bech32_address
 
     if not valid_bech32_address(address, service.definition.account_prefix):
         raise ValueError("invalid account address")
@@ -328,11 +363,14 @@ async def load_account_snapshot(service, address: str) -> dict:
         "unbonding": service._rest("account_unbonding", f"/cosmos/staking/v1beta1/delegators/{encoded}/unbonding_delegations?{page}"),
         "rewards": service._rest("account_rewards", f"/cosmos/distribution/v1beta1/delegators/{encoded}/rewards"),
         "withdraw_address": service._rest("account_withdraw_address", f"/cosmos/distribution/v1beta1/delegators/{encoded}/withdraw_address"),
+        "staking_params": service._rest("account_staking_params", "/cosmos/staking/v1beta1/params"),
     }
     names = tuple(requests)
     raw = await asyncio.gather(*(requests[name] for name in names), return_exceptions=True)
     outcomes = dict(zip(names, raw))
-    states = {name: "unavailable" if isinstance(outcomes[name], BaseException) else "available" for name in names}
+    section_names = ("auth", "bank", "staking", "unbonding", "rewards", "withdraw_address")
+    states = {name: "unavailable" if isinstance(outcomes[name], BaseException) else "available"
+              for name in section_names}
     if all(state == "unavailable" for state in states.values()):
         raise AllEndpointsUnavailable("account snapshot unavailable")
 
@@ -343,10 +381,10 @@ async def load_account_snapshot(service, address: str) -> dict:
         except MalformedUpstreamResponse:
             states["auth"] = "unavailable"
 
-    balances = []
+    balances, balances_truncated = [], False
     if states["bank"] == "available":
         try:
-            balances = _coins(_mapping(outcomes["bank"], "bank response").get("balances"), integer_only=True)
+            balances, balances_truncated = _bank_balances(outcomes["bank"])
         except MalformedUpstreamResponse:
             states["bank"] = "unavailable"
 
@@ -365,10 +403,10 @@ async def load_account_snapshot(service, address: str) -> dict:
         except MalformedUpstreamResponse:
             states["unbonding"] = "unavailable"
 
-    rewards_by_validator, rewards_total = {}, []
+    rewards_by_operator, rewards_total = {}, []
     if states["rewards"] == "available":
         try:
-            rewards_by_validator, rewards_total = _reward_map(outcomes["rewards"])
+            rewards_by_operator, rewards_total = _reward_map(outcomes["rewards"])
         except MalformedUpstreamResponse:
             states["rewards"] = "unavailable"
 
@@ -383,38 +421,49 @@ async def load_account_snapshot(service, address: str) -> dict:
             states["withdraw_address"] = "unavailable"
             withdraw_address = None
 
-    operator_addresses = {row["operator_address"] for row in delegation_rows}
-    operator_addresses.update(row["operator_address"] for row in unbonding_rows)
-    operator_addresses.update(rewards_by_validator)
+    bond_denom = None if isinstance(outcomes["staking_params"], BaseException) else _bond_denom(outcomes["staking_params"])
+    if bond_denom is None and delegation_rows:
+        bond_denom = delegation_rows[0]["balance"]["denom"]
+
     refs = {}
     validator_relation = None
     try:
-        validators_payload = await service.validators()
-        refs = _validator_refs(service, validators_payload)
-        relation_operator = service.definition.validator_operator_prefix + address[len(service.definition.account_prefix):]
-        relation = refs.get(relation_operator)
-        if relation is not None:
-            validator_relation = relation
+        raw_validators = await service.cache.get_or_load(
+            (service.definition.transport.network_id, "validator_set"), 15.0, service._all_validators)
+        refs = _validator_refs(service, raw_validators)
+        relation_operator = reencode_bech32_address(
+            address, service.definition.account_prefix, service.definition.validator_operator_prefix)
+        validator_relation = refs.get(relation_operator)
     except Exception:
         refs = {}
 
     delegations = [{"validator": _validator_ref(row["operator_address"], refs),
                     "shares": row["shares"], "balance": row["balance"],
-                    "rewards": rewards_by_validator.get(row["operator_address"], [])}
+                    "rewards": rewards_by_operator.get(row["operator_address"], [])}
                    for row in delegation_rows]
-    unbonding = [{"validator": _validator_ref(row["operator_address"], refs), "entries": row["entries"]}
+    rewards_by_validator = [
+        {"validator": _validator_ref(operator, refs), "rewards": rewards}
+        for operator, rewards in sorted(rewards_by_operator.items())
+    ]
+    unbonding = [{"validator": _validator_ref(row["operator_address"], refs),
+                  "denom": bond_denom, "entries": row["entries"]}
                  for row in unbonding_rows]
     delegated_total = _sum_coins([row["balance"] for row in delegation_rows])
 
     exists = bool(identity["account_number"] is not None or balances or delegation_rows or unbonding_rows or rewards_total)
+    if all(state == "unavailable" for state in states.values()):
+        raise AllEndpointsUnavailable("account snapshot malformed")
     payload = {
         "network_id": service.definition.transport.network_id,
         "address": address,
         "exists": exists,
         **identity,
+        "bond_denom": bond_denom,
         "balances": balances,
+        "balances_truncated": balances_truncated,
         "delegated_total": delegated_total,
         "rewards_total": rewards_total,
+        "rewards_by_validator": rewards_by_validator,
         "delegations": delegations,
         "delegations_truncated": delegations_truncated,
         "unbonding": unbonding,
