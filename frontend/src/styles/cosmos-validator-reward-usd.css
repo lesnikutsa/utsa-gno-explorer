@@ -21,6 +21,11 @@
   background: var(--color-overlay-hover);
 }
 
+.cosmos-validator-activity a.accent-value:hover,
+.cosmos-validator-activity a.accent-value:focus-visible {
+  color: var(--color-text-bright);
+}
+
 .cosmos-validator-activity > p.muted,
 .cosmos-validator-activity > p.cosmos-error {
   margin: 0;
