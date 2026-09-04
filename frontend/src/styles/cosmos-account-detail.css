@@ -59,9 +59,12 @@
 
 .cosmos-account-reward-total { display: grid; }
 .cosmos-account-reward-total > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--color-border); }
-.cosmos-account-reward-total > div:last-child { border-bottom: 0; }
 .cosmos-account-reward-total span { color: var(--color-text-secondary); font-size: 11px; font-weight: 600; }
 .cosmos-account-reward-total strong { color: var(--color-text-bright); font-size: 12px; }
+.cosmos-account-reward-breakdown { display: grid; border-top: 1px solid var(--color-border); }
+.cosmos-account-reward-breakdown > div { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(140px, auto); align-items: center; gap: 16px; padding: 12px 16px; border-bottom: 1px solid var(--color-border); }
+.cosmos-account-reward-breakdown > div:last-child { border-bottom: 0; }
+.cosmos-account-reward-breakdown .cosmos-account-coin-stack { justify-items: end; color: var(--color-text-bright); font-size: 10px; font-weight: 600; }
 
 .cosmos-account-technical summary { padding: 14px 16px; cursor: pointer; color: var(--color-text); font-size: 13px; font-weight: 700; }
 .cosmos-account-technical[open] summary { border-bottom: 1px solid var(--color-border); }
@@ -91,5 +94,7 @@
   .cosmos-account-unbonding-row { grid-template-columns: 1fr 1fr; }
   .cosmos-account-unbonding-row > .cosmos-account-validator { grid-column: 1 / -1; }
   .cosmos-account-unbonding-row > div:last-child { grid-column: auto; }
+  .cosmos-account-reward-breakdown > div { grid-template-columns: 1fr; }
+  .cosmos-account-reward-breakdown .cosmos-account-coin-stack { justify-items: start; }
   .cosmos-account-technical dl > div { grid-template-columns: 1fr; gap: 5px; }
 }
