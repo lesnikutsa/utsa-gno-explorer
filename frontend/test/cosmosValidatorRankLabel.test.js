@@ -17,3 +17,9 @@ test('validator hero tiles reuse the shared light hover surface', () => {
   assert.match(styles, /cosmos-validator-hero__metrics > article:hover/)
   assert.match(styles, /background:\s*var\(--color-overlay-hover\)/)
 })
+
+test('validator activity block links brighten on hover like block links elsewhere', () => {
+  assert.match(styles, /cosmos-validator-activity a\.accent-value:hover/)
+  assert.match(styles, /cosmos-validator-activity a\.accent-value:focus-visible/)
+  assert.match(styles, /color:\s*var\(--color-text-bright\)/)
+})
