@@ -109,11 +109,16 @@ export function CosmosAccountDetail({ network, address }) {
     <a className="cosmos-back block-detail__back" href={`/networks/${network.id}`}>← Back to Overview</a>
 
     <header className="panel cosmos-account-hero">
-      <div className="cosmos-account-hero__title">
-        <h1>Account</h1>
+      <div className="cosmos-account-hero__profile">
+        <div className="cosmos-account-hero__main">
+          <span className="cosmos-account-network-logo" aria-hidden="true"><img src={network.presentation?.networkIconSrc} alt="" /></span>
+          <div className="cosmos-account-hero__identity">
+            <h1>Account</h1>
+            <AddressValue value={account.address} label="account address" />
+          </div>
+        </div>
         {account.validator_relation && <a className="cosmos-account-validator-link" href={`/networks/${network.id}/validators/${account.validator_relation.operator_address}`}>Validator account · {account.validator_relation.moniker || 'Open validator'} →</a>}
       </div>
-      <AddressValue value={account.address} label="account address" />
       {!account.exists && <p className="muted cosmos-account-empty-note">No current account state was found in the available live modules.</p>}
       <div className="cosmos-account-summary-grid">
         <SummaryCard label="Balance">{bankAvailable ? (primaryBalance ? formatCoin(primaryBalance, network) : primaryAsset ? formatTokenAmount('0', primaryAsset.exponent, primaryAsset.symbol) : '0') : '—'}</SummaryCard>
