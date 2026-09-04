@@ -35,11 +35,21 @@ def tx(messages):
     return field(1, body) + field(2, auth) + field(3, b"signature")
 
 
-def normalize(messages):
+def event(event_type, attributes, msg_index=None):
+    values = [{"key": key, "value": value, "index": True} for key, value in attributes.items()]
+    if msg_index is not None:
+        values.append({"key": "msg_index", "value": str(msg_index), "index": True})
+    return {"type": event_type, "attributes": values}
+
+
+def normalize(messages, events=None, code=0):
     raw = tx(messages)
     block = {"result": {"block": {"header": {"chain_id": "atomone-1", "height": "10", "time": TIME},
                                       "data": {"txs": [base64.b64encode(raw).decode()]}}}}
-    results = {"result": {"height": "10", "txs_results": [{"code": 0, "gas_used": "100", "gas_wanted": "200"}]}}
+    tx_result = {"code": code, "gas_used": "100", "gas_wanted": "200"}
+    if events is not None:
+        tx_result["events"] = events
+    results = {"result": {"height": "10", "txs_results": [tx_result]}}
     detail = normalize_transaction_detail(block, results, expected_chain_id="atomone-1", requested_height=10, tx_index=0)
     TransactionDetailResponse.model_validate(detail)
     return detail
@@ -64,6 +74,56 @@ class CosmosTransactionMessageDetailsTest(unittest.TestCase):
             {"label": "Details", "value": "Professional validator and infrastructure provider"},
         ])
         self.assertNotIn("[do-not-modify]", str(message))
+
+    def test_reward_and_commission_amounts_are_attached_to_the_correct_message(self):
+        reward = field(1, "atone1delegator") + field(2, "atonevaloper1validator")
+        commission = field(1, "atonevaloper1validator")
+        detail = normalize([
+            ("/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward", reward),
+            ("/cosmos.distribution.v1beta1.MsgWithdrawValidatorCommission", commission),
+        ], events=[
+            event("withdraw_rewards", {
+                "amount": "12807843uphoton",
+                "validator": "atonevaloper1validator",
+                "delegator": "atone1delegator",
+            }, 0),
+            event("withdraw_commission", {"amount": "461236uphoton"}, 1),
+        ])
+        self.assertEqual(detail["messages"][0]["fields"][-1], {
+            "label": "Reward withdrawn",
+            "value": [{"denom": "uphoton", "amount": "12807843"}],
+        })
+        self.assertEqual(detail["messages"][1]["fields"][-1], {
+            "label": "Commission withdrawn",
+            "value": [{"denom": "uphoton", "amount": "461236"}],
+        })
+
+    def test_single_message_can_use_legacy_event_without_msg_index(self):
+        reward = field(1, "atone1delegator") + field(2, "atonevaloper1validator")
+        message = normalize([
+            ("/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward", reward),
+        ], events=[event("withdraw_rewards", {"amount": "42uatone"})])["messages"][0]
+        self.assertEqual(message["fields"][-1], {
+            "label": "Reward withdrawn",
+            "value": [{"denom": "uatone", "amount": "42"}],
+        })
+
+    def test_multi_message_legacy_events_without_msg_index_are_not_guessed(self):
+        reward_a = field(1, "atone1a") + field(2, "atonevaloper1a")
+        reward_b = field(1, "atone1b") + field(2, "atonevaloper1b")
+        detail = normalize([
+            ("/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward", reward_a),
+            ("/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward", reward_b),
+        ], events=[event("withdraw_rewards", {"amount": "999uatone"})])
+        for message in detail["messages"]:
+            self.assertNotIn("Reward withdrawn", [item["label"] for item in message["fields"]])
+
+    def test_failed_transaction_does_not_claim_execution_amounts(self):
+        reward = field(1, "atone1delegator") + field(2, "atonevaloper1validator")
+        message = normalize([
+            ("/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward", reward),
+        ], events=[event("withdraw_rewards", {"amount": "42uatone"})], code=7)["messages"][0]
+        self.assertNotIn("Reward withdrawn", [item["label"] for item in message["fields"]])
 
     def test_validator_operational_messages_are_human_readable_and_multi_message_safe(self):
         reward = field(1, "atone1delegator") + field(2, "atonevaloper1validator")
