@@ -14,6 +14,7 @@ import '../styles/cosmos-validator-reward-usd.css'
 const pct = (v) => v == null ? '—' : `${(Number(v) * 100).toFixed(2)}%`
 const utc = (v) => !v || v.startsWith('1970-01-01T00:00:00') ? '—' : new Date(v).toLocaleString(undefined, { timeZone: 'UTC', timeZoneName: 'short' })
 const label = (v) => v[0].toUpperCase() + v.slice(1)
+const rankLabel = (category) => ({ active: 'Active Rank', inactive: 'Inactive Rank', jailed: 'Jailed Rank' })[category] || 'Rank'
 const eta = (v) => v == null ? '—' : v === 0 ? 'Threshold reached' : `≈${Math.floor(v / 3600)}h ${Math.floor(v % 3600 / 60)}m`
 const website = (v) => { try { const u = new URL(v); return ['http:', 'https:'].includes(u.protocol) ? u.href : null } catch { return null } }
 const websiteText = (value) => { const url = new URL(value); const text = `${url.hostname}${url.pathname === '/' ? '' : url.pathname.replace(/\/$/, '')}`; return text.length > 48 ? `${text.slice(0, 45)}…` : text }
@@ -60,7 +61,7 @@ export function CosmosValidatorDetail({ network, operatorAddress }) {
         <div className="cosmos-validator-hero__main"><CosmosValidatorIdentity moniker={v.moniker} address={v.operator_address} imageSrc={v.avatar_url} showTitles={false} fullAddress metadata={v.identity} action={<button className={`validator-favorite ${favorite ? 'validator-favorite--active' : ''}`} type="button" aria-pressed={favorite} aria-label={`${favorite ? 'Remove' : 'Add'} ${v.moniker} ${favorite ? 'from' : 'to'} favorites`} onClick={toggle}>{favorite ? '★' : '☆'}</button>} /></div>
         {(site || v.contact) && <dl className="cosmos-validator-hero__metadata">{site && <div><dt><MetaIcon type="website" />Website</dt><dd><a href={site} target="_blank" rel="noopener noreferrer">{websiteText(site)} ↗</a></dd></div>}{v.contact && <div><dt><MetaIcon type="contact" />Contact</dt><dd>{emailHref(v.contact) ? <a href={emailHref(v.contact)}>{v.contact}</a> : v.contact}</dd></div>}</dl>}
       </div>
-      <div className="cosmos-validator-hero__facts"><Field label="Rank" value={<span className={`cosmos-validator-rank cosmos-validator-rank--${validatorRankTone(v.stake_share)}`}>#{v.rank}</span>} /><Field label="Status" value={label(v.bond_status)} /><Field label="Jailed" value={v.jailed ? 'Yes' : 'No'} /><Field label="Commission" value={pct(v.commission.rate)} /></div>
+      <div className="cosmos-validator-hero__facts"><Field label="Rank" displayLabel={rankLabel(v.category)} value={<span className={`cosmos-validator-rank cosmos-validator-rank--${validatorRankTone(v.stake_share)}`}>#{v.rank}</span>} /><Field label="Status" value={label(v.bond_status)} /><Field label="Jailed" value={v.jailed ? 'Yes' : 'No'} /><Field label="Commission" value={pct(v.commission.rate)} /></div>
       {v.jailed && <div className="cosmos-validator-jailed"><strong>Jailed</strong><span>Until: {utc(v.jailed_until)}</span>{v.tombstoned != null && <span>Tombstoned: {v.tombstoned ? 'Yes' : 'No'}</span>}</div>}
       <div className="cosmos-validator-hero__metrics"><Metric label="Voting Power" value={formatTokenAmount(v.tokens, asset.exponent, asset.symbol)} /><Metric label="Stake Share" value={`${v.stake_share.toFixed(4)}%`} /><Metric label="≈24h Change" value={<Delta validator={v} asset={asset} />} /><Metric label="Minimum Self Delegation" value={minimumSelfDelegation(v.min_self_delegation, asset)} /></div>
       {v.description && <p className="cosmos-validator-hero__description">{v.description}</p>}
@@ -75,7 +76,7 @@ export function CosmosValidatorDetail({ network, operatorAddress }) {
 }
 
 function Metric({ label, value }) { return <article className="card status-card cosmos-validator-summary__card"><span>{label}</span><strong>{value}</strong></article> }
-function Field({ label, value }) { return <div><dt>{label}</dt><dd>{value}</dd></div> }
+function Field({ label, value, displayLabel = label }) { return <div><dt>{displayLabel}</dt><dd>{value}</dd></div> }
 function Panel({ title, children, className = '' }) { return <section className={`panel cosmos-validator-fields ${className}`.trim()}><div className="panel__heading"><h2>{title}</h2></div><dl>{children}</dl></section> }
 function Address({ label, value, full = false, accent = false }) { const display = value || '—'; return <div className="cosmos-validator-address-row"><dt>{label}</dt><dd className={`cosmos-copy-value cosmos-validator-address${full ? ' is-full' : ''}${accent ? ' is-accent' : ''}`}><code>{display}</code>{value && <CopyButton value={value} label={label.toLowerCase()} showTitle={false} />}</dd></div> }
 function Delta({ validator: v, asset }) { if (v.change_24h == null || Number(v.change_24h) === 0) return '—'; const positive = Number(v.change_24h) > 0; return <span className={`validator-delta is-${positive ? 'positive' : 'negative'}`}>{formatSignedTokenAmount(v.change_24h, asset.exponent, asset.symbol)}</span> }
