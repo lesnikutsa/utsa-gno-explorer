@@ -280,24 +280,62 @@ class CosmosService:
         # (blocks -> tx bytes -> block_results) before exposing this capability.
         if type(limit) is not int or not 1 <= limit <= 20 or type(page) is not int or not 1 <= page <= 100:
             raise ValueError("invalid transaction page")
-        path = ("/cosmos/tx/v1beta1/txs?events=tx.height%3E0"
-                f"&pagination.offset={(page - 1) * limit}&pagination.limit={limit}&pagination.count_total=true"
-                "&order_by=ORDER_BY_DESC")
-        capability = False
-        async for endpoint, payload in self.adapter.rest_failover(path):
-            if "code" in payload and "tx" in str(payload.get("message", "")).lower():
-                capability = True
-                continue
+
+        expression = "tx.height>0"
+        encoded = quote(expression, safe="")
+        modern = (f"/cosmos/tx/v1beta1/txs?query={encoded}&order_by=ORDER_BY_DESC"
+                  f"&page={page}&limit={limit}")
+        legacy = (f"/cosmos/tx/v1beta1/txs?events={encoded}&order_by=ORDER_BY_DESC"
+                  f"&page={page}&limit={limit}")
+        indexing_unavailable = False
+
+        def error_text(payload):
+            if not isinstance(payload, dict):
+                return ""
+            return " ".join(str(payload.get(key, "")) for key in ("message", "details", "error"))
+
+        def index_unavailable(payload):
+            text = error_text(payload).lower()
+            return (("tx" in text or "transaction" in text)
+                    and ("index" in text or "search" in text)
+                    and any(marker in text for marker in (
+                        "disabled", "unavailable", "not enabled", "not configured", "no indexer")))
+
+        def normalized(endpoint, payload):
             try:
                 rows, total = normalize_transactions(payload, limit)
                 candidate = {"state": "available", "transactions": rows, "page": page,
-                        "page_size": limit, "total": total,
-                        "has_older": page < 100 and total is not None and page * limit < total,
-                        "has_newer": page > 1, "source_host": self.adapter._host(endpoint)}
+                             "page_size": limit, "total": total,
+                             "has_older": page < 100 and total is not None and page * limit < total,
+                             "has_newer": page > 1, "source_host": self.adapter._host(endpoint)}
                 return TypeAdapter(CosmosTransactionsResponse).validate_python(candidate).model_dump()
             except (MalformedUpstreamResponse, ValidationError):
+                return None
+
+        candidates = await self.adapter._cached_candidates("rest")
+        for candidate in candidates:
+            try:
+                payload = await self.transport.get_object(
+                    candidate.endpoint, modern, accept_error_payload=True)
+            except Exception:
                 continue
-        if capability:
+            response = normalized(candidate.endpoint, payload)
+            if response is not None:
+                return response
+            modern_error = error_text(payload)
+            if _QUERY_FIELD_UNSUPPORTED.search(modern_error) is None:
+                indexing_unavailable = indexing_unavailable or index_unavailable(payload)
+                continue
+            try:
+                fallback = await self.transport.get_object(
+                    candidate.endpoint, legacy, accept_error_payload=True)
+            except Exception:
+                continue
+            response = normalized(candidate.endpoint, fallback)
+            if response is not None:
+                return response
+            indexing_unavailable = indexing_unavailable or index_unavailable(fallback)
+        if indexing_unavailable:
             return {"state": "indexing_unavailable", "transactions": [], "page": page,
                     "page_size": limit, "total": None, "has_older": False, "has_newer": page > 1}
         raise AllEndpointsUnavailable("no valid transaction search response")
