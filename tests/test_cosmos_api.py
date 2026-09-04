@@ -112,6 +112,7 @@ class CosmosRouteTests(unittest.TestCase):
     def test_market_exact_contract(self):
         market = {"network_id": "atomone-mainnet", "currency": "USD", "price": "1.25",
                   "market_cap": "1000000", "change_24h": "-2.5",
+                  "change_7d": None, "change_30d": None,
                   "source_last_updated_at": "2026-08-29T12:35:00Z"}
         with TestClient(self.module.app) as client:
             service = client.app.state.cosmos_services["atomone-mainnet"]
@@ -216,7 +217,16 @@ class CosmosUpstreamIntegrationTests(unittest.TestCase):
             if path == "/cosmos/distribution/v1beta1/params": return httpx.Response(200, json=distribution)
             if path == "/cosmos/distribution/v1beta1/community_pool": return httpx.Response(200, json=base["community_pool"])
             if path == "/cosmos/gov/v1/params/voting": return httpx.Response(200, json=governance)
-            if path == "/api/v3/simple/price": return httpx.Response(200, json={"atomone":{"usd":-1.2 if negative_market else 1.2,"usd_market_cap":1000,"usd_24h_change":-2.5,"last_updated_at":1788000000}})
+            if path == "/api/v3/coins/atomone":
+                return httpx.Response(200, json={
+                    "id": "atomone",
+                    "last_updated": "2026-08-29T12:35:00Z",
+                    "market_data": {
+                        "current_price": {"usd": -1.2 if negative_market else 1.2},
+                        "market_cap": {"usd": 1000},
+                        "price_change_percentage_24h": -2.5,
+                        "price_change_percentage_7d": 3.25,
+                        "price_change_percentage_30d": -4.5}})
             if path == "/api/v3/coins/atomone/market_chart":
                 return httpx.Response(200, json={"prices": [[1788000000000 + index * 300000, 1 + index / 1000] for index in range(120)]})
             return httpx.Response(501, json={"error":"wrong route"})
