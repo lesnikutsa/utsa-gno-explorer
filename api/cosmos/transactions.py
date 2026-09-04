@@ -75,5 +75,18 @@ def normalize_transactions(payload, limit):
             "primary_action": _ACTIONS.get(primary, primary.rsplit(".", 1)[-1].removeprefix("Msg") if primary else "Unknown"),
             "sender": sender})
     pagination = payload.get("pagination")
-    total = pagination.get("total") if isinstance(pagination, dict) else None
-    return rows, _uint(total, "pagination total") if total is not None else None
+    legacy_total = pagination.get("total") if isinstance(pagination, dict) else None
+    modern_total = payload.get("total")
+    if modern_total is not None and legacy_total is not None:
+        modern_value = _uint(modern_total, "transaction total")
+        legacy_value = _uint(legacy_total, "pagination total")
+        if modern_value != legacy_value:
+            raise MalformedUpstreamResponse("conflicting transaction totals")
+        total = modern_value
+    elif modern_total is not None:
+        total = _uint(modern_total, "transaction total")
+    elif legacy_total is not None:
+        total = _uint(legacy_total, "pagination total")
+    else:
+        total = None
+    return rows, total
