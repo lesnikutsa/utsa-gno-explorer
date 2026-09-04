@@ -102,7 +102,7 @@ export function CosmosAccountDetail({ network, address }) {
 
     <header className="panel cosmos-account-hero">
       <div className="cosmos-account-hero__title">
-        <div><span className="cosmos-account-eyebrow">{network.presentation?.projectName || network.id}</span><h1>Account</h1></div>
+        <h1>Account</h1>
         {account.validator_relation && <a className="cosmos-account-validator-link" href={`/networks/${network.id}/validators/${account.validator_relation.operator_address}`}>Validator account · {account.validator_relation.moniker || 'Open validator'} →</a>}
       </div>
       <AddressValue value={account.address} label="account address" />
@@ -116,23 +116,23 @@ export function CosmosAccountDetail({ network, address }) {
     </header>
 
     <section className="panel cosmos-account-panel cosmos-account-delegations">
-      <div className="panel__heading"><div><h2>Delegations</h2><span className="panel__meta">Current staking positions</span></div><div className="cosmos-account-panel-total">{stakingAvailable ? (delegatedCoin ? formatCoin(delegatedCoin, network) : '0') : '—'}</div></div>
-      <StateHint state={account.states.staking}>{activeDelegations.length ? <div className="cosmos-account-table-wrap"><table><thead><tr><th>Validator</th><th>Status</th><th>Delegated</th><th>Rewards</th></tr></thead><tbody>{activeDelegations.map((row) => <tr key={row.validator.operator_address}><td><ValidatorName network={network} validator={row.validator} /></td><td><span className={`cosmos-account-status is-${row.validator.category || 'unknown'}`}>{row.validator.category || 'Unknown'}</span></td><td><strong>{formatCoin(row.balance, network)}</strong></td><td><CoinStack coins={row.rewards} network={network} /></td></tr>)}</tbody></table></div> : <p className="muted">No active delegations.</p>}</StateHint>
+      <div className="panel__heading"><h2>Delegations</h2><div className="cosmos-account-panel-total">{stakingAvailable ? (delegatedCoin ? formatCoin(delegatedCoin, network) : '0') : '—'}</div></div>
+      <StateHint state={account.states.staking}>{activeDelegations.length ? <div className="cosmos-account-table-wrap"><table><thead><tr><th>Validator</th><th>Status</th><th>Delegated</th><th>Rewards</th></tr></thead><tbody>{activeDelegations.map((row) => <tr key={row.validator.operator_address}><td><ValidatorName network={network} validator={row.validator} /></td><td><span className={`cosmos-account-status is-${row.validator.category || 'unknown'}`}>{row.validator.category || 'Unknown'}</span></td><td><strong>{formatCoin(row.balance, network)}</strong></td><td><CoinStack coins={row.rewards} network={network} /></td></tr>)}</tbody></table></div> : <p className="muted cosmos-account-empty-state">No active delegations.</p>}</StateHint>
       {account.delegations_truncated && <p className="muted cosmos-account-footnote">Additional delegation records exist beyond the bounded live page.</p>}
     </section>
 
     <section className="panel cosmos-account-panel cosmos-account-unbonding">
-      <div className="panel__heading"><div><h2>Unbonding</h2><span className="panel__meta">Tokens currently leaving staking</span></div></div>
-      <StateHint state={account.states.unbonding}>{account.unbonding?.length ? <div className="cosmos-account-unbonding-list">{account.unbonding.flatMap((group) => group.entries.map((entry, index) => <article className="cosmos-account-unbonding-row" key={`${group.validator.operator_address}:${entry.creation_height}:${index}`}><ValidatorName network={network} validator={group.validator} /><div><span>Amount</span><strong>{group.denom ? formatCoin({ denom: group.denom, amount: entry.balance }, network) : entry.balance}</strong></div><div><span>Completion</span><strong>{utc(entry.completion_time)}</strong></div><div><span>Remaining</span><strong>{formatDuration(entry.remaining_seconds)}</strong></div></article>))}</div> : <p className="muted">No active unbonding delegations.</p>}</StateHint>
+      <div className="panel__heading"><h2>Unbonding</h2></div>
+      <StateHint state={account.states.unbonding}>{account.unbonding?.length ? <div className="cosmos-account-unbonding-list">{account.unbonding.flatMap((group) => group.entries.map((entry, index) => <article className="cosmos-account-unbonding-row" key={`${group.validator.operator_address}:${entry.creation_height}:${index}`}><ValidatorName network={network} validator={group.validator} /><div><span>Amount</span><strong>{group.denom ? formatCoin({ denom: group.denom, amount: entry.balance }, network) : entry.balance}</strong></div><div><span>Completion</span><strong>{utc(entry.completion_time)}</strong></div><div><span>Remaining</span><strong>{formatDuration(entry.remaining_seconds)}</strong></div></article>))}</div> : <p className="muted cosmos-account-empty-state">No active unbonding delegations.</p>}</StateHint>
       {account.unbonding_truncated && <p className="muted cosmos-account-footnote">Additional unbonding entries exist beyond the bounded live page.</p>}
     </section>
 
     <section className="panel cosmos-account-panel cosmos-account-rewards">
-      <div className="panel__heading"><div><h2>Rewards</h2><span className="panel__meta">Claimable staking rewards</span></div></div>
+      <div className="panel__heading"><h2>Rewards</h2></div>
       <StateHint state={account.states.rewards}>{account.rewards_total?.some(hasAmount) ? <>
         <div className="cosmos-account-reward-total">{account.rewards_total.filter(hasAmount).map((coin) => <div key={coin.denom}><span>{assetFor(network, coin.denom)?.symbol || coin.denom}</span><strong>{formatCoin(coin, network)}</strong></div>)}</div>
         {account.rewards_by_validator?.length > 0 && <div className="cosmos-account-reward-breakdown">{account.rewards_by_validator.map((row) => <div key={row.validator.operator_address}><ValidatorName network={network} validator={row.validator} /><CoinStack coins={row.rewards} network={network} /></div>)}</div>}
-      </> : <p className="muted">No claimable rewards.</p>}</StateHint>
+      </> : <p className="muted cosmos-account-empty-state">No claimable rewards.</p>}</StateHint>
     </section>
 
     <details className="panel cosmos-account-panel cosmos-account-technical">
