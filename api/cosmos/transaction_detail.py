@@ -10,6 +10,8 @@ from .parsing import _height, _identity, _mapping, _timestamp
 
 MAX_TX_BYTES = 2_000_000
 MAX_FIELDS = 256
+MAX_AUTHZ_DEPTH = 3
+MAX_MESSAGE_DISPLAY_FIELDS = 16
 _DO_NOT_MODIFY = "[do-not-modify]"
 _VOTE_OPTIONS = {
     0: "Unspecified",
@@ -256,6 +258,53 @@ def _weighted_vote(fields):
     return result
 
 
+def _authz_grant(fields):
+    result = []
+    granter = _text(_one(fields, 1))
+    grantee = _text(_one(fields, 2))
+    if granter:
+        result.append(_field("Granter", granter))
+    if grantee:
+        result.append(_field("Grantee", grantee))
+    grant_raw = _one(fields, 3)
+    if grant_raw is not None:
+        grant_fields = _fields(grant_raw)
+        authorization_raw = _one(grant_fields, 1)
+        if authorization_raw is not None:
+            authorization_fields = _fields(authorization_raw)
+            authorization_type = _text(_one(authorization_fields, 1))
+            if authorization_type:
+                result.append(_field("Authorization", authorization_type))
+    return result
+
+
+def _authz_exec(fields, depth):
+    result = []
+    grantee = _text(_one(fields, 1))
+    nested_raw = [value for field, wire, value in fields if field == 2 and wire == 2]
+    if grantee:
+        result.append(_field("Grantee", grantee))
+    result.append(_field("Executed messages", str(len(nested_raw))))
+    if depth >= MAX_AUTHZ_DEPTH:
+        if nested_raw:
+            result.append(_field("Nested details", "Depth limit reached"))
+        return result
+
+    omitted = 0
+    for nested_index, raw_any in enumerate(nested_raw):
+        nested = _message(raw_any, depth=depth + 1)
+        candidate = [_field(f"#{nested_index} action", nested["action"])]
+        for nested_field in nested["fields"]:
+            candidate.append(_field(f"#{nested_index} {nested_field['label']}", nested_field["value"]))
+        if len(result) + len(candidate) > MAX_MESSAGE_DISPLAY_FIELDS - 1:
+            omitted = len(nested_raw) - nested_index
+            break
+        result.extend(candidate)
+    if omitted and len(result) < MAX_MESSAGE_DISPLAY_FIELDS:
+        result.append(_field("Additional executed messages", str(omitted)))
+    return result
+
+
 _MESSAGES = {
     "/cosmos.bank.v1beta1.MsgSend": ("Send", ((1, "From", "text"), (2, "To", "text"), (3, "Amount", "coins"))),
     "/cosmos.staking.v1beta1.MsgDelegate": ("Delegate", ((1, "Delegator", "text"), (2, "Validator", "text"), (3, "Amount", "coin"))),
@@ -271,6 +320,7 @@ _MESSAGES = {
     "/cosmos.gov.v1.MsgVote": ("Vote", ((1, "Proposal", "uint"), (2, "Voter", "text"), (3, "Option", "vote_option"))),
     "/cosmos.gov.v1beta1.MsgDeposit": ("Deposit", ((1, "Proposal", "uint"), (2, "Depositor", "text"), (3, "Amount", "coins"))),
     "/cosmos.gov.v1.MsgDeposit": ("Deposit", ((1, "Proposal", "uint"), (2, "Depositor", "text"), (3, "Amount", "coins"))),
+    "/cosmos.authz.v1beta1.MsgRevoke": ("Revoke authorization", ((1, "Granter", "text"), (2, "Grantee", "text"), (3, "Message type", "text"))),
     "/ibc.applications.transfer.v1.MsgTransfer": ("IBC transfer", ((1, "Source port", "text"), (2, "Source channel", "text"), (3, "Token", "coin"), (4, "Sender", "text"), (5, "Receiver", "text"))),
 }
 
@@ -279,6 +329,7 @@ _CUSTOM_MESSAGES = {
     "/cosmos.staking.v1beta1.MsgCreateValidator": ("Create validator", _create_validator),
     "/cosmos.gov.v1beta1.MsgVoteWeighted": ("Weighted vote", _weighted_vote),
     "/cosmos.gov.v1.MsgVoteWeighted": ("Weighted vote", _weighted_vote),
+    "/cosmos.authz.v1beta1.MsgGrant": ("Grant authorization", _authz_grant),
 }
 
 _EXECUTION_COIN_EVENTS = {
@@ -287,12 +338,14 @@ _EXECUTION_COIN_EVENTS = {
 }
 
 
-def _message(raw_any):
+def _message(raw_any, *, depth=0):
     any_fields = _fields(raw_any)
     type_url, value = _text(_one(any_fields, 1)), _one(any_fields, 2)
     if not type_url or not type_url.startswith("/") or value is None:
         raise MalformedUpstreamResponse("invalid Cosmos message Any")
     fields = _fields(value)
+    if type_url == "/cosmos.authz.v1beta1.MsgExec":
+        return {"type_url": type_url, "action": "Authz execution", "fields": _authz_exec(fields, depth)}
     custom = _CUSTOM_MESSAGES.get(type_url)
     if custom:
         action, decoder = custom
