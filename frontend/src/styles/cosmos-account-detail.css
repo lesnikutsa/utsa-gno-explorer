@@ -1,18 +1,24 @@
 /* Cosmos account detail follows the existing validator-detail visual language. */
 .cosmos-account-detail { min-width: 0; }
-.cosmos-account-hero { display: grid; gap: 18px; margin-bottom: 12px; padding: 22px; }
-.cosmos-account-hero__title { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
-.cosmos-account-hero__title h1 { margin: 0; color: var(--color-text-bright); font-size: clamp(24px, 2.3vw, 32px); font-weight: 650; }
-.cosmos-account-validator-link { align-self: center; color: var(--color-text-secondary); font-size: 12px; font-weight: 600; }
+.cosmos-account-hero { display: grid; gap: 16px; margin-bottom: 12px; padding: 18px; background: radial-gradient(circle at 48px 44px, var(--color-accent-soft), transparent 150px), var(--color-card); box-shadow: 0 6px 18px var(--color-shadow); }
+.cosmos-account-hero__profile { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) minmax(220px, .42fr); align-items: center; gap: 22px; }
+.cosmos-account-hero__main { display: flex; min-width: 0; align-items: center; gap: 12px; }
+.cosmos-account-network-logo { display: grid; width: 86px; height: 86px; flex: 0 0 86px; place-items: center; overflow: hidden; border: 1px solid var(--color-border-soft); border-radius: 11px; background: var(--color-surface-subtle); }
+.cosmos-account-network-logo img { display: block; width: 72px; height: 72px; object-fit: contain; }
+.cosmos-account-hero__identity { display: grid; min-width: 0; align-content: center; gap: 7px; }
+.cosmos-account-hero__identity h1 { margin: 0; color: var(--color-text-bright); font-size: 22px; font-weight: 700; line-height: 1.2; }
+.cosmos-account-validator-link { justify-self: end; align-self: center; color: var(--color-text-secondary); font-size: 12px; font-weight: 600; }
 .cosmos-account-validator-link:hover, .cosmos-account-validator-link:focus-visible { color: var(--color-accent); }
-.cosmos-account-address-value { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) 26px; align-items: center; gap: 10px; }
-.cosmos-account-address-value code { min-width: 0; overflow: hidden; color: var(--color-text); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+.cosmos-account-address-value { display: inline-flex; width: fit-content; max-width: 100%; min-width: 0; align-items: center; gap: 7px; }
+.cosmos-account-address-value code { min-width: 0; max-width: min(620px, 100%); overflow: hidden; color: var(--color-text-secondary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.cosmos-account-address-value .copy-button { flex: 0 0 auto; }
 .cosmos-account-empty-note { margin: -4px 0 0; }
 
-.cosmos-account-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
-.cosmos-account-summary-card { min-width: 0; min-height: 98px; padding: 14px 15px; background: linear-gradient(135deg, var(--color-accent-soft), var(--color-card-gradient-end)); box-shadow: 0 4px 12px var(--color-shadow); }
+.cosmos-account-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; overflow: hidden; border: 1px solid var(--color-border-soft); border-radius: 6px; background: var(--color-border-soft); }
+.cosmos-account-summary-card { min-width: 0; min-height: 112px; padding: 15px 16px; border: 0; border-radius: 5px; background: var(--color-surface-subtle); box-shadow: none; transition: background-color .15s ease, filter .15s ease; }
+.cosmos-account-summary-card:hover { background: var(--color-overlay-hover); filter: brightness(1.04); }
 .cosmos-account-summary-card .status-card__heading span { display: block; color: var(--color-table-heading); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-.cosmos-account-summary-card .status-card__value { margin: 12px 0 5px; color: var(--color-text-bright); font-size: clamp(15px, 1.35vw, 19px); font-weight: 700; line-height: 1.2; }
+.cosmos-account-summary-card .status-card__value { margin: 13px 0 6px; color: var(--color-text-bright); font-size: clamp(18px, 1.55vw, 22px); font-weight: 700; line-height: 1.2; }
 .cosmos-account-summary-card .status-card__meta { min-height: 14px; color: var(--color-text-secondary); font-size: 10px; }
 
 .cosmos-account-panel { min-width: 0; margin-bottom: 12px; padding: 0; overflow: hidden; }
@@ -67,6 +73,9 @@
 .cosmos-account-technical dd code { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (max-width: 920px) {
+  .cosmos-account-hero__profile { grid-template-columns: 1fr; gap: 12px; }
+  .cosmos-account-validator-link { justify-self: start; }
+  .cosmos-account-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cosmos-account-unbonding-row { grid-template-columns: minmax(180px, 1.4fr) repeat(2, minmax(120px, 1fr)); }
   .cosmos-account-unbonding-row > div:last-child { grid-column: 2 / -1; }
   .cosmos-account-technical dl { grid-template-columns: 1fr; }
@@ -75,11 +84,12 @@
 
 @media (max-width: 680px) {
   .cosmos-account-hero { padding: 15px; }
-  .cosmos-account-hero__title { display: grid; }
-  .cosmos-account-validator-link { justify-self: start; }
-  .cosmos-account-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .cosmos-account-summary-card { min-height: 88px; padding: 12px; }
-  .cosmos-account-summary-card .status-card__value { font-size: 13px; }
+  .cosmos-account-network-logo { width: 62px; height: 62px; flex-basis: 62px; border-radius: 9px; }
+  .cosmos-account-network-logo img { width: 52px; height: 52px; }
+  .cosmos-account-hero__identity h1 { font-size: 19px; }
+  .cosmos-account-address-value code { max-width: min(66vw, 420px); font-size: 10px; }
+  .cosmos-account-summary-card { min-height: 96px; padding: 12px; }
+  .cosmos-account-summary-card .status-card__value { font-size: 16px; }
   .cosmos-account-balance-grid, .cosmos-account-reward-total { grid-template-columns: 1fr; }
   .cosmos-account-balance-grid > div, .cosmos-account-reward-total > div { border-right: 0; border-bottom: 1px solid var(--color-border); }
   .cosmos-account-balance-grid > div:last-child, .cosmos-account-reward-total > div:last-child { border-bottom: 0; }
