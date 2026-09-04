@@ -21,7 +21,7 @@
 .cosmos-account-hero .cosmos-account-summary-grid > article { min-height: 96px; padding: 15px 16px; }
 .cosmos-account-hero .cosmos-account-summary-grid > article:hover { background: var(--color-overlay-hover); }
 .cosmos-account-hero .cosmos-account-summary-grid > article > span { font-family: var(--font-ui); font-size: 10px; }
-.cosmos-account-hero .cosmos-account-summary-grid > article > strong { display: inline-block; margin-top: 12px; margin-right: 8px; color: var(--color-text-bright); font-family: var(--font-ui); font-size: clamp(18px, 1.55vw, 22px); font-weight: 700; line-height: 1.2; vertical-align: baseline; }
+.cosmos-account-hero .cosmos-account-summary-grid > article > strong { display: inline-block; margin-top: 12px; margin-right: 12px; color: var(--color-text-bright); font-family: var(--font-ui); font-size: clamp(18px, 1.55vw, 22px); font-weight: 700; line-height: 1.2; vertical-align: baseline; }
 .cosmos-account-summary-card__meta { display: block; min-height: 14px; margin-top: 4px; color: var(--color-text-secondary); font-family: var(--font-ui); font-size: 10px; font-weight: 400; line-height: 1.35; }
 .cosmos-account-usd { display: block; margin-top: 4px; color: var(--color-success); font-family: var(--font-ui); font-size: 9px; font-weight: 500; line-height: 1.3; font-variant-numeric: tabular-nums; }
 .cosmos-account-summary-card > .cosmos-account-usd { display: inline-block; margin: 0; font-size: 11px; font-weight: 600; line-height: 1.2; vertical-align: baseline; }
@@ -30,10 +30,10 @@
 .cosmos-account-hero__wallet-assets { display: grid; grid-template-columns: 92px minmax(0, 1fr); align-items: start; gap: 12px; padding-top: 14px; border-top: 1px solid var(--color-border-soft); }
 .cosmos-account-hero__wallet-assets-label { padding-top: 8px; color: var(--color-table-heading); font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
 .cosmos-account-wallet-assets-grid { display: flex; min-width: 0; flex-wrap: wrap; gap: 8px; }
-.cosmos-account-wallet-asset { display: grid; min-width: 185px; min-height: 44px; grid-template-columns: auto auto minmax(58px, auto); grid-template-rows: 1fr; align-items: center; gap: 0 12px; padding: 8px 10px; border: 1px solid var(--color-border-soft); border-radius: 5px; background: var(--color-surface-subtle); }
-.cosmos-account-wallet-asset > span { grid-column: 1; grid-row: 1; align-self: center; color: var(--color-text-secondary); font-size: 9px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
-.cosmos-account-wallet-asset > strong { grid-column: 2; grid-row: 1; align-self: center; color: var(--color-text-bright); font-family: var(--font-ui); font-size: 12px; font-weight: 700; white-space: nowrap; }
-.cosmos-account-wallet-asset > .cosmos-account-usd { grid-column: 3; grid-row: 1; align-self: center; margin: 0; text-align: right; white-space: nowrap; }
+.cosmos-account-wallet-asset { display: grid; min-width: 168px; min-height: 44px; grid-template-columns: auto auto auto; grid-template-rows: 1fr; align-items: center; gap: 0 8px; padding: 8px 9px; border: 1px solid var(--color-border-soft); border-radius: 5px; background: var(--color-surface-subtle); }
+.cosmos-account-wallet-asset > span { grid-column: 1; grid-row: 1; align-self: center; color: var(--color-text-secondary); font-size: 9px; font-weight: 700; line-height: 1.2; letter-spacing: .05em; text-transform: uppercase; }
+.cosmos-account-wallet-asset > strong { grid-column: 2; grid-row: 1; align-self: center; color: var(--color-text-bright); font-family: var(--font-ui); font-size: 12px; font-weight: 700; line-height: 1.2; white-space: nowrap; }
+.cosmos-account-wallet-asset > .cosmos-account-usd { grid-column: 3; grid-row: 1; align-self: center; margin: 0; line-height: 1.2; text-align: right; white-space: nowrap; }
 .cosmos-account-wallet-assets-unavailable { align-self: center; font-size: 10px; }
 
 .cosmos-account-panel { min-width: 0; margin-bottom: 12px; padding: 0; overflow: hidden; }
