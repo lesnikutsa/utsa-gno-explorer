@@ -351,6 +351,8 @@ class MarketResponse(StrictModel):
     price: DecimalString
     market_cap: DecimalString
     change_24h: SignedDecimalString
+    change_7d: SignedDecimalString | None = None
+    change_30d: SignedDecimalString | None = None
     source_last_updated_at: str = Field(min_length=20, max_length=64)
 
 
