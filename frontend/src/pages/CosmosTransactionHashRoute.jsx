@@ -8,7 +8,6 @@ export function CosmosTransactionHashRoute({ network, txHash }) {
   useEffect(() => {
     let active = true
     const controller = new AbortController()
-    const timeout = window.setTimeout(() => controller.abort(), 15000)
 
     setState({ loading: true, error: null })
     getCosmosTransactionByHash({ networkId: network.id, txHash, signal: controller.signal })
@@ -21,17 +20,13 @@ export function CosmosTransactionHashRoute({ network, txHash }) {
       })
       .catch((error) => {
         if (!active) return
-        const message = error?.name === 'AbortError'
-          ? 'Request timed out'
-          : error?.detail || error?.message || 'Transaction not found or temporarily unavailable.'
+        const message = error?.detail || error?.message || 'Transaction not found or temporarily unavailable.'
         setState({ loading: false, error: message })
       })
-      .finally(() => window.clearTimeout(timeout))
 
     return () => {
       active = false
       controller.abort()
-      window.clearTimeout(timeout)
     }
   }, [network.id, txHash])
 
