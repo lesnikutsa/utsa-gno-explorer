@@ -47,6 +47,21 @@ test('account page keeps staking reward unbonding and technical surfaces', () =>
   assert.match(page, /account\.public_key/)
 })
 
+test('account page removes redundant network and section helper copy', () => {
+  assert.doesNotMatch(page, /cosmos-account-eyebrow/)
+  assert.doesNotMatch(page, /network\.presentation\?\.projectName/)
+  assert.doesNotMatch(page, /Current staking positions/)
+  assert.doesNotMatch(page, /Tokens currently leaving staking/)
+  assert.doesNotMatch(page, /Claimable staking rewards/)
+})
+
+test('empty states stay compact and technical labels match validator detail typography', () => {
+  assert.match(page, /cosmos-account-empty-state/)
+  assert.match(css, /\.cosmos-account-panel > \.cosmos-account-empty-state \{[^}]*font-size: 10px/)
+  assert.match(css, /\.cosmos-account-technical dt \{[^}]*font-size: 9px[^}]*font-weight: 700[^}]*text-transform: uppercase/)
+  assert.match(css, /\.cosmos-account-technical dd \{[^}]*font-size: 12px[^}]*font-weight: 600/)
+})
+
 test('summary cards include unbonding and preserve tiny non-zero reward visibility', () => {
   assert.match(page, /<SummaryCard label="Unbonding"/)
   assert.match(page, /sumUnbonding\(account\.unbonding\)/)
