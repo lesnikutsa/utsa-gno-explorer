@@ -25,6 +25,24 @@ test('account summary stays chain-generic with exactly four logical cards', () =
   assert.doesNotMatch(page, /PHOTON Balance/)
 })
 
+test('account hero mirrors validator identity language with network logo and adjacent address copy', () => {
+  assert.match(page, /cosmos-account-hero__profile/)
+  assert.match(page, /cosmos-account-network-logo/)
+  assert.match(page, /network\.presentation\?\.networkIconSrc/)
+  assert.match(page, /cosmos-account-hero__identity/)
+  assert.match(page, /<h1>Account<\/h1>/)
+  assert.match(page, /<AddressValue value=\{account\.address\} label="account address" \/>/)
+  assert.match(css, /\.cosmos-account-network-logo \{[^}]*width: 86px[^}]*height: 86px/)
+  assert.match(css, /\.cosmos-account-address-value \{[^}]*display: inline-flex[^}]*width: fit-content[^}]*gap: 7px/)
+})
+
+test('summary cards use validator-style segmented surface and hover treatment', () => {
+  assert.match(css, /\.cosmos-account-summary-grid \{[^}]*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)[^}]*gap: 1px[^}]*background: var\(--color-border-soft\)/)
+  assert.match(css, /\.cosmos-account-summary-card \{[^}]*min-height: 112px[^}]*background: var\(--color-surface-subtle\)[^}]*box-shadow: none/)
+  assert.match(css, /\.cosmos-account-summary-card:hover \{[^}]*background: var\(--color-overlay-hover\)/)
+  assert.match(css, /\.cosmos-account-summary-card \.status-card__value \{[^}]*font-size: clamp\(18px, 1\.55vw, 22px\)/)
+})
+
 test('balances panel shows configured assets and extra live bank denoms dynamically', () => {
   assert.match(page, /<h2>Balances<\/h2>/)
   assert.match(page, /configuredAssets\.map\(\(asset\) => coinFor\(account\.balances, asset\.base\)/)
@@ -91,7 +109,7 @@ test('summary cards include unbonding and preserve tiny non-zero reward visibili
 test('account page stays aligned with the explorer panel and theme system', () => {
   assert.match(page, /panel cosmos-account-hero/)
   assert.match(page, /card status-card cosmos-account-summary-card/)
-  assert.match(css, /linear-gradient\(135deg, var\(--color-accent-soft\), var\(--color-card-gradient-end\)\)/)
+  assert.match(css, /radial-gradient\(circle at 48px 44px, var\(--color-accent-soft\), transparent 150px\), var\(--color-card\)/)
   assert.match(css, /var\(--color-border\)/)
   assert.match(css, /var\(--color-accent\)/)
   assert.match(css, /var\(--color-text-secondary\)/)
