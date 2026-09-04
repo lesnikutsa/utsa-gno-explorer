@@ -1,4 +1,5 @@
 import base64
+import unittest
 
 from api.cosmos.schemas import TransactionDetailResponse
 from api.cosmos.transaction_detail import normalize_transaction_detail
@@ -44,61 +45,71 @@ def normalize(messages):
     return detail
 
 
-def test_edit_validator_only_exposes_fields_that_actually_change():
-    description = (field(1, "[do-not-modify]") + field(2, "[do-not-modify]")
-                   + field(3, "[do-not-modify]") + field(4, "[do-not-modify]")
-                   + field(5, "Professional validator and infrastructure provider"))
-    payload = field(1, description) + field(2, "atonevaloper1validator")
-    message = normalize([("/cosmos.staking.v1beta1.MsgEditValidator", payload)])["messages"][0]
-    assert message["action"] == "Edit validator"
-    assert message["fields"] == [
-        {"label": "Validator", "value": "atonevaloper1validator"},
-        {"label": "Details", "value": "Professional validator and infrastructure provider"},
-    ]
-    assert "[do-not-modify]" not in str(message)
+class CosmosTransactionMessageDetailsTest(unittest.TestCase):
+    def test_existing_send_decoder_stays_human_readable(self):
+        payload = field(1, "atone1from") + field(2, "atone1to") + field(3, coin())
+        message = normalize([("/cosmos.bank.v1beta1.MsgSend", payload)])["messages"][0]
+        self.assertEqual(message["action"], "Send")
+        self.assertEqual([item["label"] for item in message["fields"]], ["From", "To", "Amount"])
+
+    def test_edit_validator_only_exposes_fields_that_actually_change(self):
+        description = (field(1, "[do-not-modify]") + field(2, "[do-not-modify]")
+                       + field(3, "[do-not-modify]") + field(4, "[do-not-modify]")
+                       + field(5, "Professional validator and infrastructure provider"))
+        payload = field(1, description) + field(2, "atonevaloper1validator")
+        message = normalize([("/cosmos.staking.v1beta1.MsgEditValidator", payload)])["messages"][0]
+        self.assertEqual(message["action"], "Edit validator")
+        self.assertEqual(message["fields"], [
+            {"label": "Validator", "value": "atonevaloper1validator"},
+            {"label": "Details", "value": "Professional validator and infrastructure provider"},
+        ])
+        self.assertNotIn("[do-not-modify]", str(message))
+
+    def test_validator_operational_messages_are_human_readable_and_multi_message_safe(self):
+        reward = field(1, "atone1delegator") + field(2, "atonevaloper1validator")
+        commission = field(1, "atonevaloper1validator")
+        unjail = field(1, "atonevaloper1validator")
+        detail = normalize([
+            ("/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward", reward),
+            ("/cosmos.distribution.v1beta1.MsgWithdrawValidatorCommission", commission),
+            ("/cosmos.slashing.v1beta1.MsgUnjail", unjail),
+        ])
+        self.assertEqual(detail["message_count"], 3)
+        self.assertEqual([message["action"] for message in detail["messages"]], [
+            "Withdraw reward", "Withdraw validator commission", "Unjail",
+        ])
+        self.assertEqual(detail["messages"][1]["fields"], [
+            {"label": "Validator", "value": "atonevaloper1validator"}
+        ])
+
+    def test_create_validator_decodes_nested_description_commission_and_value(self):
+        description = field(1, "UTSA") + field(3, "https://example.com") + field(5, "Validator details")
+        commission = field(1, "0.050000000000000000") + field(2, "0.250000000000000000") + field(3, "0.100000000000000000")
+        payload = (field(1, description) + field(2, commission) + field(3, "1")
+                   + field(4, "atone1delegator") + field(5, "atonevaloper1validator")
+                   + field(7, coin("1000000")))
+        message = normalize([("/cosmos.staking.v1beta1.MsgCreateValidator", payload)])["messages"][0]
+        labels = [item["label"] for item in message["fields"]]
+        self.assertEqual(labels, ["Validator", "Delegator", "Amount", "Minimum self delegation", "Moniker", "Website", "Details",
+                                  "Commission rate", "Maximum commission", "Maximum daily change"])
+        self.assertEqual(message["fields"][2]["value"], {"denom": "uatone", "amount": "1000000"})
+
+    def test_weighted_vote_and_deposit_keep_structured_safe_details(self):
+        yes = field(1, 1) + field(2, "0.700000000000000000")
+        abstain = field(1, 2) + field(2, "0.300000000000000000")
+        vote = field(1, 9) + field(2, "atone1voter") + field(3, yes) + field(3, abstain)
+        deposit = field(1, 9) + field(2, "atone1depositor") + field(3, coin("42"))
+        detail = normalize([
+            ("/cosmos.gov.v1.MsgVoteWeighted", vote),
+            ("/cosmos.gov.v1.MsgDeposit", deposit),
+        ])
+        options = detail["messages"][0]["fields"][2]["value"]
+        self.assertEqual(options, [
+            {"option": "Yes", "weight": "0.700000000000000000"},
+            {"option": "Abstain", "weight": "0.300000000000000000"},
+        ])
+        self.assertEqual(detail["messages"][1]["fields"][2]["value"], [{"denom": "uatone", "amount": "42"}])
 
 
-def test_validator_operational_messages_are_human_readable_and_multi_message_safe():
-    reward = field(1, "atone1delegator") + field(2, "atonevaloper1validator")
-    commission = field(1, "atonevaloper1validator")
-    unjail = field(1, "atonevaloper1validator")
-    detail = normalize([
-        ("/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward", reward),
-        ("/cosmos.distribution.v1beta1.MsgWithdrawValidatorCommission", commission),
-        ("/cosmos.slashing.v1beta1.MsgUnjail", unjail),
-    ])
-    assert detail["message_count"] == 3
-    assert [message["action"] for message in detail["messages"]] == [
-        "Withdraw reward", "Withdraw validator commission", "Unjail",
-    ]
-    assert detail["messages"][1]["fields"] == [{"label": "Validator", "value": "atonevaloper1validator"}]
-
-
-def test_create_validator_decodes_nested_description_commission_and_value():
-    description = field(1, "UTSA") + field(3, "https://example.com") + field(5, "Validator details")
-    commission = field(1, "0.050000000000000000") + field(2, "0.250000000000000000") + field(3, "0.100000000000000000")
-    payload = (field(1, description) + field(2, commission) + field(3, "1")
-               + field(4, "atone1delegator") + field(5, "atonevaloper1validator")
-               + field(7, coin("1000000")))
-    message = normalize([("/cosmos.staking.v1beta1.MsgCreateValidator", payload)])["messages"][0]
-    labels = [item["label"] for item in message["fields"]]
-    assert labels == ["Validator", "Delegator", "Amount", "Minimum self delegation", "Moniker", "Website", "Details",
-                      "Commission rate", "Maximum commission", "Maximum daily change"]
-    assert message["fields"][2]["value"] == {"denom": "uatone", "amount": "1000000"}
-
-
-def test_weighted_vote_and_deposit_keep_structured_safe_details():
-    yes = field(1, 1) + field(2, "0.700000000000000000")
-    abstain = field(1, 2) + field(2, "0.300000000000000000")
-    vote = field(1, 9) + field(2, "atone1voter") + field(3, yes) + field(3, abstain)
-    deposit = field(1, 9) + field(2, "atone1depositor") + field(3, coin("42"))
-    detail = normalize([
-        ("/cosmos.gov.v1.MsgVoteWeighted", vote),
-        ("/cosmos.gov.v1.MsgDeposit", deposit),
-    ])
-    options = detail["messages"][0]["fields"][2]["value"]
-    assert options == [
-        {"option": "Yes", "weight": "0.700000000000000000"},
-        {"option": "Abstain", "weight": "0.300000000000000000"},
-    ]
-    assert detail["messages"][1]["fields"][2]["value"] == [{"denom": "uatone", "amount": "42"}]
+if __name__ == "__main__":
+    unittest.main()
