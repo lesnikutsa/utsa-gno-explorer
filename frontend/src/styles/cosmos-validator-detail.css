@@ -322,12 +322,13 @@
 .cosmos-validator-delegator:hover code, .cosmos-validator-delegator:focus-within code, .cosmos-validator-delegator.is-self-delegation code { color: var(--color-accent); }
 .cosmos-validator-delegator .copy-button { width: 23px; height: 23px; flex: 0 0 23px; }
 .cosmos-validator-delegated, .cosmos-validator-delegation-share { color: var(--color-text-bright); font-size: 12px; }
-.cosmos-validator-delegators__actions { display: flex; gap: 18px; margin-top: 4px; padding: 9px 13px 0; border-top: 1px solid var(--color-border-soft); }
+.cosmos-validator-delegators__actions { display: flex; gap: 18px; margin-top: 4px; padding: 9px 13px; border-top: 1px solid var(--color-border-soft); }
 .cosmos-validator-delegators__actions .cosmos-detail-toggle { margin: 0; }
 .cosmos-validator-delegators__actions button:disabled { cursor: wait; opacity: .6; }
-.cosmos-validator-activity { min-width: 0; }
+.cosmos-validator-activity { position: relative; min-width: 0; }
+.cosmos-validator-activity > .panel__heading { padding-right: 282px; }
 .cosmos-validator-activity .panel__meta { display: flex; align-items: center; }
-.cosmos-validator-activity__filters { display: flex; gap: 3px; padding: 7px 8px 5px; }
+.cosmos-validator-activity__filters { position: absolute; top: 12px; right: 13px; display: flex; gap: 3px; padding: 0; }
 .cosmos-validator-activity__filters button { padding: 3px 7px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--color-text-secondary); font-size: 10px; cursor: pointer; }
 .cosmos-validator-activity__filters button:hover { background: var(--color-overlay-hover); color: var(--color-text); }
 .cosmos-validator-activity__filters button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
@@ -385,6 +386,11 @@
     row-gap: 6px;
     column-gap: 4px;
   }
+}
+
+@media (max-width: 700px) {
+  .cosmos-validator-activity > .panel__heading { padding-right: 13px; }
+  .cosmos-validator-activity__filters { position: static; padding: 7px 8px 5px; border-bottom: 1px solid var(--color-border-soft); }
 }
 
 @media (max-width: 560px) {
