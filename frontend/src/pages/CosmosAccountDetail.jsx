@@ -54,7 +54,7 @@ function AddressValue({ value, label }) {
 
 function ValidatorName({ network, validator }) {
   return <span className="cosmos-account-validator">
-    <a href={`/networks/${network.id}/validators/${validator.operator_address}`} className="accent-value">{validator.moniker || 'Validator'}</a>
+    <a href={`/networks/${network.id}/validators/${validator.operator_address}`}>{validator.moniker || 'Validator'}</a>
     <code title={validator.operator_address}>{validator.operator_address}</code>
   </span>
 }
@@ -65,10 +65,10 @@ function CoinStack({ coins, network }) {
 }
 
 function SummaryCard({ label, children, meta }) {
-  return <article className="card status-card cosmos-account-summary-card">
-    <div className="status-card__heading"><span>{label}</span></div>
-    <div className="status-card__value">{children}</div>
-    {meta && <div className="status-card__meta">{meta}</div>}
+  return <article className="card status-card cosmos-validator-summary__card cosmos-account-summary-card">
+    <span>{label}</span>
+    <strong>{children}</strong>
+    {meta && <small className="cosmos-account-summary-card__meta">{meta}</small>}
   </article>
 }
 
@@ -117,10 +117,10 @@ export function CosmosAccountDetail({ network, address }) {
             <AddressValue value={account.address} label="account address" />
           </div>
         </div>
-        {account.validator_relation && <a className="cosmos-account-validator-link" href={`/networks/${network.id}/validators/${account.validator_relation.operator_address}`}>Validator account · {account.validator_relation.moniker || 'Open validator'} →</a>}
+        {account.validator_relation && <p className="cosmos-account-validator-relation">This account belongs to validator <a href={`/networks/${network.id}/validators/${account.validator_relation.operator_address}`}>{account.validator_relation.moniker || 'Unknown validator'}</a></p>}
       </div>
       {!account.exists && <p className="muted cosmos-account-empty-note">No current account state was found in the available live modules.</p>}
-      <div className="cosmos-account-summary-grid">
+      <div className="cosmos-validator-hero__metrics cosmos-account-summary-grid">
         <SummaryCard label="Balance">{bankAvailable ? (primaryBalance ? formatCoin(primaryBalance, network) : primaryAsset ? formatTokenAmount('0', primaryAsset.exponent, primaryAsset.symbol) : '0') : '—'}</SummaryCard>
         <SummaryCard label="Delegated" meta={stakingAvailable ? `${delegationCount} active validator${delegationCount === 1 ? '' : 's'}` : 'Unavailable'}>{stakingAvailable ? (delegatedCoin ? formatCoin(delegatedCoin, network) : primaryAsset ? formatTokenAmount('0', primaryAsset.exponent, primaryAsset.symbol) : '0') : '—'}</SummaryCard>
         <SummaryCard label="Rewards" meta={!rewardsAvailable ? 'Unavailable' : otherRewardCount ? `+${otherRewardCount} other asset${otherRewardCount === 1 ? '' : 's'}` : 'Claimable now'}>{rewardsAvailable ? (rewardHeadline ? formatCoin(rewardHeadline, network) : primaryAsset ? formatTokenAmount('0', primaryAsset.exponent, primaryAsset.symbol) : '0') : '—'}</SummaryCard>
