@@ -1297,26 +1297,40 @@ class CosmosService:
     async def market(self) -> dict:
         key = (self.definition.transport.network_id, "market", ())
         async def load():
-            identifier = self.definition.coingecko_id
-            response = await self.transport.get_object("https://api.coingecko.com",
-                f"/api/v3/simple/price?ids={identifier}&vs_currencies=usd&include_market_cap=true&include_24hr_change=true&include_last_updated_at=true")
-            item = _mapping(response.get(identifier), "market data")
-            def number(name, *, nonnegative=False):
-                value = item.get(name)
+            identifier = quote(self.definition.coingecko_id, safe="")
+            response = await self.transport.get_object(
+                "https://api.coingecko.com",
+                f"/api/v3/coins/{identifier}?localization=false&tickers=false&market_data=true"
+                "&community_data=false&developer_data=false&sparkline=false")
+            if response.get("id") != self.definition.coingecko_id:
+                raise MalformedUpstreamResponse("wrong market asset")
+            item = _mapping(response.get("market_data"), "market data")
+            prices = _mapping(item.get("current_price"), "market prices")
+            caps = _mapping(item.get("market_cap"), "market caps")
+
+            def number(value, *, nonnegative=False):
                 if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
                     raise MalformedUpstreamResponse("invalid market value")
                 if nonnegative and value < 0:
                     raise MalformedUpstreamResponse("invalid market value")
                 return format(Decimal(str(value)), "f")
-            updated = _integer(item.get("last_updated_at"), "market timestamp")
+
+            def optional_number(name):
+                value = item.get(name)
+                return None if value is None else number(value)
+
             try:
-                timestamp = datetime.fromtimestamp(updated, timezone.utc).isoformat().replace("+00:00", "Z")
-            except (OverflowError, OSError, ValueError):
+                timestamp = parse_rfc3339(_text(response.get("last_updated"), "market timestamp", 64)).isoformat(
+                    timespec="microseconds").replace("+00:00", "Z")
+            except ValueError:
                 raise MalformedUpstreamResponse("invalid market timestamp") from None
             result = {"network_id": self.definition.transport.network_id, "currency": "USD",
-                      "price": number("usd", nonnegative=True),
-                      "market_cap": number("usd_market_cap", nonnegative=True),
-                      "change_24h": number("usd_24h_change"), "source_last_updated_at": timestamp}
+                      "price": number(prices.get("usd"), nonnegative=True),
+                      "market_cap": number(caps.get("usd"), nonnegative=True),
+                      "change_24h": number(item.get("price_change_percentage_24h")),
+                      "change_7d": optional_number("price_change_percentage_7d"),
+                      "change_30d": optional_number("price_change_percentage_30d"),
+                      "source_last_updated_at": timestamp}
             try:
                 return MarketResponse.model_validate(result).model_dump(mode="json")
             except ValidationError:
