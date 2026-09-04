@@ -27,3 +27,9 @@ test('hash route initial lookup is not suppressed when a middle-click opens a ba
   assert.match(resolver, /new AbortController\(\)/)
   assert.match(resolver, /getCosmosTransactionByHash/)
 })
+
+test('hash route does not impose a shorter client-side timeout than backend RPC failover', () => {
+  assert.doesNotMatch(resolver, /setTimeout\s*\(/)
+  assert.doesNotMatch(resolver, /clearTimeout\s*\(/)
+  assert.match(resolver, /return \(\) => \{\s*active = false\s*controller\.abort\(\)/s)
+})
