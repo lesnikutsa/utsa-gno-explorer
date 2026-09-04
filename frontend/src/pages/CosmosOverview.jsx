@@ -11,6 +11,7 @@ import { formatCompactDecimal, formatProtocolDuration, formatProtocolPercent, fo
 import { cosmosLivenessRisk, formatApproximateDuration } from '../utils/cosmosSlashing'
 import { relativeTime } from '../utils/time'
 import { missedCountClass } from '../utils/cosmosValidators'
+import '../styles/cosmos-overview-parameters.css'
 
 const sectionUnavailable = (value) => value?.error
 const help = {

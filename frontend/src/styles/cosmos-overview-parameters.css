@@ -1,0 +1,12 @@
+/* Keep Overview parameter cards typographically aligned with Cosmos validator detail fields. */
+.cosmos-overview .cosmos-parameters .cosmos-metrics dt {
+  color: var(--color-table-heading);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.cosmos-overview .cosmos-parameters .cosmos-metrics dd {
+  font: 400 12px var(--font-ui);
+}
