@@ -49,16 +49,17 @@ test('validator relation stays on the wallet line but is pushed to the right edg
   assert.match(css, /\.cosmos-account-validator-relation a:hover,[^}]*focus-visible \{ color: var\(--color-accent\); \}/)
 })
 
-test('summary cards reuse the validator metric strip colors while keeping account sizing', () => {
+test('summary cards reuse validator colors and keep the more compact account height', () => {
   assert.match(page, /cosmos-validator-hero__metrics cosmos-account-summary-grid/)
   assert.match(page, /card status-card cosmos-validator-summary__card cosmos-account-summary-card/)
-  assert.match(css, /\.cosmos-account-hero \.cosmos-account-summary-grid > article \{[^}]*min-height: 112px[^}]*padding: 15px 16px/)
+  assert.match(css, /\.cosmos-account-hero \.cosmos-account-summary-grid > article \{[^}]*min-height: 96px[^}]*padding: 15px 16px/)
   assert.match(css, /\.cosmos-account-hero \.cosmos-account-summary-grid > article:hover \{ background: var\(--color-overlay-hover\); \}/)
   assert.doesNotMatch(css, /\.cosmos-account-summary-card \{[^}]*background:/)
 })
 
-test('account headline numbers use the UI font rather than the status-card mono font', () => {
-  assert.match(css, /\.cosmos-account-hero \.cosmos-account-summary-grid > article > strong \{[^}]*font-family: var\(--font-ui\)[^}]*font-size: clamp\(18px, 1\.55vw, 22px\)/)
+test('account headline numbers use the UI font and keep USD on the same value line', () => {
+  assert.match(css, /\.cosmos-account-hero \.cosmos-account-summary-grid > article > strong \{[^}]*display: inline-block[^}]*font-family: var\(--font-ui\)[^}]*font-size: clamp\(18px, 1\.55vw, 22px\)/)
+  assert.match(css, /\.cosmos-account-summary-card > \.cosmos-account-usd \{[^}]*display: inline-block[^}]*margin: 0[^}]*font-size: 11px[^}]*font-weight: 600[^}]*vertical-align: baseline/)
   assert.match(css, /\.cosmos-account-summary-card__meta \{[^}]*font-family: var\(--font-ui\)/)
 })
 
@@ -74,11 +75,11 @@ test('wallet assets replace the standalone balances panel and stay dynamic', () 
   assert.match(css, /\.cosmos-account-wallet-assets-grid \{[^}]*flex-wrap: wrap/)
 })
 
-test('wallet asset labels stay vertically centered whether USD exists or not', () => {
-  assert.match(css, /\.cosmos-account-wallet-asset \{[^}]*grid-template-rows: auto auto[^}]*align-items: center/)
-  assert.match(css, /\.cosmos-account-wallet-asset > span \{[^}]*grid-row: 1 \/ 3[^}]*align-self: center/)
-  assert.match(css, /\.cosmos-account-wallet-asset > strong \{[^}]*grid-column: 2[^}]*grid-row: 1/)
-  assert.match(css, /\.cosmos-account-wallet-asset > \.cosmos-account-usd \{[^}]*grid-column: 2[^}]*grid-row: 2/)
+test('wallet asset labels and amounts stay on one common line whether USD exists or not', () => {
+  assert.match(css, /\.cosmos-account-wallet-asset \{[^}]*grid-template-columns: auto auto minmax\(58px, auto\)[^}]*grid-template-rows: 1fr[^}]*align-items: center/)
+  assert.match(css, /\.cosmos-account-wallet-asset > span \{[^}]*grid-column: 1[^}]*grid-row: 1[^}]*align-self: center/)
+  assert.match(css, /\.cosmos-account-wallet-asset > strong \{[^}]*grid-column: 2[^}]*grid-row: 1[^}]*align-self: center/)
+  assert.match(css, /\.cosmos-account-wallet-asset > \.cosmos-account-usd \{[^}]*grid-column: 3[^}]*grid-row: 1[^}]*align-self: center/)
 })
 
 test('native-token USD uses the existing market endpoint and validator green price contract', () => {
