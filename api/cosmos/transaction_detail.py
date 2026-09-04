@@ -2,6 +2,7 @@
 
 import base64
 import hashlib
+import re
 
 from .errors import MalformedUpstreamResponse
 from .parsing import _height, _identity, _mapping, _timestamp
@@ -16,6 +17,7 @@ _VOTE_OPTIONS = {
     3: "No",
     4: "No with veto",
 }
+_EVENT_COIN_RE = re.compile(r"^([0-9]+)([A-Za-z][A-Za-z0-9/:._-]{0,127})$")
 
 
 def _varint(data, offset):
@@ -75,6 +77,62 @@ def _coin(raw):
     fields = _fields(raw)
     denom, amount = _text(_one(fields, 1)), _text(_one(fields, 2))
     return {"denom": denom, "amount": amount} if denom and amount and amount.isdigit() else None
+
+
+def _event_coins(value):
+    if not isinstance(value, str) or not value or len(value) > 4096:
+        return None
+    result = []
+    for part in value.split(","):
+        match = _EVENT_COIN_RE.fullmatch(part.strip())
+        if not match:
+            return None
+        amount, denom = match.groups()
+        result.append({"denom": denom, "amount": amount})
+    return result or None
+
+
+def _event_attributes(event):
+    attributes = event.get("attributes") if isinstance(event, dict) else None
+    if not isinstance(attributes, list):
+        return {}
+    result = {}
+    for attribute in attributes:
+        if not isinstance(attribute, dict):
+            continue
+        key, value = attribute.get("key"), attribute.get("value")
+        if (isinstance(key, str) and 0 < len(key) <= 128
+                and isinstance(value, str) and len(value) <= 4096):
+            result.setdefault(key, value)
+    return result
+
+
+def _message_events(events, message_index, message_count):
+    if not isinstance(events, list):
+        return []
+    result = []
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        attributes = _event_attributes(event)
+        raw_index = attributes.get("msg_index")
+        if raw_index is None:
+            if message_count == 1:
+                result.append(event)
+            continue
+        if raw_index == str(message_index):
+            result.append(event)
+    return result
+
+
+def _execution_coin_field(events, event_type, label):
+    for event in events:
+        if event.get("type") != event_type:
+            continue
+        amount = _event_coins(_event_attributes(event).get("amount"))
+        if amount:
+            return {"label": label, "value": amount}
+    return None
 
 
 def _field(label, value):
@@ -190,6 +248,11 @@ _CUSTOM_MESSAGES = {
     "/cosmos.gov.v1.MsgVoteWeighted": ("Weighted vote", _weighted_vote),
 }
 
+_EXECUTION_COIN_EVENTS = {
+    "/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward": ("withdraw_rewards", "Reward withdrawn"),
+    "/cosmos.distribution.v1beta1.MsgWithdrawValidatorCommission": ("withdraw_commission", "Commission withdrawn"),
+}
+
 
 def _message(raw_any):
     any_fields = _fields(raw_any)
@@ -223,6 +286,18 @@ def _message(raw_any):
     return {"type_url": type_url, "action": action, "fields": normalized}
 
 
+def _enrich_messages_from_events(messages, events):
+    message_count = len(messages)
+    for message_index, message in enumerate(messages):
+        specification = _EXECUTION_COIN_EVENTS.get(message["type_url"])
+        if not specification:
+            continue
+        event_type, label = specification
+        field = _execution_coin_field(_message_events(events, message_index, message_count), event_type, label)
+        if field:
+            message["fields"].append(field)
+
+
 def normalize_transaction_detail(block_payload, results_payload, *, expected_chain_id,
                                  requested_height, tx_index):
     result = _mapping(_mapping(block_payload).get("result"))
@@ -249,6 +324,8 @@ def normalize_transaction_detail(block_payload, results_payload, *, expected_cha
     if body_raw is None or auth_raw is None: raise MalformedUpstreamResponse("invalid TxRaw")
     body = _fields(body_raw)
     messages = [_message(value) for field, wire, value in body if field == 1 and wire == 2]
+    if code == 0:
+        _enrich_messages_from_events(messages, outcome.get("events"))
     memo = _text(_one(body, 2)) or None
     auth = _fields(auth_raw); fee_raw = _one(auth, 2); fee = None
     if fee_raw is not None:
