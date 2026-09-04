@@ -12,19 +12,25 @@ test('Cosmos account route is network-scoped and separate from the Gno account r
   assert.match(app, /const accountDetailMatch = path\.match\(\/\^\\\/accounts/)
 })
 
-test('account page is multi-asset and uses the network registry instead of AtomOne hardcoding', () => {
+test('account summary stays chain-generic with exactly four logical cards', () => {
   assert.match(page, /const configuredAssets = network\.assets \|\| \[\]/)
-  assert.match(page, /configuredAssets\.map\(\(asset\) => <SummaryCard/)
+  assert.match(page, /const primaryDenom = network\.presentation\?\.nativeDenom/)
+  for (const label of ['Balance', 'Delegated', 'Rewards', 'Unbonding']) {
+    assert.match(page, new RegExp(`<SummaryCard label="${label}"`))
+  }
+  assert.doesNotMatch(page, /label=\{`\$\{asset\.symbol\} Balance`\}/)
   assert.doesNotMatch(page, /uatone/)
   assert.doesNotMatch(page, /uphoton/)
   assert.doesNotMatch(page, /ATONE Balance/)
   assert.doesNotMatch(page, /PHOTON Balance/)
 })
 
-test('balances are shown once in the hero rather than repeated in a second panel', () => {
-  assert.match(page, /label=\{`\$\{asset\.symbol\} Balance`\}/)
-  assert.doesNotMatch(page, /<h2>Balances<\/h2>/)
-  assert.doesNotMatch(page, /Current bank balances/)
+test('balances panel shows configured assets and extra live bank denoms dynamically', () => {
+  assert.match(page, /<h2>Balances<\/h2>/)
+  assert.match(page, /configuredAssets\.map\(\(asset\) => coinFor\(account\.balances, asset\.base\)/)
+  assert.match(page, /account\.balances \|\| \[\]\)\.filter\(\(coin\) => !configuredDenoms\.has\(coin\.denom\) && hasAmount\(coin\)\)/)
+  assert.match(page, /balanceCoins\.map/)
+  assert.match(css, /\.cosmos-account-balance-grid/)
 })
 
 test('current delegations hide zero-balance historical rows while rewards remain independent', () => {
@@ -34,8 +40,22 @@ test('current delegations hide zero-balance historical rows while rewards remain
   assert.match(page, /delegationCount = activeDelegations\.length/)
 })
 
+test('rewards stay multi-asset and prefer the configured primary denom for the headline', () => {
+  assert.match(page, /visibleRewards = \(account\.rewards_total \|\| \[\]\)\.filter\(hasAmount\)/)
+  assert.match(page, /rewardHeadline = coinFor\(visibleRewards, primaryDenom\) \|\| visibleRewards\[0\]/)
+  assert.match(page, /visibleRewards\.map/)
+  assert.match(page, /otherRewardCount = visibleRewards\.filter/)
+})
+
+test('unbonding is placed after rewards and immediately before technical details', () => {
+  const rewardsIndex = page.indexOf('cosmos-account-rewards')
+  const unbondingIndex = page.indexOf('cosmos-account-unbonding')
+  const technicalIndex = page.indexOf('cosmos-account-technical')
+  assert.ok(rewardsIndex > -1 && unbondingIndex > rewardsIndex && technicalIndex > unbondingIndex)
+})
+
 test('account page keeps staking reward unbonding and technical surfaces', () => {
-  for (const label of ['Delegations', 'Unbonding', 'Rewards', 'Technical details']) {
+  for (const label of ['Balances', 'Delegations', 'Unbonding', 'Rewards', 'Technical details']) {
     assert.ok(page.includes(label), `missing ${label}`)
   }
   assert.doesNotMatch(page, /Account Information/)
