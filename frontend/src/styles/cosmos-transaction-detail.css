@@ -48,6 +48,10 @@
   overflow-wrap: anywhere;
 }
 
+.cosmos-transaction-detail .cosmos-transaction-error {
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 700px) {
   .cosmos-transaction-detail .cosmos-message__details > dl {
     grid-template-columns: 1fr;
