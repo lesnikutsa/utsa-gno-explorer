@@ -16,6 +16,20 @@ function formatCoin(coin, network) {
   return formatted
 }
 
+function approximateUsd(coin, network, market) {
+  const marketAsset = network.assets?.[0]
+  const price = Number(market?.price)
+  const amount = Number(coin?.amount)
+  const exponent = marketAsset?.exponent
+  if (!marketAsset || coin?.denom !== marketAsset.base || !Number.isFinite(price) || price <= 0 || !Number.isFinite(amount) || amount < 0 || !Number.isInteger(exponent) || exponent < 0 || exponent > 30) return null
+  const usd = amount / (10 ** exponent) * price
+  if (!Number.isFinite(usd) || usd <= 0) return null
+  if (usd >= 1000) return `$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  if (usd >= 1) return `$${usd.toFixed(2)}`
+  const digits = usd >= 0.01 ? 4 : 8
+  return `$${usd.toFixed(digits).replace(/0+$/, '').replace(/\.$/, '')}`
+}
+
 function sumUnbonding(groups) {
   try {
     let total = 0n
@@ -64,11 +78,21 @@ function CoinStack({ coins, network }) {
   return visible.length ? <span className="cosmos-account-coin-stack">{visible.map((coin) => <span key={coin.denom}>{formatCoin(coin, network)}</span>)}</span> : '—'
 }
 
-function SummaryCard({ label, children, meta }) {
+function SummaryCard({ label, children, usd, meta }) {
   return <article className="card status-card cosmos-validator-summary__card cosmos-account-summary-card">
     <span>{label}</span>
     <strong>{children}</strong>
+    {usd && <small className="cosmos-account-usd" title="Approximate USD value · CoinGecko">≈ {usd}</small>}
     {meta && <small className="cosmos-account-summary-card__meta">{meta}</small>}
+  </article>
+}
+
+function WalletAsset({ coin, network, market }) {
+  const usd = approximateUsd(coin, network, market)
+  return <article className="cosmos-account-wallet-asset">
+    <span>{assetFor(network, coin.denom)?.symbol || coin.denom}</span>
+    <strong>{formatCoin(coin, network)}</strong>
+    {usd && <small className="cosmos-account-usd" title="Approximate USD value · CoinGecko">≈ {usd}</small>}
   </article>
 }
 
@@ -78,6 +102,7 @@ function StateHint({ state, children }) {
 
 export function CosmosAccountDetail({ network, address }) {
   const resource = useCosmosResource(`/api/networks/${network.id}/accounts/${encodeURIComponent(address)}`, 15000)
+  const market = useCosmosResource(`/api/networks/${network.id}/market`, 30000)
   if (!resource.data && resource.loading) return <section className="cosmos-account-detail"><p>Loading account…</p></section>
   if (!resource.data) return <section className="cosmos-account-detail"><a className="cosmos-back block-detail__back" href={`/networks/${network.id}`}>← Back to Overview</a><p className="cosmos-error">Account data is temporarily unavailable or the address is invalid.</p></section>
 
@@ -104,6 +129,9 @@ export function CosmosAccountDetail({ network, address }) {
   const unbondingCount = (account.unbonding || []).reduce((sum, group) => sum + (group.entries?.length || 0), 0)
   const unbondingAmount = sumUnbonding(account.unbonding)
   const unbondingCoin = account.bond_denom && unbondingAmount != null ? { denom: account.bond_denom, amount: unbondingAmount } : null
+  const balanceUsd = bankAvailable ? approximateUsd(primaryBalance, network, market.data) : null
+  const delegatedUsd = stakingAvailable ? approximateUsd(delegatedCoin, network, market.data) : null
+  const rewardsUsd = rewardsAvailable ? approximateUsd(rewardHeadline, network, market.data) : null
 
   return <section className="cosmos-account-detail theme-compatible">
     <a className="cosmos-back block-detail__back" href={`/networks/${network.id}`}>← Back to Overview</a>
@@ -114,24 +142,25 @@ export function CosmosAccountDetail({ network, address }) {
           <span className="cosmos-account-network-logo" aria-hidden="true"><img src={network.presentation?.networkIconSrc} alt="" /></span>
           <div className="cosmos-account-hero__identity">
             <h1>Account</h1>
-            <AddressValue value={account.address} label="account address" />
+            <div className="cosmos-account-identity-line">
+              <AddressValue value={account.address} label="account address" />
+              {account.validator_relation && <p className="cosmos-account-validator-relation">This account belongs to validator <a href={`/networks/${network.id}/validators/${account.validator_relation.operator_address}`}>{account.validator_relation.moniker || 'Unknown validator'}</a></p>}
+            </div>
           </div>
         </div>
-        {account.validator_relation && <p className="cosmos-account-validator-relation">This account belongs to validator <a href={`/networks/${network.id}/validators/${account.validator_relation.operator_address}`}>{account.validator_relation.moniker || 'Unknown validator'}</a></p>}
       </div>
       {!account.exists && <p className="muted cosmos-account-empty-note">No current account state was found in the available live modules.</p>}
       <div className="cosmos-validator-hero__metrics cosmos-account-summary-grid">
-        <SummaryCard label="Balance">{bankAvailable ? (primaryBalance ? formatCoin(primaryBalance, network) : primaryAsset ? formatTokenAmount('0', primaryAsset.exponent, primaryAsset.symbol) : '0') : '—'}</SummaryCard>
-        <SummaryCard label="Delegated" meta={stakingAvailable ? `${delegationCount} active validator${delegationCount === 1 ? '' : 's'}` : 'Unavailable'}>{stakingAvailable ? (delegatedCoin ? formatCoin(delegatedCoin, network) : primaryAsset ? formatTokenAmount('0', primaryAsset.exponent, primaryAsset.symbol) : '0') : '—'}</SummaryCard>
-        <SummaryCard label="Rewards" meta={!rewardsAvailable ? 'Unavailable' : otherRewardCount ? `+${otherRewardCount} other asset${otherRewardCount === 1 ? '' : 's'}` : 'Claimable now'}>{rewardsAvailable ? (rewardHeadline ? formatCoin(rewardHeadline, network) : primaryAsset ? formatTokenAmount('0', primaryAsset.exponent, primaryAsset.symbol) : '0') : '—'}</SummaryCard>
+        <SummaryCard label="Balance" usd={balanceUsd}>{bankAvailable ? (primaryBalance ? formatCoin(primaryBalance, network) : primaryAsset ? formatTokenAmount('0', primaryAsset.exponent, primaryAsset.symbol) : '0') : '—'}</SummaryCard>
+        <SummaryCard label="Delegated" usd={delegatedUsd} meta={stakingAvailable ? `${delegationCount} active validator${delegationCount === 1 ? '' : 's'}` : 'Unavailable'}>{stakingAvailable ? (delegatedCoin ? formatCoin(delegatedCoin, network) : primaryAsset ? formatTokenAmount('0', primaryAsset.exponent, primaryAsset.symbol) : '0') : '—'}</SummaryCard>
+        <SummaryCard label="Rewards" usd={rewardsUsd} meta={!rewardsAvailable ? 'Unavailable' : otherRewardCount ? `+${otherRewardCount} other asset${otherRewardCount === 1 ? '' : 's'}` : 'Claimable now'}>{rewardsAvailable ? (rewardHeadline ? formatCoin(rewardHeadline, network) : primaryAsset ? formatTokenAmount('0', primaryAsset.exponent, primaryAsset.symbol) : '0') : '—'}</SummaryCard>
         <SummaryCard label="Unbonding" meta={!unbondingAvailable ? 'Unavailable' : unbondingCount ? `${unbondingCount} active entr${unbondingCount === 1 ? 'y' : 'ies'}` : 'No active entries'}>{unbondingAvailable ? (unbondingCoin ? formatCoin(unbondingCoin, network) : primaryAsset ? formatTokenAmount('0', primaryAsset.exponent, primaryAsset.symbol) : '0') : '—'}</SummaryCard>
       </div>
+      <div className="cosmos-account-hero__wallet-assets">
+        <span className="cosmos-account-hero__wallet-assets-label">Wallet assets</span>
+        {bankAvailable ? <div className="cosmos-account-wallet-assets-grid">{balanceCoins.map((coin) => <WalletAsset key={coin.denom} coin={coin} network={network} market={market.data} />)}</div> : <span className="muted cosmos-account-wallet-assets-unavailable">Temporarily unavailable from the current API.</span>}
+      </div>
     </header>
-
-    <section className="panel cosmos-account-panel cosmos-account-balances">
-      <div className="panel__heading"><h2>Balances</h2></div>
-      <StateHint state={account.states.bank}>{balanceCoins.length ? <div className="cosmos-account-balance-grid">{balanceCoins.map((coin) => <div key={coin.denom}><span>{assetFor(network, coin.denom)?.symbol || coin.denom}</span><strong>{formatCoin(coin, network)}</strong></div>)}</div> : <p className="muted cosmos-account-empty-state">No balances.</p>}</StateHint>
-    </section>
 
     <section className="panel cosmos-account-panel cosmos-account-delegations">
       <div className="panel__heading"><h2>Delegations</h2><div className="cosmos-account-panel-total">{stakingAvailable ? (delegatedCoin ? formatCoin(delegatedCoin, network) : '0') : '—'}</div></div>
@@ -142,7 +171,7 @@ export function CosmosAccountDetail({ network, address }) {
     <section className="panel cosmos-account-panel cosmos-account-rewards">
       <div className="panel__heading"><h2>Rewards</h2></div>
       <StateHint state={account.states.rewards}>{visibleRewards.length ? <>
-        <div className="cosmos-account-reward-total">{visibleRewards.map((coin) => <div key={coin.denom}><span>{assetFor(network, coin.denom)?.symbol || coin.denom}</span><strong>{formatCoin(coin, network)}</strong></div>)}</div>
+        <div className="cosmos-account-reward-total">{visibleRewards.map((coin) => <div key={coin.denom}><span>{assetFor(network, coin.denom)?.symbol || coin.denom}</span><strong>{formatCoin(coin, network)}</strong>{approximateUsd(coin, network, market.data) && <small className="cosmos-account-usd" title="Approximate USD value · CoinGecko">≈ {approximateUsd(coin, network, market.data)}</small>}</div>)}</div>
         {account.rewards_by_validator?.length > 0 && <div className="cosmos-account-reward-breakdown">{account.rewards_by_validator.map((row) => <div key={row.validator.operator_address}><ValidatorName network={network} validator={row.validator} /><CoinStack coins={row.rewards} network={network} /></div>)}</div>}
       </> : <p className="muted cosmos-account-empty-state">No claimable rewards.</p>}</StateHint>
     </section>
