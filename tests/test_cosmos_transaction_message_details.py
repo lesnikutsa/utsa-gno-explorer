@@ -42,13 +42,17 @@ def event(event_type, attributes, msg_index=None):
     return {"type": event_type, "attributes": values}
 
 
-def normalize(messages, events=None, code=0):
+def normalize(messages, events=None, code=0, log=None, codespace=None):
     raw = tx(messages)
     block = {"result": {"block": {"header": {"chain_id": "atomone-1", "height": "10", "time": TIME},
                                       "data": {"txs": [base64.b64encode(raw).decode()]}}}}
     tx_result = {"code": code, "gas_used": "100", "gas_wanted": "200"}
     if events is not None:
         tx_result["events"] = events
+    if log is not None:
+        tx_result["log"] = log
+    if codespace is not None:
+        tx_result["codespace"] = codespace
     results = {"result": {"height": "10", "txs_results": [tx_result]}}
     detail = normalize_transaction_detail(block, results, expected_chain_id="atomone-1", requested_height=10, tx_index=0)
     TransactionDetailResponse.model_validate(detail)
@@ -71,9 +75,21 @@ class CosmosTransactionMessageDetailsTest(unittest.TestCase):
         self.assertEqual(message["action"], "Edit validator")
         self.assertEqual(message["fields"], [
             {"label": "Validator", "value": "atonevaloper1validator"},
-            {"label": "Details", "value": "Professional validator and infrastructure provider"},
+            {"label": "New details", "value": "Professional validator and infrastructure provider"},
         ])
         self.assertNotIn("[do-not-modify]", str(message))
+
+    def test_edit_validator_commission_is_explicit_and_human_readable(self):
+        description = (field(1, "[do-not-modify]") + field(2, "[do-not-modify]")
+                       + field(3, "[do-not-modify]") + field(4, "[do-not-modify]")
+                       + field(5, "[do-not-modify]"))
+        payload = (field(1, description) + field(2, "atonevaloper1validator")
+                   + field(3, "0.050000000000000000"))
+        message = normalize([("/cosmos.staking.v1beta1.MsgEditValidator", payload)])["messages"][0]
+        self.assertEqual(message["fields"], [
+            {"label": "Validator", "value": "atonevaloper1validator"},
+            {"label": "New commission rate", "value": "5.00%"},
+        ])
 
     def test_reward_and_commission_amounts_are_attached_to_the_correct_message(self):
         reward = field(1, "atone1delegator") + field(2, "atonevaloper1validator")
@@ -118,12 +134,22 @@ class CosmosTransactionMessageDetailsTest(unittest.TestCase):
         for message in detail["messages"]:
             self.assertNotIn("Reward withdrawn", [item["label"] for item in message["fields"]])
 
-    def test_failed_transaction_does_not_claim_execution_amounts(self):
+    def test_failed_transaction_exposes_error_but_not_execution_amounts(self):
         reward = field(1, "atone1delegator") + field(2, "atonevaloper1validator")
-        message = normalize([
+        detail = normalize([
             ("/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward", reward),
-        ], events=[event("withdraw_rewards", {"amount": "42uatone"})], code=7)["messages"][0]
-        self.assertNotIn("Reward withdrawn", [item["label"] for item in message["fields"]])
+        ], events=[event("withdraw_rewards", {"amount": "42uatone"})], code=7,
+            codespace="distribution", log="no delegation distribution info")
+        self.assertEqual(detail["codespace"], "distribution")
+        self.assertEqual(detail["error_log"], "no delegation distribution info")
+        self.assertNotIn("Reward withdrawn", [item["label"] for item in detail["messages"][0]["fields"]])
+
+    def test_success_transaction_does_not_surface_spurious_error_metadata(self):
+        payload = field(1, "atone1from") + field(2, "atone1to") + field(3, coin())
+        detail = normalize([("/cosmos.bank.v1beta1.MsgSend", payload)],
+                           log="should not be shown", codespace="bank")
+        self.assertIsNone(detail["codespace"])
+        self.assertIsNone(detail["error_log"])
 
     def test_validator_operational_messages_are_human_readable_and_multi_message_safe(self):
         reward = field(1, "atone1delegator") + field(2, "atonevaloper1validator")
@@ -153,6 +179,7 @@ class CosmosTransactionMessageDetailsTest(unittest.TestCase):
         self.assertEqual(labels, ["Validator", "Delegator", "Amount", "Minimum self delegation", "Moniker", "Website", "Details",
                                   "Commission rate", "Maximum commission", "Maximum daily change"])
         self.assertEqual(message["fields"][2]["value"], {"denom": "uatone", "amount": "1000000"})
+        self.assertEqual([item["value"] for item in message["fields"][-3:]], ["5.00%", "25.00%", "10.00%"])
 
     def test_weighted_vote_and_deposit_keep_structured_safe_details(self):
         yes = field(1, 1) + field(2, "0.700000000000000000")
@@ -165,8 +192,8 @@ class CosmosTransactionMessageDetailsTest(unittest.TestCase):
         ])
         options = detail["messages"][0]["fields"][2]["value"]
         self.assertEqual(options, [
-            {"option": "Yes", "weight": "0.700000000000000000"},
-            {"option": "Abstain", "weight": "0.300000000000000000"},
+            {"option": "Yes", "weight": "70.00%"},
+            {"option": "Abstain", "weight": "30.00%"},
         ])
         self.assertEqual(detail["messages"][1]["fields"][2]["value"], [{"denom": "uatone", "amount": "42"}])
 
