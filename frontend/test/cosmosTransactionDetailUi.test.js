@@ -22,9 +22,18 @@ test('Cosmos transaction detail safely renders structured non-coin message value
   assert.match(page, /value\.map\(objectValue\)\.join\('; '\)/)
 })
 
+test('failed Cosmos transactions surface execution diagnostics', () => {
+  assert.match(page, /!tx\.success && tx\.codespace/)
+  assert.match(page, /<dt>Codespace<\/dt>/)
+  assert.match(page, /!tx\.success && tx\.error_log/)
+  assert.match(page, /<dt>Execution error<\/dt>/)
+  assert.match(page, /cosmos-transaction-error/)
+})
+
 test('message Details styling is scoped to Cosmos Transaction Detail', () => {
   assert.match(styles, /\.cosmos-transaction-detail \.cosmos-message__details/)
   assert.match(styles, /grid-template-columns: minmax\(120px, 180px\) minmax\(0, 1fr\)/)
   assert.match(styles, /\.cosmos-message__field \{\s*display: contents;/)
+  assert.match(styles, /\.cosmos-transaction-detail \.cosmos-transaction-error/)
   assert.match(styles, /@media \(max-width: 700px\)/)
 })
