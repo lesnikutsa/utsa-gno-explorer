@@ -36,11 +36,24 @@ test('account hero mirrors validator identity language with network logo and adj
   assert.match(css, /\.cosmos-account-address-value \{[^}]*display: inline-flex[^}]*width: fit-content[^}]*gap: 7px/)
 })
 
-test('summary cards use validator-style segmented surface and hover treatment', () => {
-  assert.match(css, /\.cosmos-account-summary-grid \{[^}]*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)[^}]*gap: 1px[^}]*background: var\(--color-border-soft\)/)
-  assert.match(css, /\.cosmos-account-summary-card \{[^}]*min-height: 112px[^}]*background: var\(--color-surface-subtle\)[^}]*box-shadow: none/)
-  assert.match(css, /\.cosmos-account-summary-card:hover \{[^}]*background: var\(--color-overlay-hover\)/)
-  assert.match(css, /\.cosmos-account-summary-card \.status-card__value \{[^}]*font-size: clamp\(18px, 1\.55vw, 22px\)/)
+test('validator relation uses the Gno wording but Cosmos validator link colors', () => {
+  assert.match(page, /This account belongs to validator/)
+  assert.match(page, /cosmos-account-validator-relation/)
+  assert.match(css, /\.cosmos-account-validator-relation a \{[^}]*color: var\(--color-text-bright\)[^}]*font-weight: 700/)
+  assert.match(css, /\.cosmos-account-validator-relation a:hover,[^}]*focus-visible \{ color: var\(--color-accent\); \}/)
+})
+
+test('summary cards reuse the validator metric strip colors while keeping account sizing', () => {
+  assert.match(page, /cosmos-validator-hero__metrics cosmos-account-summary-grid/)
+  assert.match(page, /card status-card cosmos-validator-summary__card cosmos-account-summary-card/)
+  assert.match(css, /\.cosmos-account-hero \.cosmos-account-summary-grid > article \{[^}]*min-height: 112px[^}]*padding: 15px 16px/)
+  assert.match(css, /\.cosmos-account-hero \.cosmos-account-summary-grid > article:hover \{ background: var\(--color-overlay-hover\); \}/)
+  assert.doesNotMatch(css, /\.cosmos-account-summary-card \{[^}]*background:/)
+})
+
+test('account headline numbers use the UI font rather than the status-card mono font', () => {
+  assert.match(css, /\.cosmos-account-hero \.cosmos-account-summary-grid > article > strong \{[^}]*font-family: var\(--font-ui\)[^}]*font-size: clamp\(18px, 1\.55vw, 22px\)/)
+  assert.match(css, /\.cosmos-account-summary-card__meta \{[^}]*font-family: var\(--font-ui\)/)
 })
 
 test('balances panel shows configured assets and extra live bank denoms dynamically', () => {
@@ -56,6 +69,12 @@ test('current delegations hide zero-balance historical rows while rewards remain
   assert.match(page, /activeDelegations\.map/)
   assert.match(page, /account\.rewards_by_validator\.map/)
   assert.match(page, /delegationCount = activeDelegations\.length/)
+})
+
+test('validator monikers use the shared Cosmos bright-to-accent color contract', () => {
+  assert.doesNotMatch(page, /className="accent-value"/)
+  assert.match(css, /\.cosmos-account-validator > a \{[^}]*color: var\(--color-text-bright\)/)
+  assert.match(css, /\.cosmos-account-validator > a:hover,[^}]*focus-visible \{ color: var\(--color-accent\); \}/)
 })
 
 test('rewards stay multi-asset and prefer the configured primary denom for the headline', () => {
@@ -108,7 +127,7 @@ test('summary cards include unbonding and preserve tiny non-zero reward visibili
 
 test('account page stays aligned with the explorer panel and theme system', () => {
   assert.match(page, /panel cosmos-account-hero/)
-  assert.match(page, /card status-card cosmos-account-summary-card/)
+  assert.match(page, /card status-card cosmos-validator-summary__card cosmos-account-summary-card/)
   assert.match(css, /radial-gradient\(circle at 48px 44px, var\(--color-accent-soft\), transparent 150px\), var\(--color-card\)/)
   assert.match(css, /var\(--color-border\)/)
   assert.match(css, /var\(--color-accent\)/)
