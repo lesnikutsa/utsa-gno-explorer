@@ -28,8 +28,12 @@ def coin(amount="1234567", denom="uatone"):
     return field(1, denom) + field(2, amount)
 
 
+def any_message(type_url, payload):
+    return field(1, type_url) + field(2, payload)
+
+
 def tx(messages):
-    body = b"".join(field(1, field(1, type_url) + field(2, payload)) for type_url, payload in messages)
+    body = b"".join(field(1, any_message(type_url, payload)) for type_url, payload in messages)
     fee = field(1, coin("5000", "uphoton")) + field(2, 200000)
     auth = field(2, fee)
     return field(1, body) + field(2, auth) + field(3, b"signature")
@@ -196,6 +200,47 @@ class CosmosTransactionMessageDetailsTest(unittest.TestCase):
             {"option": "Abstain", "weight": "30.00%"},
         ])
         self.assertEqual(detail["messages"][1]["fields"][2]["value"], [{"denom": "uatone", "amount": "42"}])
+
+    def test_authz_exec_reuses_nested_message_decoder(self):
+        delegate = field(1, "atone1delegator") + field(2, "atonevaloper1validator") + field(3, coin("2600000"))
+        exec_payload = field(1, "atone1restake") + field(2, any_message("/cosmos.staking.v1beta1.MsgDelegate", delegate))
+        message = normalize([("/cosmos.authz.v1beta1.MsgExec", exec_payload)])["messages"][0]
+        self.assertEqual(message["action"], "Authz execution")
+        self.assertEqual(message["fields"], [
+            {"label": "Grantee", "value": "atone1restake"},
+            {"label": "Executed messages", "value": "1"},
+            {"label": "#0 action", "value": "Delegate"},
+            {"label": "#0 Delegator", "value": "atone1delegator"},
+            {"label": "#0 Validator", "value": "atonevaloper1validator"},
+            {"label": "#0 Amount", "value": {"denom": "uatone", "amount": "2600000"}},
+        ])
+
+    def test_authz_exec_is_bounded_when_many_nested_messages_are_present(self):
+        delegate = field(1, "atone1delegator") + field(2, "atonevaloper1validator") + field(3, coin("1"))
+        exec_payload = field(1, "atone1restake") + b"".join(
+            field(2, any_message("/cosmos.staking.v1beta1.MsgDelegate", delegate)) for _ in range(10)
+        )
+        message = normalize([("/cosmos.authz.v1beta1.MsgExec", exec_payload)])["messages"][0]
+        self.assertLessEqual(len(message["fields"]), 16)
+        self.assertIn("Additional executed messages", [item["label"] for item in message["fields"]])
+
+    def test_authz_grant_and_revoke_are_human_readable(self):
+        authorization = any_message("/cosmos.staking.v1beta1.StakeAuthorization", b"")
+        grant = field(1, authorization)
+        grant_payload = field(1, "atone1granter") + field(2, "atone1grantee") + field(3, grant)
+        revoke_payload = field(1, "atone1granter") + field(2, "atone1grantee") + field(3, "/cosmos.staking.v1beta1.MsgDelegate")
+        detail = normalize([
+            ("/cosmos.authz.v1beta1.MsgGrant", grant_payload),
+            ("/cosmos.authz.v1beta1.MsgRevoke", revoke_payload),
+        ])
+        self.assertEqual(detail["messages"][0]["action"], "Grant authorization")
+        self.assertEqual(detail["messages"][0]["fields"][-1], {
+            "label": "Authorization", "value": "/cosmos.staking.v1beta1.StakeAuthorization",
+        })
+        self.assertEqual(detail["messages"][1]["action"], "Revoke authorization")
+        self.assertEqual(detail["messages"][1]["fields"][-1], {
+            "label": "Message type", "value": "/cosmos.staking.v1beta1.MsgDelegate",
+        })
 
 
 if __name__ == "__main__":
