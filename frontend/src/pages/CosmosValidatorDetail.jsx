@@ -212,10 +212,10 @@ function approximateRewardUsd(coin, assets, market) {
   if (!marketAsset || coin?.denom !== marketAsset.base || !Number.isFinite(price) || price <= 0 || !Number.isFinite(amount) || amount < 0 || !Number.isInteger(exponent) || exponent < 0 || exponent > 30) return null
   const usd = amount / (10 ** exponent) * price
   if (!Number.isFinite(usd) || usd <= 0) return null
-  if (usd >= 1000) return `+$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-  if (usd >= 1) return `+$${usd.toFixed(2)}`
+  if (usd >= 1000) return `$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  if (usd >= 1) return `$${usd.toFixed(2)}`
   const digits = usd >= 0.01 ? 4 : 8
-  return `+$${usd.toFixed(digits).replace(/0+$/, '').replace(/\.$/, '')}`
+  return `$${usd.toFixed(digits).replace(/0+$/, '').replace(/\.$/, '')}`
 }
 function formatRewardCoin(coin, assets) { const registered = assets.find((item) => item.base === coin.denom); return registered ? formatTokenAmount(String(coin.amount), registered.exponent, registered.symbol) : `${readableDecimal(coin.amount)} ${coin.denom}` }
 function MetaIcon({ type }) { return type === 'website' ? <svg className="cosmos-validator-meta-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a3 3 0 0 0 4.2 0l3-3a3 3 0 0 0-4.2-4.2l-1.1 1.1"/><path d="M14 10a3 3 0 0 0-4.2 0l-3 3A3 3 0 0 0 11 17.2l1.1-1.1"/></svg> : <svg className="cosmos-validator-meta-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg> }
