@@ -4,7 +4,7 @@ import { CheckIcon, CopyIcon } from './Icons'
 
 const RESET_DELAY = 1800
 
-export function CopyButton({ value, label }) {
+export function CopyButton({ value, label, showTitle = true }) {
   const [status, setStatus] = useState('idle')
   const resetTimer = useRef(null)
   const copyRequest = useRef(0)
@@ -61,7 +61,7 @@ export function CopyButton({ value, label }) {
       type="button"
       onClick={handleCopy}
       aria-label={ariaLabel}
-      title={ariaLabel}
+      title={showTitle ? ariaLabel : undefined}
     >
       {status === 'copied' ? <CheckIcon /> : <CopyIcon />}
       {status === 'error' && <span className="copy-button__error-mark" aria-hidden="true">!</span>}
