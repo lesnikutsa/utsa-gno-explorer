@@ -82,7 +82,7 @@ function SummaryCard({ label, children, usd, meta }) {
   return <article className="card status-card cosmos-validator-summary__card cosmos-account-summary-card">
     <span>{label}</span>
     <strong>{children}</strong>
-    {usd && <small className="cosmos-account-usd" title="Approximate USD value · CoinGecko">≈ {usd}</small>}
+    {usd && <small className="cosmos-account-usd">≈ {usd}</small>}
     {meta && <small className="cosmos-account-summary-card__meta">{meta}</small>}
   </article>
 }
@@ -92,7 +92,7 @@ function WalletAsset({ coin, network, market }) {
   return <article className="cosmos-account-wallet-asset">
     <span>{assetFor(network, coin.denom)?.symbol || coin.denom}</span>
     <strong>{formatCoin(coin, network)}</strong>
-    {usd && <small className="cosmos-account-usd" title="Approximate USD value · CoinGecko">≈ {usd}</small>}
+    {usd && <small className="cosmos-account-usd">≈ {usd}</small>}
   </article>
 }
 
@@ -171,7 +171,7 @@ export function CosmosAccountDetail({ network, address }) {
     <section className="panel cosmos-account-panel cosmos-account-rewards">
       <div className="panel__heading"><h2>Rewards</h2></div>
       <StateHint state={account.states.rewards}>{visibleRewards.length ? <>
-        <div className="cosmos-account-reward-total">{visibleRewards.map((coin) => <div key={coin.denom}><span>{assetFor(network, coin.denom)?.symbol || coin.denom}</span><strong>{formatCoin(coin, network)}</strong>{approximateUsd(coin, network, market.data) && <small className="cosmos-account-usd" title="Approximate USD value · CoinGecko">≈ {approximateUsd(coin, network, market.data)}</small>}</div>)}</div>
+        <div className="cosmos-account-reward-total">{visibleRewards.map((coin) => <div key={coin.denom}><span>{assetFor(network, coin.denom)?.symbol || coin.denom}</span><strong>{formatCoin(coin, network)}</strong>{approximateUsd(coin, network, market.data) && <small className="cosmos-account-usd">≈ {approximateUsd(coin, network, market.data)}</small>}</div>)}</div>
         {account.rewards_by_validator?.length > 0 && <div className="cosmos-account-reward-breakdown">{account.rewards_by_validator.map((row) => <div key={row.validator.operator_address}><ValidatorName network={network} validator={row.validator} /><CoinStack coins={row.rewards} network={network} /></div>)}</div>}
       </> : <p className="muted cosmos-account-empty-state">No claimable rewards.</p>}</StateHint>
     </section>
