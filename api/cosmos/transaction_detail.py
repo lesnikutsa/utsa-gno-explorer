@@ -8,6 +8,14 @@ from .parsing import _height, _identity, _mapping, _timestamp
 
 MAX_TX_BYTES = 2_000_000
 MAX_FIELDS = 256
+_DO_NOT_MODIFY = "[do-not-modify]"
+_VOTE_OPTIONS = {
+    0: "Unspecified",
+    1: "Yes",
+    2: "Abstain",
+    3: "No",
+    4: "No with veto",
+}
 
 
 def _varint(data, offset):
@@ -69,14 +77,117 @@ def _coin(raw):
     return {"denom": denom, "amount": amount} if denom and amount and amount.isdigit() else None
 
 
+def _field(label, value):
+    return {"label": label, "value": value}
+
+
+def _description(raw, *, edit=False):
+    if raw is None:
+        return []
+    fields = _fields(raw)
+    result = []
+    for number, label in ((1, "Moniker"), (2, "Identity"), (3, "Website"),
+                          (4, "Security contact"), (5, "Details")):
+        value = _text(_one(fields, number))
+        if not value or (edit and value == _DO_NOT_MODIFY):
+            continue
+        result.append(_field(label, value))
+    return result
+
+
+def _commission_rates(raw):
+    if raw is None:
+        return []
+    fields = _fields(raw)
+    result = []
+    for number, label in ((1, "Commission rate"), (2, "Maximum commission"),
+                          (3, "Maximum daily change")):
+        value = _text(_one(fields, number))
+        if value:
+            result.append(_field(label, value))
+    return result
+
+
+def _edit_validator(fields):
+    result = []
+    validator = _text(_one(fields, 2))
+    if validator:
+        result.append(_field("Validator", validator))
+    result.extend(_description(_one(fields, 1), edit=True))
+    commission = _text(_one(fields, 3))
+    if commission:
+        result.append(_field("Commission rate", commission))
+    minimum = _text(_one(fields, 4))
+    if minimum:
+        result.append(_field("Minimum self delegation", minimum))
+    return result
+
+
+def _create_validator(fields):
+    result = []
+    delegator = _text(_one(fields, 4))
+    validator = _text(_one(fields, 5))
+    amount = _coin(_one(fields, 7)) if _one(fields, 7) is not None else None
+    minimum = _text(_one(fields, 3))
+    if validator:
+        result.append(_field("Validator", validator))
+    if delegator:
+        result.append(_field("Delegator", delegator))
+    if amount:
+        result.append(_field("Amount", amount))
+    if minimum:
+        result.append(_field("Minimum self delegation", minimum))
+    result.extend(_description(_one(fields, 1)))
+    result.extend(_commission_rates(_one(fields, 2)))
+    return result
+
+
+def _weighted_vote(fields):
+    result = []
+    proposal = _one(fields, 1, 0)
+    voter = _text(_one(fields, 2))
+    if proposal is not None:
+        result.append(_field("Proposal", str(proposal)))
+    if voter:
+        result.append(_field("Voter", voter))
+    options = []
+    for field, wire, raw in fields:
+        if field != 3 or wire != 2:
+            continue
+        option_fields = _fields(raw)
+        option = _one(option_fields, 1, 0)
+        weight = _text(_one(option_fields, 2))
+        if option is None or not weight:
+            continue
+        options.append({"option": _VOTE_OPTIONS.get(option, str(option)), "weight": weight})
+    if options:
+        result.append(_field("Options", options))
+    return result
+
+
 _MESSAGES = {
     "/cosmos.bank.v1beta1.MsgSend": ("Send", ((1, "From", "text"), (2, "To", "text"), (3, "Amount", "coins"))),
     "/cosmos.staking.v1beta1.MsgDelegate": ("Delegate", ((1, "Delegator", "text"), (2, "Validator", "text"), (3, "Amount", "coin"))),
     "/cosmos.staking.v1beta1.MsgUndelegate": ("Undelegate", ((1, "Delegator", "text"), (2, "Validator", "text"), (3, "Amount", "coin"))),
     "/cosmos.staking.v1beta1.MsgBeginRedelegate": ("Redelegate", ((1, "Delegator", "text"), (2, "Source validator", "text"), (3, "Destination validator", "text"), (4, "Amount", "coin"))),
+    "/cosmos.staking.v1beta1.MsgCancelUnbondingDelegation": ("Cancel unbonding", ((1, "Delegator", "text"), (2, "Validator", "text"), (3, "Amount", "coin"), (4, "Creation height", "uint"))),
     "/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward": ("Withdraw reward", ((1, "Delegator", "text"), (2, "Validator", "text"))),
-    "/cosmos.gov.v1beta1.MsgVote": ("Vote", ((1, "Proposal", "uint"), (2, "Voter", "text"), (3, "Option", "uint"))),
+    "/cosmos.distribution.v1beta1.MsgWithdrawValidatorCommission": ("Withdraw validator commission", ((1, "Validator", "text"),)),
+    "/cosmos.distribution.v1beta1.MsgSetWithdrawAddress": ("Set withdraw address", ((1, "Delegator", "text"), (2, "Withdraw address", "text"))),
+    "/cosmos.distribution.v1beta1.MsgFundCommunityPool": ("Fund community pool", ((1, "Amount", "coins"), (2, "Depositor", "text"))),
+    "/cosmos.slashing.v1beta1.MsgUnjail": ("Unjail", ((1, "Validator", "text"),)),
+    "/cosmos.gov.v1beta1.MsgVote": ("Vote", ((1, "Proposal", "uint"), (2, "Voter", "text"), (3, "Option", "vote_option"))),
+    "/cosmos.gov.v1.MsgVote": ("Vote", ((1, "Proposal", "uint"), (2, "Voter", "text"), (3, "Option", "vote_option"))),
+    "/cosmos.gov.v1beta1.MsgDeposit": ("Deposit", ((1, "Proposal", "uint"), (2, "Depositor", "text"), (3, "Amount", "coins"))),
+    "/cosmos.gov.v1.MsgDeposit": ("Deposit", ((1, "Proposal", "uint"), (2, "Depositor", "text"), (3, "Amount", "coins"))),
     "/ibc.applications.transfer.v1.MsgTransfer": ("IBC transfer", ((1, "Source port", "text"), (2, "Source channel", "text"), (3, "Token", "coin"), (4, "Sender", "text"), (5, "Receiver", "text"))),
+}
+
+_CUSTOM_MESSAGES = {
+    "/cosmos.staking.v1beta1.MsgEditValidator": ("Edit validator", _edit_validator),
+    "/cosmos.staking.v1beta1.MsgCreateValidator": ("Create validator", _create_validator),
+    "/cosmos.gov.v1beta1.MsgVoteWeighted": ("Weighted vote", _weighted_vote),
+    "/cosmos.gov.v1.MsgVoteWeighted": ("Weighted vote", _weighted_vote),
 }
 
 
@@ -85,19 +196,30 @@ def _message(raw_any):
     type_url, value = _text(_one(any_fields, 1)), _one(any_fields, 2)
     if not type_url or not type_url.startswith("/") or value is None:
         raise MalformedUpstreamResponse("invalid Cosmos message Any")
+    fields = _fields(value)
+    custom = _CUSTOM_MESSAGES.get(type_url)
+    if custom:
+        action, decoder = custom
+        return {"type_url": type_url, "action": action, "fields": decoder(fields)}
     specification = _MESSAGES.get(type_url)
     if not specification:
         return {"type_url": type_url, "action": type_url.rsplit(".", 1)[-1].removeprefix("Msg"), "fields": []}
     action, definitions = specification
-    fields = _fields(value)
     normalized = []
     for number, label, kind in definitions:
-        values = [item for field, wire, item in fields if field == number and wire == (0 if kind == "uint" else 2)]
-        if kind == "text": parsed = _text(values[0]) if len(values) == 1 else None
-        elif kind == "uint": parsed = str(values[0]) if len(values) == 1 else None
-        elif kind == "coin": parsed = _coin(values[0]) if len(values) == 1 else None
-        else: parsed = [coin for coin in (_coin(item) for item in values) if coin]
-        if parsed not in (None, []): normalized.append({"label": label, "value": parsed})
+        values = [item for field, wire, item in fields if field == number and wire == (0 if kind in ("uint", "vote_option") else 2)]
+        if kind == "text":
+            parsed = _text(values[0]) if len(values) == 1 else None
+        elif kind == "uint":
+            parsed = str(values[0]) if len(values) == 1 else None
+        elif kind == "vote_option":
+            parsed = _VOTE_OPTIONS.get(values[0], str(values[0])) if len(values) == 1 else None
+        elif kind == "coin":
+            parsed = _coin(values[0]) if len(values) == 1 else None
+        else:
+            parsed = [coin for coin in (_coin(item) for item in values) if coin]
+        if parsed not in (None, []):
+            normalized.append(_field(label, parsed))
     return {"type_url": type_url, "action": action, "fields": normalized}
 
 
