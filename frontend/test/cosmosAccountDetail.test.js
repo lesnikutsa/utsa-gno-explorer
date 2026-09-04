@@ -57,8 +57,8 @@ test('summary cards reuse validator colors and keep the more compact account hei
   assert.doesNotMatch(css, /\.cosmos-account-summary-card \{[^}]*background:/)
 })
 
-test('account headline numbers use the UI font and keep USD on the same value line', () => {
-  assert.match(css, /\.cosmos-account-hero \.cosmos-account-summary-grid > article > strong \{[^}]*display: inline-block[^}]*font-family: var\(--font-ui\)[^}]*font-size: clamp\(18px, 1\.55vw, 22px\)/)
+test('account headline numbers use the UI font and keep USD on the same value line with breathing room', () => {
+  assert.match(css, /\.cosmos-account-hero \.cosmos-account-summary-grid > article > strong \{[^}]*display: inline-block[^}]*margin-right: 12px[^}]*font-family: var\(--font-ui\)[^}]*font-size: clamp\(18px, 1\.55vw, 22px\)/)
   assert.match(css, /\.cosmos-account-summary-card > \.cosmos-account-usd \{[^}]*display: inline-block[^}]*margin: 0[^}]*font-size: 11px[^}]*font-weight: 600[^}]*vertical-align: baseline/)
   assert.match(css, /\.cosmos-account-summary-card__meta \{[^}]*font-family: var\(--font-ui\)/)
 })
@@ -75,14 +75,14 @@ test('wallet assets replace the standalone balances panel and stay dynamic', () 
   assert.match(css, /\.cosmos-account-wallet-assets-grid \{[^}]*flex-wrap: wrap/)
 })
 
-test('wallet asset labels and amounts stay on one common line whether USD exists or not', () => {
-  assert.match(css, /\.cosmos-account-wallet-asset \{[^}]*grid-template-columns: auto auto minmax\(58px, auto\)[^}]*grid-template-rows: 1fr[^}]*align-items: center/)
+test('wallet asset labels amounts and optional USD share one compact line', () => {
+  assert.match(css, /\.cosmos-account-wallet-asset \{[^}]*min-width: 168px[^}]*grid-template-columns: auto auto auto[^}]*grid-template-rows: 1fr[^}]*gap: 0 8px[^}]*align-items: center/)
   assert.match(css, /\.cosmos-account-wallet-asset > span \{[^}]*grid-column: 1[^}]*grid-row: 1[^}]*align-self: center/)
   assert.match(css, /\.cosmos-account-wallet-asset > strong \{[^}]*grid-column: 2[^}]*grid-row: 1[^}]*align-self: center/)
   assert.match(css, /\.cosmos-account-wallet-asset > \.cosmos-account-usd \{[^}]*grid-column: 3[^}]*grid-row: 1[^}]*align-self: center/)
 })
 
-test('native-token USD uses the existing market endpoint and validator green price contract', () => {
+test('native-token USD uses the existing market endpoint and validator green price contract without hover tooltips', () => {
   assert.match(page, /useCosmosResource\(`\/api\/networks\/\$\{network\.id\}\/market`, 30000\)/)
   assert.match(page, /function approximateUsd\(coin, network, market\)/)
   assert.match(page, /const marketAsset = network\.assets\?\.\[0\]/)
@@ -90,7 +90,7 @@ test('native-token USD uses the existing market endpoint and validator green pri
   assert.match(page, /<SummaryCard label="Balance" usd=\{balanceUsd\}>/)
   assert.match(page, /<SummaryCard label="Delegated" usd=\{delegatedUsd\}/)
   assert.match(page, /<SummaryCard label="Rewards" usd=\{rewardsUsd\}/)
-  assert.match(page, /Approximate USD value · CoinGecko/)
+  assert.doesNotMatch(page, /Approximate USD value · CoinGecko/)
   assert.match(css, /\.cosmos-account-usd \{[^}]*color: var\(--color-success\)[^}]*font-size: 9px[^}]*font-weight: 500/)
   assert.match(css, /\.cosmos-account-summary-card > \.cosmos-account-usd \{[^}]*font-size: 11px[^}]*font-weight: 600/)
 })
