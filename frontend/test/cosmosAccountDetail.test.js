@@ -31,14 +31,19 @@ test('account hero mirrors validator identity language with network logo and adj
   assert.match(page, /network\.presentation\?\.networkIconSrc/)
   assert.match(page, /cosmos-account-hero__identity/)
   assert.match(page, /<h1>Account<\/h1>/)
+  assert.match(page, /cosmos-account-identity-line/)
   assert.match(page, /<AddressValue value=\{account\.address\} label="account address" \/>/)
   assert.match(css, /\.cosmos-account-network-logo \{[^}]*width: 86px[^}]*height: 86px/)
   assert.match(css, /\.cosmos-account-address-value \{[^}]*display: inline-flex[^}]*width: fit-content[^}]*gap: 7px/)
 })
 
-test('validator relation uses the Gno wording but Cosmos validator link colors', () => {
-  assert.match(page, /This account belongs to validator/)
-  assert.match(page, /cosmos-account-validator-relation/)
+test('validator relation sits on the wallet line and matches the wallet tone', () => {
+  const lineStart = page.indexOf('cosmos-account-identity-line')
+  const lineEnd = page.indexOf('</div>', lineStart)
+  const identityLine = page.slice(lineStart, lineEnd)
+  assert.match(identityLine, /This account belongs to validator/)
+  assert.match(identityLine, /cosmos-account-validator-relation/)
+  assert.match(css, /\.cosmos-account-validator-relation \{[^}]*color: var\(--color-text-secondary\)[^}]*font-size: 11px/)
   assert.match(css, /\.cosmos-account-validator-relation a \{[^}]*color: var\(--color-text-bright\)[^}]*font-weight: 700/)
   assert.match(css, /\.cosmos-account-validator-relation a:hover,[^}]*focus-visible \{ color: var\(--color-accent\); \}/)
 })
@@ -56,12 +61,28 @@ test('account headline numbers use the UI font rather than the status-card mono 
   assert.match(css, /\.cosmos-account-summary-card__meta \{[^}]*font-family: var\(--font-ui\)/)
 })
 
-test('balances panel shows configured assets and extra live bank denoms dynamically', () => {
-  assert.match(page, /<h2>Balances<\/h2>/)
+test('wallet assets replace the standalone balances panel and stay dynamic', () => {
+  assert.match(page, /Wallet assets/)
+  assert.match(page, /cosmos-account-hero__wallet-assets/)
+  assert.match(page, /balanceCoins\.map\(\(coin\) => <WalletAsset/)
   assert.match(page, /configuredAssets\.map\(\(asset\) => coinFor\(account\.balances, asset\.base\)/)
   assert.match(page, /account\.balances \|\| \[\]\)\.filter\(\(coin\) => !configuredDenoms\.has\(coin\.denom\) && hasAmount\(coin\)\)/)
-  assert.match(page, /balanceCoins\.map/)
-  assert.match(css, /\.cosmos-account-balance-grid/)
+  assert.doesNotMatch(page, /<h2>Balances<\/h2>/)
+  assert.doesNotMatch(page, /cosmos-account-balances/)
+  assert.match(css, /\.cosmos-account-hero__wallet-assets \{[^}]*border-top: 1px solid var\(--color-border-soft\)/)
+  assert.match(css, /\.cosmos-account-wallet-assets-grid \{[^}]*flex-wrap: wrap/)
+})
+
+test('native-token USD uses the existing network market endpoint and CoinGecko semantics', () => {
+  assert.match(page, /useCosmosResource\(`\/api\/networks\/\$\{network\.id\}\/market`, 30000\)/)
+  assert.match(page, /function approximateUsd\(coin, network, market\)/)
+  assert.match(page, /const marketAsset = network\.assets\?\.\[0\]/)
+  assert.match(page, /coin\?\.denom !== marketAsset\.base/)
+  assert.match(page, /<SummaryCard label="Balance" usd=\{balanceUsd\}>/)
+  assert.match(page, /<SummaryCard label="Delegated" usd=\{delegatedUsd\}/)
+  assert.match(page, /<SummaryCard label="Rewards" usd=\{rewardsUsd\}/)
+  assert.match(page, /Approximate USD value · CoinGecko/)
+  assert.match(css, /\.cosmos-account-usd \{[^}]*color: var\(--color-text-secondary\)/)
 })
 
 test('current delegations hide zero-balance historical rows while rewards remain independent', () => {
@@ -92,7 +113,7 @@ test('unbonding is placed after rewards and immediately before technical details
 })
 
 test('account page keeps staking reward unbonding and technical surfaces', () => {
-  for (const label of ['Balances', 'Delegations', 'Unbonding', 'Rewards', 'Technical details']) {
+  for (const label of ['Wallet assets', 'Delegations', 'Unbonding', 'Rewards', 'Technical details']) {
     assert.ok(page.includes(label), `missing ${label}`)
   }
   assert.doesNotMatch(page, /Account Information/)
