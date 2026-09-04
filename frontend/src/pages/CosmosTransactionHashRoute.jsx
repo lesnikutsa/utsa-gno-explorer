@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { getCosmosTransactionByHash } from '../services/api'
-import { INTERNAL_NAVIGATION_EVENT } from '../utils/navigation'
 
 export function CosmosTransactionHashRoute({ network, txHash }) {
   const [state, setState] = useState({ loading: true, error: null })
@@ -14,9 +13,7 @@ export function CosmosTransactionHashRoute({ network, txHash }) {
       .then((data) => {
         if (!active) return
         const destination = `/networks/${network.id}/blocks/${data.height}/transactions/${data.index}`
-        window.history.replaceState({}, '', destination)
-        window.scrollTo(0, 0)
-        window.dispatchEvent(new Event(INTERNAL_NAVIGATION_EVENT))
+        window.location.replace(destination)
       })
       .catch((error) => {
         if (!active) return
