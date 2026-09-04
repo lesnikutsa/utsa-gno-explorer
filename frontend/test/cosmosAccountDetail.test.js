@@ -37,13 +37,14 @@ test('account hero mirrors validator identity language with network logo and adj
   assert.match(css, /\.cosmos-account-address-value \{[^}]*display: inline-flex[^}]*width: fit-content[^}]*gap: 7px/)
 })
 
-test('validator relation sits on the wallet line and matches the wallet tone', () => {
+test('validator relation stays on the wallet line but is pushed to the right edge', () => {
   const lineStart = page.indexOf('cosmos-account-identity-line')
   const lineEnd = page.indexOf('</div>', lineStart)
   const identityLine = page.slice(lineStart, lineEnd)
   assert.match(identityLine, /This account belongs to validator/)
   assert.match(identityLine, /cosmos-account-validator-relation/)
-  assert.match(css, /\.cosmos-account-validator-relation \{[^}]*color: var\(--color-text-secondary\)[^}]*font-size: 11px/)
+  assert.match(css, /\.cosmos-account-identity-line \{[^}]*width: 100%/)
+  assert.match(css, /\.cosmos-account-validator-relation \{[^}]*margin: 0 0 0 auto[^}]*color: var\(--color-text-secondary\)[^}]*font-size: 11px/)
   assert.match(css, /\.cosmos-account-validator-relation a \{[^}]*color: var\(--color-text-bright\)[^}]*font-weight: 700/)
   assert.match(css, /\.cosmos-account-validator-relation a:hover,[^}]*focus-visible \{ color: var\(--color-accent\); \}/)
 })
@@ -73,7 +74,14 @@ test('wallet assets replace the standalone balances panel and stay dynamic', () 
   assert.match(css, /\.cosmos-account-wallet-assets-grid \{[^}]*flex-wrap: wrap/)
 })
 
-test('native-token USD uses the existing network market endpoint and CoinGecko semantics', () => {
+test('wallet asset labels stay vertically centered whether USD exists or not', () => {
+  assert.match(css, /\.cosmos-account-wallet-asset \{[^}]*grid-template-rows: auto auto[^}]*align-items: center/)
+  assert.match(css, /\.cosmos-account-wallet-asset > span \{[^}]*grid-row: 1 \/ 3[^}]*align-self: center/)
+  assert.match(css, /\.cosmos-account-wallet-asset > strong \{[^}]*grid-column: 2[^}]*grid-row: 1/)
+  assert.match(css, /\.cosmos-account-wallet-asset > \.cosmos-account-usd \{[^}]*grid-column: 2[^}]*grid-row: 2/)
+})
+
+test('native-token USD uses the existing market endpoint and validator green price contract', () => {
   assert.match(page, /useCosmosResource\(`\/api\/networks\/\$\{network\.id\}\/market`, 30000\)/)
   assert.match(page, /function approximateUsd\(coin, network, market\)/)
   assert.match(page, /const marketAsset = network\.assets\?\.\[0\]/)
@@ -82,7 +90,8 @@ test('native-token USD uses the existing network market endpoint and CoinGecko s
   assert.match(page, /<SummaryCard label="Delegated" usd=\{delegatedUsd\}/)
   assert.match(page, /<SummaryCard label="Rewards" usd=\{rewardsUsd\}/)
   assert.match(page, /Approximate USD value · CoinGecko/)
-  assert.match(css, /\.cosmos-account-usd \{[^}]*color: var\(--color-text-secondary\)/)
+  assert.match(css, /\.cosmos-account-usd \{[^}]*color: var\(--color-success\)[^}]*font-size: 9px[^}]*font-weight: 500/)
+  assert.match(css, /\.cosmos-account-summary-card > \.cosmos-account-usd \{[^}]*font-size: 11px[^}]*font-weight: 600/)
 })
 
 test('current delegations hide zero-balance historical rows while rewards remain independent', () => {
