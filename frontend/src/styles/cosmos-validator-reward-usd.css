@@ -1,16 +1,19 @@
 /* Small Validator Detail additions for market enrichment and compact empty states. */
 .cosmos-validator-reward-value {
   display: inline-flex;
+  width: 100%;
   max-width: 100%;
   align-items: baseline;
-  gap: 8px;
+  gap: 12px;
 }
 
 .cosmos-validator-reward-usd {
+  margin-left: auto;
   color: var(--color-success);
   font-size: 11px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .cosmos-validator-activity > p.muted,
@@ -22,5 +25,6 @@
 }
 
 @media (max-width: 560px) {
-  .cosmos-validator-reward-value { gap: 6px; }
+  .cosmos-validator-reward-value { width: auto; gap: 6px; }
+  .cosmos-validator-reward-usd { margin-left: 0; }
 }
