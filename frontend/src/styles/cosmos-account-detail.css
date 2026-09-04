@@ -7,8 +7,8 @@
 .cosmos-account-network-logo img { display: block; width: 72px; height: 72px; object-fit: contain; }
 .cosmos-account-hero__identity { display: grid; min-width: 0; flex: 1; align-content: center; gap: 7px; }
 .cosmos-account-hero__identity h1 { margin: 0; color: var(--color-text-bright); font-family: var(--font-ui); font-size: 22px; font-weight: 700; line-height: 1.2; }
-.cosmos-account-identity-line { display: flex; min-width: 0; align-items: center; gap: 18px; }
-.cosmos-account-validator-relation { flex: 0 0 auto; margin: 0; color: var(--color-text-secondary); font-family: var(--font-ui); font-size: 11px; line-height: 1.4; white-space: nowrap; }
+.cosmos-account-identity-line { display: flex; width: 100%; min-width: 0; align-items: center; gap: 18px; }
+.cosmos-account-validator-relation { flex: 0 0 auto; margin: 0 0 0 auto; color: var(--color-text-secondary); font-family: var(--font-ui); font-size: 11px; line-height: 1.4; white-space: nowrap; }
 .cosmos-account-validator-relation a { color: var(--color-text-bright); font-weight: 700; }
 .cosmos-account-validator-relation a:hover, .cosmos-account-validator-relation a:focus-visible { color: var(--color-accent); }
 .cosmos-account-address-value { display: inline-flex; width: fit-content; max-width: 100%; min-width: 0; align-items: center; gap: 7px; }
@@ -23,16 +23,17 @@
 .cosmos-account-hero .cosmos-account-summary-grid > article > span { font-family: var(--font-ui); font-size: 10px; }
 .cosmos-account-hero .cosmos-account-summary-grid > article > strong { margin-top: 12px; color: var(--color-text-bright); font-family: var(--font-ui); font-size: clamp(18px, 1.55vw, 22px); font-weight: 700; line-height: 1.2; }
 .cosmos-account-summary-card__meta { display: block; min-height: 14px; margin-top: 4px; color: var(--color-text-secondary); font-family: var(--font-ui); font-size: 10px; font-weight: 400; line-height: 1.35; }
-.cosmos-account-usd { display: block; margin-top: 4px; color: var(--color-text-secondary); font-family: var(--font-ui); font-size: 9px; font-weight: 500; line-height: 1.3; }
+.cosmos-account-usd { display: block; margin-top: 4px; color: var(--color-success); font-family: var(--font-ui); font-size: 9px; font-weight: 500; line-height: 1.3; font-variant-numeric: tabular-nums; }
+.cosmos-account-summary-card > .cosmos-account-usd { font-size: 11px; font-weight: 600; }
 
 /* Full wallet composition lives inside the hero, like the validator description strip. */
 .cosmos-account-hero__wallet-assets { display: grid; grid-template-columns: 92px minmax(0, 1fr); align-items: start; gap: 12px; padding-top: 14px; border-top: 1px solid var(--color-border-soft); }
 .cosmos-account-hero__wallet-assets-label { padding-top: 8px; color: var(--color-table-heading); font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
 .cosmos-account-wallet-assets-grid { display: flex; min-width: 0; flex-wrap: wrap; gap: 8px; }
-.cosmos-account-wallet-asset { display: grid; min-width: 185px; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 3px 12px; padding: 8px 10px; border: 1px solid var(--color-border-soft); border-radius: 5px; background: var(--color-surface-subtle); }
-.cosmos-account-wallet-asset > span { color: var(--color-text-secondary); font-size: 9px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
-.cosmos-account-wallet-asset > strong { color: var(--color-text-bright); font-family: var(--font-ui); font-size: 12px; font-weight: 700; }
-.cosmos-account-wallet-asset > .cosmos-account-usd { grid-column: 2; margin-top: 0; text-align: right; }
+.cosmos-account-wallet-asset { display: grid; min-width: 185px; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto; align-items: center; gap: 3px 12px; padding: 8px 10px; border: 1px solid var(--color-border-soft); border-radius: 5px; background: var(--color-surface-subtle); }
+.cosmos-account-wallet-asset > span { grid-row: 1 / 3; align-self: center; color: var(--color-text-secondary); font-size: 9px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.cosmos-account-wallet-asset > strong { grid-column: 2; grid-row: 1; color: var(--color-text-bright); font-family: var(--font-ui); font-size: 12px; font-weight: 700; }
+.cosmos-account-wallet-asset > .cosmos-account-usd { grid-column: 2; grid-row: 2; margin-top: 0; text-align: right; }
 .cosmos-account-wallet-assets-unavailable { align-self: center; font-size: 10px; }
 
 .cosmos-account-panel { min-width: 0; margin-bottom: 12px; padding: 0; overflow: hidden; }
@@ -90,7 +91,7 @@
 
 @media (max-width: 1080px) {
   .cosmos-account-identity-line { align-items: flex-start; flex-direction: column; gap: 5px; }
-  .cosmos-account-validator-relation { white-space: normal; }
+  .cosmos-account-validator-relation { margin-left: 0; white-space: normal; }
 }
 
 @media (max-width: 920px) {
