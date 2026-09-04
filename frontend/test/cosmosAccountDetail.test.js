@@ -76,7 +76,13 @@ test('wallet assets replace the standalone balances panel and stay dynamic', () 
 })
 
 test('wallet asset labels amounts and optional USD share one compact line', () => {
-  assert.match(css, /\.cosmos-account-wallet-asset \{[^}]*min-width: 168px[^}]*grid-template-columns: auto auto auto[^}]*grid-template-rows: 1fr[^}]*gap: 0 8px[^}]*align-items: center/)
+  const walletAssetRule = css.match(/\.cosmos-account-wallet-asset \{([^}]*)\}/)?.[1] || ''
+  assert.match(walletAssetRule, /min-width: 168px/)
+  assert.match(walletAssetRule, /grid-template-columns: auto auto auto/)
+  assert.match(walletAssetRule, /grid-template-rows: 1fr/)
+  assert.match(walletAssetRule, /align-items: center/)
+  assert.match(walletAssetRule, /gap: 0 8px/)
+  assert.match(walletAssetRule, /padding: 8px 9px/)
   assert.match(css, /\.cosmos-account-wallet-asset > span \{[^}]*grid-column: 1[^}]*grid-row: 1[^}]*align-self: center/)
   assert.match(css, /\.cosmos-account-wallet-asset > strong \{[^}]*grid-column: 2[^}]*grid-row: 1[^}]*align-self: center/)
   assert.match(css, /\.cosmos-account-wallet-asset > \.cosmos-account-usd \{[^}]*grid-column: 3[^}]*grid-row: 1[^}]*align-self: center/)
