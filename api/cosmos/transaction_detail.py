@@ -1,6 +1,7 @@
 """Bounded block-context Cosmos transaction decoding without transaction indexing."""
 
 import base64
+from decimal import Decimal, InvalidOperation
 import hashlib
 import re
 
@@ -71,6 +72,36 @@ def _text(value):
     except UnicodeDecodeError:
         return None
     return decoded if len(decoded) <= 1024 and decoded.isprintable() else None
+
+
+def _percent(value):
+    if not isinstance(value, str) or not value or len(value) > 128:
+        return None
+    try:
+        percent = Decimal(value) * Decimal(100)
+    except (InvalidOperation, ValueError):
+        return None
+    if not percent.is_finite():
+        return None
+    text = f"{percent:.6f}".rstrip("0").rstrip(".")
+    if "." not in text:
+        text += ".00"
+    else:
+        decimals = len(text.rsplit(".", 1)[1])
+        if decimals < 2:
+            text += "0" * (2 - decimals)
+    return f"{text}%"
+
+
+def _outcome_text(value, max_length):
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if not value:
+        return None
+    if len(value) <= max_length:
+        return value
+    return value[:max_length - 1].rstrip() + "…"
 
 
 def _coin(raw):
@@ -149,6 +180,8 @@ def _description(raw, *, edit=False):
         value = _text(_one(fields, number))
         if not value or (edit and value == _DO_NOT_MODIFY):
             continue
+        if edit:
+            label = f"New {label.lower()}"
         result.append(_field(label, value))
     return result
 
@@ -160,7 +193,7 @@ def _commission_rates(raw):
     result = []
     for number, label in ((1, "Commission rate"), (2, "Maximum commission"),
                           (3, "Maximum daily change")):
-        value = _text(_one(fields, number))
+        value = _percent(_text(_one(fields, number)))
         if value:
             result.append(_field(label, value))
     return result
@@ -172,12 +205,12 @@ def _edit_validator(fields):
     if validator:
         result.append(_field("Validator", validator))
     result.extend(_description(_one(fields, 1), edit=True))
-    commission = _text(_one(fields, 3))
+    commission = _percent(_text(_one(fields, 3)))
     if commission:
-        result.append(_field("Commission rate", commission))
+        result.append(_field("New commission rate", commission))
     minimum = _text(_one(fields, 4))
     if minimum:
-        result.append(_field("Minimum self delegation", minimum))
+        result.append(_field("New minimum self delegation", minimum))
     return result
 
 
@@ -214,7 +247,7 @@ def _weighted_vote(fields):
             continue
         option_fields = _fields(raw)
         option = _one(option_fields, 1, 0)
-        weight = _text(_one(option_fields, 2))
+        weight = _percent(_text(_one(option_fields, 2)))
         if option is None or not weight:
             continue
         options.append({"option": _VOTE_OPTIONS.get(option, str(option)), "weight": weight})
@@ -335,7 +368,10 @@ def normalize_transaction_detail(block_payload, results_payload, *, expected_cha
     def gas(name):
         value = outcome.get(name)
         return int(value) if isinstance(value, (str, int)) and str(value).isdigit() else None
+    codespace = _outcome_text(outcome.get("codespace"), 128) if code else None
+    error_log = _outcome_text(outcome.get("log") or outcome.get("info"), 4096) if code else None
     return {"tx_hash": hashlib.sha256(raw).hexdigest().upper(), "height": height, "index": tx_index,
             "timestamp": _timestamp(header.get("time")), "success": code == 0, "code": code,
+            "codespace": codespace, "error_log": error_log,
             "gas_wanted": gas("gas_wanted"), "gas_used": gas("gas_used"), "fee": fee,
             "memo": memo, "message_count": len(messages), "messages": messages}
