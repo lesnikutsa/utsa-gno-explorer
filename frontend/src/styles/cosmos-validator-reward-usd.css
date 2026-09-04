@@ -1,4 +1,4 @@
-/* Small Validator Detail additions for market enrichment and compact empty states. */
+/* Small Validator Detail additions for market enrichment, compact empty states, and hero interactions. */
 .cosmos-validator-reward-value {
   display: inline-flex;
   width: 100%;
@@ -14,6 +14,11 @@
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   text-align: right;
+}
+
+.cosmos-validator-detail .cosmos-validator-hero__facts > div:hover,
+.cosmos-validator-detail .cosmos-validator-hero__metrics > article:hover {
+  background: var(--color-overlay-hover);
 }
 
 .cosmos-validator-activity > p.muted,
