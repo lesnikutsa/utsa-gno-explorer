@@ -1,0 +1,68 @@
+.cosmos-transaction-detail .cosmos-message__heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.cosmos-transaction-detail .cosmos-message__heading h3 {
+  margin: 0;
+}
+
+.cosmos-transaction-detail .cosmos-message__details {
+  margin-top: 9px;
+}
+
+.cosmos-transaction-detail .cosmos-message__details > summary {
+  margin: 0;
+}
+
+.cosmos-transaction-detail .cosmos-message__details > dl {
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
+  margin: 8px 0 0;
+  border-top: 1px solid var(--color-border-soft);
+}
+
+.cosmos-transaction-detail .cosmos-message__field {
+  display: contents;
+}
+
+.cosmos-transaction-detail .cosmos-message__field dt,
+.cosmos-transaction-detail .cosmos-message__field dd {
+  padding: 7px 0;
+  border-bottom: 1px solid var(--color-border-soft);
+}
+
+.cosmos-transaction-detail .cosmos-message__field dt {
+  color: var(--color-table-heading);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.cosmos-transaction-detail .cosmos-message__field dd {
+  color: var(--color-text);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.cosmos-transaction-detail .cosmos-transaction-error {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 700px) {
+  .cosmos-transaction-detail .cosmos-message__details > dl {
+    grid-template-columns: 1fr;
+  }
+
+  .cosmos-transaction-detail .cosmos-message__field dt {
+    padding-bottom: 2px;
+    border-bottom: 0;
+  }
+
+  .cosmos-transaction-detail .cosmos-message__field dd {
+    padding-top: 0;
+  }
+}

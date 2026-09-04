@@ -1,13 +1,26 @@
 """Bounded block-context Cosmos transaction decoding without transaction indexing."""
 
 import base64
+from decimal import Decimal, InvalidOperation
 import hashlib
+import re
 
 from .errors import MalformedUpstreamResponse
 from .parsing import _height, _identity, _mapping, _timestamp
 
 MAX_TX_BYTES = 2_000_000
 MAX_FIELDS = 256
+MAX_AUTHZ_DEPTH = 3
+MAX_MESSAGE_DISPLAY_FIELDS = 16
+_DO_NOT_MODIFY = "[do-not-modify]"
+_VOTE_OPTIONS = {
+    0: "Unspecified",
+    1: "Yes",
+    2: "Abstain",
+    3: "No",
+    4: "No with veto",
+}
+_EVENT_COIN_RE = re.compile(r"^([0-9]+)([A-Za-z][A-Za-z0-9/:._-]{0,127})$")
 
 
 def _varint(data, offset):
@@ -63,10 +76,233 @@ def _text(value):
     return decoded if len(decoded) <= 1024 and decoded.isprintable() else None
 
 
+def _percent(value):
+    if not isinstance(value, str) or not value or len(value) > 128:
+        return None
+    try:
+        percent = Decimal(value) * Decimal(100)
+    except (InvalidOperation, ValueError):
+        return None
+    if not percent.is_finite():
+        return None
+    text = f"{percent:.6f}".rstrip("0").rstrip(".")
+    if "." not in text:
+        text += ".00"
+    else:
+        decimals = len(text.rsplit(".", 1)[1])
+        if decimals < 2:
+            text += "0" * (2 - decimals)
+    return f"{text}%"
+
+
+def _outcome_text(value, max_length):
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if not value:
+        return None
+    if len(value) <= max_length:
+        return value
+    return value[:max_length - 1].rstrip() + "…"
+
+
 def _coin(raw):
     fields = _fields(raw)
     denom, amount = _text(_one(fields, 1)), _text(_one(fields, 2))
     return {"denom": denom, "amount": amount} if denom and amount and amount.isdigit() else None
+
+
+def _event_coins(value):
+    if not isinstance(value, str) or not value or len(value) > 4096:
+        return None
+    result = []
+    for part in value.split(","):
+        match = _EVENT_COIN_RE.fullmatch(part.strip())
+        if not match:
+            return None
+        amount, denom = match.groups()
+        result.append({"denom": denom, "amount": amount})
+    return result or None
+
+
+def _event_attributes(event):
+    attributes = event.get("attributes") if isinstance(event, dict) else None
+    if not isinstance(attributes, list):
+        return {}
+    result = {}
+    for attribute in attributes:
+        if not isinstance(attribute, dict):
+            continue
+        key, value = attribute.get("key"), attribute.get("value")
+        if (isinstance(key, str) and 0 < len(key) <= 128
+                and isinstance(value, str) and len(value) <= 4096):
+            result.setdefault(key, value)
+    return result
+
+
+def _message_events(events, message_index, message_count):
+    if not isinstance(events, list):
+        return []
+    result = []
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        attributes = _event_attributes(event)
+        raw_index = attributes.get("msg_index")
+        if raw_index is None:
+            if message_count == 1:
+                result.append(event)
+            continue
+        if raw_index == str(message_index):
+            result.append(event)
+    return result
+
+
+def _execution_coin_field(events, event_type, label):
+    for event in events:
+        if event.get("type") != event_type:
+            continue
+        amount = _event_coins(_event_attributes(event).get("amount"))
+        if amount:
+            return {"label": label, "value": amount}
+    return None
+
+
+def _field(label, value):
+    return {"label": label, "value": value}
+
+
+def _description(raw, *, edit=False):
+    if raw is None:
+        return []
+    fields = _fields(raw)
+    result = []
+    for number, label in ((1, "Moniker"), (2, "Identity"), (3, "Website"),
+                          (4, "Security contact"), (5, "Details")):
+        value = _text(_one(fields, number))
+        if not value or (edit and value == _DO_NOT_MODIFY):
+            continue
+        if edit:
+            label = f"New {label.lower()}"
+        result.append(_field(label, value))
+    return result
+
+
+def _commission_rates(raw):
+    if raw is None:
+        return []
+    fields = _fields(raw)
+    result = []
+    for number, label in ((1, "Commission rate"), (2, "Maximum commission"),
+                          (3, "Maximum daily change")):
+        value = _percent(_text(_one(fields, number)))
+        if value:
+            result.append(_field(label, value))
+    return result
+
+
+def _edit_validator(fields):
+    result = []
+    validator = _text(_one(fields, 2))
+    if validator:
+        result.append(_field("Validator", validator))
+    result.extend(_description(_one(fields, 1), edit=True))
+    commission = _percent(_text(_one(fields, 3)))
+    if commission:
+        result.append(_field("New commission rate", commission))
+    minimum = _text(_one(fields, 4))
+    if minimum:
+        result.append(_field("New minimum self delegation", minimum))
+    return result
+
+
+def _create_validator(fields):
+    result = []
+    delegator = _text(_one(fields, 4))
+    validator = _text(_one(fields, 5))
+    amount = _coin(_one(fields, 7)) if _one(fields, 7) is not None else None
+    minimum = _text(_one(fields, 3))
+    if validator:
+        result.append(_field("Validator", validator))
+    if delegator:
+        result.append(_field("Delegator", delegator))
+    if amount:
+        result.append(_field("Amount", amount))
+    if minimum:
+        result.append(_field("Minimum self delegation", minimum))
+    result.extend(_description(_one(fields, 1)))
+    result.extend(_commission_rates(_one(fields, 2)))
+    return result
+
+
+def _weighted_vote(fields):
+    result = []
+    proposal = _one(fields, 1, 0)
+    voter = _text(_one(fields, 2))
+    if proposal is not None:
+        result.append(_field("Proposal", str(proposal)))
+    if voter:
+        result.append(_field("Voter", voter))
+    options = []
+    for field, wire, raw in fields:
+        if field != 3 or wire != 2:
+            continue
+        option_fields = _fields(raw)
+        option = _one(option_fields, 1, 0)
+        weight = _percent(_text(_one(option_fields, 2)))
+        if option is None or not weight:
+            continue
+        options.append({"option": _VOTE_OPTIONS.get(option, str(option)), "weight": weight})
+    if options:
+        result.append(_field("Options", options))
+    return result
+
+
+def _authz_grant(fields):
+    result = []
+    granter = _text(_one(fields, 1))
+    grantee = _text(_one(fields, 2))
+    if granter:
+        result.append(_field("Granter", granter))
+    if grantee:
+        result.append(_field("Grantee", grantee))
+    grant_raw = _one(fields, 3)
+    if grant_raw is not None:
+        grant_fields = _fields(grant_raw)
+        authorization_raw = _one(grant_fields, 1)
+        if authorization_raw is not None:
+            authorization_fields = _fields(authorization_raw)
+            authorization_type = _text(_one(authorization_fields, 1))
+            if authorization_type:
+                result.append(_field("Authorization", authorization_type))
+    return result
+
+
+def _authz_exec(fields, depth):
+    result = []
+    grantee = _text(_one(fields, 1))
+    nested_raw = [value for field, wire, value in fields if field == 2 and wire == 2]
+    if grantee:
+        result.append(_field("Grantee", grantee))
+    result.append(_field("Executed messages", str(len(nested_raw))))
+    if depth >= MAX_AUTHZ_DEPTH:
+        if nested_raw:
+            result.append(_field("Nested details", "Depth limit reached"))
+        return result
+
+    omitted = 0
+    for nested_index, raw_any in enumerate(nested_raw):
+        nested = _message(raw_any, depth=depth + 1)
+        candidate = [_field(f"#{nested_index} action", nested["action"])]
+        for nested_field in nested["fields"]:
+            candidate.append(_field(f"#{nested_index} {nested_field['label']}", nested_field["value"]))
+        if len(result) + len(candidate) > MAX_MESSAGE_DISPLAY_FIELDS - 1:
+            omitted = len(nested_raw) - nested_index
+            break
+        result.extend(candidate)
+    if omitted and len(result) < MAX_MESSAGE_DISPLAY_FIELDS:
+        result.append(_field("Additional executed messages", str(omitted)))
+    return result
 
 
 _MESSAGES = {
@@ -74,31 +310,78 @@ _MESSAGES = {
     "/cosmos.staking.v1beta1.MsgDelegate": ("Delegate", ((1, "Delegator", "text"), (2, "Validator", "text"), (3, "Amount", "coin"))),
     "/cosmos.staking.v1beta1.MsgUndelegate": ("Undelegate", ((1, "Delegator", "text"), (2, "Validator", "text"), (3, "Amount", "coin"))),
     "/cosmos.staking.v1beta1.MsgBeginRedelegate": ("Redelegate", ((1, "Delegator", "text"), (2, "Source validator", "text"), (3, "Destination validator", "text"), (4, "Amount", "coin"))),
+    "/cosmos.staking.v1beta1.MsgCancelUnbondingDelegation": ("Cancel unbonding", ((1, "Delegator", "text"), (2, "Validator", "text"), (3, "Amount", "coin"), (4, "Creation height", "uint"))),
     "/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward": ("Withdraw reward", ((1, "Delegator", "text"), (2, "Validator", "text"))),
-    "/cosmos.gov.v1beta1.MsgVote": ("Vote", ((1, "Proposal", "uint"), (2, "Voter", "text"), (3, "Option", "uint"))),
+    "/cosmos.distribution.v1beta1.MsgWithdrawValidatorCommission": ("Withdraw validator commission", ((1, "Validator", "text"),)),
+    "/cosmos.distribution.v1beta1.MsgSetWithdrawAddress": ("Set withdraw address", ((1, "Delegator", "text"), (2, "Withdraw address", "text"))),
+    "/cosmos.distribution.v1beta1.MsgFundCommunityPool": ("Fund community pool", ((1, "Amount", "coins"), (2, "Depositor", "text"))),
+    "/cosmos.slashing.v1beta1.MsgUnjail": ("Unjail", ((1, "Validator", "text"),)),
+    "/cosmos.gov.v1beta1.MsgVote": ("Vote", ((1, "Proposal", "uint"), (2, "Voter", "text"), (3, "Option", "vote_option"))),
+    "/cosmos.gov.v1.MsgVote": ("Vote", ((1, "Proposal", "uint"), (2, "Voter", "text"), (3, "Option", "vote_option"))),
+    "/cosmos.gov.v1beta1.MsgDeposit": ("Deposit", ((1, "Proposal", "uint"), (2, "Depositor", "text"), (3, "Amount", "coins"))),
+    "/cosmos.gov.v1.MsgDeposit": ("Deposit", ((1, "Proposal", "uint"), (2, "Depositor", "text"), (3, "Amount", "coins"))),
+    "/cosmos.authz.v1beta1.MsgRevoke": ("Revoke authorization", ((1, "Granter", "text"), (2, "Grantee", "text"), (3, "Message type", "text"))),
     "/ibc.applications.transfer.v1.MsgTransfer": ("IBC transfer", ((1, "Source port", "text"), (2, "Source channel", "text"), (3, "Token", "coin"), (4, "Sender", "text"), (5, "Receiver", "text"))),
 }
 
+_CUSTOM_MESSAGES = {
+    "/cosmos.staking.v1beta1.MsgEditValidator": ("Edit validator", _edit_validator),
+    "/cosmos.staking.v1beta1.MsgCreateValidator": ("Create validator", _create_validator),
+    "/cosmos.gov.v1beta1.MsgVoteWeighted": ("Weighted vote", _weighted_vote),
+    "/cosmos.gov.v1.MsgVoteWeighted": ("Weighted vote", _weighted_vote),
+    "/cosmos.authz.v1beta1.MsgGrant": ("Grant authorization", _authz_grant),
+}
 
-def _message(raw_any):
+_EXECUTION_COIN_EVENTS = {
+    "/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward": ("withdraw_rewards", "Reward withdrawn"),
+    "/cosmos.distribution.v1beta1.MsgWithdrawValidatorCommission": ("withdraw_commission", "Commission withdrawn"),
+}
+
+
+def _message(raw_any, *, depth=0):
     any_fields = _fields(raw_any)
     type_url, value = _text(_one(any_fields, 1)), _one(any_fields, 2)
     if not type_url or not type_url.startswith("/") or value is None:
         raise MalformedUpstreamResponse("invalid Cosmos message Any")
+    fields = _fields(value)
+    if type_url == "/cosmos.authz.v1beta1.MsgExec":
+        return {"type_url": type_url, "action": "Authz execution", "fields": _authz_exec(fields, depth)}
+    custom = _CUSTOM_MESSAGES.get(type_url)
+    if custom:
+        action, decoder = custom
+        return {"type_url": type_url, "action": action, "fields": decoder(fields)}
     specification = _MESSAGES.get(type_url)
     if not specification:
         return {"type_url": type_url, "action": type_url.rsplit(".", 1)[-1].removeprefix("Msg"), "fields": []}
     action, definitions = specification
-    fields = _fields(value)
     normalized = []
     for number, label, kind in definitions:
-        values = [item for field, wire, item in fields if field == number and wire == (0 if kind == "uint" else 2)]
-        if kind == "text": parsed = _text(values[0]) if len(values) == 1 else None
-        elif kind == "uint": parsed = str(values[0]) if len(values) == 1 else None
-        elif kind == "coin": parsed = _coin(values[0]) if len(values) == 1 else None
-        else: parsed = [coin for coin in (_coin(item) for item in values) if coin]
-        if parsed not in (None, []): normalized.append({"label": label, "value": parsed})
+        values = [item for field, wire, item in fields if field == number and wire == (0 if kind in ("uint", "vote_option") else 2)]
+        if kind == "text":
+            parsed = _text(values[0]) if len(values) == 1 else None
+        elif kind == "uint":
+            parsed = str(values[0]) if len(values) == 1 else None
+        elif kind == "vote_option":
+            parsed = _VOTE_OPTIONS.get(values[0], str(values[0])) if len(values) == 1 else None
+        elif kind == "coin":
+            parsed = _coin(values[0]) if len(values) == 1 else None
+        else:
+            parsed = [coin for coin in (_coin(item) for item in values) if coin]
+        if parsed not in (None, []):
+            normalized.append(_field(label, parsed))
     return {"type_url": type_url, "action": action, "fields": normalized}
+
+
+def _enrich_messages_from_events(messages, events):
+    message_count = len(messages)
+    for message_index, message in enumerate(messages):
+        specification = _EXECUTION_COIN_EVENTS.get(message["type_url"])
+        if not specification:
+            continue
+        event_type, label = specification
+        field = _execution_coin_field(_message_events(events, message_index, message_count), event_type, label)
+        if field:
+            message["fields"].append(field)
 
 
 def normalize_transaction_detail(block_payload, results_payload, *, expected_chain_id,
@@ -127,6 +410,8 @@ def normalize_transaction_detail(block_payload, results_payload, *, expected_cha
     if body_raw is None or auth_raw is None: raise MalformedUpstreamResponse("invalid TxRaw")
     body = _fields(body_raw)
     messages = [_message(value) for field, wire, value in body if field == 1 and wire == 2]
+    if code == 0:
+        _enrich_messages_from_events(messages, outcome.get("events"))
     memo = _text(_one(body, 2)) or None
     auth = _fields(auth_raw); fee_raw = _one(auth, 2); fee = None
     if fee_raw is not None:
@@ -136,7 +421,10 @@ def normalize_transaction_detail(block_payload, results_payload, *, expected_cha
     def gas(name):
         value = outcome.get(name)
         return int(value) if isinstance(value, (str, int)) and str(value).isdigit() else None
+    codespace = _outcome_text(outcome.get("codespace"), 128) if code else None
+    error_log = _outcome_text(outcome.get("log") or outcome.get("info"), 4096) if code else None
     return {"tx_hash": hashlib.sha256(raw).hexdigest().upper(), "height": height, "index": tx_index,
             "timestamp": _timestamp(header.get("time")), "success": code == 0, "code": code,
+            "codespace": codespace, "error_log": error_log,
             "gas_wanted": gas("gas_wanted"), "gas_used": gas("gas_used"), "fee": fee,
             "memo": memo, "message_count": len(messages), "messages": messages}
