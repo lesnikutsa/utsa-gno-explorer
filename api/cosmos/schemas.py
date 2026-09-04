@@ -118,6 +118,27 @@ class CosmosValidatorDelegationsResponse(StrictModel):
     total: int | None = Field(default=None, ge=0)
 
 
+class CosmosValidatorActivityItem(StrictModel):
+    tx_hash: str = Field(min_length=1, max_length=128)
+    height: int = Field(ge=1)
+    message_index: int = Field(ge=0, le=99)
+    timestamp: str = Field(min_length=20, max_length=64)
+    action: Literal["delegate", "undelegate", "redelegate_in", "redelegate_out",
+                    "withdraw_reward", "withdraw_commission", "edit_validator", "unjail"]
+    account_address: str | None = Field(default=None, max_length=90)
+    direction: Literal["positive", "negative", "neutral"]
+    amounts: list[CosmosDelegationBalance] = Field(max_length=16)
+    detail: str | None = Field(default=None, max_length=256)
+
+
+class CosmosValidatorActivityResponse(StrictModel):
+    state: Literal["available", "partial", "indexing_unavailable"]
+    items: list[CosmosValidatorActivityItem] = Field(max_length=10)
+    page: int = Field(ge=1, le=5)
+    page_size: int = Field(ge=1, le=10)
+    has_more: bool
+
+
 class CosmosRewardCoin(StrictModel):
     denom: str = Field(min_length=1, max_length=128)
     amount: DecimalString
