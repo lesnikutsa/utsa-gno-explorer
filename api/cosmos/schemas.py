@@ -532,6 +532,8 @@ class CosmosTransactionDetailResponse(StrictModel):
     timestamp: str = Field(min_length=20, max_length=64)
     success: bool
     code: int = Field(ge=0)
+    codespace: str | None = Field(default=None, max_length=128)
+    error_log: str | None = Field(default=None, max_length=4096)
     gas_wanted: int | None = Field(default=None, ge=0)
     gas_used: int | None = Field(default=None, ge=0)
     fee: TransactionFee | None = None
