@@ -39,13 +39,14 @@ function MarketPanel({ network, market, marketError, history }) {
   const max = prices.length ? Math.max(...prices) : 0
   const range = max - min || 1
   const path = prices.map((price, index) => `${index ? 'L' : 'M'}${(index / Math.max(1, prices.length - 1) * 300).toFixed(2)},${(72 - ((price - min) / range) * 60).toFixed(2)}`).join(' ')
-  const change24h = Number(market?.change_24h)
+  const numericChange = (value) => value === null || value === undefined ? null : Number(value)
+  const change24h = numericChange(market?.change_24h)
   const toneFor = (change) => change > 0 ? 'positive' : change < 0 ? 'negative' : 'neutral'
   const tone = toneFor(change24h)
   const changes = market ? [
     ['24h', change24h],
-    ['7d', Number(market.change_7d)],
-    ['30d', Number(market.change_30d)],
+    ['7d', numericChange(market.change_7d)],
+    ['30d', numericChange(market.change_30d)],
   ].filter(([, change]) => Number.isFinite(change)) : []
   const symbol = network.assets?.[0]?.symbol || network.presentation.nativeToken?.symbol || 'Token'
   return <section className="panel cosmos-market"><div className="cosmos-market__summary"><div><span className="eyebrow">Market · {symbol}</span><strong>{market ? `$${Number(market.price).toFixed(6).replace(/0+$/, '').replace(/\.$/, '')}` : marketError ? 'Unavailable' : '—'}</strong>{market ? <span>{changes.map(([period, change], index) => <span key={period} className={`cosmos-market__change cosmos-market__change--${toneFor(change)}`}>{`${index ? ' · ' : ''}${change > 0 ? '+' : ''}${change.toFixed(2)}% (${period})`}</span>)}</span> : <span className="cosmos-market__change cosmos-market__change--neutral">Optional market enrichment</span>}<small className="cosmos-market__source">{market?.source_last_updated_at ? `CoinGecko · updated ${relativeTime(market.source_last_updated_at)}` : 'CoinGecko · unavailable'}</small></div><dl><Detail label="Market cap" value={market ? formatCompactDecimal(market.market_cap, { prefix: '$' }) : '—'} />{prices.length > 1 && <><Detail label="24h low" value={`$${min.toFixed(6)}`} /><Detail label="24h high" value={`$${max.toFixed(6)}`} /></>}</dl></div>
