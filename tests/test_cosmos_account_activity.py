@@ -16,7 +16,7 @@ VAL_A = "atonevaloper1validatora"
 VAL_B = "atonevaloper1validatorb"
 
 
-def transaction(messages, *, height="42", txhash="A" * 64, code=0, logs=None):
+def transaction(messages, *, height="42", txhash="A" * 64, code=0, logs=None, events=None):
     tx = {"body": {"messages": messages}}
     response = {
         "height": height,
@@ -24,6 +24,7 @@ def transaction(messages, *, height="42", txhash="A" * 64, code=0, logs=None):
         "timestamp": "2026-09-05T12:34:56Z",
         "code": code,
         "logs": logs or [],
+        "events": events or [],
     }
     return tx, response
 
@@ -74,6 +75,24 @@ class AccountActivityNormalizationTests(unittest.TestCase):
         item = normalize_transaction(*transaction([reward], logs=logs), ACCOUNT, "message.sender")
         self.assertEqual(item["action"], "withdraw_reward")
         self.assertEqual(len(item["amounts"]), 2)
+
+    def test_inbound_ibc_uses_recv_packet_not_relayer_update_client(self):
+        update_client = {"@type": "/ibc.core.client.v1.MsgUpdateClient", "signer": "atone1relayer"}
+        recv_packet = {"@type": "/ibc.core.channel.v1.MsgRecvPacket", "packet": {
+            "source_channel": "channel-9", "destination_channel": "channel-2",
+        }, "signer": "atone1relayer"}
+        events = [{"type": "transfer", "attributes": [
+            {"key": "recipient", "value": ACCOUNT},
+            {"key": "sender", "value": "osmo1remote"},
+            {"key": "amount", "value": "24000000uatone"},
+        ]}]
+        item = normalize_transaction(
+            *transaction([update_client, recv_packet], events=events), ACCOUNT, "transfer.recipient")
+        self.assertEqual((item["action"], item["direction"]), ("ibc_received", "positive"))
+        self.assertEqual(item["message_index"], 1)
+        self.assertEqual(item["type_url"], "/ibc.core.channel.v1.MsgRecvPacket")
+        self.assertEqual(item["detail"], "channel-9 → channel-2")
+        self.assertEqual(item["amounts"], [{"denom": "uatone", "amount": "24000000"}])
 
     def test_failed_transaction_never_claims_value_movement(self):
         message = {"@type": "/cosmos.bank.v1beta1.MsgSend", "from_address": ACCOUNT,
