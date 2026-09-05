@@ -17,6 +17,7 @@ const ACTION_LABELS = {
   vote: 'Vote',
   deposit: 'Deposit',
   ibc_transfer: 'IBC transfer',
+  ibc_received: 'IBC received',
   authz_execution: 'Authz execution',
   grant_authorization: 'Grant authorization',
   revoke_authorization: 'Revoke authorization',
