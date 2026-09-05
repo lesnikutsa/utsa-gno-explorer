@@ -52,7 +52,11 @@
 .cosmos-account-reward-total .cosmos-account-usd { grid-column: 2; margin-top: 0; text-align: right; }
 
 .cosmos-account-table-wrap { width: 100%; overflow-x: auto; }
-.cosmos-account-delegations table { width: 100%; min-width: 720px; border-collapse: collapse; }
+.cosmos-account-delegations table { width: 100%; min-width: 720px; table-layout: fixed; border-collapse: collapse; }
+.cosmos-account-delegations th:nth-child(1), .cosmos-account-delegations td:nth-child(1) { width: 40%; }
+.cosmos-account-delegations th:nth-child(2), .cosmos-account-delegations td:nth-child(2) { width: 13%; }
+.cosmos-account-delegations th:nth-child(3), .cosmos-account-delegations td:nth-child(3) { width: 18%; }
+.cosmos-account-delegations th:nth-child(4), .cosmos-account-delegations td:nth-child(4) { width: 29%; }
 .cosmos-account-delegations th { padding: 9px 16px; color: var(--color-text-secondary); font-size: 9px; font-weight: 700; text-align: left; text-transform: uppercase; letter-spacing: .06em; }
 .cosmos-account-delegations td { padding: 13px 16px; border-top: 1px solid var(--color-border); font-size: 11px; vertical-align: middle; }
 .cosmos-account-delegations tbody tr:hover { background: var(--color-overlay-hover); }
