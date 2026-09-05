@@ -72,20 +72,19 @@ class CosmosAccountRouteTests(unittest.TestCase):
         self.assertEqual(response.json()["detail"], "Account data is temporarily unavailable")
         self.assertNotIn("secret", response.text)
 
+    def test_main_api_app_mounts_cosmos_account_route(self):
+        from api.app import app as main_app
 
-def test_main_api_app_mounts_cosmos_account_route(self):
-    from api.app import app as main_app
+        url = main_app.url_path_for(
+            "get_cosmos_account_detail",
+            network_id=NETWORK,
+            address=ADDRESS,
+        )
 
-    url = main_app.url_path_for(
-        "get_cosmos_account_detail",
-        network_id=NETWORK,
-        address=ADDRESS,
-    )
-
-    self.assertEqual(
-        str(url),
-        f"/api/networks/{NETWORK}/accounts/{ADDRESS}",
-    )
+        self.assertEqual(
+            str(url),
+            f"/api/networks/{NETWORK}/accounts/{ADDRESS}",
+        )
 
 
 if __name__ == "__main__":
