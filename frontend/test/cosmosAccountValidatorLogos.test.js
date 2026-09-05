@@ -12,3 +12,7 @@ test('account delegation and unbonding validator rows reuse the shared validator
   assert.match(page, /<ValidatorName network=\{network\} validator=\{row\.validator\} \/>/)
   assert.match(page, /<ValidatorName network=\{network\} validator=\{group\.validator\} \/>/)
 })
+
+test('shared account validator identity is wrapped in a grid cell so unbonding aligns with delegations', () => {
+  assert.match(page, /function ValidatorName[\s\S]*?return <div className="cosmos-account-validator-cell">[\s\S]*?<CosmosValidatorIdentity/)
+})
