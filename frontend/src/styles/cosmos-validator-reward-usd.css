@@ -33,6 +33,12 @@
   order: 2;
 }
 
+/* The panel titles are self-explanatory; keep the headings compact. */
+.cosmos-validator-activity .panel__meta,
+.cosmos-validator-delegators .panel__meta {
+  display: none;
+}
+
 .cosmos-validator-detail .cosmos-validator-hero__facts > div:hover,
 .cosmos-validator-detail .cosmos-validator-hero__metrics > article:hover {
   background: var(--color-overlay-hover);
