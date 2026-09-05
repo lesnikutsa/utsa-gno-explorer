@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import test from 'node:test'
 
 const page = fs.readFileSync(new URL('../src/pages/CosmosAccountDetail.jsx', import.meta.url), 'utf8')
+const identityCss = fs.readFileSync(new URL('../src/styles/cosmos-account-validator-identity.css', import.meta.url), 'utf8')
 
 test('account delegation and unbonding validator rows reuse the shared validator identity with logos', () => {
   assert.match(page, /import \{ CosmosValidatorIdentity \} from '\.\.\/components\/CosmosValidatorIdentity'/)
@@ -15,4 +16,9 @@ test('account delegation and unbonding validator rows reuse the shared validator
 
 test('shared account validator identity is wrapped in a grid cell so unbonding aligns with delegations', () => {
   assert.match(page, /function ValidatorName[\s\S]*?return <div className="cosmos-account-validator-cell">[\s\S]*?<CosmosValidatorIdentity/)
+})
+
+test('account validator monikers match validator list typography without resizing avatars', () => {
+  assert.match(identityCss, /\.cosmos-account-delegations \.cosmos-validator strong,[\s\S]*?\.cosmos-account-unbonding \.cosmos-validator strong \{[^}]*font-size:\s*12px;[^}]*font-weight:\s*600;/)
+  assert.doesNotMatch(identityCss, /cosmos-validator-avatar/)
 })
