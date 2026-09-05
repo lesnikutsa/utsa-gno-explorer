@@ -61,12 +61,13 @@
 .cosmos-account-delegations td { padding: 13px 16px; border-top: 1px solid var(--color-border); font-size: 11px; vertical-align: middle; }
 .cosmos-account-delegations tbody tr:hover { background: var(--color-overlay-hover); }
 .cosmos-account-validator { display: grid; min-width: 0; gap: 3px; }
-.cosmos-account-validator > a { width: fit-content; max-width: 310px; overflow: hidden; color: var(--color-text-bright); font-size: 12px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.cosmos-account-validator > a { width: fit-content; max-width: 310px; overflow: hidden; color: var(--color-text-bright); font-family: inherit; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .cosmos-account-validator > a:hover, .cosmos-account-validator > a:focus-visible { color: var(--color-accent); }
 .cosmos-account-validator > code { max-width: 310px; overflow: hidden; color: var(--color-text-secondary); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .cosmos-account-status { display: inline-flex; align-items: center; min-height: 21px; padding: 3px 7px; border: 1px solid var(--color-border); border-radius: 999px; color: var(--color-text-secondary); font-size: 9px; font-weight: 700; text-transform: capitalize; }
 .cosmos-account-status.is-active { color: var(--color-success); }
 .cosmos-account-status.is-jailed { color: var(--color-error); }
+.cosmos-account-delegations td:nth-child(3) > strong { color: var(--color-text-bright); font-family: inherit; font-size: 12px; font-weight: 600; }
 .cosmos-account-coin-stack { display: grid; gap: 2px; }
 .cosmos-account-coin-line { display: flex; align-items: baseline; gap: 9px; white-space: nowrap; }
 .cosmos-account-reward-usd { color: var(--color-success); font-family: var(--font-ui); font-size: 9px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -75,8 +76,8 @@
 .cosmos-account-unbonding-row { display: grid; grid-template-columns: minmax(210px, 1.4fr) repeat(3, minmax(125px, .8fr)); align-items: center; gap: 14px; padding: 13px 16px; border-bottom: 1px solid var(--color-border); }
 .cosmos-account-unbonding-row:last-child { border-bottom: 0; }
 .cosmos-account-unbonding-row > div { display: grid; gap: 3px; }
-.cosmos-account-unbonding-row > div > span { color: var(--color-text-secondary); font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
-.cosmos-account-unbonding-row > div > strong { font-size: 11px; }
+.cosmos-account-unbonding-row > div > span { color: var(--color-text-secondary); font-family: inherit; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0; }
+.cosmos-account-unbonding-row > div > strong { color: var(--color-text-bright); font-family: inherit; font-size: 12px; font-weight: 600; }
 
 .cosmos-account-reward-breakdown { display: grid; }
 .cosmos-account-reward-breakdown > div { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(160px, auto); align-items: center; gap: 16px; padding: 12px 16px; border-bottom: 1px solid var(--color-border); }
