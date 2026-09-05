@@ -31,11 +31,24 @@ test('account activity exposes the expected human actions and validator activity
     assert.match(activity, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   }
   assert.match(activity, /function actionTone\(item\)/)
+  assert.match(activity, /item\.action === 'redelegate'\) return 'warning'/)
   assert.match(activity, /item\.action === 'withdraw_reward'[\s\S]*return 'neutral'/)
   assert.match(activity, /return item\.direction/)
   assert.match(css, /is-positive[^{]*\{[^}]*var\(--color-success\)/)
   assert.match(css, /is-negative[^,]*,[^{]*is-failed[^{]*\{[^}]*var\(--color-error\)/)
+  assert.match(css, /is-warning[^{]*\{[^}]*var\(--color-warning\)/)
   assert.match(css, /is-neutral[^{]*\{[^}]*var\(--color-text\)/)
+})
+
+test('account activity shows full message type paths without redundant hover hints', () => {
+  assert.match(activity, /<code className="cosmos-account-activity__type">\{item\.type_url\}<\/code>/)
+  assert.doesNotMatch(activity, /<code title=\{item\.type_url\}/)
+  assert.match(css, /cosmos-account-activity__type[^}]*white-space: normal/)
+})
+
+test('account activity reuses the shared block height accent', () => {
+  assert.match(activity, /className="accent-value cosmos-account-activity__height"/)
+  assert.doesNotMatch(css, /\.cosmos-account-activity__height\s*\{[^}]*color:/)
 })
 
 test('activity columns align with the account unbonding table', () => {
