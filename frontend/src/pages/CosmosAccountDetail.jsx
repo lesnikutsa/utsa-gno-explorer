@@ -1,4 +1,5 @@
 import { CopyButton } from '../components/CopyButton'
+import { CosmosAccountActivity } from '../components/CosmosAccountActivity'
 import { CosmosValidatorIdentity } from '../components/CosmosValidatorIdentity'
 import { useCosmosResource } from '../hooks/useCosmosResource'
 import { formatTokenAmount } from '../utils/cosmosFormat'
@@ -217,6 +218,8 @@ export function CosmosAccountDetail({ network, address }) {
       <StateHint state={account.states.unbonding}>{account.unbonding?.length ? <div className="cosmos-account-unbonding-list"><div className="cosmos-account-unbonding-row" aria-hidden="true"><div><span>Validator</span></div><div><span>Amount</span></div><div><span>Completion</span></div><div><span>Remaining</span></div></div>{account.unbonding.flatMap((group) => group.entries.map((entry, index) => <article className="cosmos-account-unbonding-row" key={`${group.validator.operator_address}:${entry.creation_height}:${index}`}><ValidatorName network={network} validator={group.validator} /><div><strong>{group.denom ? formatCoin({ denom: group.denom, amount: entry.balance }, network) : entry.balance}</strong></div><div><strong>{utc(entry.completion_time)}</strong></div><div><strong>{formatDuration(entry.remaining_seconds)}</strong></div></article>))}</div> : <p className="muted cosmos-account-empty-state">No active unbonding delegations.</p>}</StateHint>
       {account.unbonding_truncated && <p className="muted cosmos-account-footnote">Additional unbonding entries exist beyond the bounded live page.</p>}
     </section>
+
+    <CosmosAccountActivity network={network} address={account.address} market={market.data} />
 
     <details className="panel cosmos-account-panel cosmos-account-technical">
       <summary>Technical details</summary>
