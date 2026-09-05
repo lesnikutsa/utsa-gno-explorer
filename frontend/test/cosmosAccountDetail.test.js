@@ -124,7 +124,7 @@ test('delegation rewards show native-token USD inline and stay multi-asset safe'
   assert.match(page, /cosmos-account-coin-line/)
   assert.match(page, /cosmos-account-reward-usd/)
   assert.match(css, /\.cosmos-account-coin-line \{[^}]*display: flex[^}]*align-items: baseline[^}]*gap: 9px/)
-  assert.match(css, /\.cosmos-account-reward-usd \{[^}]*color: var\(--color-success\)[^}]*font-size: 9px[^}]*font-weight: 600/)
+  assert.match(css, /\.cosmos-account-reward-usd \{[^}]*color: var\(--color-success\)[^}]*font-size: 9px[^}]*font-weight: 500/)
 })
 
 test('delegation columns are balanced and headings match validator table typography', () => {
