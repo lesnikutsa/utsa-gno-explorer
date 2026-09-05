@@ -16,6 +16,44 @@
   text-align: right;
 }
 
+/* Keep the paired validator panels in the user-facing order without changing their internals. */
+.cosmos-validator-detail__secondary > .cosmos-validator-fields:not(.cosmos-validator-reward-fields) {
+  order: 1;
+}
+
+.cosmos-validator-detail__secondary > .cosmos-validator-reward-fields {
+  order: 2;
+}
+
+.cosmos-validator-detail__lower > .cosmos-validator-activity {
+  order: 1;
+}
+
+.cosmos-validator-detail__lower > .cosmos-validator-delegators {
+  order: 2;
+}
+
+/* The panel titles are self-explanatory; keep the headings compact. */
+.cosmos-validator-activity .panel__meta,
+.cosmos-validator-delegators .panel__meta {
+  display: none;
+}
+
+/* Center the four participation cards and the 50-block strip as one visual group. */
+.cosmos-validator-detail .cosmos-validator-signing__mini-metrics,
+.cosmos-validator-detail .cosmos-validator-signing__monitor {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.cosmos-validator-detail .cosmos-validator-signing__mini-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.cosmos-validator-detail .cosmos-validator-signing__monitor {
+  transform: none;
+}
+
 .cosmos-validator-detail .cosmos-validator-hero__facts > div:hover,
 .cosmos-validator-detail .cosmos-validator-hero__metrics > article:hover {
   background: var(--color-overlay-hover);
