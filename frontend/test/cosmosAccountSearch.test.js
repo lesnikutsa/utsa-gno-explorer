@@ -14,5 +14,6 @@ test('Cosmos shared search routes account addresses with the configured network 
 
 test('account addresses do not trigger validator autocomplete before submit', () => {
   assert.match(search, /TRANSACTION_HASH\.test\(value\) \|\| value\.startsWith\(accountPrefix\) \|\| value\.length > 128/)
+  assert.match(search, /placeholder="Search blocks, transactions, accounts, or validators\.\.\."/)
   assert.match(search, /blocks, transactions, account addresses, or validators/)
 })
