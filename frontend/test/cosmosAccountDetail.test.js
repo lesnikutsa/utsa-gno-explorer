@@ -88,10 +88,11 @@ test('wallet asset labels amounts and optional USD share one compact line', () =
   assert.match(css, /\.cosmos-account-wallet-asset > \.cosmos-account-usd \{[^}]*grid-column: 3[^}]*grid-row: 1[^}]*align-self: center/)
 })
 
-test('native-token USD uses the existing market endpoint and validator green price contract without hover tooltips', () => {
+test('native-token USD uses the configured native denom and existing market endpoint without hover tooltips', () => {
   assert.match(page, /useCosmosResource\(`\/api\/networks\/\$\{network\.id\}\/market`, 30000\)/)
   assert.match(page, /function approximateUsd\(coin, network, market\)/)
-  assert.match(page, /const marketAsset = network\.assets\?\.\[0\]/)
+  assert.match(page, /const nativeDenom = network\.presentation\?\.nativeDenom \|\| network\.assets\?\.\[0\]\?\.base/)
+  assert.match(page, /network\.assets\?\.find\(\(asset\) => asset\.base === nativeDenom\) \|\| network\.assets\?\.\[0\]/)
   assert.match(page, /coin\?\.denom !== marketAsset\.base/)
   assert.match(page, /<SummaryCard label="Balance" usd=\{balanceUsd\}>/)
   assert.match(page, /<SummaryCard label="Delegated" usd=\{delegatedUsd\}/)
@@ -109,12 +110,29 @@ test('delegations absorb reward-only validator rows without a duplicate rewards 
   assert.match(page, /delegationRows = buildDelegationRows\(account\.delegations, account\.rewards_by_validator, account\.bond_denom\)/)
   assert.match(page, /delegationRows\.map/)
   assert.match(page, /delegationSurfaceAvailable = stakingAvailable \|\| rewardsAvailable/)
-  assert.match(page, /rewardsAvailable \? <CoinStack coins=\{row\.rewards\}/)
+  assert.match(page, /rewardsAvailable \? <CoinStack coins=\{row\.rewards\} network=\{network\} market=\{market\.data\} \/>/)
   assert.match(page, /delegationCount = activeDelegations\.length/)
   assert.doesNotMatch(page, /cosmos-account-rewards/)
   assert.doesNotMatch(page, /cosmos-account-reward-total/)
   assert.doesNotMatch(page, /cosmos-account-reward-breakdown/)
   assert.doesNotMatch(page, /<h2>Rewards<\/h2>/)
+})
+
+test('delegation rewards show native-token USD inline and stay multi-asset safe', () => {
+  assert.match(page, /function CoinStack\(\{ coins, network, market \}\)/)
+  assert.match(page, /const usd = approximateUsd\(coin, network, market\)/)
+  assert.match(page, /cosmos-account-coin-line/)
+  assert.match(page, /cosmos-account-reward-usd/)
+  assert.match(css, /\.cosmos-account-coin-line \{[^}]*display: flex[^}]*align-items: baseline[^}]*gap: 9px/)
+  assert.match(css, /\.cosmos-account-reward-usd \{[^}]*color: var\(--color-success\)[^}]*font-size: 9px[^}]*font-weight: 600/)
+})
+
+test('delegation columns are balanced and headings match validator table typography', () => {
+  assert.match(css, /th:nth-child\(1\)[^}]*width: 34%/)
+  assert.match(css, /th:nth-child\(2\)[^}]*width: 18%/)
+  assert.match(css, /th:nth-child\(3\)[^}]*width: 24%/)
+  assert.match(css, /th:nth-child\(4\)[^}]*width: 24%/)
+  assert.match(css, /\.cosmos-account-delegations th \{[^}]*font-family: inherit[^}]*font-size: 10px[^}]*font-weight: 700[^}]*text-transform: uppercase[^}]*letter-spacing: 0/)
 })
 
 test('validator status stays explicit for active inactive jailed and unknown rows', () => {
