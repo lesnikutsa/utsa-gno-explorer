@@ -18,7 +18,9 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
 
-TIMEOUT = 6.0
+# Match CosmosNetworkConfig.request_timeout so a probe timeout means the same
+# thing as an explorer transport timeout unless the operator overrides it.
+TIMEOUT = 10.0
 MAX_BYTES = 2_000_000
 
 
@@ -26,7 +28,8 @@ def host(url: str) -> str:
     return urlsplit(url).hostname or "invalid"
 
 
-def get_json(base: str, path: str, timeout: float = TIMEOUT):
+def get_json(base: str, path: str, timeout: float | None = None):
+    timeout = TIMEOUT if timeout is None else timeout
     started = time.monotonic()
     request = Request(base.rstrip("/") + path, headers={"Accept": "application/json", "User-Agent": "utsa-cosmos-endpoint-probe/1"})
     try:
@@ -154,7 +157,8 @@ def main(argv=None):
     parser.add_argument("--config", default="networks/atomone-mainnet/network.json")
     parser.add_argument("--rpc", action="append", default=[], help="additional RPC URL (repeatable)")
     parser.add_argument("--rest", action="append", default=[], help="additional REST/API URL (repeatable)")
-    parser.add_argument("--timeout", type=float, default=TIMEOUT)
+    parser.add_argument("--timeout", type=float, default=TIMEOUT,
+                        help="per-request timeout; defaults to explorer Cosmos transport timeout (10s)")
     args = parser.parse_args(argv)
     if not 0.5 <= args.timeout <= 30:
         parser.error("--timeout must be between 0.5 and 30 seconds")
@@ -170,6 +174,7 @@ def main(argv=None):
     rpc_endpoints = list(dict.fromkeys([*(config.get("rpc_endpoints") or []), *args.rpc]))
     rest_endpoints = list(dict.fromkeys([*(config.get("rest_endpoints") or []), *args.rest]))
 
+    print(f"TIMEOUT_S\t{TIMEOUT:g}")
     print("REST ENDPOINTS")
     print_row(("HOST", "CHAIN", "HEIGHT", "HEAD", "TX_SEARCH", "MODE", "TX_HEIGHT", "LATENCY_MS"))
     discovered = []
