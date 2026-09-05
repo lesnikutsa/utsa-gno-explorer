@@ -1,0 +1,94 @@
+name: Account router integration once
+
+on:
+  push:
+    branches:
+      - cosmos-account-detail
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: cosmos-account-detail
+          fetch-depth: 0
+
+      - name: Apply verified account-router integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app_path = Path('api/app.py')
+          text = app_path.read_text()
+
+          import_anchor = 'from api.cosmos import AllEndpointsUnavailable, RejectedEndpoint, RequestCache\n'
+          router_import = 'from api.cosmos.account_routes import router as cosmos_account_router\n'
+          app_anchor = 'app = FastAPI(title="UTSA Gno.land Explorer API", lifespan=lifespan)\n'
+          mount_line = 'app.include_router(cosmos_account_router)\n'
+
+          if router_import not in text:
+              if text.count(import_anchor) != 1:
+                  raise SystemExit('api.app Cosmos import anchor is not unique')
+              text = text.replace(import_anchor, import_anchor + router_import, 1)
+          if mount_line not in text:
+              if text.count(app_anchor) != 1:
+                  raise SystemExit('FastAPI app anchor is not unique')
+              text = text.replace(app_anchor, app_anchor + mount_line, 1)
+          if text.count(router_import) != 1 or text.count(mount_line) != 1:
+              raise SystemExit('Cosmos Account router integration count is invalid')
+          app_path.write_text(text)
+
+          test_path = Path('tests/test_cosmos_account_route.py')
+          test = test_path.read_text()
+          method_name = 'test_main_api_app_mounts_cosmos_account_route'
+          marker = '\n\nif __name__ == "__main__":\n    unittest.main()\n'
+          if method_name not in test:
+              if test.count(marker) != 1:
+                  raise SystemExit('test insertion anchor is not unique')
+              addition = '''
+              def test_main_api_app_mounts_cosmos_account_route(self):
+                  from api.app import app as main_app
+
+                  url = main_app.url_path_for(
+                      "get_cosmos_account_detail",
+                      network_id=NETWORK,
+                      address=ADDRESS,
+                  )
+
+                  self.assertEqual(
+                      str(url),
+                      f"/api/networks/{NETWORK}/accounts/{ADDRESS}",
+                  )
+          '''
+              # Remove the workflow script's indentation while preserving the test method's class indentation.
+              import textwrap
+              addition = textwrap.dedent(addition)
+              test = test.replace(marker, '\n' + addition + marker, 1)
+          test_path.write_text(test)
+          PY
+
+          python3 -m py_compile api/app.py tests/test_cosmos_account_route.py
+          git diff --check
+
+          grep -Fq 'from api.cosmos.account_routes import router as cosmos_account_router' api/app.py
+          grep -Fq 'app.include_router(cosmos_account_router)' api/app.py
+          grep -Fq 'def test_main_api_app_mounts_cosmos_account_route' tests/test_cosmos_account_route.py
+
+      - name: Commit integration and remove helper workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/account-router-integration-once.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add api/app.py tests/test_cosmos_account_route.py .github/workflows/account-router-integration-once.yml
+          git diff --cached --check
+          git commit -m 'Mount Cosmos account routes in main API'
+          git push origin HEAD:cosmos-account-detail
