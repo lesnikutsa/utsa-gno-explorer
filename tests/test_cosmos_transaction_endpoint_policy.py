@@ -32,7 +32,9 @@ class TransactionEndpointPolicyTests(unittest.IsolatedAsyncioTestCase):
 
         self.service.transport.get_object = AsyncMock(side_effect=get_object)
         result = await self.service._validator_event_search("message.sender='atone1x'", 10)
-        self.assertIs(result, found)
+        # RequestCache deliberately deep-copies cached values, so equality is
+        # the contract here; object identity is not preserved by design.
+        self.assertEqual(result, found)
         self.assertIn(("tx_search", self.fast.endpoint), self.service._tx_operation_suspect_until)
         ordered = await self.service._operation_candidates("rest", "tx_search")
         self.assertEqual([candidate.endpoint for candidate in ordered],
