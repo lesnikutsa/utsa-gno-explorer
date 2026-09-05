@@ -15,7 +15,7 @@
 .cosmos-account-activity td:first-child > code,
 .cosmos-account-activity td:nth-child(3) > small { margin-top: 3px; }
 .cosmos-account-activity td code, .cosmos-account-activity td small { min-width: 0; overflow: hidden; color: var(--color-text-secondary); font-size: 9px; font-weight: 400; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
-.cosmos-account-activity__type { overflow: visible !important; text-overflow: clip !important; white-space: normal !important; overflow-wrap: anywhere; }
+.cosmos-account-activity td code.cosmos-account-activity__type { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
 .cosmos-account-activity__action { width: fit-content; color: var(--color-text-bright); font-size: 12px; font-weight: 600; }
 .cosmos-account-activity__action.is-positive { color: var(--color-success); }
 .cosmos-account-activity__action.is-negative, .cosmos-account-activity__action.is-failed { color: var(--color-error); }
