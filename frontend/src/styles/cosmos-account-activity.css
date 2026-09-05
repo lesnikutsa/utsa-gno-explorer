@@ -6,13 +6,19 @@
 .cosmos-account-activity th:nth-child(3), .cosmos-account-activity td:nth-child(3) { width: 24%; }
 .cosmos-account-activity th:nth-child(4), .cosmos-account-activity td:nth-child(4) { width: 24%; }
 .cosmos-account-activity th { padding: 9px 16px; color: var(--color-text-secondary); font-family: inherit; font-size: 10px; font-weight: 700; text-align: left; text-transform: uppercase; letter-spacing: 0; }
-.cosmos-account-activity td { padding: 11px 16px; border-top: 1px solid var(--color-border); color: var(--color-text-bright); font-family: inherit; font-size: 11px; vertical-align: middle; }
+.cosmos-account-activity td { padding: 13px 16px; border-top: 1px solid var(--color-border); color: var(--color-text-bright); font-family: inherit; font-size: 11px; vertical-align: middle; }
 .cosmos-account-activity tbody tr:hover { background: var(--color-overlay-hover); }
-.cosmos-account-activity td:first-child, .cosmos-account-activity td:nth-child(3) { display: grid; gap: 3px; }
+.cosmos-account-activity td:first-child > strong,
+.cosmos-account-activity td:first-child > code,
+.cosmos-account-activity td:nth-child(3) > a,
+.cosmos-account-activity td:nth-child(3) > small { display: block; width: fit-content; max-width: 100%; }
+.cosmos-account-activity td:first-child > code,
+.cosmos-account-activity td:nth-child(3) > small { margin-top: 3px; }
 .cosmos-account-activity td code, .cosmos-account-activity td small { min-width: 0; overflow: hidden; color: var(--color-text-secondary); font-size: 9px; font-weight: 400; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
 .cosmos-account-activity__action { width: fit-content; color: var(--color-text-bright); font-size: 12px; font-weight: 600; }
 .cosmos-account-activity__action.is-positive { color: var(--color-success); }
 .cosmos-account-activity__action.is-negative, .cosmos-account-activity__action.is-failed { color: var(--color-error); }
+.cosmos-account-activity__action.is-neutral { color: var(--color-text); }
 .cosmos-account-activity__amount-detail { display: grid; min-width: 0; gap: 3px; }
 .cosmos-account-activity__coin { display: flex; min-width: 0; align-items: baseline; gap: 9px; white-space: nowrap; }
 .cosmos-account-activity__coin > span { color: var(--color-text-bright); font-size: 12px; font-weight: 400; }
