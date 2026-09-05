@@ -69,14 +69,16 @@ function AddressValue({ value, label }) {
 }
 
 function ValidatorName({ network, validator }) {
-  return <CosmosValidatorIdentity
-    moniker={validator.moniker || 'Validator'}
-    address={validator.operator_address}
-    imageSrc={validator.avatar_url}
-    showTitles={false}
-    fullAddress
-    href={`/networks/${network.id}/validators/${encodeURIComponent(validator.operator_address)}`}
-  />
+  return <div className="cosmos-account-validator-cell">
+    <CosmosValidatorIdentity
+      moniker={validator.moniker || 'Validator'}
+      address={validator.operator_address}
+      imageSrc={validator.avatar_url}
+      showTitles={false}
+      fullAddress
+      href={`/networks/${network.id}/validators/${encodeURIComponent(validator.operator_address)}`}
+    />
+  </div>
 }
 
 function CoinStack({ coins, network, market }) {
