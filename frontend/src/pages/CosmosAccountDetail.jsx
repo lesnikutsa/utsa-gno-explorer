@@ -1,4 +1,5 @@
 import { CopyButton } from '../components/CopyButton'
+import { CosmosValidatorIdentity } from '../components/CosmosValidatorIdentity'
 import { useCosmosResource } from '../hooks/useCosmosResource'
 import { formatTokenAmount } from '../utils/cosmosFormat'
 import '../styles/cosmos-account-detail.css'
@@ -68,10 +69,14 @@ function AddressValue({ value, label }) {
 }
 
 function ValidatorName({ network, validator }) {
-  return <span className="cosmos-account-validator">
-    <a href={`/networks/${network.id}/validators/${validator.operator_address}`}>{validator.moniker || 'Validator'}</a>
-    <code title={validator.operator_address}>{validator.operator_address}</code>
-  </span>
+  return <CosmosValidatorIdentity
+    moniker={validator.moniker || 'Validator'}
+    address={validator.operator_address}
+    imageSrc={validator.avatar_url}
+    showTitles={false}
+    fullAddress
+    href={`/networks/${network.id}/validators/${encodeURIComponent(validator.operator_address)}`}
+  />
 }
 
 function CoinStack({ coins, network, market }) {
