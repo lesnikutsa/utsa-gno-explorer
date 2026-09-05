@@ -122,6 +122,7 @@ from api.schemas import (
 from api.token_supply import (NATIVE_GNOT_DECIMALS, NATIVE_GNOT_DENOM, decimal_amount,
                               query_native_gnot_supply, query_total_supply, token_supply_cache)
 from api.cosmos import AllEndpointsUnavailable, RejectedEndpoint, RequestCache
+from api.cosmos.account_routes import router as cosmos_account_router
 from api.cosmos.errors import InvalidValidatorAddress, TransactionNotFound, ValidatorNotFound
 from api.cosmos.registry import (NETWORKS, get_network as get_cosmos_network,
                                  public_networks)
@@ -435,6 +436,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="UTSA Gno.land Explorer API", lifespan=lifespan)
+app.include_router(cosmos_account_router)
 
 ACCOUNT_UNAVAILABLE_DETAIL = "Account data is temporarily unavailable"
 
