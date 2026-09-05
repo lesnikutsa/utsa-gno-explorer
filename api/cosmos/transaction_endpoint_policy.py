@@ -13,6 +13,7 @@ from .service_core import SECTION_TTL, _QUERY_FIELD_UNSUPPORTED, _integer, _mapp
 from .transactions import normalize_transactions
 
 _TX_SUSPECT_SECONDS = 60.0
+_TX_RECENT_BLOCK_WINDOW = 2_000
 
 
 def _error_text(payload: object) -> str:
@@ -104,8 +105,17 @@ class TransactionEndpointPolicyMixin:
             candidate.endpoint, legacy, accept_error_payload=True)
         return payload, "legacy"
 
+    async def _recent_transaction_expression(self) -> str:
+        """Bound generic transaction search to a small recent block window."""
+        status = await self.adapter.node_status()
+        height = getattr(status, "local_height", None)
+        if type(height) is not int or height <= 0:
+            raise AllEndpointsUnavailable("current chain height unavailable")
+        lower = max(1, height - _TX_RECENT_BLOCK_WINDOW + 1)
+        return f"tx.height>={lower}"
+
     async def transactions(self, limit=20, page=1):
-        """Use v0.50 tx search and prefer informative results across REST candidates."""
+        """Return recent transactions without scanning the full transaction index."""
         if type(limit) is not int or not 1 <= limit <= 20 or type(page) is not int or not 1 <= page <= 100:
             raise ValueError("invalid transaction page")
 
@@ -120,13 +130,14 @@ class TransactionEndpointPolicyMixin:
             except (MalformedUpstreamResponse, ValidationError):
                 return None
 
+        expression = await self._recent_transaction_expression()
         candidates = await self._operation_candidates("rest", "tx_search")
         first_empty = None
         empty_endpoints: list[str] = []
         indexing_unavailable = False
         for candidate in candidates:
             try:
-                payload, _mode = await self._tx_search_payload(candidate, "tx.height>0", page, limit)
+                payload, _mode = await self._tx_search_payload(candidate, expression, page, limit)
             except Exception:
                 continue
             response = normalized(candidate.endpoint, payload)
