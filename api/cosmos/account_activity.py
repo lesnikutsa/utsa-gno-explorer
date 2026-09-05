@@ -28,6 +28,7 @@ MSG_VOTE = {"/cosmos.gov.v1.MsgVote", "/cosmos.gov.v1beta1.MsgVote",
             "/cosmos.gov.v1.MsgVoteWeighted", "/cosmos.gov.v1beta1.MsgVoteWeighted"}
 MSG_DEPOSIT = {"/cosmos.gov.v1.MsgDeposit", "/cosmos.gov.v1beta1.MsgDeposit"}
 MSG_IBC_TRANSFER = "/ibc.applications.transfer.v1.MsgTransfer"
+MSG_IBC_RECV_PACKET = "/ibc.core.channel.v1.MsgRecvPacket"
 MSG_AUTHZ_EXEC = "/cosmos.authz.v1beta1.MsgExec"
 MSG_AUTHZ_GRANT = "/cosmos.authz.v1beta1.MsgGrant"
 MSG_AUTHZ_REVOKE = "/cosmos.authz.v1beta1.MsgRevoke"
@@ -101,6 +102,25 @@ def _event_coins(value: object) -> list[dict[str, str]]:
     return result
 
 
+def _event_values(event: object) -> dict[str, object]:
+    if not isinstance(event, dict) or not isinstance(event.get("attributes"), list):
+        return {}
+    return {item.get("key"): item.get("value") for item in event["attributes"] if isinstance(item, dict)}
+
+
+def _response_events(response: dict):
+    """Yield decoded Cosmos events from both legacy logs and the v0.50 TxResponse event list."""
+    logs = response.get("logs")
+    if isinstance(logs, list):
+        for log in logs:
+            if not isinstance(log, dict) or not isinstance(log.get("events"), list):
+                continue
+            yield from (event for event in log["events"] if isinstance(event, dict))
+    events = response.get("events")
+    if isinstance(events, list):
+        yield from (event for event in events if isinstance(event, dict))
+
+
 def _withdrawal_amounts(response: dict, message_index: int, validator: str) -> list[dict[str, str]]:
     logs = response.get("logs")
     if not isinstance(logs, list):
@@ -112,10 +132,7 @@ def _withdrawal_amounts(response: dict, message_index: int, validator: str) -> l
     for event in log["events"]:
         if not isinstance(event, dict) or event.get("type") != "withdraw_rewards":
             continue
-        attributes = event.get("attributes")
-        if not isinstance(attributes, list):
-            continue
-        values = {item.get("key"): item.get("value") for item in attributes if isinstance(item, dict)}
+        values = _event_values(event)
         if values.get("validator") != validator:
             continue
         coins = _event_coins(values.get("amount"))
@@ -125,23 +142,14 @@ def _withdrawal_amounts(response: dict, message_index: int, validator: str) -> l
 
 
 def _received_event_amounts(response: dict, address: str) -> list[dict[str, str]]:
-    logs = response.get("logs")
-    if not isinstance(logs, list):
-        return []
-    for log in logs:
-        if not isinstance(log, dict) or not isinstance(log.get("events"), list):
+    for event in _response_events(response):
+        if event.get("type") != "transfer":
             continue
-        for event in log["events"]:
-            if not isinstance(event, dict) or event.get("type") != "transfer":
-                continue
-            attributes = event.get("attributes")
-            if not isinstance(attributes, list):
-                continue
-            values = {item.get("key"): item.get("value") for item in attributes if isinstance(item, dict)}
-            if values.get("recipient") == address:
-                coins = _event_coins(values.get("amount"))
-                if coins:
-                    return coins
+        values = _event_values(event)
+        if values.get("recipient") == address:
+            coins = _event_coins(values.get("amount"))
+            if coins:
+                return coins
     return []
 
 
@@ -231,6 +239,22 @@ def _message_activity(message: dict, address: str, response: dict, index: int):
     return None
 
 
+def _ibc_received_activity(messages: list[dict], response: dict, address: str):
+    """Prefer the actual receive-packet message over a relayer's preceding update-client message."""
+    for index, message in enumerate(messages):
+        if message.get("@type") != MSG_IBC_RECV_PACKET:
+            continue
+        packet = message.get("packet")
+        source = destination = None
+        if isinstance(packet, dict):
+            source = _text(packet.get("source_channel"), 128)
+            destination = _text(packet.get("destination_channel"), 128)
+        detail = f"{source} → {destination}" if source and destination else source or destination
+        return (index, "ibc_received", "positive", _received_event_amounts(response, address),
+                detail, MSG_IBC_RECV_PACKET)
+    return None
+
+
 def normalize_transaction(tx: object, response: object, address: str, event_key: str):
     if not isinstance(tx, dict) or not isinstance(response, dict):
         raise MalformedUpstreamResponse("invalid account transaction search result")
@@ -266,8 +290,10 @@ def normalize_transaction(tx: object, response: object, address: str, event_key:
 
     if selected is None:
         if event_key == "transfer.recipient":
-            selected = (0, "received", "positive", _received_event_amounts(response, address), None,
-                        _text(messages[0].get("@type"), 256) if messages else None)
+            selected = _ibc_received_activity(messages, response, address)
+            if selected is None:
+                selected = (0, "received", "positive", _received_event_amounts(response, address), None,
+                            _text(messages[0].get("@type"), 256) if messages else None)
         else:
             selected = (0, "transaction", "neutral", [], None,
                         _text(messages[0].get("@type"), 256) if messages else None)
