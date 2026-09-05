@@ -18,6 +18,7 @@ export function NetworkBlockSearch({ network, inputRef, formRef }) {
   const requestSequence = useRef(0)
   const currentNetworkId = useRef(network.id)
   currentNetworkId.current = network.id
+  const accountPrefix = `${network.addressPrefixes.account}1`
   const operatorPrefix = `${network.addressPrefixes.validator_operator}1`
 
   const clear = (blur = false) => {
@@ -34,7 +35,7 @@ export function NetworkBlockSearch({ network, inputRef, formRef }) {
 
   useEffect(() => {
     const value = query.trim()
-    if (!value || BLOCK_HEIGHT.test(value) || TRANSACTION_HASH.test(value) || value.length > 128) {
+    if (!value || BLOCK_HEIGHT.test(value) || TRANSACTION_HASH.test(value) || value.startsWith(accountPrefix) || value.length > 128) {
       setResults([])
       setDropdownOpen(false)
       setHighlightedIndex(-1)
@@ -65,7 +66,7 @@ export function NetworkBlockSearch({ network, inputRef, formRef }) {
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [network.id, query])
+  }, [network.id, query, accountPrefix])
 
   useEffect(() => {
     const closeOnOutsideClick = (event) => {
@@ -99,6 +100,9 @@ export function NetworkBlockSearch({ network, inputRef, formRef }) {
         const transaction = await request(`/networks/${networkId}/transactions/${encodeURIComponent(value)}`)
         if (currentNetworkId.current !== networkId) return
         navigateInternal(`/networks/${networkId}/blocks/${transaction.height}/transactions/${transaction.index}`)
+      } else if (value.startsWith(accountPrefix)) {
+        setMessage('')
+        navigateInternal(`/networks/${networkId}/accounts/${encodeURIComponent(value)}`)
       } else if (value.startsWith(operatorPrefix)) {
         const response = await searchCosmosValidators({ networkId, query: value, limit: 6 })
         if (currentNetworkId.current !== networkId) return
@@ -107,7 +111,7 @@ export function NetworkBlockSearch({ network, inputRef, formRef }) {
         else { setStatus('invalid'); setMessage('Validator not found.') }
       } else {
         setStatus('invalid')
-        setMessage('Enter a positive block height, transaction hash, or validator.')
+        setMessage('Enter a positive block height, transaction hash, account address, or validator.')
       }
     } catch (error) {
       if (currentNetworkId.current !== networkId) return
@@ -135,7 +139,7 @@ export function NetworkBlockSearch({ network, inputRef, formRef }) {
   }
 
   return <form ref={formRef} className="global-search" role="search" onSubmit={submit} aria-busy={searching}>
-    <label className="search-box"><SearchIcon /><input ref={inputRef} type="search" value={query} onChange={(event) => { setQuery(event.target.value); setMessage('') }} onKeyDown={keyDown} placeholder="Search blocks, transactions, or validators..." aria-label={`Search ${network.presentation.projectName} blocks, transactions, or validators`} aria-expanded={dropdownOpen} aria-controls="cosmos-search-results" aria-activedescendant={highlightedIndex >= 0 ? `cosmos-search-result-${highlightedIndex}` : undefined} autoComplete="off" spellCheck={false} maxLength={128} /><kbd>/</kbd></label>
+    <label className="search-box"><SearchIcon /><input ref={inputRef} type="search" value={query} onChange={(event) => { setQuery(event.target.value); setMessage('') }} onKeyDown={keyDown} placeholder="Search blocks, transactions, accounts, or validators..." aria-label={`Search ${network.presentation.projectName} blocks, transactions, account addresses, or validators`} aria-expanded={dropdownOpen} aria-controls="cosmos-search-results" aria-activedescendant={highlightedIndex >= 0 ? `cosmos-search-result-${highlightedIndex}` : undefined} autoComplete="off" spellCheck={false} maxLength={128} /><kbd>/</kbd></label>
     {dropdownOpen && results.length > 0 && <div id="cosmos-search-results" className="global-search__results" role="listbox" aria-label="Validator results">
       {results.map((validator, index) => <a id={`cosmos-search-result-${index}`} key={validator.operator_address} className={`global-search__result${highlightedIndex === index ? ' global-search__result--highlighted' : ''}`} href={`/networks/${network.id}/validators/${encodeURIComponent(validator.operator_address)}`} role="option" aria-selected={highlightedIndex === index} onClick={(event) => { event.preventDefault(); selectValidator(validator) }}>
         <strong className="global-search__moniker">{validator.moniker}</strong>

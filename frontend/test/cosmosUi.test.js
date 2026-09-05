@@ -76,7 +76,7 @@ test('AtomOne overview shares dashboard cards and tables without raw responsive 
 test('Cosmos TopBar keeps the shared search and block-time UI while scoping block navigation', () => {
   assert.doesNotMatch(topbar, /UTSA Explorer/)
   assert.match(topbar, /NetworkBlockSearch/)
-  assert.match(networkSearch, /Search blocks, transactions, or validators/)
+  assert.match(networkSearch, /Search blocks, transactions, accounts, or validators/)
   assert.match(networkSearch, /`\/networks\/\$\{network\.id\}\/blocks\/\$\{value\}`/)
   assert.match(networkSearch, /\^\[0-9A-Fa-f\]\{64\}\$/)
   assert.match(networkSearch, /transactions\/\$\{encodeURIComponent\(value\)\}/)
