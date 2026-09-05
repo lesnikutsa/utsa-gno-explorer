@@ -275,6 +275,24 @@ def _delegations(payload: object, expected_address: str) -> tuple[list[dict], bo
     return items, bool(pagination.get("next_key"))
 
 
+def _parse_completion_time(value: str) -> datetime:
+    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+    fraction_pos = normalized.find(".")
+    if fraction_pos != -1:
+        timezone_pos = max(normalized.rfind("+"), normalized.rfind("-"))
+        if timezone_pos > fraction_pos:
+            fractional_digits = timezone_pos - fraction_pos - 1
+            if fractional_digits > 6:
+                normalized = normalized[:fraction_pos + 7] + normalized[timezone_pos:]
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        raise MalformedUpstreamResponse("invalid completion time") from None
+    if parsed.tzinfo is None:
+        raise MalformedUpstreamResponse("invalid completion timezone")
+    return parsed
+
+
 def _unbonding(payload: object, expected_address: str, now: datetime) -> tuple[list[dict], bool]:
     payload = _mapping(payload, "unbonding response")
     rows = payload.get("unbonding_responses")
@@ -297,12 +315,7 @@ def _unbonding(payload: object, expected_address: str, now: datetime) -> tuple[l
                 raise MalformedUpstreamResponse("too many unbonding entries")
             entry = _mapping(entry, "unbonding entry")
             completion = _text(entry.get("completion_time"), "completion time", 64)
-            try:
-                parsed = datetime.fromisoformat(completion.replace("Z", "+00:00"))
-            except ValueError:
-                raise MalformedUpstreamResponse("invalid completion time") from None
-            if parsed.tzinfo is None:
-                raise MalformedUpstreamResponse("invalid completion timezone")
+            parsed = _parse_completion_time(completion)
             remaining = max(0, int((parsed.astimezone(timezone.utc) - now).total_seconds()))
             normalized_entries.append({
                 "creation_height": _integer(entry.get("creation_height"), "creation height"),

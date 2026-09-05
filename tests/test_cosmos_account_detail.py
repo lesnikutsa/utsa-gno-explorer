@@ -56,8 +56,9 @@ def payloads():
             "pagination": {"next_key": None}},
         "account_unbonding": {"unbonding_responses": [{
             "delegator_address": ACCOUNT, "validator_address": OPERATOR,
-            "entries": [{"creation_height": "100", "completion_time": "2026-09-05T18:00:00Z",
-                         "initial_balance": "500000", "balance": "450000"}]}],
+            "entries": [{"creation_height": "100", "completion_time": "2026-09-05T18:00:00.123456789Z",
+                         "initial_balance": "500000", "balance": "450000",
+                         "unbonding_id": "21397", "unbonding_on_hold_ref_count": "0"}]}],
             "pagination": {"next_key": None}},
         "account_rewards": {"rewards": [{"validator_address": OPERATOR, "reward": [
             {"denom": "uatone", "amount": "42170000.125000000000000000"},
@@ -88,6 +89,8 @@ class CosmosAccountDetailTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["rewards_total"][1], {"denom": "uphoton", "amount": "10.5"})
         self.assertEqual(result["rewards_by_validator"][0]["validator"]["moniker"], "UTSA")
         self.assertEqual(result["unbonding"][0]["denom"], "uatone")
+        self.assertEqual(result["unbonding"][0]["entries"][0]["completion_time"],
+                         "2026-09-05T18:00:00.123456789Z")
         self.assertEqual(result["unbonding"][0]["entries"][0]["remaining_seconds"], 86400)
         self.assertEqual(result["withdraw_address"], ACCOUNT)
         self.assertEqual(result["validator_relation"]["operator_address"], OPERATOR)
