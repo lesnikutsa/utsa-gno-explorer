@@ -78,6 +78,33 @@ function CoinStack({ coins, network }) {
   return visible.length ? <span className="cosmos-account-coin-stack">{visible.map((coin) => <span key={coin.denom}>{formatCoin(coin, network)}</span>)}</span> : '—'
 }
 
+function buildDelegationRows(delegations, rewardsByValidator, bondDenom) {
+  const rewardsByOperator = new Map((rewardsByValidator || []).map((row) => [row.validator.operator_address, row]))
+  const seen = new Set()
+  const rows = []
+
+  for (const delegation of delegations || []) {
+    const operator = delegation.validator.operator_address
+    const rewardRow = rewardsByOperator.get(operator)
+    const rewards = rewardRow?.rewards || delegation.rewards || []
+    if (hasAmount(delegation.balance) || rewards.some(hasAmount)) rows.push({ ...delegation, rewards })
+    seen.add(operator)
+  }
+
+  for (const rewardRow of rewardsByValidator || []) {
+    const operator = rewardRow.validator.operator_address
+    if (seen.has(operator) || !(rewardRow.rewards || []).some(hasAmount)) continue
+    rows.push({
+      validator: rewardRow.validator,
+      shares: '0',
+      balance: bondDenom ? { denom: bondDenom, amount: '0' } : null,
+      rewards: rewardRow.rewards || [],
+    })
+  }
+
+  return rows
+}
+
 function SummaryCard({ label, children, usd, meta }) {
   return <article className="card status-card cosmos-validator-summary__card cosmos-account-summary-card">
     <span>{label}</span>
@@ -115,6 +142,8 @@ export function CosmosAccountDetail({ network, address }) {
   const rewardsAvailable = account.states.rewards === 'available'
   const unbondingAvailable = account.states.unbonding === 'available'
   const activeDelegations = (account.delegations || []).filter((row) => hasAmount(row.balance))
+  const delegationRows = buildDelegationRows(account.delegations, account.rewards_by_validator, account.bond_denom)
+  const delegationSurfaceAvailable = stakingAvailable || rewardsAvailable
   const delegatedCoin = coinFor(account.delegated_total, account.bond_denom) || account.delegated_total?.[0] || null
   const visibleRewards = (account.rewards_total || []).filter(hasAmount)
   const rewardHeadline = coinFor(visibleRewards, primaryDenom) || visibleRewards[0] || null
@@ -152,7 +181,7 @@ export function CosmosAccountDetail({ network, address }) {
       {!account.exists && <p className="muted cosmos-account-empty-note">No current account state was found in the available live modules.</p>}
       <div className="cosmos-validator-hero__metrics cosmos-account-summary-grid">
         <SummaryCard label="Balance" usd={balanceUsd}>{bankAvailable ? (primaryBalance ? formatCoin(primaryBalance, network) : primaryAsset ? formatTokenAmount('0', primaryAsset.exponent, primaryAsset.symbol) : '0') : '—'}</SummaryCard>
-        <SummaryCard label="Delegated" usd={delegatedUsd} meta={stakingAvailable ? `${delegationCount} active validator${delegationCount === 1 ? '' : 's'}` : 'Unavailable'}>{stakingAvailable ? (delegatedCoin ? formatCoin(delegatedCoin, network) : primaryAsset ? formatTokenAmount('0', primaryAsset.exponent, primaryAsset.symbol) : '0') : '—'}</SummaryCard>
+        <SummaryCard label="Delegated" usd={delegatedUsd} meta={stakingAvailable ? `${delegationCount} current delegation${delegationCount === 1 ? '' : 's'}` : 'Unavailable'}>{stakingAvailable ? (delegatedCoin ? formatCoin(delegatedCoin, network) : primaryAsset ? formatTokenAmount('0', primaryAsset.exponent, primaryAsset.symbol) : '0') : '—'}</SummaryCard>
         <SummaryCard label="Rewards" usd={rewardsUsd} meta={!rewardsAvailable ? 'Unavailable' : otherRewardCount ? `+${otherRewardCount} other asset${otherRewardCount === 1 ? '' : 's'}` : 'Claimable now'}>{rewardsAvailable ? (rewardHeadline ? formatCoin(rewardHeadline, network) : primaryAsset ? formatTokenAmount('0', primaryAsset.exponent, primaryAsset.symbol) : '0') : '—'}</SummaryCard>
         <SummaryCard label="Unbonding" meta={!unbondingAvailable ? 'Unavailable' : unbondingCount ? `${unbondingCount} active entr${unbondingCount === 1 ? 'y' : 'ies'}` : 'No active entries'}>{unbondingAvailable ? (unbondingCoin ? formatCoin(unbondingCoin, network) : primaryAsset ? formatTokenAmount('0', primaryAsset.exponent, primaryAsset.symbol) : '0') : '—'}</SummaryCard>
       </div>
@@ -164,16 +193,8 @@ export function CosmosAccountDetail({ network, address }) {
 
     <section className="panel cosmos-account-panel cosmos-account-delegations">
       <div className="panel__heading"><h2>Delegations</h2><div className="cosmos-account-panel-total">{stakingAvailable ? (delegatedCoin ? formatCoin(delegatedCoin, network) : '0') : '—'}</div></div>
-      <StateHint state={account.states.staking}>{activeDelegations.length ? <div className="cosmos-account-table-wrap"><table><thead><tr><th>Validator</th><th>Status</th><th>Delegated</th><th>Rewards</th></tr></thead><tbody>{activeDelegations.map((row) => <tr key={row.validator.operator_address}><td><ValidatorName network={network} validator={row.validator} /></td><td><span className={`cosmos-account-status is-${row.validator.category || 'unknown'}`}>{row.validator.category || 'Unknown'}</span></td><td><strong>{formatCoin(row.balance, network)}</strong></td><td><CoinStack coins={row.rewards} network={network} /></td></tr>)}</tbody></table></div> : <p className="muted cosmos-account-empty-state">No active delegations.</p>}</StateHint>
+      {delegationSurfaceAvailable ? delegationRows.length ? <div className="cosmos-account-table-wrap"><table><thead><tr><th>Validator</th><th>Status</th><th>Delegated</th><th>Rewards</th></tr></thead><tbody>{delegationRows.map((row) => <tr key={row.validator.operator_address}><td><ValidatorName network={network} validator={row.validator} /></td><td><span className={`cosmos-account-status is-${row.validator.category || 'unknown'}`}>{row.validator.category || 'Unknown'}</span></td><td><strong>{stakingAvailable ? formatCoin(row.balance, network) : '—'}</strong></td><td>{rewardsAvailable ? <CoinStack coins={row.rewards} network={network} /> : '—'}</td></tr>)}</tbody></table></div> : <p className="muted cosmos-account-empty-state">No delegations or claimable rewards.</p> : <p className="muted cosmos-account-unavailable">Temporarily unavailable from the current API.</p>}
       {account.delegations_truncated && <p className="muted cosmos-account-footnote">Additional delegation records exist beyond the bounded live page.</p>}
-    </section>
-
-    <section className="panel cosmos-account-panel cosmos-account-rewards">
-      <div className="panel__heading"><h2>Rewards</h2></div>
-      <StateHint state={account.states.rewards}>{visibleRewards.length ? <>
-        <div className="cosmos-account-reward-total">{visibleRewards.map((coin) => <div key={coin.denom}><span>{assetFor(network, coin.denom)?.symbol || coin.denom}</span><strong>{formatCoin(coin, network)}</strong>{approximateUsd(coin, network, market.data) && <small className="cosmos-account-usd">≈ {approximateUsd(coin, network, market.data)}</small>}</div>)}</div>
-        {account.rewards_by_validator?.length > 0 && <div className="cosmos-account-reward-breakdown">{account.rewards_by_validator.map((row) => <div key={row.validator.operator_address}><ValidatorName network={network} validator={row.validator} /><CoinStack coins={row.rewards} network={network} /></div>)}</div>}
-      </> : <p className="muted cosmos-account-empty-state">No claimable rewards.</p>}</StateHint>
     </section>
 
     <section className="panel cosmos-account-panel cosmos-account-unbonding">
