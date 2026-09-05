@@ -27,7 +27,7 @@ test('account activity keeps graceful indexing states and hash navigation', () =
 })
 
 test('account activity exposes the expected human actions and validator activity tones', () => {
-  for (const label of ['Received', 'Sent', 'Delegate', 'Undelegate', 'Redelegate', 'Withdraw reward', 'Vote', 'IBC transfer', 'Authz execution']) {
+  for (const label of ['Received', 'Sent', 'Delegate', 'Undelegate', 'Redelegate', 'Withdraw reward', 'Vote', 'IBC transfer', 'IBC received', 'Authz execution']) {
     assert.match(activity, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   }
   assert.match(activity, /function actionTone\(item\)/)
