@@ -34,10 +34,10 @@ test('account activity exposes the expected human actions and value direction st
   assert.match(css, /is-negative[^,]*,[^{]*is-failed[^{]*\{[^}]*var\(--color-error\)/)
 })
 
-test('activity table follows the compact four-column Cosmos table layout', () => {
+test('activity columns align with the account unbonding table', () => {
   assert.match(activity, /<th>Activity<\/th><th>Amount \/ Detail<\/th><th>Height \/ Time<\/th><th>TX<\/th>/)
-  assert.match(css, /nth-child\(1\)[^{]*\{ width: 24%; \}/)
-  assert.match(css, /nth-child\(2\)[^{]*\{ width: 30%; \}/)
-  assert.match(css, /nth-child\(3\)[^{]*\{ width: 25%; \}/)
-  assert.match(css, /nth-child\(4\)[^{]*\{ width: 21%; \}/)
+  assert.match(css, /nth-child\(1\)[^{]*\{ width: 34%; \}/)
+  assert.match(css, /nth-child\(2\)[^{]*\{ width: 18%; \}/)
+  assert.match(css, /nth-child\(3\)[^{]*\{ width: 24%; \}/)
+  assert.match(css, /nth-child\(4\)[^{]*\{ width: 24%; \}/)
 })
