@@ -10,3 +10,7 @@ test('validator detail paired panels use the requested visual order', () => {
   assert.match(css, /cosmos-validator-detail__lower > \.cosmos-validator-activity\s*\{[^}]*order:\s*1/)
   assert.match(css, /cosmos-validator-detail__lower > \.cosmos-validator-delegators\s*\{[^}]*order:\s*2/)
 })
+
+test('validator activity and delegators headings omit helper subtitles visually', () => {
+  assert.match(css, /cosmos-validator-activity \.panel__meta,[\s\S]*cosmos-validator-delegators \.panel__meta\s*\{[^}]*display:\s*none/)
+})
