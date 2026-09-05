@@ -1,0 +1,6 @@
+/* Account validator identities should match validator-list moniker typography without changing shared avatar sizing. */
+.cosmos-account-delegations .cosmos-validator strong,
+.cosmos-account-unbonding .cosmos-validator strong {
+  font-size: 12px;
+  font-weight: 600;
+}
