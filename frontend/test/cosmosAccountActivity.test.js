@@ -26,12 +26,16 @@ test('account activity keeps graceful indexing states and hash navigation', () =
   assert.match(activity, /\/blocks\/\$\{item\.height\}/)
 })
 
-test('account activity exposes the expected human actions and value direction styling', () => {
+test('account activity exposes the expected human actions and validator activity tones', () => {
   for (const label of ['Received', 'Sent', 'Delegate', 'Undelegate', 'Redelegate', 'Withdraw reward', 'Vote', 'IBC transfer', 'Authz execution']) {
     assert.match(activity, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   }
+  assert.match(activity, /function actionTone\(item\)/)
+  assert.match(activity, /item\.action === 'withdraw_reward'[\s\S]*return 'neutral'/)
+  assert.match(activity, /return item\.direction/)
   assert.match(css, /is-positive[^{]*\{[^}]*var\(--color-success\)/)
   assert.match(css, /is-negative[^,]*,[^{]*is-failed[^{]*\{[^}]*var\(--color-error\)/)
+  assert.match(css, /is-neutral[^{]*\{[^}]*var\(--color-text\)/)
 })
 
 test('activity columns align with the account unbonding table', () => {
@@ -40,4 +44,10 @@ test('activity columns align with the account unbonding table', () => {
   assert.match(css, /nth-child\(2\)[^{]*\{ width: 18%; \}/)
   assert.match(css, /nth-child\(3\)[^{]*\{ width: 24%; \}/)
   assert.match(css, /nth-child\(4\)[^{]*\{ width: 24%; \}/)
+})
+
+test('activity rows keep native table cells and continuous delegation-style separators', () => {
+  assert.match(css, /\.cosmos-account-activity td \{[^}]*padding: 13px 16px[^}]*border-top: 1px solid var\(--color-border\)/)
+  assert.doesNotMatch(css, /\.cosmos-account-activity td:first-child,[^{]*\{[^}]*display:\s*grid/)
+  assert.match(css, /td:first-child > strong,[\s\S]*td:nth-child\(3\) > small \{ display: block;/)
 })
