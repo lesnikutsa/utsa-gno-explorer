@@ -71,7 +71,7 @@
 .cosmos-account-delegations td:nth-child(4) .cosmos-account-coin-line > span { color: var(--color-text-bright); font-family: inherit; font-size: 12px; font-weight: 400; }
 .cosmos-account-coin-stack { display: grid; gap: 2px; }
 .cosmos-account-coin-line { display: flex; align-items: baseline; gap: 9px; white-space: nowrap; }
-.cosmos-account-reward-usd { color: var(--color-success); font-family: var(--font-ui); font-size: 9px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cosmos-account-reward-usd { color: var(--color-success); font-family: var(--font-ui); font-size: 9px; font-weight: 500; line-height: 1.3; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 .cosmos-account-unbonding-list { display: grid; }
 .cosmos-account-unbonding-row { display: grid; grid-template-columns: minmax(210px, 1.4fr) repeat(3, minmax(125px, .8fr)); align-items: center; gap: 14px; padding: 13px 16px; border-bottom: 1px solid var(--color-border); }
