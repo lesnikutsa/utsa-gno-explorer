@@ -16,6 +16,23 @@
   text-align: right;
 }
 
+/* Keep the paired validator panels in the user-facing order without changing their internals. */
+.cosmos-validator-detail__secondary > .cosmos-validator-fields:not(.cosmos-validator-reward-fields) {
+  order: 1;
+}
+
+.cosmos-validator-detail__secondary > .cosmos-validator-reward-fields {
+  order: 2;
+}
+
+.cosmos-validator-detail__lower > .cosmos-validator-activity {
+  order: 1;
+}
+
+.cosmos-validator-detail__lower > .cosmos-validator-delegators {
+  order: 2;
+}
+
 .cosmos-validator-detail .cosmos-validator-hero__facts > div:hover,
 .cosmos-validator-detail .cosmos-validator-hero__metrics > article:hover {
   background: var(--color-overlay-hover);
