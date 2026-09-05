@@ -65,13 +65,17 @@ class TransactionHistoryTests(unittest.TestCase):
             raise AssertionError(path)
 
         current = service(get_object)
-        first = asyncio.run(current.transaction_history(20, None))
+
+        async def run():
+            first = await current.transaction_history(20, None)
+            older = await current.transaction_history(20, first["older_cursor"])
+            return first, older
+
+        first, older = asyncio.run(run())
         self.assertEqual((first["window_from"], first["window_to"]), (8_001, 10_000))
         self.assertEqual(first["transactions"][0]["height"], 9_999)
         self.assertEqual(first["older_cursor"], "v1.10000.8000.1")
         self.assertFalse(first["has_newer"])
-
-        older = asyncio.run(current.transaction_history(20, first["older_cursor"]))
         self.assertEqual((older["window_from"], older["window_to"]), (6_001, 8_000))
         self.assertEqual(older["transactions"][0]["height"], 7_500)
         self.assertTrue(older["has_newer"])
@@ -86,9 +90,14 @@ class TransactionHistoryTests(unittest.TestCase):
             return tx_payload(9_900, total=41)
 
         current = service(get_object)
-        first = asyncio.run(current.transaction_history(20, None))
+
+        async def run():
+            first = await current.transaction_history(20, None)
+            second = await current.transaction_history(20, first["older_cursor"])
+            return first, second
+
+        first, second = asyncio.run(run())
         self.assertEqual(first["older_cursor"], "v1.10000.10000.2")
-        second = asyncio.run(current.transaction_history(20, first["older_cursor"]))
         self.assertEqual(second["window_page"], 2)
         self.assertEqual(second["older_cursor"], "v1.10000.10000.3")
         self.assertTrue(second["has_newer"])
