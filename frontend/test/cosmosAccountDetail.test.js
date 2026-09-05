@@ -101,11 +101,27 @@ test('native-token USD uses the existing market endpoint and validator green pri
   assert.match(css, /\.cosmos-account-summary-card > \.cosmos-account-usd \{[^}]*font-size: 11px[^}]*font-weight: 600/)
 })
 
-test('current delegations hide zero-balance historical rows while rewards remain independent', () => {
-  assert.match(page, /activeDelegations = \(account\.delegations \|\| \[\]\)\.filter\(\(row\) => hasAmount\(row\.balance\)\)/)
-  assert.match(page, /activeDelegations\.map/)
-  assert.match(page, /account\.rewards_by_validator\.map/)
+test('delegations absorb reward-only validator rows without a duplicate rewards section', () => {
+  assert.match(page, /function buildDelegationRows\(delegations, rewardsByValidator, bondDenom\)/)
+  assert.match(page, /rewardsByOperator = new Map/)
+  assert.match(page, /hasAmount\(delegation\.balance\) \|\| rewards\.some\(hasAmount\)/)
+  assert.match(page, /balance: bondDenom \? \{ denom: bondDenom, amount: '0' \} : null/)
+  assert.match(page, /delegationRows = buildDelegationRows\(account\.delegations, account\.rewards_by_validator, account\.bond_denom\)/)
+  assert.match(page, /delegationRows\.map/)
+  assert.match(page, /delegationSurfaceAvailable = stakingAvailable \|\| rewardsAvailable/)
+  assert.match(page, /rewardsAvailable \? <CoinStack coins=\{row\.rewards\}/)
   assert.match(page, /delegationCount = activeDelegations\.length/)
+  assert.doesNotMatch(page, /cosmos-account-rewards/)
+  assert.doesNotMatch(page, /cosmos-account-reward-total/)
+  assert.doesNotMatch(page, /cosmos-account-reward-breakdown/)
+  assert.doesNotMatch(page, /<h2>Rewards<\/h2>/)
+})
+
+test('validator status stays explicit for active inactive jailed and unknown rows', () => {
+  assert.match(page, /cosmos-account-status is-\$\{row\.validator\.category \|\| 'unknown'\}/)
+  assert.match(page, /row\.validator\.category \|\| 'Unknown'/)
+  assert.match(css, /\.cosmos-account-status\.is-active \{ color: var\(--color-success\); \}/)
+  assert.match(css, /\.cosmos-account-status\.is-jailed \{ color: var\(--color-error\); \}/)
 })
 
 test('validator monikers use the shared Cosmos bright-to-accent color contract', () => {
@@ -114,24 +130,26 @@ test('validator monikers use the shared Cosmos bright-to-accent color contract',
   assert.match(css, /\.cosmos-account-validator > a:hover,[^}]*focus-visible \{ color: var\(--color-accent\); \}/)
 })
 
-test('rewards stay multi-asset and prefer the configured primary denom for the headline', () => {
+test('reward summary stays multi-asset and prefers the configured primary denom for the headline', () => {
   assert.match(page, /visibleRewards = \(account\.rewards_total \|\| \[\]\)\.filter\(hasAmount\)/)
   assert.match(page, /rewardHeadline = coinFor\(visibleRewards, primaryDenom\) \|\| visibleRewards\[0\]/)
-  assert.match(page, /visibleRewards\.map/)
   assert.match(page, /otherRewardCount = visibleRewards\.filter/)
+  assert.match(page, /<SummaryCard label="Rewards"/)
+  assert.doesNotMatch(page, /visibleRewards\.map/)
 })
 
-test('unbonding is placed after rewards and immediately before technical details', () => {
-  const rewardsIndex = page.indexOf('cosmos-account-rewards')
+test('unbonding follows the consolidated delegations section and stays before technical details', () => {
+  const delegationsIndex = page.indexOf('cosmos-account-delegations')
   const unbondingIndex = page.indexOf('cosmos-account-unbonding')
   const technicalIndex = page.indexOf('cosmos-account-technical')
-  assert.ok(rewardsIndex > -1 && unbondingIndex > rewardsIndex && technicalIndex > unbondingIndex)
+  assert.ok(delegationsIndex > -1 && unbondingIndex > delegationsIndex && technicalIndex > unbondingIndex)
 })
 
-test('account page keeps staking reward unbonding and technical surfaces', () => {
-  for (const label of ['Wallet assets', 'Delegations', 'Unbonding', 'Rewards', 'Technical details']) {
+test('account page keeps wallet delegations unbonding reward summary and technical surfaces', () => {
+  for (const label of ['Wallet assets', 'Delegations', 'Unbonding', 'Technical details']) {
     assert.ok(page.includes(label), `missing ${label}`)
   }
+  assert.match(page, /<SummaryCard label="Rewards"/)
   assert.doesNotMatch(page, /Account Information/)
   assert.match(page, /Account number/)
   assert.match(page, /Sequence/)
