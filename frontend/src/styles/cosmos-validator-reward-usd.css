@@ -39,11 +39,19 @@
   display: none;
 }
 
-/* Keep the signing summary and the 50-block participation strip centered as one visual group. */
+/* Center the four participation cards and the 50-block strip as one visual group. */
 .cosmos-validator-detail .cosmos-validator-signing__mini-metrics,
 .cosmos-validator-detail .cosmos-validator-signing__monitor {
   margin-left: auto;
   margin-right: auto;
+}
+
+.cosmos-validator-detail .cosmos-validator-signing__mini-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.cosmos-validator-detail .cosmos-validator-signing__monitor {
+  transform: none;
 }
 
 .cosmos-validator-detail .cosmos-validator-hero__facts > div:hover,
