@@ -1,4 +1,4 @@
-"""FastAPI router for live Cosmos account state."""
+"""FastAPI router for live Cosmos account state and bounded transaction history."""
 
 import logging
 
@@ -8,6 +8,7 @@ from .account_activity import CosmosAccountActivityResponse, load_account_activi
 from .account_detail import CosmosAccountDetailResponse, load_account_snapshot
 from .errors import AllEndpointsUnavailable
 from .registry import get_network
+from .transaction_endpoint_policy import CosmosTransactionHistoryResponse
 
 
 LOGGER = logging.getLogger(__name__)
@@ -60,3 +61,25 @@ async def get_cosmos_account_activity(
     except Exception:
         LOGGER.info("Cosmos account activity failed network=%s reason=upstream_unavailable", network_id)
         raise HTTPException(status_code=503, detail="Account activity is temporarily unavailable") from None
+
+
+@router.get(
+    "/api/networks/{network_id}/transactions/history",
+    response_model=CosmosTransactionHistoryResponse,
+    response_model_exclude_none=True,
+)
+async def get_cosmos_transaction_history(
+        request: Request, network_id: str,
+        limit: int = Query(default=20, ge=1, le=20),
+        cursor: str | None = Query(default=None, min_length=1, max_length=80)):
+    """Serve cursor pagination without ever issuing a full-chain tx search."""
+    service = _service(request, network_id)
+    try:
+        return await service.transaction_history(limit, cursor)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid transaction history cursor") from None
+    except AllEndpointsUnavailable:
+        raise HTTPException(status_code=503, detail="Transaction data is temporarily unavailable") from None
+    except Exception:
+        LOGGER.info("Cosmos transaction history failed network=%s reason=upstream_unavailable", network_id)
+        raise HTTPException(status_code=503, detail="Transaction data is temporarily unavailable") from None
