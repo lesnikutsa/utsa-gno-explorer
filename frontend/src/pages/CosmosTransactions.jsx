@@ -13,13 +13,13 @@ const fee = (row, assets) => {
 
 export function CosmosTransactions({ network }) {
   const page = Math.max(1, Number(new URLSearchParams(window.location.search).get('page')) || 1)
-  const resource = useCosmosResource(`/api/networks/${network.id}/transactions?limit=20&page=${page}`, page === 1 ? 10000 : null)
+  const resource = useCosmosResource(`/api/networks/${network.id}/transactions?limit=20&page=${page}`, page === 1 ? 30000 : null)
   const rows = resource.data?.transactions || []
   const newest = useMemo(() => rows[0]?.tx_hash, [rows])
   const state = resource.data?.state
   return <div className="cosmos-blocks cosmos-transactions"><div className="cosmos-title"><h1>Transactions</h1>{resource.stale || resource.error
     ? <span className="cosmos-stale">Stale · last successful data</span>
-    : page === 1 && state === 'available' ? <span className="panel__meta panel__meta--live"><span className="live-dot" />Live · every 10s</span> : null}</div>
+    : page === 1 && state === 'available' ? <span className="panel__meta panel__meta--live"><span className="live-dot" />Live · every 30s</span> : null}</div>
     {resource.loading && !resource.data && <p>Loading transactions…</p>}
     {resource.error && !resource.data && <section className="cosmos-card"><h2>Transactions unavailable</h2><p>The upstream API is temporarily unavailable.</p><details className="cosmos-detail-card"><summary>Details</summary><p>{resource.error}</p></details></section>}
     {state === 'indexing_unavailable' && <section className="cosmos-card"><h2>Transaction search unavailable</h2><p>The upstream node does not expose indexed transaction search.</p></section>}
