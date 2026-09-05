@@ -22,3 +22,7 @@ test('account validator monikers match validator list typography without resizin
   assert.match(identityCss, /\.cosmos-account-delegations \.cosmos-validator strong,[\s\S]*?\.cosmos-account-unbonding \.cosmos-validator strong \{[^}]*font-size:\s*12px;[^}]*font-weight:\s*600;/)
   assert.doesNotMatch(identityCss, /cosmos-validator-avatar/)
 })
+
+test('account delegation status badges are slightly larger without changing other status surfaces', () => {
+  assert.match(identityCss, /\.cosmos-account-delegations \.cosmos-account-status \{[^}]*min-height:\s*24px;[^}]*padding:\s*4px 9px;[^}]*font-size:\s*10px;[^}]*font-weight:\s*700;[^}]*line-height:\s*1\.2;/)
+})
