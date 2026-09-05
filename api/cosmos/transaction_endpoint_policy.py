@@ -319,7 +319,6 @@ class TransactionEndpointPolicyMixin:
             anchor, upper, page = _decode_history_cursor(cursor)
             requested_was_live = False
 
-        first_upper, first_page = upper, page
         response = None
         lower = max(1, upper - _TX_HISTORY_WINDOW + 1)
         batched_older_cursor = None
@@ -376,12 +375,15 @@ class TransactionEndpointPolicyMixin:
         else:
             older_cursor = None
 
-        if requested_was_live and upper == first_upper and page == first_page:
+        if requested_was_live:
+            # A live request is already the newest view. Do not spend another
+            # bounded scan trying to manufacture a Newer cursor after we had
+            # to walk empty windows to find recent transactions.
             newer_cursor = None
             has_newer = False
         else:
             newer_cursor = await self._newer_history_cursor(anchor, upper, page, limit)
-            has_newer = True
+            has_newer = newer_cursor is not None
 
         candidate = {
             "state": "available",
@@ -469,8 +471,9 @@ class TransactionEndpointPolicyMixin:
                     continue
                 if _event_payload_valid(payload, limit):
                     if payload["txs"]:
-                        for endpoint in empty_endpoints:
-                            self._mark_operation_suspect("tx_search", endpoint)
+                        if empty_endpoints:
+                            for endpoint in empty_endpoints:
+                                self._mark_operation_suspect("tx_search", endpoint)
                         self._clear_operation_suspect("tx_search", candidate.endpoint)
                         return payload
                     if first_empty is None:
