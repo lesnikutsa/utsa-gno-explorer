@@ -29,6 +29,7 @@ const assetFor = (network, denom) => network.assets?.find((asset) => asset.base 
 
 function actionTone(item) {
   if (!item.success) return 'failed'
+  if (item.action === 'redelegate') return 'warning'
   if (item.action === 'withdraw_reward' || item.action === 'withdraw_commission') return 'neutral'
   return item.direction
 }
@@ -133,9 +134,9 @@ export function CosmosAccountActivity({ network, address, market }) {
               <div className="cosmos-account-activity__table-wrap"><table>
                 <thead><tr><th>Activity</th><th>Amount / Detail</th><th>Height / Time</th><th>TX</th></tr></thead>
                 <tbody>{state.items.map((item) => <tr key={item.tx_hash}>
-                  <td><strong className={`cosmos-account-activity__action is-${actionTone(item)}`}>{item.success ? (ACTION_LABELS[item.action] || 'Transaction') : `Failed · ${ACTION_LABELS[item.action] || 'Transaction'}`}</strong>{item.type_url && <code title={item.type_url}>{shorten(item.type_url, 24, 12)}</code>}</td>
+                  <td><strong className={`cosmos-account-activity__action is-${actionTone(item)}`}>{item.success ? (ACTION_LABELS[item.action] || 'Transaction') : `Failed · ${ACTION_LABELS[item.action] || 'Transaction'}`}</strong>{item.type_url && <code className="cosmos-account-activity__type">{item.type_url}</code>}</td>
                   <td><AmountDetail item={item} network={network} market={market} /></td>
-                  <td><a className="cosmos-account-activity__height" href={`/networks/${network.id}/blocks/${item.height}`}>#{item.height.toLocaleString()}</a><small>{utc(item.timestamp)}</small></td>
+                  <td><a className="accent-value cosmos-account-activity__height" href={`/networks/${network.id}/blocks/${item.height}`}>#{item.height.toLocaleString()}</a><small>{utc(item.timestamp)}</small></td>
                   <td><a className="cosmos-account-activity__tx" href={`/networks/${network.id}/transactions/${item.tx_hash}`} title={item.tx_hash}>{shorten(item.tx_hash, 10, 6)}</a></td>
                 </tr>)}</tbody>
               </table></div>
