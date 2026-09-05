@@ -175,6 +175,7 @@ export function CosmosAccountDetail({ network, address }) {
   const balanceUsd = bankAvailable ? approximateUsd(primaryBalance, network, market.data) : null
   const delegatedUsd = stakingAvailable ? approximateUsd(delegatedCoin, network, market.data) : null
   const rewardsUsd = rewardsAvailable ? approximateUsd(rewardHeadline, network, market.data) : null
+  const unbondingUsd = unbondingAvailable ? approximateUsd(unbondingCoin, network, market.data) : null
 
   return <section className="cosmos-account-detail theme-compatible">
     <a className="cosmos-back block-detail__back" href={`/networks/${network.id}`}>← Back to Overview</a>
@@ -197,7 +198,7 @@ export function CosmosAccountDetail({ network, address }) {
         <SummaryCard label="Balance" usd={balanceUsd}>{bankAvailable ? (primaryBalance ? formatCoin(primaryBalance, network) : primaryAsset ? formatTokenAmount('0', primaryAsset.exponent, primaryAsset.symbol) : '0') : '—'}</SummaryCard>
         <SummaryCard label="Delegated" usd={delegatedUsd} meta={stakingAvailable ? `${delegationCount} current delegation${delegationCount === 1 ? '' : 's'}` : 'Unavailable'}>{stakingAvailable ? (delegatedCoin ? formatCoin(delegatedCoin, network) : primaryAsset ? formatTokenAmount('0', primaryAsset.exponent, primaryAsset.symbol) : '0') : '—'}</SummaryCard>
         <SummaryCard label="Rewards" usd={rewardsUsd} meta={!rewardsAvailable ? 'Unavailable' : otherRewardCount ? `+${otherRewardCount} other asset${otherRewardCount === 1 ? '' : 's'}` : 'Claimable now'}>{rewardsAvailable ? (rewardHeadline ? formatCoin(rewardHeadline, network) : primaryAsset ? formatTokenAmount('0', primaryAsset.exponent, primaryAsset.symbol) : '0') : '—'}</SummaryCard>
-        <SummaryCard label="Unbonding" meta={!unbondingAvailable ? 'Unavailable' : unbondingCount ? `${unbondingCount} active entr${unbondingCount === 1 ? 'y' : 'ies'}` : 'No active entries'}>{unbondingAvailable ? (unbondingCoin ? formatCoin(unbondingCoin, network) : primaryAsset ? formatTokenAmount('0', primaryAsset.exponent, primaryAsset.symbol) : '0') : '—'}</SummaryCard>
+        <SummaryCard label="Unbonding" usd={unbondingUsd} meta={!unbondingAvailable ? 'Unavailable' : unbondingCount ? `${unbondingCount} active entr${unbondingCount === 1 ? 'y' : 'ies'}` : 'No active entries'}>{unbondingAvailable ? (unbondingCoin ? formatCoin(unbondingCoin, network) : primaryAsset ? formatTokenAmount('0', primaryAsset.exponent, primaryAsset.symbol) : '0') : '—'}</SummaryCard>
       </div>
       <div className="cosmos-account-hero__wallet-assets">
         <span className="cosmos-account-hero__wallet-assets-label">Wallet assets</span>
