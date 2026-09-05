@@ -1,4 +1,5 @@
 import { CopyButton } from '../components/CopyButton'
+import { CosmosValidatorIdentity } from '../components/CosmosValidatorIdentity'
 import { useCosmosResource } from '../hooks/useCosmosResource'
 import { formatTokenAmount } from '../utils/cosmosFormat'
 import '../styles/cosmos-account-detail.css'
@@ -68,10 +69,16 @@ function AddressValue({ value, label }) {
 }
 
 function ValidatorName({ network, validator }) {
-  return <span className="cosmos-account-validator">
-    <a href={`/networks/${network.id}/validators/${validator.operator_address}`}>{validator.moniker || 'Validator'}</a>
-    <code title={validator.operator_address}>{validator.operator_address}</code>
-  </span>
+  return <div className="cosmos-account-validator-cell">
+    <CosmosValidatorIdentity
+      moniker={validator.moniker || 'Validator'}
+      address={validator.operator_address}
+      imageSrc={validator.avatar_url}
+      showTitles={false}
+      fullAddress
+      href={`/networks/${network.id}/validators/${encodeURIComponent(validator.operator_address)}`}
+    />
+  </div>
 }
 
 function CoinStack({ coins, network, market }) {
@@ -168,6 +175,7 @@ export function CosmosAccountDetail({ network, address }) {
   const balanceUsd = bankAvailable ? approximateUsd(primaryBalance, network, market.data) : null
   const delegatedUsd = stakingAvailable ? approximateUsd(delegatedCoin, network, market.data) : null
   const rewardsUsd = rewardsAvailable ? approximateUsd(rewardHeadline, network, market.data) : null
+  const unbondingUsd = unbondingAvailable ? approximateUsd(unbondingCoin, network, market.data) : null
 
   return <section className="cosmos-account-detail theme-compatible">
     <a className="cosmos-back block-detail__back" href={`/networks/${network.id}`}>← Back to Overview</a>
@@ -190,7 +198,7 @@ export function CosmosAccountDetail({ network, address }) {
         <SummaryCard label="Balance" usd={balanceUsd}>{bankAvailable ? (primaryBalance ? formatCoin(primaryBalance, network) : primaryAsset ? formatTokenAmount('0', primaryAsset.exponent, primaryAsset.symbol) : '0') : '—'}</SummaryCard>
         <SummaryCard label="Delegated" usd={delegatedUsd} meta={stakingAvailable ? `${delegationCount} current delegation${delegationCount === 1 ? '' : 's'}` : 'Unavailable'}>{stakingAvailable ? (delegatedCoin ? formatCoin(delegatedCoin, network) : primaryAsset ? formatTokenAmount('0', primaryAsset.exponent, primaryAsset.symbol) : '0') : '—'}</SummaryCard>
         <SummaryCard label="Rewards" usd={rewardsUsd} meta={!rewardsAvailable ? 'Unavailable' : otherRewardCount ? `+${otherRewardCount} other asset${otherRewardCount === 1 ? '' : 's'}` : 'Claimable now'}>{rewardsAvailable ? (rewardHeadline ? formatCoin(rewardHeadline, network) : primaryAsset ? formatTokenAmount('0', primaryAsset.exponent, primaryAsset.symbol) : '0') : '—'}</SummaryCard>
-        <SummaryCard label="Unbonding" meta={!unbondingAvailable ? 'Unavailable' : unbondingCount ? `${unbondingCount} active entr${unbondingCount === 1 ? 'y' : 'ies'}` : 'No active entries'}>{unbondingAvailable ? (unbondingCoin ? formatCoin(unbondingCoin, network) : primaryAsset ? formatTokenAmount('0', primaryAsset.exponent, primaryAsset.symbol) : '0') : '—'}</SummaryCard>
+        <SummaryCard label="Unbonding" usd={unbondingUsd} meta={!unbondingAvailable ? 'Unavailable' : unbondingCount ? `${unbondingCount} active entr${unbondingCount === 1 ? 'y' : 'ies'}` : 'No active entries'}>{unbondingAvailable ? (unbondingCoin ? formatCoin(unbondingCoin, network) : primaryAsset ? formatTokenAmount('0', primaryAsset.exponent, primaryAsset.symbol) : '0') : '—'}</SummaryCard>
       </div>
       <div className="cosmos-account-hero__wallet-assets">
         <span className="cosmos-account-hero__wallet-assets-label">Wallet assets</span>

@@ -1,0 +1,15 @@
+/* Account validator identities should match validator-list moniker typography without changing shared avatar sizing. */
+.cosmos-account-delegations .cosmos-validator strong,
+.cosmos-account-unbonding .cosmos-validator strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Account delegation status badges are scoped here so other validator-status surfaces stay unchanged. */
+.cosmos-account-delegations .cosmos-account-status {
+  min-height: 24px;
+  padding: 4px 9px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+}

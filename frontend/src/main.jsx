@@ -4,6 +4,7 @@ import App from './App'
 import 'flag-icons/css/flag-icons.min.css'
 import './styles/theme.css'
 import './styles/app.css'
+import './styles/cosmos-account-validator-identity.css'
 import { initializeTheme } from './utils/theme'
 import { SelectedNetworkProvider } from './context/SelectedNetworkContext'
 
