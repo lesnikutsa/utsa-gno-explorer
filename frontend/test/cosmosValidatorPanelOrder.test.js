@@ -15,6 +15,8 @@ test('validator activity and delegators headings omit helper subtitles visually'
   assert.match(css, /cosmos-validator-activity \.panel__meta,[\s\S]*cosmos-validator-delegators \.panel__meta\s*\{[^}]*display:\s*none/)
 })
 
-test('signing participation summary and strip are centered inside the panel', () => {
+test('signing participation summary and strip are actually centered inside the panel', () => {
   assert.match(css, /cosmos-validator-signing__mini-metrics,[\s\S]*cosmos-validator-signing__monitor\s*\{[^}]*margin-left:\s*auto;[^}]*margin-right:\s*auto;/)
+  assert.match(css, /cosmos-validator-signing__mini-metrics\s*\{[^}]*grid-template-columns:\s*repeat\(4,/)
+  assert.match(css, /cosmos-validator-signing__monitor\s*\{[^}]*transform:\s*none;/)
 })
