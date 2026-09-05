@@ -41,6 +41,7 @@ import { CosmosValidators } from './pages/CosmosValidators'
 import { CosmosValidatorDetail } from './pages/CosmosValidatorDetail'
 import { CosmosTransactionDetail } from './pages/CosmosTransactionDetail'
 import { CosmosTransactionHashRoute } from './pages/CosmosTransactionHashRoute'
+import { CosmosAccountDetail } from './pages/CosmosAccountDetail'
 import { CosmosExplorerLayout } from './layouts/CosmosExplorerLayout'
 
 const NETWORK_MASCOT_SRC = '/assets/network-mascot.png?v=1'
@@ -210,8 +211,9 @@ export default function App() {
 
   const cosmosTxMatch = path.match(/^\/networks\/([^/]+)\/blocks\/([1-9]\d{0,18})\/transactions\/(\d{1,4})\/?$/)
   const cosmosTxHashMatch = path.match(/^\/networks\/([^/]+)\/transactions\/([0-9A-Fa-f]{64})\/?$/)
+  const cosmosAccountMatch = path.match(/^\/networks\/([^/]+)\/accounts\/([^/]+)\/?$/)
   const cosmosMatch = path.match(/^\/networks\/([^/]+)(?:\/(blocks|transactions|validators)(?:\/([^/]+))?)?\/?$/)
-  const cosmosNetworkId = cosmosTxMatch?.[1] || cosmosTxHashMatch?.[1] || cosmosMatch?.[1]
+  const cosmosNetworkId = cosmosTxMatch?.[1] || cosmosTxHashMatch?.[1] || cosmosAccountMatch?.[1] || cosmosMatch?.[1]
   if (cosmosNetworkId) {
     const network = getNetworkById(cosmosNetworkId)
     if (networksLoading) return <main className="route-error"><p>Loading network registry…</p></main>
@@ -224,6 +226,9 @@ export default function App() {
     }
     if (cosmosTxHashMatch) {
       return <CosmosExplorerLayout network={network}><CosmosTransactionHashRoute network={network} txHash={cosmosTxHashMatch[2].toUpperCase()} /></CosmosExplorerLayout>
+    }
+    if (cosmosAccountMatch) {
+      return <CosmosExplorerLayout network={network}><CosmosAccountDetail network={network} address={decodeURIComponent(cosmosAccountMatch[2])} /></CosmosExplorerLayout>
     }
     const rawHeight = cosmosMatch[2] === 'blocks' ? cosmosMatch[3] : null
     if (cosmosMatch[2] === 'transactions' && cosmosMatch[3]) return <main className="route-error"><h1>Route not found</h1></main>
