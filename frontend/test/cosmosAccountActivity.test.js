@@ -59,8 +59,9 @@ test('activity columns align with the account unbonding table', () => {
   assert.match(css, /nth-child\(4\)[^{]*\{ width: 24%; \}/)
 })
 
-test('activity rows keep native table cells and continuous delegation-style separators', () => {
-  assert.match(css, /\.cosmos-account-activity td \{[^}]*padding: 13px 16px[^}]*border-top: 1px solid var\(--color-border\)/)
+test('activity rows use one continuous row separator like account staking tables', () => {
+  assert.match(css, /\.cosmos-account-activity td \{[^}]*padding: 13px 16px[^}]*border-top: 0/)
+  assert.match(css, /\.cosmos-account-activity tbody tr \{ border-top: 1px solid var\(--color-border\); \}/)
   assert.doesNotMatch(css, /\.cosmos-account-activity td:first-child,[^{]*\{[^}]*display:\s*grid/)
   assert.match(css, /td:first-child > strong,[\s\S]*td:nth-child\(3\) > small \{ display: block;/)
 })
