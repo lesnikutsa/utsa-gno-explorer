@@ -66,6 +66,7 @@ class TransactionServiceTests(unittest.TestCase):
             _cached_candidates=lambda _kind: asyncio.sleep(0, result=(SimpleNamespace(endpoint="https://rpc.example"),)),
             _host=lambda _endpoint: "rest.example",
             _clock=lambda: 0.0,
+            node_status=lambda: asyncio.sleep(0, result=SimpleNamespace(local_height=10_000)),
             rest_failover=None)
         service.transport = SimpleNamespace(
             get_object=lambda _endpoint, _path, **_kwargs: asyncio.sleep(0, result=responses))
@@ -79,7 +80,8 @@ class TransactionServiceTests(unittest.TestCase):
         service.adapter = SimpleNamespace(
             _cached_candidates=lambda _kind: asyncio.sleep(0, result=candidates),
             _host=lambda endpoint: endpoint.removeprefix("https://"),
-            _clock=lambda: 0.0)
+            _clock=lambda: 0.0,
+            node_status=lambda: asyncio.sleep(0, result=SimpleNamespace(local_height=10_000)))
         service.transport = SimpleNamespace(get_object=get_object)
         return service
 
@@ -99,7 +101,7 @@ class TransactionServiceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             asyncio.run(unavailable.transaction_lookup("not-a-hash"))
 
-    def test_v050_transaction_search_uses_query_page_limit_and_top_level_total(self):
+    def test_v050_transaction_search_uses_recent_query_page_limit_and_top_level_total(self):
         response = payload()
         response["pagination"] = None
         response["total"] = "41"
@@ -113,13 +115,14 @@ class TransactionServiceTests(unittest.TestCase):
         service.transport = SimpleNamespace(get_object=get_object)
         result = asyncio.run(service.transactions(20, 2))
         self.assertEqual(calls, [
-            "/cosmos/tx/v1beta1/txs?query=tx.height%3E0&order_by=ORDER_BY_DESC&page=2&limit=20"
+            "/cosmos/tx/v1beta1/txs?query=tx.height%3E%3D8001&order_by=ORDER_BY_DESC&page=2&limit=20"
         ])
+        self.assertNotIn("tx.height%3E0", calls[0])
         self.assertEqual(result["total"], 41)
         self.assertTrue(result["has_older"])
         self.assertTrue(result["has_newer"])
 
-    def test_pre_v050_query_field_error_falls_back_to_events_with_page_limit(self):
+    def test_pre_v050_query_field_error_falls_back_to_bounded_events_with_page_limit(self):
         response = payload()
         service = self.service(response)
         calls = []
@@ -133,10 +136,24 @@ class TransactionServiceTests(unittest.TestCase):
         service.transport = SimpleNamespace(get_object=get_object)
         result = asyncio.run(service.transactions(10, 3))
         self.assertEqual(calls, [
-            "/cosmos/tx/v1beta1/txs?query=tx.height%3E0&order_by=ORDER_BY_DESC&page=3&limit=10",
-            "/cosmos/tx/v1beta1/txs?events=tx.height%3E0&order_by=ORDER_BY_DESC&page=3&limit=10",
+            "/cosmos/tx/v1beta1/txs?query=tx.height%3E%3D8001&order_by=ORDER_BY_DESC&page=3&limit=10",
+            "/cosmos/tx/v1beta1/txs?events=tx.height%3E%3D8001&order_by=ORDER_BY_DESC&page=3&limit=10",
         ])
         self.assertEqual(result["state"], "available")
+
+    def test_recent_window_never_reaches_below_height_one(self):
+        response = payload()
+        service = self.service(response)
+        service.adapter.node_status = lambda: asyncio.sleep(0, result=SimpleNamespace(local_height=77))
+        calls = []
+
+        async def get_object(_endpoint, path, **_kwargs):
+            calls.append(path)
+            return response
+
+        service.transport = SimpleNamespace(get_object=get_object)
+        asyncio.run(service.transactions(20, 1))
+        self.assertIn("query=tx.height%3E%3D1", calls[0])
 
     def test_transaction_indexing_disabled_is_reported(self):
         service = self.service({"code": 13, "message": "transaction indexing is disabled"})
