@@ -6,11 +6,13 @@
   "network_name": "Mainnet",
   "rpc_endpoints": [
     "https://m-atomone.rpc.utsa.tech",
-    "https://atomone-mainnet-rpc.itrocket.net"
+    "https://atomone-mainnet-rpc.itrocket.net",
+    "https://atomone-rpc.publicnode.com:443"
   ],
   "rest_endpoints": [
     "https://m-atomone.api.utsa.tech",
-    "https://atomone-mainnet-api.itrocket.net"
+    "https://atomone-mainnet-api.itrocket.net",
+    "https://atomone-rest.publicnode.com"
   ],
   "account_prefix": "atone",
   "validator_operator_prefix": "atonevaloper",
