@@ -1,4 +1,4 @@
-import { rewriteCosmosApiUrl } from '../utils/cosmosEndpointProvider'
+import { rewriteCosmosApiUrl } from '../utils/cosmosEndpointProvider.js'
 
 const API_ROOT = import.meta.env?.VITE_API_ROOT || '/api'
 
