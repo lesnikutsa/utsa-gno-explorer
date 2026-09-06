@@ -50,7 +50,8 @@
 .cosmos-governance-votes__bar .is-abstain { background: var(--color-warning); }
 
 @media (max-width: 900px) {
-  .cosmos-governance__toolbar { display: grid; }
+  .cosmos-governance__toolbar { flex-direction: column; align-items: stretch; }
+  .cosmos-governance__toolbar .cosmos-validator-search { width: 100%; min-width: 0; height: 34px; flex: 0 0 34px; margin-bottom: 4px; }
   .cosmos-governance-votes { min-width: 190px; }
   .cosmos-governance-votes__labels { gap: 9px; font-size: 9px; }
 }
