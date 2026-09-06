@@ -40,6 +40,7 @@ import { CosmosTransactions } from './pages/CosmosTransactions'
 import { CosmosValidators } from './pages/CosmosValidators'
 import { CosmosValidatorDetail } from './pages/CosmosValidatorDetail'
 import { CosmosGovernance } from './pages/CosmosGovernance'
+import { CosmosGovernanceDetail } from './pages/CosmosGovernanceDetail'
 import { CosmosTransactionDetail } from './pages/CosmosTransactionDetail'
 import { CosmosTransactionHashRoute } from './pages/CosmosTransactionHashRoute'
 import { CosmosAccountDetail } from './pages/CosmosAccountDetail'
@@ -139,7 +140,6 @@ function TokensPage() {
   </ExplorerLayout>
 }
 
-
 function RealmDetailPage() {
   const realmPath = decodeRealmDetailPath()
   const detailState = useRealmDetail(realmPath)
@@ -170,6 +170,7 @@ function ValidatorDetailPage({ address }) {
     </ExplorerLayout>
   )
 }
+
 function AccountDetailPage({ address }) {
   const accountDetail = useAccountDetail(address)
 
@@ -179,6 +180,7 @@ function AccountDetailPage({ address }) {
     </ExplorerLayout>
   )
 }
+
 function GovernancePage() {
   const governancePage = useGovernancePage()
 
@@ -232,7 +234,9 @@ export default function App() {
       return <CosmosExplorerLayout network={network}><CosmosAccountDetail network={network} address={decodeURIComponent(cosmosAccountMatch[2])} /></CosmosExplorerLayout>
     }
     const rawHeight = cosmosMatch[2] === 'blocks' ? cosmosMatch[3] : null
-    if ((cosmosMatch[2] === 'transactions' || cosmosMatch[2] === 'governance') && cosmosMatch[3]) return <main className="route-error"><h1>Route not found</h1></main>
+    const rawProposalId = cosmosMatch[2] === 'governance' ? cosmosMatch[3] : null
+    if (cosmosMatch[2] === 'transactions' && cosmosMatch[3]) return <main className="route-error"><h1>Route not found</h1></main>
+    if (rawProposalId && (!/^[1-9]\d{0,18}$/.test(rawProposalId) || BigInt(rawProposalId) > 9223372036854775807n)) return <main className="route-error"><h1>Route not found</h1></main>
     const renderContent = ({ overview, blocks, blockTime }) => rawHeight
       ? (/^[1-9]\d{0,18}$/.test(rawHeight) && BigInt(rawHeight) <= 9223372036854775807n
         ? <CosmosBlockDetail network={network} height={rawHeight} />
@@ -240,6 +244,7 @@ export default function App() {
       : cosmosMatch[2] === 'transactions' ? <CosmosTransactions network={network} />
       : cosmosMatch[2] === 'validators' && cosmosMatch[3] ? <CosmosValidatorDetail network={network} operatorAddress={cosmosMatch[3]} />
       : cosmosMatch[2] === 'validators' ? <CosmosValidators network={network} />
+      : rawProposalId ? <CosmosGovernanceDetail network={network} proposalId={rawProposalId} />
       : cosmosMatch[2] === 'governance' ? <CosmosGovernance network={network} />
       : cosmosMatch[2] === 'blocks' ? <CosmosBlocks network={network} resource={blocks} /> : <CosmosOverview network={network} overview={overview} blocks={blocks} averageBlockSeconds={blockTime.average} />
     return <CosmosExplorerLayout network={network}>{renderContent}</CosmosExplorerLayout>
