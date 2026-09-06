@@ -114,3 +114,46 @@
   .cosmos-governance-detail__field.is-wide { grid-column: span 1; }
   .cosmos-governance-detail__description-body { padding: 15px; font-size: 13px; }
 }
+
+/* Keep the proposal hero aligned with the standard Cosmos block/transaction detail heading rhythm. */
+.cosmos-governance-detail > .block-detail__back { margin-bottom: -6px; }
+.cosmos-governance-detail__hero-title h1 { font-size: 24px; }
+
+/* Governance section headings are labels only; the panels themselves provide the surrounding boundary. */
+.cosmos-governance-detail__vote-heading,
+.cosmos-governance-detail__details > .panel__heading { border-bottom: 0; }
+
+/* Keep validator-like 1px spacing within each logical row, but add breathing room between the 4 / 3 / 3 rows. */
+.cosmos-governance-detail__details .cosmos-governance-detail__details-grid {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: 1px;
+  row-gap: 12px;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+}
+.cosmos-governance-detail__details .cosmos-governance-detail__field {
+  grid-column: span 3;
+  border: 1px solid var(--color-border-soft);
+}
+.cosmos-governance-detail__details .cosmos-governance-detail__field:nth-child(n + 5),
+.cosmos-governance-detail__details .cosmos-governance-detail__field.is-wide { grid-column: span 4; }
+
+@media (max-width: 1000px) {
+  .cosmos-governance-detail__details .cosmos-governance-detail__details-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 8px;
+    row-gap: 10px;
+  }
+  .cosmos-governance-detail__details .cosmos-governance-detail__field,
+  .cosmos-governance-detail__details .cosmos-governance-detail__field:nth-child(n + 5),
+  .cosmos-governance-detail__details .cosmos-governance-detail__field.is-wide { grid-column: span 1; }
+}
+
+@media (max-width: 700px) {
+  .cosmos-governance-detail__hero-title h1 { font-size: 24px; }
+  .cosmos-governance-detail__details .cosmos-governance-detail__details-grid {
+    grid-template-columns: minmax(0, 1fr);
+    column-gap: 0;
+  }
+}
