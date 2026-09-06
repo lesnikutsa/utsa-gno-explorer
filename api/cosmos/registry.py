@@ -11,7 +11,7 @@ from .config import CosmosNetworkConfig
 from .errors import InvalidConfiguration
 
 NETWORKS_ROOT = Path(__file__).resolve().parents[2] / "networks"
-PUBLIC_CAPABILITIES = frozenset({"overview", "blocks", "transactions", "validators", "governance", "network-parameters"})
+PUBLIC_CAPABILITIES = frozenset({"overview", "blocks", "transactions", "validators", "governance", "consensus", "network-parameters"})
 _PREFIX = re.compile(r"^[a-z][a-z0-9]{1,63}$")
 _PROVIDER_ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _REQUIRED_KEYS = frozenset({

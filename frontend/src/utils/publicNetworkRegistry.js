@@ -10,6 +10,8 @@ export const normalizePublicCosmosNetwork = (value) => {
   if (assets.some((asset) => typeof asset.base !== 'string' || typeof asset.symbol !== 'string'
       || !Number.isInteger(asset.exponent))) return null
   const primary = assets[0]
+  const capabilities = value.capabilities.includes('validators') && !value.capabilities.includes('consensus')
+    ? [...value.capabilities, 'consensus'] : value.capabilities
   return Object.freeze({
     id: value.id, family: 'cosmos', expectedChainId: value.chain_id,
     presentation: Object.freeze({ projectName: value.display_name, networkName: value.network_name,
@@ -19,6 +21,6 @@ export const normalizePublicCosmosNetwork = (value) => {
       description: `${value.display_name} ${value.network_name} explorer`,
       telegramValidatorMonitorEnabled: false, links: Object.freeze({}) }),
     assets: Object.freeze(assets), addressPrefixes: Object.freeze(value.address_prefixes || {}),
-    capabilities: Object.freeze(value.capabilities),
+    capabilities: Object.freeze(capabilities),
   })
 }

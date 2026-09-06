@@ -1,5 +1,5 @@
 import { NetworkCapability } from './networkRegistry'
-import { BlocksIcon, GovernanceIcon, HomeIcon, RealmsIcon, TokensIcon, TransactionsIcon, ValidatorsIcon } from '../components/Icons'
+import { BlocksIcon, ConsensusIcon, GovernanceIcon, HomeIcon, RealmsIcon, TokensIcon, TransactionsIcon, ValidatorsIcon } from '../components/Icons'
 
 export const navigationItems = Object.freeze([
   { label: 'Overview', Icon: HomeIcon, href: '/', capability: NetworkCapability.OVERVIEW },
@@ -9,4 +9,5 @@ export const navigationItems = Object.freeze([
   { label: 'Tokens', Icon: TokensIcon, href: '/tokens', capability: NetworkCapability.TOKENS },
   { label: 'Validators', Icon: ValidatorsIcon, href: '/validators', capability: NetworkCapability.VALIDATORS },
   { label: 'Governance', Icon: GovernanceIcon, href: '/governance', capability: NetworkCapability.GOVERNANCE },
+  { label: 'Consensus', Icon: ConsensusIcon, href: '/consensus', capability: NetworkCapability.CONSENSUS },
 ])
