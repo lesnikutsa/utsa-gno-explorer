@@ -96,7 +96,9 @@ class CosmosService(TransactionEndpointPolicyMixin, _core.CosmosService):
                 "providers": rows,
             }
 
-        return await self.cache.get_or_load(cache_key, 15.0, load)
+        # The frontend asks for this at most every 30 seconds. A shared cache
+        # keeps many viewers from multiplying the same three-pair health probe.
+        return await self.cache.get_or_load(cache_key, 30.0, load)
 
     async def _newer_history_cursor(self, anchor: int, upper: int, page: int,
                                     limit: int) -> str | None:
