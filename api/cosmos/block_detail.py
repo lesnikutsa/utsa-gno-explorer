@@ -123,7 +123,7 @@ def normalize_detail(block_payload, commit_payload, results_payload, *, network_
     return {"network_id": network_id, "chain_id": expected_chain_id, "local_height": local_height,
             "height": height, "timestamp": _timestamp(header.get("time")),
             "transaction_count": len(transactions), "block_version": _integer(version.get("block"), "block version"),
-            "app_version": _integer(version.get("app"), "app version"), "proposer": proposer,
+            "app_version": _integer(version.get("app", 0), "app version"), "proposer": proposer,
             **proposer_identity, "hashes": {"block": block_hash,
                 "last_block": _optional_hash(_mapping(header.get("last_block_id", {})), "hash"),
                 "last_commit": _optional_hash(header, "last_commit_hash"), "data": _optional_hash(header, "data_hash"),

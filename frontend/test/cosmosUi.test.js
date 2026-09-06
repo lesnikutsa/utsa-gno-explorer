@@ -182,7 +182,7 @@ test('RPC, edge help, validator risk, chart, and footer polish follow shared int
   const footer = read('../src/components/CosmosResourceFooter.jsx')
   assert.match(rpc, /onPointerEnter=.*pointerType === 'mouse'/)
   assert.match(rpc, /onFocus=\{\(\) => setOpen\(true\)\}/)
-  assert.match(rpc, /Selected ·/)
+  assert.match(rpc, /marker = 'Manual'/)
   assert.match(rpc, /Automatic bounded failover/)
   assert.match(parameterHelp, /getBoundingClientRect/)
   assert.match(parameterHelp, /window\.innerWidth - width - 10/)

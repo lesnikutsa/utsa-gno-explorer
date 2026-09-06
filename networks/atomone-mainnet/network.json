@@ -6,11 +6,21 @@
   "network_name": "Mainnet",
   "rpc_endpoints": [
     "https://m-atomone.rpc.utsa.tech",
-    "https://atomone-mainnet-rpc.itrocket.net"
+    "https://atomone-mainnet-rpc.itrocket.net",
+    "https://rpc-m.atomone.vinjan-inc.com",
+    "https://atomone-rpc.allinbits.com:443"
   ],
   "rest_endpoints": [
     "https://m-atomone.api.utsa.tech",
-    "https://atomone-mainnet-api.itrocket.net"
+    "https://atomone-mainnet-api.itrocket.net",
+    "https://api-m.atomone.vinjan-inc.com",
+    "https://atomone-api.allinbits.com"
+  ],
+  "endpoint_providers": [
+    {"id": "utsa", "label": "UTSA"},
+    {"id": "itrocket", "label": "IT Rocket"},
+    {"id": "vinjan", "label": "Vinjan"},
+    {"id": "allinbits", "label": "Allinbits"}
   ],
   "account_prefix": "atone",
   "validator_operator_prefix": "atonevaloper",

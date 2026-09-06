@@ -1,9 +1,11 @@
+import { rewriteCosmosApiUrl } from '../utils/cosmosEndpointProvider.js'
+
 const API_ROOT = import.meta.env?.VITE_API_ROOT || '/api'
 
 export async function request(path, options = {}) {
   let response
   try {
-    response = await fetch(`${API_ROOT}${path}`, {
+    response = await fetch(rewriteCosmosApiUrl(`${API_ROOT}${path}`), {
       headers: { Accept: 'application/json',
         ...(options.body ? { 'Content-Type': 'application/json' } : {}) },
       method: options.method ?? 'GET',
