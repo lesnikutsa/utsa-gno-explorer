@@ -101,8 +101,19 @@
   border-top: 0;
 }
 
+.cosmos-endpoint-mode__health {
+  grid-template-columns: minmax(70px, 1fr) auto auto minmax(84px, auto);
+  gap: 8px;
+}
+
 .cosmos-endpoint-mode__health .rpc-pool__host {
   font-weight: 700;
+}
+
+.cosmos-endpoint-mode__height {
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  white-space: nowrap;
 }
 
 .cosmos-endpoint-mode__notice {
@@ -119,5 +130,23 @@
 
   .cosmos-endpoint-mode__routing p {
     grid-column: auto;
+  }
+
+  .cosmos-endpoint-mode__health {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 3px;
+  }
+
+  .cosmos-endpoint-mode__health .cosmos-endpoint-mode__height {
+    grid-column: 1;
+  }
+
+  .cosmos-endpoint-mode__health .rpc-pool__latency {
+    grid-column: 2;
+  }
+
+  .cosmos-endpoint-mode__health .rpc-pool__state {
+    grid-column: 2;
+    grid-row: 1;
   }
 }
