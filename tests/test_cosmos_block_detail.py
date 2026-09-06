@@ -54,6 +54,14 @@ def test_current_commit_flags_summary_and_identity_are_normalized():
     assert len(detail["signatures"]) == len(signatures)
 
 
+def test_legacy_header_without_app_version_defaults_to_zero():
+    block, commit, results = payloads()
+    del block["result"]["block"]["header"]["version"]["app"]
+    detail = normalize(block, commit, results)
+    assert detail["app_version"] == 0
+    BlockDetailResponse.model_validate(detail)
+
+
 def test_tx_hash_and_result_index_correlation():
     raw = b"strict cosmos transaction"
     detail = normalize(*payloads(
