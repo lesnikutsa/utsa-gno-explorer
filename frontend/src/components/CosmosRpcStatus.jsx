@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getCosmosEndpointProvider, setCosmosEndpointProvider, subscribeCosmosEndpointProvider } from '../utils/cosmosEndpointProvider'
 import '../styles/cosmos-endpoint-mode.css'
 
@@ -14,12 +14,12 @@ export function CosmosRpcStatus({ source, pool = [] }) {
   const [open, setOpen] = useState(false)
   const [diagnostics, setDiagnostics] = useState(null)
   const [diagnosticsError, setDiagnosticsError] = useState(false)
-  const networkId = useMemo(routeNetworkId, [])
+  const networkId = routeNetworkId()
   const [providerMode, setProviderMode] = useState(() => networkId ? getCosmosEndpointProvider(networkId) : 'auto')
   const root = useRef(null)
   const closeTimer = useRef(null)
   const selected = pool.find((item) => item.selected) || pool.find((item) => item.host === source)
-  const providers = diagnostics?.providers || []
+  const providers = diagnostics?.network_id === networkId ? (diagnostics.providers || []) : []
   const preferredRpc = providers.find((item) => item.id === diagnostics?.preferred_rpc_provider_id)
   const preferredApi = providers.find((item) => item.id === diagnostics?.preferred_api_provider_id)
   const manualProvider = providers.find((item) => item.id === providerMode)
@@ -37,6 +37,9 @@ export function CosmosRpcStatus({ source, pool = [] }) {
 
   useEffect(() => {
     if (!networkId) return undefined
+    setProviderMode(getCosmosEndpointProvider(networkId))
+    setDiagnostics(null)
+    setDiagnosticsError(false)
     let active = true
     let controller = null
     const load = async () => {
@@ -59,7 +62,7 @@ export function CosmosRpcStatus({ source, pool = [] }) {
       }
     }
     load()
-    const timer = window.setInterval(load, 15000)
+    const timer = window.setInterval(load, 30000)
     const visible = () => { if (!document.hidden) load() }
     document.addEventListener('visibilitychange', visible)
     const unsubscribe = subscribeCosmosEndpointProvider((changedNetworkId) => {
@@ -74,6 +77,13 @@ export function CosmosRpcStatus({ source, pool = [] }) {
       unsubscribe()
     }
   }, [networkId])
+
+  useEffect(() => {
+    if (!networkId || providerMode === 'auto' || providers.length === 0) return
+    if (providers.some((provider) => provider.id === providerMode)) return
+    setProviderMode('auto')
+    setCosmosEndpointProvider(networkId, 'auto')
+  }, [networkId, providerMode, providers])
 
   const chooseProvider = (providerId) => {
     if (!networkId) return
