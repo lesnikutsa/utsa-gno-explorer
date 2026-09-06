@@ -57,12 +57,13 @@ export const setCosmosEndpointProvider = (networkId, providerId) => {
 export const rewriteCosmosApiUrl = (url) => {
   const networkId = cosmosApiNetworkId(url)
   if (!networkId || typeof url !== 'string') return url
-  if (url.includes(`/api/networks/${networkId}/endpoint-status`)) return url
+  const prefix = `/api/networks/${networkId}`
+  if (url.includes(`${prefix}/endpoint-status`) || url.includes(`${prefix}/market`)) return url
   const providerId = getCosmosEndpointProvider(networkId)
   if (providerId === 'auto') return url
   const alias = cosmosProviderAlias(networkId, providerId)
   if (!alias) return url
-  return url.replace(`/api/networks/${networkId}`, `/api/networks/${alias}`)
+  return url.replace(prefix, `/api/networks/${alias}`)
 }
 
 export const subscribeCosmosEndpointProvider = (listener) => {
