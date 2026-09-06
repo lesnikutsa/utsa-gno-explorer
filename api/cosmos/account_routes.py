@@ -1,4 +1,4 @@
-"""FastAPI router for live Cosmos account state and bounded transaction history."""
+"""FastAPI router for live Cosmos account, transaction, and governance data."""
 
 import logging
 
@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from .account_activity import CosmosAccountActivityResponse, load_account_activity
 from .account_detail import CosmosAccountDetailResponse, load_account_snapshot
 from .errors import AllEndpointsUnavailable
+from .governance import CosmosGovernancePageResponse, load_governance_page
 from .registry import get_network
 from .transaction_endpoint_policy import CosmosTransactionHistoryResponse
 
@@ -32,6 +33,22 @@ async def get_cosmos_endpoint_status(request: Request, network_id: str):
     except Exception:
         LOGGER.info("Cosmos endpoint status failed network=%s reason=upstream_unavailable", network_id)
         raise HTTPException(status_code=503, detail="Endpoint status is temporarily unavailable") from None
+
+
+@router.get(
+    "/api/networks/{network_id}/governance",
+    response_model=CosmosGovernancePageResponse,
+    response_model_exclude_none=True,
+)
+async def get_cosmos_governance(request: Request, network_id: str):
+    service = _service(request, network_id)
+    try:
+        return await load_governance_page(service)
+    except AllEndpointsUnavailable:
+        raise HTTPException(status_code=503, detail="Governance data is temporarily unavailable") from None
+    except Exception:
+        LOGGER.info("Cosmos governance failed network=%s reason=upstream_unavailable", network_id)
+        raise HTTPException(status_code=503, detail="Governance data is temporarily unavailable") from None
 
 
 @router.get(
