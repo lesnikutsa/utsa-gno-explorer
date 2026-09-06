@@ -13,15 +13,15 @@ def candidate(endpoint, height, latency):
     return SimpleNamespace(endpoint=endpoint, height=height, latency=latency)
 
 
-def test_atomone_declares_three_ordered_rpc_api_pairs():
+def test_atomone_declares_four_ordered_rpc_api_pairs():
     definition = CANONICAL_NETWORKS["atomone-mainnet"]
     assert [provider.id for provider in definition.endpoint_providers] == [
-        "utsa", "itrocket", "publicnode"]
+        "utsa", "itrocket", "vinjan", "allinbits"]
     assert [provider.label for provider in definition.endpoint_providers] == [
-        "UTSA", "IT Rocket", "PublicNode"]
+        "UTSA", "IT Rocket", "Vinjan", "Allinbits"]
     assert tuple(provider.rpc_endpoint for provider in definition.endpoint_providers) == definition.transport.rpc_endpoints
     assert tuple(provider.rest_endpoint for provider in definition.endpoint_providers) == definition.transport.rest_endpoints
-    assert len(definition.endpoint_providers) == 3
+    assert len(definition.endpoint_providers) == 4
 
 
 def test_manual_provider_aliases_pin_exactly_one_pair_and_stay_private():
@@ -49,14 +49,16 @@ def test_endpoint_status_reports_independent_auto_rpc_and_api_preferences():
     service.cache = RequestCache()
 
     rpc_candidates = (
-        candidate(providers["publicnode"].rpc_endpoint, 10_000, 0.010),
+        candidate(providers["vinjan"].rpc_endpoint, 10_000, 0.010),
         candidate(providers["utsa"].rpc_endpoint, 10_000, 0.020),
+        candidate(providers["allinbits"].rpc_endpoint, 10_000, 0.025),
         candidate(providers["itrocket"].rpc_endpoint, 9_999, 0.030),
     )
     rest_candidates = (
         candidate(providers["itrocket"].rest_endpoint, 10_000, 0.015),
         candidate(providers["utsa"].rest_endpoint, 10_000, 0.025),
-        candidate(providers["publicnode"].rest_endpoint, 10_000, 0.035),
+        candidate(providers["vinjan"].rest_endpoint, 10_000, 0.030),
+        candidate(providers["allinbits"].rest_endpoint, 10_000, 0.035),
     )
 
     async def cached(kind):
@@ -70,10 +72,10 @@ def test_endpoint_status_reports_independent_auto_rpc_and_api_preferences():
     result = asyncio.run(service.endpoint_status())
     assert result["mode"] == "auto"
     assert result["selected_provider_id"] is None
-    assert result["preferred_rpc_provider_id"] == "publicnode"
+    assert result["preferred_rpc_provider_id"] == "vinjan"
     assert result["preferred_api_provider_id"] == "itrocket"
     assert result["mixed_providers"] is True
-    assert len(result["providers"]) == 3
+    assert len(result["providers"]) == 4
     assert all(row["rpc"]["state"] == "healthy" for row in result["providers"])
     assert all(row["api"]["state"] == "healthy" for row in result["providers"])
     assert all(row["rpc"]["tx_index"] == "unknown" for row in result["providers"])
@@ -104,8 +106,10 @@ def test_endpoint_status_keeps_unavailable_side_visible():
     assert rows["utsa"]["api"]["state"] == "unavailable"
     assert rows["itrocket"]["rpc"]["state"] == "unavailable"
     assert rows["itrocket"]["api"]["state"] == "healthy"
-    assert rows["publicnode"]["rpc"]["state"] == "unavailable"
-    assert rows["publicnode"]["api"]["state"] == "unavailable"
+    assert rows["vinjan"]["rpc"]["state"] == "unavailable"
+    assert rows["vinjan"]["api"]["state"] == "unavailable"
+    assert rows["allinbits"]["rpc"]["state"] == "unavailable"
+    assert rows["allinbits"]["api"]["state"] == "unavailable"
 
 
 def test_rpc_capabilities_refine_only_the_method_with_a_bad_reported_floor_and_share_cache(monkeypatch):
