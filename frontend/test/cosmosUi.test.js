@@ -4,7 +4,7 @@ import test from 'node:test'
 import { formatProtocolDuration, formatProtocolPercent, formatSignedTokenAmount, formatTokenAmount } from '../src/utils/cosmosFormat.js'
 import { normalizePublicCosmosNetwork } from '../src/utils/publicNetworkRegistry.js'
 import { deriveBlockTimeMetrics } from '../src/utils/cosmosBlockTime.js'
-import { cosmosLivenessRisk } from '../src/utils/cosmosSlashing.js'
+import { cosmosLivenessRisk } from '../utils/cosmosSlashing.js'
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
 const app = read('../src/App.jsx')
@@ -48,7 +48,8 @@ test('Cosmos Transactions route and compact list preserve Explorer contracts', (
   assert.match(app, /<CosmosTransactions network=\{network\}/)
   assert.match(transactions, /<h1>Transactions<\/h1>/)
   for (const heading of ['Time', 'Type', 'Tx hash', 'Block', 'Status', 'Fee', 'Gas']) assert.match(transactions, new RegExp(`<th>${heading}`))
-  assert.match(transactions, /dateTime=\{row\.timestamp\} title=\{row\.timestamp\}/)
+  assert.match(transactions, /dateTime=\{row\.timestamp\} data-tooltip=\{row\.timestamp\}/)
+  assert.doesNotMatch(transactions, /dateTime=\{row\.timestamp\} title=/)
   assert.match(transactions, /relativeTime\(row\.timestamp\)/)
   assert.match(transactions, /transactions\/history\?limit=20/)
   assert.match(transactions, /cursor \? null : 30000/)
@@ -145,7 +146,7 @@ test('Cosmos SDK liveness boundaries preserve strict greater-than semantics', ()
   const base = { startHeight: 100, currentHeight: 201, signedWindow: 100, minimumSigned: '0.5', averageBlockSeconds: 5 }
   assert.equal(cosmosLivenessRisk({ ...base, missedBlocks: 50 }).overThreshold, false)
   assert.equal(cosmosLivenessRisk({ ...base, missedBlocks: 51 }).overThreshold, true)
-  const initialWindow = cosmosLivenessRisk({ ...base, currentHeight: 150, missedBlocks: 50 })
+  const initialWindow = cosmosLivenessRisk({ ...base, currentHeight: 150, missedBlocks: 50 }).overThreshold
   assert.equal(initialWindow.overThreshold, false)
   assert.equal(initialWindow.earliestBlocks, 51)
   assert.equal(cosmosLivenessRisk({ ...base, missedBlocks: 0 }).budgetLeft, 50)
