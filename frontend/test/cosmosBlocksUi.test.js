@@ -24,8 +24,9 @@ test('Cosmos Blocks columns are ordered and use TIME rather than AGE', () => {
   assert.doesNotMatch(blocks, /<th>Age<\/th>/i)
 })
 
-test('Cosmos Blocks presents relative time while retaining the exact timestamp', () => {
-  assert.match(blocks, /<time dateTime=\{block\.timestamp\} title=\{block\.timestamp\}>\{relativeTime\(block\.timestamp\)\}<\/time>/)
+test('Cosmos Blocks presents relative time with an Explorer-styled exact timestamp tooltip', () => {
+  assert.match(blocks, /<time className="cosmos-data-tooltip" dateTime=\{block\.timestamp\} data-tooltip=\{block\.timestamp\}>\{relativeTime\(block\.timestamp\)\}<\/time>/)
+  assert.doesNotMatch(blocks, /dateTime=\{block\.timestamp\} title=/)
 })
 
 test('Cosmos Blocks uses monikers with an address fallback and shortened hashes', () => {
@@ -36,7 +37,8 @@ test('Cosmos Blocks uses monikers with an address fallback and shortened hashes'
   assert.match(identity, /\{moniker \|\| 'Unknown proposer'\}/)
   assert.match(identity, /shortAddress\(address\)/)
   assert.match(blocks, /value\.slice\(0, 6\).*value\.slice\(-6\)/)
-  assert.match(blocks, /<code className="muted" title=\{block\.hash\}>/)
+  assert.match(blocks, /<code className="muted cosmos-data-tooltip cosmos-data-tooltip--right" data-tooltip=\{block\.hash\}>/)
+  assert.doesNotMatch(blocks, /title=\{block\.hash\}/)
 })
 
 test('stale Cosmos Blocks never claims Live and reuses Explorer row animation classes', () => {
@@ -79,8 +81,10 @@ test('Block Detail exposes human and technical information through compact discl
   assert.match(styles, /\.cosmos-copy-value \{[^}]*width: 100%;[^}]*justify-content: space-between;/)
   assert.match(styles, /\.cosmos-detail-summary > div \{[^}]*border: 1px solid var\(--color-border-soft\);[^}]*background: var\(--color-surface-subtle\);/)
   assert.match(detail, /className=\{compact \? undefined : 'cosmos-hash-value'\}/)
+  assert.doesNotMatch(detail, /className=\{compact \? undefined : 'cosmos-hash-value'\} title=/)
   assert.match(detail, /blocks\/\$\{data\.height\}\/transactions\/\$\{tx\.index\}/)
-  assert.match(detail, /className="transaction-hash transaction-link mono cosmos-hash-value"[^>]*title=\{tx\.hash\}>\{tx\.hash\}<\/a><CopyButton value=\{tx\.hash\}/)
+  assert.match(detail, /className="transaction-hash mono cosmos-hash-value cosmos-tx-full-hash-link"[^>]*>\{tx\.hash\}<\/a><CopyButton value=\{tx\.hash\}/)
+  assert.doesNotMatch(detail, /cosmos-tx-full-hash-link[^>]*title=\{tx\.hash\}/)
   assert.doesNotMatch(detail, /label="transaction hash" compact/)
   assert.doesNotMatch(detail, /shortHash/)
   assert.match(styles, /\.cosmos-detail-card details > summary, \.cosmos-normalized-json > summary, \.cosmos-detail-toggle \{[^}]*display: inline-flex;[^}]*width: fit-content;[^}]*max-width: calc\(100% - 24px\);[^}]*border: 1px solid var\(--color-accent\);[^}]*background: var\(--color-accent-soft\)/)
@@ -98,10 +102,12 @@ test('Cosmos Transaction Detail keeps block-context navigation and readable norm
   assert.match(app, /cosmosTxMatch/)
   assert.match(app, /<CosmosTransactionDetail network=\{network\} height=\{txHeight\} index=\{txIndex\}/)
   assert.match(transactionDetail, /blocks\/\$\{height\}\/transactions\/\$\{index\}/)
-  assert.match(transactionDetail, /className="cosmos-hash-value" title=\{tx\.tx_hash\}>\{tx\.tx_hash\}/)
+  assert.match(transactionDetail, /className="cosmos-hash-value">\{tx\.tx_hash\}/)
+  assert.doesNotMatch(transactionDetail, /className="cosmos-hash-value"[^>]*title=\{tx\.tx_hash\}/)
   assert.match(transactionDetail, /CopyButton value=\{tx\.tx_hash\}/)
   assert.match(transactionDetail, /blocks\/\$\{tx\.height\}/)
   assert.match(transactionDetail, /dateTime=\{tx\.timestamp\}/)
+  assert.doesNotMatch(transactionDetail, /dateTime=\{tx\.timestamp\} title=/)
   for (const label of ['Gas used', 'Gas wanted', 'Fee', 'Memo']) assert.match(transactionDetail, new RegExp(`<dt>${label}`))
   assert.match(transactionDetail, /message\.action/)
   assert.match(transactionDetail, /message\.type_url/)

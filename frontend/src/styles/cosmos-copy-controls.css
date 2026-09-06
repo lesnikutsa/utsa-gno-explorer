@@ -1,0 +1,17 @@
+.cosmos-block-detail .cosmos-copy-value {
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.cosmos-block-detail .cosmos-copy-value code,
+.cosmos-block-detail .cosmos-copy-value .cosmos-hash-value,
+.cosmos-block-detail .cosmos-copy-value .cosmos-validator-identity {
+  flex: 0 1 auto;
+}
+
+.cosmos-block-detail .cosmos-copy-value .copy-button {
+  flex: 0 0 auto;
+}

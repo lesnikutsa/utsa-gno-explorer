@@ -35,9 +35,11 @@ test('capability menu resolves only implemented AtomOne routes inside the select
   assert.match(sidebar, /hasNetworkCapability\(selectedNetwork, capability\)/)
   assert.match(sidebar, /selectedNetwork\.family === 'cosmos'/)
   assert.match(sidebar, /`\/networks\/\$\{selectedNetwork\.id\}/)
-  assert.deepEqual(networkMetadata.capabilities, ['overview', 'blocks', 'validators', 'network-parameters'])
+  assert.deepEqual(networkMetadata.capabilities, ['overview', 'blocks', 'transactions', 'validators', 'network-parameters'])
+  assert.match(app, /<CosmosTransactions network=\{network\}/)
   assert.match(app, /<CosmosValidators network=\{network\}/)
-  for (const capability of ['transactions', 'governance', 'realms', 'tokens']) {
+  assert.ok(networkMetadata.capabilities.includes('transactions'))
+  for (const capability of ['governance', 'realms', 'tokens']) {
     assert.ok(!networkMetadata.capabilities.includes(capability))
   }
 })
@@ -46,7 +48,8 @@ test('Cosmos Transactions route and compact list preserve Explorer contracts', (
   assert.match(app, /<CosmosTransactions network=\{network\}/)
   assert.match(transactions, /<h1>Transactions<\/h1>/)
   for (const heading of ['Time', 'Type', 'Tx hash', 'Block', 'Status', 'Fee', 'Gas']) assert.match(transactions, new RegExp(`<th>${heading}`))
-  assert.match(transactions, /dateTime=\{row\.timestamp\} title=\{row\.timestamp\}/)
+  assert.match(transactions, /dateTime=\{row\.timestamp\} data-tooltip=\{row\.timestamp\}/)
+  assert.doesNotMatch(transactions, /dateTime=\{row\.timestamp\} title=/)
   assert.match(transactions, /relativeTime\(row\.timestamp\)/)
   assert.match(transactions, /transactions\/history\?limit=20/)
   assert.match(transactions, /cursor \? null : 30000/)
