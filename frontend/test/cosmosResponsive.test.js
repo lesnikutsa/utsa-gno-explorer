@@ -12,8 +12,11 @@ test('Cosmos layout loads isolated medium-width responsive polish', () => {
   assert.match(styles, /\.app-frame:has\(\.cosmos-node-strip\) \.topbar-block-time-control\s*\{[^}]*width:\s*90px;[^}]*flex-basis:\s*90px;/s)
 })
 
-test('Cosmos node strip uses stable equal columns instead of flex row stretching', () => {
-  assert.match(styles, /@media \(max-width: 1100px\) and \(min-width: 761px\)[\s\S]*\.cosmos-node-strip > dl\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\);/)
+test('Cosmos node strip balances complete rows at medium and narrow widths', () => {
+  assert.match(styles, /@media \(max-width: 1100px\) and \(min-width: 761px\)[\s\S]*grid-template-columns:\s*repeat\(12, minmax\(0, 1fr\)\);/)
+  assert.match(styles, /\.cosmos-node-strip > dl > div:nth-child\(-n\+4\)\s*\{[^}]*grid-column:\s*span 3;/s)
+  assert.match(styles, /\.cosmos-node-strip > dl > div:nth-child\(n\+5\)\s*\{[^}]*grid-column:\s*span 4;/s)
   assert.match(styles, /@media \(max-width: 760px\)[\s\S]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/)
+  assert.match(styles, /\.cosmos-node-strip > dl > div:last-child:nth-child\(odd\)\s*\{[^}]*grid-column:\s*1 \/ -1;/s)
   assert.match(styles, /@media \(max-width: 480px\)[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\);/)
 })
