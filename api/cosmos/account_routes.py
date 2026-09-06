@@ -1,4 +1,4 @@
-"""FastAPI router for live Cosmos account, transaction, and governance data."""
+"""FastAPI router for live Cosmos account, transaction, governance, and consensus data."""
 
 import logging
 
@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 
 from .account_activity import CosmosAccountActivityResponse, load_account_activity
 from .account_detail import CosmosAccountDetailResponse, load_account_snapshot
+from .consensus import CosmosConsensusResponse, load_consensus
 from .errors import AllEndpointsUnavailable
 from .governance import (
     CosmosGovernanceDetailResponse,
@@ -40,6 +41,22 @@ async def get_cosmos_endpoint_status(request: Request, network_id: str):
     except Exception:
         LOGGER.info("Cosmos endpoint status failed network=%s reason=upstream_unavailable", network_id)
         raise HTTPException(status_code=503, detail="Endpoint status is temporarily unavailable") from None
+
+
+@router.get(
+    "/api/networks/{network_id}/consensus",
+    response_model=CosmosConsensusResponse,
+    response_model_exclude_none=True,
+)
+async def get_cosmos_consensus(request: Request, network_id: str):
+    service = _service(request, network_id)
+    try:
+        return await load_consensus(service)
+    except AllEndpointsUnavailable:
+        raise HTTPException(status_code=503, detail="Consensus data is temporarily unavailable") from None
+    except Exception:
+        LOGGER.info("Cosmos consensus failed network=%s reason=upstream_unavailable", network_id)
+        raise HTTPException(status_code=503, detail="Consensus data is temporarily unavailable") from None
 
 
 @router.get(
