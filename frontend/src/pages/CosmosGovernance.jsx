@@ -125,9 +125,10 @@ export function CosmosGovernance({ network }) {
         const end = dateValue(proposal.voting_end_time)
         const proposalTitle = proposal.title || 'Untitled proposal'
         const titleTooltip = proposalTitle.length > 54 ? proposalTitle : null
+        const detailHref = `/networks/${network.id}/governance/${proposal.proposal_id}`
         return <tr key={proposal.proposal_id}>
-          <td><span className="cosmos-governance__proposal-id">{proposal.proposal_id}</span></td>
-          <td><span className={`cosmos-governance__title-tooltip${titleTooltip ? ' cosmos-data-tooltip' : ''}`} data-tooltip={titleTooltip || undefined} tabIndex={titleTooltip ? 0 : undefined}><strong className="cosmos-governance__title">{proposalTitle}</strong></span></td>
+          <td><a className="cosmos-governance__proposal-link" href={detailHref}><span className="cosmos-governance__proposal-id">{proposal.proposal_id}</span></a></td>
+          <td><span className={`cosmos-governance__title-tooltip${titleTooltip ? ' cosmos-data-tooltip' : ''}`} data-tooltip={titleTooltip || undefined} tabIndex={titleTooltip ? 0 : undefined}><a className="cosmos-governance__title-link" href={detailHref}><strong className="cosmos-governance__title">{proposalTitle}</strong></a></span></td>
           <td><span className={`cosmos-gov-type cosmos-gov-type--${typeTone(proposal.proposal_type)}`}>{proposal.proposal_type}</span></td>
           <td><span className={`cosmos-gov-status cosmos-gov-status--${statusTone(proposal.status)}`}>{label(proposal.status)}</span></td>
           <td><span className="cosmos-governance__date">{end.date}</span>{end.time && <small>{end.time}</small>}</td>
