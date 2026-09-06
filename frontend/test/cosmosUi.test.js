@@ -35,11 +35,12 @@ test('capability menu resolves only implemented AtomOne routes inside the select
   assert.match(sidebar, /hasNetworkCapability\(selectedNetwork, capability\)/)
   assert.match(sidebar, /selectedNetwork\.family === 'cosmos'/)
   assert.match(sidebar, /`\/networks\/\$\{selectedNetwork\.id\}/)
-  assert.deepEqual(networkMetadata.capabilities, ['overview', 'blocks', 'transactions', 'validators', 'network-parameters'])
+  assert.deepEqual(networkMetadata.capabilities, ['overview', 'blocks', 'transactions', 'validators', 'governance', 'network-parameters'])
   assert.match(app, /<CosmosTransactions network=\{network\}/)
   assert.match(app, /<CosmosValidators network=\{network\}/)
   assert.ok(networkMetadata.capabilities.includes('transactions'))
-  for (const capability of ['governance', 'realms', 'tokens']) {
+  assert.ok(networkMetadata.capabilities.includes('governance'))
+  for (const capability of ['realms', 'tokens']) {
     assert.ok(!networkMetadata.capabilities.includes(capability))
   }
 })
