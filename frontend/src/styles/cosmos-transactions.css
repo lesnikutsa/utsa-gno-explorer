@@ -1,6 +1,6 @@
 .cosmos-transactions .cosmos-table table { min-width: 1050px; table-layout: fixed; }
 .cosmos-transactions .cosmos-table th:nth-child(1), .cosmos-transactions .cosmos-table td:nth-child(1) { width: 16%; }
-.cosmos-transactions .cosmos-table th:nth-child(2), .cosmos-transactions .cosmos-table td:nth-child(2) { width: 18%; }
+.cosmos-transactions .cosmos-table th:nth-child(2), .cosmos-transactions .cosmos-table td:nth-child(2) { width: 18%; overflow: visible; }
 .cosmos-transactions .cosmos-table th:nth-child(3), .cosmos-transactions .cosmos-table td:nth-child(3) { width: 12%; }
 .cosmos-transactions .cosmos-table th:nth-child(4), .cosmos-transactions .cosmos-table td:nth-child(4) { width: 13%; }
 .cosmos-transactions .cosmos-table th:nth-child(5), .cosmos-transactions .cosmos-table td:nth-child(5) { width: 11%; }
@@ -17,5 +17,24 @@
 .cosmos-tx-type .cosmos-tx-more { margin-left: 4px; color: currentColor; font-size: 9px; opacity: .75; }
 
 .cosmos-transactions .cosmos-tx-status { min-height: 20px; padding: 1px 7px; font-size: 10px; line-height: 1.2; }
-.cosmos-tx-hash { display: inline-block; max-width: 100%; overflow: hidden; color: var(--color-text-secondary); font-family: var(--font-mono); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.cosmos-tx-hash:hover, .cosmos-tx-hash:focus-visible { color: var(--color-accent); }
+.cosmos-tx-hash { position: relative; z-index: 1; display: inline-block; max-width: 100%; color: var(--color-text-bright); font-family: var(--font-mono); font-size: 11px; font-weight: 500; text-decoration: none; white-space: nowrap; }
+.cosmos-tx-hash:hover, .cosmos-tx-hash:focus-visible { z-index: 40; color: var(--color-accent); }
+.cosmos-tx-hash[data-tooltip]::before,
+.cosmos-tx-hash[data-tooltip]::after { position: absolute; left: 0; z-index: 50; pointer-events: none; opacity: 0; transform: translateY(-3px); transition: opacity 120ms ease, transform 120ms ease; }
+.cosmos-tx-hash[data-tooltip]::before { top: calc(100% + 4px); width: 0; height: 0; margin-left: 11px; border: 5px solid transparent; border-bottom-color: var(--color-border); content: ''; }
+.cosmos-tx-hash[data-tooltip]::after { top: calc(100% + 13px); width: max-content; max-width: min(440px, 68vw); padding: 7px 9px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-popover); box-shadow: 0 7px 20px var(--color-shadow); color: var(--color-text); content: attr(data-tooltip); font-family: var(--font-mono); font-size: 10px; font-weight: 500; line-height: 1.4; overflow-wrap: anywhere; white-space: pre-line; }
+.cosmos-tx-hash[data-tooltip]:hover::before,
+.cosmos-tx-hash[data-tooltip]:hover::after,
+.cosmos-tx-hash[data-tooltip]:focus-visible::before,
+.cosmos-tx-hash[data-tooltip]:focus-visible::after { opacity: 1; transform: translateY(0); }
+
+.cosmos-validator-activity a.cosmos-validator-activity__tx,
+.cosmos-account-activity a.cosmos-account-activity__tx { color: var(--color-text-bright); font-size: 11px; font-weight: 500; }
+.cosmos-validator-activity a.cosmos-validator-activity__tx:hover,
+.cosmos-validator-activity a.cosmos-validator-activity__tx:focus-visible,
+.cosmos-account-activity a.cosmos-account-activity__tx:hover,
+.cosmos-account-activity a.cosmos-account-activity__tx:focus-visible { color: var(--color-accent); }
+
+.cosmos-block-detail a.cosmos-tx-full-hash-link { color: var(--color-text-bright); text-decoration: none; }
+.cosmos-block-detail a.cosmos-tx-full-hash-link:hover,
+.cosmos-block-detail a.cosmos-tx-full-hash-link:focus-visible { color: var(--color-accent); }
