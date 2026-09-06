@@ -16,6 +16,19 @@ test('Cosmos governance reuses validator summary, tabs and search structure', ()
   assert.match(page, /Rejected \/ failed/)
 })
 
+test('Cosmos governance keeps search compact when the viewport narrows', () => {
+  assert.match(styles, /@media \(max-width: 900px\)/)
+  const mobileToolbarRule = styles.match(/@media \(max-width: 900px\) \{[\s\S]*?\.cosmos-governance__toolbar \{([^}]*)\}/)?.[1] || ''
+  assert.match(mobileToolbarRule, /flex-direction:\s*column;/)
+  assert.match(mobileToolbarRule, /align-items:\s*stretch;/)
+
+  const mobileSearchRule = styles.match(/@media \(max-width: 900px\) \{[\s\S]*?\.cosmos-governance__toolbar \.cosmos-validator-search \{([^}]*)\}/)?.[1] || ''
+  assert.match(mobileSearchRule, /width:\s*100%;/)
+  assert.match(mobileSearchRule, /min-width:\s*0;/)
+  assert.match(mobileSearchRule, /height:\s*34px;/)
+  assert.match(mobileSearchRule, /flex:\s*0 0 34px;/)
+})
+
 test('Cosmos governance table mirrors validator numbering and keeps titles bounded', () => {
   assert.match(page, /<th>#<\/th><th>Title<\/th><th>Type<\/th><th>Status<\/th><th>Voting end<\/th><th>Vote split<\/th>/)
   assert.match(page, /className="cosmos-governance__proposal-id">\{proposal\.proposal_id\}/)
