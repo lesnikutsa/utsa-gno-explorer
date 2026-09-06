@@ -22,7 +22,7 @@ const help = {
   'Allowed misses': 'How many blocks a validator may miss within the signing window before downtime penalties apply.',
   'Minimum signed': 'The minimum share of blocks a validator must sign in the window.',
   Quorum: 'The minimum voting power participation required for a governance proposal.',
-  Threshold: 'The minimum share of non-abstaining votes required for a proposal to pass.',
+  Threshold: 'The minimum share of non-abstaining votes required for a governance proposal to pass.',
   'Community tax': 'The share of staking rewards directed to the community pool.',
   'Unbonding time': 'How long stake remains locked while moving out of the bonded state.',
   'Commission limits': 'Protocol bounds applied to validator commission rates.',
@@ -39,6 +39,13 @@ const formatRetainedBlocks = (count) => {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(2).replace(/\.00$/, '')}M blocks`
   if (count >= 1_000) return `${(count / 1_000).toFixed(count >= 100_000 ? 1 : 2).replace(/\.0+$/, '')}K blocks`
   return `${count.toLocaleString()} blocks`
+}
+
+const formatCompactHeight = (height) => {
+  if (!Number.isInteger(height) || height <= 0) return 'unknown'
+  if (height >= 1_000_000) return `${(height / 1_000_000).toFixed(2)}M`
+  if (height >= 1_000) return `${(height / 1_000).toFixed(1).replace(/\.0$/, '')}K`
+  return height.toLocaleString()
 }
 
 function MarketPanel({ network, market, marketError, history }) {
@@ -112,7 +119,9 @@ export function CosmosOverviewView({ data, market, marketError, history, blocks 
   const historyHead = rpcProvider?.rpc?.height
   const retainedBlocks = Number.isInteger(historyFloor) && Number.isInteger(historyHead) && historyHead >= historyFloor
     ? historyHead - historyFloor + 1 : null
-  const blockHistory = retainedBlocks ? formatRetainedBlocks(retainedBlocks) : data.network.block_history_state
+  const blockHistory = retainedBlocks
+    ? `From #${formatCompactHeight(historyFloor)} · ${formatRetainedBlocks(retainedBlocks)}`
+    : data.network.block_history_state
   const blockHistoryRaw = retainedBlocks
     ? `#${historyFloor.toLocaleString()} – #${historyHead.toLocaleString()} · ${retainedBlocks.toLocaleString()} blocks`
     : null
@@ -139,6 +148,6 @@ export function CosmosOverviewView({ data, market, marketError, history, blocks 
       <ParameterCard title="Security / Slashing" value={slashing}><dl className="cosmos-metrics"><Detail label="Signed blocks window" value={slashing?.signed_blocks_window?.toLocaleString() ?? '—'} /><Detail label="Allowed misses" value={slashing?.allowed_missed_threshold?.toLocaleString() ?? '—'} /><Detail label="Minimum signed" value={formatProtocolPercent(slashing?.minimum_signed_per_window)} /></dl><Advanced><Detail label="Downtime jail" value={formatProtocolDuration(slashing?.downtime_jail_duration)} /><Detail label="Downtime slash" value={formatProtocolPercent(slashing?.downtime_slash_fraction)} /><Detail label="Double-sign slash" value={formatProtocolPercent(slashing?.double_sign_slash_fraction)} /></Advanced></ParameterCard>
       <ParameterCard title="Distribution / Economics" value={distribution}><dl className="cosmos-metrics"><Detail label="Community tax" value={formatProtocolPercent(distribution?.community_tax)} /><Detail label="Withdraw address" value={distribution?.withdraw_address_enabled ? 'Enabled' : 'Disabled'} />{distribution?.nakamoto_bonus && <Detail label="Nakamoto Bonus" value={distribution.nakamoto_bonus.enabled ? 'Enabled' : 'Disabled'} />}</dl>{distribution?.nakamoto_bonus && <Advanced><Detail label="Bonus coefficient" value={`${distribution.nakamoto_bonus.minimum_coefficient} – ${distribution.nakamoto_bonus.maximum_coefficient}`} /><Detail label="Bonus period" value={distribution.nakamoto_bonus.period_epoch_identifier} /></Advanced>}</ParameterCard>
     </div>
-    <section className="panel cosmos-node-strip"><div className="panel__heading"><h2>Node / Network</h2>{rpcProvider && <span className="panel__meta">RPC: {rpcProvider.label}</span>}</div><dl><Detail label="Tx index" value={selectedTxIndex} /><Detail label="Application" value={[data.network.application_name, data.network.application_version].filter(Boolean).join(' ') || '—'} /><Detail label="SDK" value={data.network.sdk_version || '—'} /><Detail label="CometBFT" value={data.network.cometbft_version || '—'} /><Detail label="Node version" value={data.network.node_version || '—'} /><Detail label="Block history" value={blockHistory} raw={blockHistoryRaw} /><Detail label="Historical state" value={data.network.historical_state} /></dl></section>
+    <section className="panel cosmos-node-strip"><div className="panel__heading"><h2>Node / Network</h2>{rpcProvider && <span className="panel__meta">RPC: {rpcProvider.label}</span>}</div><dl><Detail label="Tx index" value={selectedTxIndex} /><Detail label="Application" value={[data.network.application_name, data.network.application_version].filter(Boolean).join(' ') || '—'} /><Detail label="SDK" value={data.network.sdk_version || '—'} /><Detail label="CometBFT" value={data.network.cometbft_version || '—'} /><Detail label="Node version" value={data.network.node_version || '—'} /><Detail label="Block history" value={blockHistory} raw={blockHistoryRaw} /><Detail label="RPC provider" value={rpcProvider?.label || 'unknown'} /></dl></section>
   </div>
 }
