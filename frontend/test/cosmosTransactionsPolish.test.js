@@ -33,7 +33,7 @@ test('Cosmos transaction hashes share bright default, accent hover, and larger c
 
 test('Cosmos transaction hash tooltip is explorer styled and block detail uses the same link semantics', () => {
   assert.match(styles, /\.cosmos-tx-hash\[data-tooltip\]::after \{[^}]*background: var\(--color-popover\)[^}]*content: attr\(data-tooltip\)/)
-  assert.match(blockDetail, /cosmos-tx-full-hash-link/)
-  assert.match(styles, /\.cosmos-block-detail a\.cosmos-tx-full-hash-link \{[^}]*color: var\(--color-text-bright\)/)
-  assert.match(styles, /\.cosmos-block-detail a\.cosmos-tx-full-hash-link:hover,[\s\S]*color: var\(--color-accent\)/)
+  assert.match(blockDetail, /className="transaction-hash transaction-link mono cosmos-hash-value"/)
+  assert.match(styles, /\.cosmos-block-detail a\.transaction-link\.cosmos-hash-value \{[^}]*color: var\(--color-text-bright\)/)
+  assert.match(styles, /\.cosmos-block-detail a\.transaction-link\.cosmos-hash-value:hover,[\s\S]*color: var\(--color-accent\)/)
 })
