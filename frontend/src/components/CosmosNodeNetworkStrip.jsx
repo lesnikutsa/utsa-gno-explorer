@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useCosmosResource } from '../hooks/useCosmosResource'
 import { getCosmosEndpointProvider, subscribeCosmosEndpointProvider } from '../utils/cosmosEndpointProvider'
+import '../styles/cosmos-tx-tooltip.css'
 
-const Detail = ({ label, value, raw }) => <div><dt>{label}</dt><dd title={raw === undefined || raw === null ? undefined : String(raw)}>{value}</dd></div>
+const Detail = ({ label, value, raw }) => <div><dt>{label}</dt><dd>{raw === undefined || raw === null ? value : <span className="cosmos-data-tooltip" data-tooltip={String(raw)}>{value}</span>}</dd></div>
 
 const formatRetainedBlocks = (count) => {
   if (!Number.isInteger(count) || count <= 0) return 'unknown'
