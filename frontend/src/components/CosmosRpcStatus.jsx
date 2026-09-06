@@ -8,6 +8,7 @@ const routeNetworkId = () => {
 }
 
 const latency = (value) => Number.isInteger(value) ? `${value} ms` : '—'
+const compactLatency = (value) => Number.isInteger(value) ? value : '—'
 const height = (value) => Number.isInteger(value) ? `#${value.toLocaleString()}` : '—'
 const endpointHealthy = (endpoint) => endpoint?.state === 'healthy'
 
@@ -134,13 +135,18 @@ export function CosmosRpcStatus({ source, pool = [], onDiagnostics, onProviderMo
         if (providerMode === 'auto') {
           const usesRpc = provider.id === statusRpc?.id
           const usesApi = provider.id === preferredApi?.id
-          if (usesRpc && usesApi) marker = 'RPC + API · '
-          else if (usesRpc) marker = 'RPC · '
-          else if (usesApi) marker = 'API · '
+          if (usesRpc && usesApi) marker = 'RPC+API'
+          else if (usesRpc) marker = 'RPC'
+          else if (usesApi) marker = 'API'
         } else if (provider.id === manualProvider?.id) {
-          marker = 'Manual · '
+          marker = 'Manual'
         }
-        return <div className="rpc-pool__row cosmos-endpoint-mode__health" key={provider.id}><span className="rpc-pool__host">{provider.label}</span><span className="cosmos-endpoint-mode__height">Height {height(provider.rpc.height)}</span><span className="rpc-pool__latency">RPC {latency(provider.rpc.latency_ms)} · API {latency(provider.api.latency_ms)}</span><span className={`rpc-pool__state rpc-pool__state--${reachable ? 'healthy' : 'degraded'}`}>{marker}{reachable ? 'Healthy' : 'Unavailable'}</span></div>
+        return <div className="rpc-pool__row cosmos-endpoint-mode__health" key={provider.id}>
+          <span className="rpc-pool__host"><span className={`cosmos-endpoint-mode__dot rpc-pool__state--${reachable ? 'healthy' : 'degraded'}`} aria-hidden="true">●</span>{provider.label}</span>
+          <span className="cosmos-endpoint-mode__height">{height(provider.rpc.height)}</span>
+          <span className="rpc-pool__latency">R {compactLatency(provider.rpc.latency_ms)} · A {compactLatency(provider.api.latency_ms)} ms</span>
+          <span className={`rpc-pool__state rpc-pool__state--${reachable ? 'healthy' : 'degraded'}`}>{marker || (reachable ? '' : 'Down')}</span>
+        </div>
       })}</div></>}
       {diagnosticsError && <div className="cosmos-endpoint-mode__notice">Endpoint diagnostics are temporarily unavailable.</div>}
     </div>}
