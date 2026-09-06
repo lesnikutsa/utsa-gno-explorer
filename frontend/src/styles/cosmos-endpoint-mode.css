@@ -102,8 +102,10 @@
 }
 
 .cosmos-endpoint-mode__health {
-  grid-template-columns: minmax(70px, 1fr) auto auto minmax(84px, auto);
-  gap: 8px;
+  grid-template-columns: 78px 116px minmax(130px, 1fr) auto;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
 }
 
 .cosmos-endpoint-mode__health .rpc-pool__host {
@@ -114,6 +116,11 @@
   color: var(--color-text-secondary);
   font-family: var(--font-mono);
   white-space: nowrap;
+}
+
+.cosmos-endpoint-mode__health .rpc-pool__latency,
+.cosmos-endpoint-mode__health .rpc-pool__state {
+  font-size: 9px;
 }
 
 .cosmos-endpoint-mode__notice {
@@ -131,7 +138,9 @@
   .cosmos-endpoint-mode__routing p {
     grid-column: auto;
   }
+}
 
+@media (max-width: 520px) {
   .cosmos-endpoint-mode__health {
     grid-template-columns: minmax(0, 1fr) auto;
     row-gap: 3px;
