@@ -21,6 +21,7 @@ _original_metadata = metadata
 
 _HISTORY_FLOOR = re.compile(r"lowest height is\s+(\d+)", re.IGNORECASE)
 _PROVIDER_CAPABILITY_TTL = 3600.0
+_PROVIDER_HISTORY_SEARCH_LIMIT = 32
 
 
 def _forward_valid_bech32_address(*args, **kwargs):
@@ -46,10 +47,12 @@ class CosmosService(TransactionEndpointPolicyMixin, _core.CosmosService):
     async def _provider_rpc_capabilities(self, provider, canonical_id: str):
         """Read slow-changing RPC capabilities with a long shared cache.
 
-        This intentionally performs only two point requests: `/status` for the
-        CometBFT tx-index flag and `/block?height=1` to learn the retained block
-        floor from the normal pruning error. It never performs a tx search or a
-        historical range scan.
+        `/status` supplies the tx-index flag and current height. A single
+        `/block?height=1` request supplies a cheap lower-bound hint when the
+        node reports one. If that hinted block cannot actually be rendered by
+        the explorer, a bounded binary search finds the first recent height for
+        which `/block`, `/commit`, and `/block_results` all normalize as a full
+        block-detail response. No transaction search or full-chain scan occurs.
         """
         transport = getattr(self, "transport", None)
         if transport is None:
@@ -59,6 +62,7 @@ class CosmosService(TransactionEndpointPolicyMixin, _core.CosmosService):
 
         async def load():
             tx_index = "unknown"
+            latest_height = None
             lowest_available_height = None
 
             try:
@@ -70,9 +74,11 @@ class CosmosService(TransactionEndpointPolicyMixin, _core.CosmosService):
                     source_host=self.adapter._host(provider.rpc_endpoint),
                 )
                 tx_index = status.tx_index
+                latest_height = status.local_height
             except Exception:
                 pass
 
+            floor_hint = None
             try:
                 payload = await transport.get_object(
                     provider.rpc_endpoint, "/block?height=1", accept_error_payload=True)
@@ -80,7 +86,7 @@ class CosmosService(TransactionEndpointPolicyMixin, _core.CosmosService):
                 block = result.get("block") if isinstance(result, dict) else None
                 header = block.get("header") if isinstance(block, dict) else None
                 if isinstance(header, dict) and str(header.get("height")) == "1":
-                    lowest_available_height = 1
+                    floor_hint = 1
                 else:
                     error = payload.get("error") if isinstance(payload, dict) else None
                     if isinstance(error, dict):
@@ -89,9 +95,68 @@ class CosmosService(TransactionEndpointPolicyMixin, _core.CosmosService):
                         if match:
                             value = int(match.group(1))
                             if value > 0:
-                                lowest_available_height = value
+                                floor_hint = value
             except Exception:
                 pass
+
+            probe_cache = {}
+
+            async def detail_available(height: int) -> bool:
+                if height in probe_cache:
+                    return probe_cache[height]
+                if height <= 0 or latest_height is None or height > latest_height:
+                    probe_cache[height] = False
+                    return False
+                try:
+                    block, commit, results = await asyncio.gather(
+                        transport.get_object(
+                            provider.rpc_endpoint, f"/block?height={height}",
+                            accept_error_payload=True),
+                        transport.get_object(
+                            provider.rpc_endpoint, f"/commit?height={height}",
+                            accept_error_payload=True),
+                        transport.get_object(
+                            provider.rpc_endpoint, f"/block_results?height={height}",
+                            accept_error_payload=True),
+                    )
+                    _core.normalize_detail(
+                        block, commit, results,
+                        network_id=canonical_id,
+                        expected_chain_id=self.definition.transport.chain_id,
+                        requested_height=height,
+                        local_height=latest_height,
+                        identities={},
+                    )
+                    probe_cache[height] = True
+                except Exception:
+                    probe_cache[height] = False
+                return probe_cache[height]
+
+            if latest_height is not None and latest_height > 0:
+                lower = floor_hint if isinstance(floor_hint, int) and floor_hint > 0 else 1
+                lower = min(lower, latest_height)
+
+                if await detail_available(lower):
+                    lowest_available_height = lower
+                else:
+                    # Avoid probing the moving tip itself when possible. A
+                    # finalized recent block is a more stable upper bound.
+                    upper = latest_height - 1 if latest_height > lower else latest_height
+                    if upper <= lower or not await detail_available(upper):
+                        upper = latest_height
+
+                    if upper > lower and await detail_available(upper):
+                        unavailable = lower
+                        available = upper
+                        for _ in range(_PROVIDER_HISTORY_SEARCH_LIMIT):
+                            if available - unavailable <= 1:
+                                break
+                            middle = (unavailable + available) // 2
+                            if await detail_available(middle):
+                                available = middle
+                            else:
+                                unavailable = middle
+                        lowest_available_height = available
 
             return {
                 "tx_index": tx_index,
@@ -169,9 +234,9 @@ class CosmosService(TransactionEndpointPolicyMixin, _core.CosmosService):
             }
 
         # The frontend asks for this at most every 30 seconds. A shared cache
-        # keeps many viewers from multiplying the same three-pair health probe.
-        # Slow-changing tx-index/history-floor capabilities have their own
-        # one-hour cache and never perform transaction searches.
+        # keeps many viewers from multiplying the same provider health probe.
+        # Slow-changing tx-index/usable-history capabilities have their own
+        # one-hour cache and never perform transaction searches or range scans.
         return await self.cache.get_or_load(cache_key, 30.0, load)
 
     async def _newer_history_cursor(self, anchor: int, upper: int, page: int,
