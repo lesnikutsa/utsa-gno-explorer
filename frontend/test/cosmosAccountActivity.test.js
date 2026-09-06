@@ -53,10 +53,17 @@ test('account activity reuses the shared block height accent', () => {
 
 test('activity columns align with the account unbonding table', () => {
   assert.match(activity, /<th>Activity<\/th><th>Amount \/ Detail<\/th><th>Height \/ Time<\/th><th>TX<\/th>/)
-  assert.match(css, /nth-child\(1\)[^{]*\{ width: 34%; \}/)
-  assert.match(css, /nth-child\(2\)[^{]*\{ width: 18%; \}/)
-  assert.match(css, /nth-child\(3\)[^{]*\{ width: 24%; \}/)
-  assert.match(css, /nth-child\(4\)[^{]*\{ width: 24%; \}/)
+  assert.match(css, /nth-child\(1\)[^{]*\{[^}]*width: 34%;/)
+  assert.match(css, /nth-child\(2\)[^{]*\{[^}]*width: 18%;/)
+  assert.match(css, /nth-child\(3\)[^{]*\{[^}]*width: 24%;/)
+  assert.match(css, /nth-child\(4\)[^{]*\{[^}]*width: 24%;/)
+})
+
+test('activity TX tooltip can escape the desktop table cell without losing mobile horizontal scrolling', () => {
+  assert.match(css, /\.cosmos-account-activity__table-wrap \{[^}]*overflow: visible;/)
+  assert.match(css, /nth-child\(4\)[^{]*\{[^}]*overflow: visible;/)
+  assert.match(css, /\.cosmos-account-activity__tx \{[^}]*overflow: visible;/)
+  assert.match(css, /@media \(max-width: 760px\)[\s\S]*\.cosmos-account-activity__table-wrap \{ overflow-x: auto; \}/)
 })
 
 test('activity rows keep native table cells and continuous delegation-style separators', () => {
