@@ -110,6 +110,7 @@ test('endpoint popup stays compact while exposing Auto and paired manual mode', 
   assert.match(component, /Auto is currently using different RPC and API providers/)
   assert.match(component, /Provider health/)
   assert.match(component, /marker = 'Manual · '/)
+  assert.match(component, /Height ·/)
   assert.doesNotMatch(component, /Reachable only means/)
   assert.doesNotMatch(component, /blockHeight/)
   assert.match(component, /onDiagnostics\?\.\(data\)/)
