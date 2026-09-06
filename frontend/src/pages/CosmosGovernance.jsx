@@ -3,6 +3,7 @@ import { useCosmosResource } from '../hooks/useCosmosResource'
 import '../styles/cosmos-governance.css'
 
 const TABS = ['all', 'voting', 'deposit', 'passed', 'rejected', 'failed']
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const label = (value) => value === 'all' ? 'All' : value[0].toUpperCase() + value.slice(1)
 
 const typeTone = (value) => {
@@ -28,10 +29,12 @@ const dateValue = (value) => {
   if (!value) return { date: '—', time: null }
   const parsed = new Date(value)
   if (Number.isNaN(parsed.getTime())) return { date: '—', time: null }
-  return {
-    date: parsed.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' }),
-    time: parsed.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' }),
-  }
+  const day = String(parsed.getUTCDate()).padStart(2, '0')
+  const month = MONTHS[parsed.getUTCMonth()]
+  const year = parsed.getUTCFullYear()
+  const hours = String(parsed.getUTCHours()).padStart(2, '0')
+  const minutes = String(parsed.getUTCMinutes()).padStart(2, '0')
+  return { date: `${day} ${month} ${year}`, time: `${hours}:${minutes} UTC` }
 }
 
 const tallyPercentages = (tally) => {
@@ -116,12 +119,12 @@ export function CosmosGovernance({ network }) {
       <div className="cosmos-validator-search"><input type="search" aria-label="Search governance proposals" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search proposal id, title or type" />{query && <button className="cosmos-validator-search__clear" type="button" onClick={() => setQuery('')} aria-label="Clear governance search">×</button>}</div>
     </div>
 
-    <div className="table-scroll cosmos-governance__table"><table className="data-table"><thead><tr><th>Proposal</th><th>Title</th><th>Type</th><th>Status</th><th>Voting end</th><th>Vote split</th></tr></thead><tbody>
+    <div className="table-scroll cosmos-governance__table"><table className="data-table"><thead><tr><th>#</th><th>Title</th><th>Type</th><th>Status</th><th>Voting end</th><th>Vote split</th></tr></thead><tbody>
       {proposals.length ? proposals.map((proposal) => {
         const end = dateValue(proposal.voting_end_time)
         return <tr key={proposal.proposal_id}>
-          <td><span className="accent-value mono cosmos-governance__proposal-id">#{proposal.proposal_id}</span></td>
-          <td><strong className="cosmos-governance__title">{proposal.title}</strong></td>
+          <td><span className="cosmos-governance__proposal-id">{proposal.proposal_id}</span></td>
+          <td><strong className="cosmos-governance__title" title={proposal.title}>{proposal.title}</strong></td>
           <td><span className={`cosmos-gov-type cosmos-gov-type--${typeTone(proposal.proposal_type)}`}>{proposal.proposal_type}</span></td>
           <td><span className={`cosmos-gov-status cosmos-gov-status--${statusTone(proposal.status)}`}>{label(proposal.status)}</span></td>
           <td><span className="cosmos-governance__date">{end.date}</span>{end.time && <small>{end.time}</small>}</td>
