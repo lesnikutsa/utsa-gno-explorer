@@ -1,37 +1,41 @@
-.cosmos-tx-tooltip {
+.cosmos-tx-tooltip,
+.cosmos-data-tooltip {
   position: relative;
   z-index: 1;
+  display: inline-block;
   overflow: visible;
 }
 
 .cosmos-tx-tooltip[data-tooltip]::before,
-.cosmos-tx-tooltip[data-tooltip]::after {
+.cosmos-tx-tooltip[data-tooltip]::after,
+.cosmos-data-tooltip[data-tooltip]::before,
+.cosmos-data-tooltip[data-tooltip]::after {
   position: absolute;
-  right: 0;
-  left: auto;
+  left: 50%;
   z-index: 80;
   pointer-events: none;
   opacity: 0;
-  transform: translateY(-3px);
+  transform: translate(-50%, -3px);
   transition: opacity 120ms ease, transform 120ms ease;
 }
 
-.cosmos-tx-tooltip[data-tooltip]::before {
+.cosmos-tx-tooltip[data-tooltip]::before,
+.cosmos-data-tooltip[data-tooltip]::before {
   top: calc(100% + 3px);
-  margin-right: 12px;
   border: 5px solid transparent;
   border-bottom-color: var(--color-border);
   content: '';
 }
 
-.cosmos-tx-tooltip[data-tooltip]::after {
+.cosmos-tx-tooltip[data-tooltip]::after,
+.cosmos-data-tooltip[data-tooltip]::after {
   top: calc(100% + 12px);
   width: max-content;
   max-width: min(460px, calc(100vw - 40px));
   padding: 7px 9px;
   border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: var(--color-card);
+  background: var(--color-popover);
   box-shadow: 0 7px 20px var(--color-shadow);
   color: var(--color-text-bright);
   content: attr(data-tooltip);
@@ -44,20 +48,59 @@
 }
 
 .cosmos-tx-tooltip[data-tooltip]:hover,
-.cosmos-tx-tooltip[data-tooltip]:focus-visible {
+.cosmos-tx-tooltip[data-tooltip]:focus-visible,
+.cosmos-data-tooltip[data-tooltip]:hover,
+.cosmos-data-tooltip[data-tooltip]:focus-visible {
   z-index: 81;
 }
 
 .cosmos-tx-tooltip[data-tooltip]:hover::before,
 .cosmos-tx-tooltip[data-tooltip]:hover::after,
 .cosmos-tx-tooltip[data-tooltip]:focus-visible::before,
-.cosmos-tx-tooltip[data-tooltip]:focus-visible::after {
+.cosmos-tx-tooltip[data-tooltip]:focus-visible::after,
+.cosmos-data-tooltip[data-tooltip]:hover::before,
+.cosmos-data-tooltip[data-tooltip]:hover::after,
+.cosmos-data-tooltip[data-tooltip]:focus-visible::before,
+.cosmos-data-tooltip[data-tooltip]:focus-visible::after {
   opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.cosmos-data-tooltip--right[data-tooltip]::before,
+.cosmos-data-tooltip--right[data-tooltip]::after,
+.cosmos-account-activity .cosmos-tx-tooltip[data-tooltip]::before,
+.cosmos-account-activity .cosmos-tx-tooltip[data-tooltip]::after,
+.cosmos-validator-activity .cosmos-tx-tooltip[data-tooltip]::before,
+.cosmos-validator-activity .cosmos-tx-tooltip[data-tooltip]::after {
+  right: 0;
+  left: auto;
+  transform: translateY(-3px);
+}
+
+.cosmos-data-tooltip--right[data-tooltip]::before,
+.cosmos-account-activity .cosmos-tx-tooltip[data-tooltip]::before,
+.cosmos-validator-activity .cosmos-tx-tooltip[data-tooltip]::before {
+  margin-right: 12px;
+}
+
+.cosmos-data-tooltip--right[data-tooltip]:hover::before,
+.cosmos-data-tooltip--right[data-tooltip]:hover::after,
+.cosmos-data-tooltip--right[data-tooltip]:focus-visible::before,
+.cosmos-data-tooltip--right[data-tooltip]:focus-visible::after,
+.cosmos-account-activity .cosmos-tx-tooltip[data-tooltip]:hover::before,
+.cosmos-account-activity .cosmos-tx-tooltip[data-tooltip]:hover::after,
+.cosmos-account-activity .cosmos-tx-tooltip[data-tooltip]:focus-visible::before,
+.cosmos-account-activity .cosmos-tx-tooltip[data-tooltip]:focus-visible::after,
+.cosmos-validator-activity .cosmos-tx-tooltip[data-tooltip]:hover::before,
+.cosmos-validator-activity .cosmos-tx-tooltip[data-tooltip]:hover::after,
+.cosmos-validator-activity .cosmos-tx-tooltip[data-tooltip]:focus-visible::before,
+.cosmos-validator-activity .cosmos-tx-tooltip[data-tooltip]:focus-visible::after {
   transform: translateY(0);
 }
 
 @media (max-width: 560px) {
-  .cosmos-tx-tooltip[data-tooltip]::after {
+  .cosmos-tx-tooltip[data-tooltip]::after,
+  .cosmos-data-tooltip[data-tooltip]::after {
     max-width: calc(100vw - 28px);
     white-space: normal;
   }
