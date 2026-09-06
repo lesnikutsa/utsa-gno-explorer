@@ -14,6 +14,12 @@
   background: var(--color-surface-subtle);
 }
 
+/* Match the account Balance / Delegated / Rewards / Unbonding hover behavior,
+   but only for the four Vote Results subtiles. */
+.cosmos-governance-detail .cosmos-governance-detail__vote-metric:hover {
+  background: var(--color-overlay-hover);
+}
+
 .cosmos-governance-detail .cosmos-governance-detail__description-body {
   background: transparent;
 }
