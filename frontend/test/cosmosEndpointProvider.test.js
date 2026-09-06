@@ -40,7 +40,7 @@ const withBrowserStorage = async (callback) => {
   }
 }
 
-test('manual provider rewrites only Cosmos network API requests to a private alias', async () => {
+test('manual provider rewrites only provider-backed Cosmos network API requests', async () => {
   await withBrowserStorage(async ({ events }) => {
     const canonical = '/api/networks/atomone-mainnet/overview'
     assert.equal(cosmosApiNetworkId(canonical), 'atomone-mainnet')
@@ -58,6 +58,10 @@ test('manual provider rewrites only Cosmos network API requests to a private ali
       rewriteCosmosApiUrl('/api/networks/atomone-mainnet/endpoint-status'),
       '/api/networks/atomone-mainnet/endpoint-status',
     )
+    assert.equal(
+      rewriteCosmosApiUrl('/api/networks/atomone-mainnet/market/history'),
+      '/api/networks/atomone-mainnet/market/history',
+    )
     assert.equal(rewriteCosmosApiUrl('/api/network'), '/api/network')
     assert.equal(events.at(-1)?.detail?.providerId, 'utsa')
 
@@ -67,19 +71,24 @@ test('manual provider rewrites only Cosmos network API requests to a private ali
   })
 })
 
-test('disabled browser storage safely falls back to Auto mode', async () => {
+test('disabled browser storage keeps an in-memory manual choice in the current tab', async () => {
   const originalWindow = globalThis.window
-  globalThis.window = {}
+  globalThis.window = {
+    dispatchEvent: () => true,
+  }
   Object.defineProperty(globalThis.window, 'localStorage', {
     configurable: true,
     get() { throw new Error('disabled') },
   })
   try {
     assert.equal(getCosmosEndpointProvider('atomone-mainnet'), 'auto')
+    setCosmosEndpointProvider('atomone-mainnet', 'itrocket')
+    assert.equal(getCosmosEndpointProvider('atomone-mainnet'), 'itrocket')
     assert.equal(
       rewriteCosmosApiUrl('/api/networks/atomone-mainnet/blocks'),
-      '/api/networks/atomone-mainnet/blocks',
+      '/api/networks/atomone-mainnet-provider-itrocket/blocks',
     )
+    setCosmosEndpointProvider('atomone-mainnet', 'auto')
   } finally {
     if (originalWindow === undefined) delete globalThis.window
     else globalThis.window = originalWindow
@@ -96,7 +105,10 @@ test('endpoint popup exposes Auto, paired manual mode, mixed routing, and bounde
   assert.match(component, /<strong>Auto<\/strong>/)
   assert.match(component, /Pin this RPC \+ API pair/)
   assert.match(component, /Manual pair · no cross-provider fallback/)
+  assert.match(component, /RPC status/)
+  assert.match(component, /API preference/)
   assert.match(component, /Mixed providers · selected independently by current health and latency/)
+  assert.match(component, /Per-operation fallback may differ/)
   assert.match(component, /Manual mode does not silently switch to another provider/)
   assert.match(component, /window\.setInterval\(load, 30000\)/)
   assert.match(component, /if \(document\.hidden\) return/)
