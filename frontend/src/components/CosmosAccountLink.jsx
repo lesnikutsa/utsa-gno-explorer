@@ -3,7 +3,7 @@ export function CosmosAccountLink({ networkId, address, children, className = ''
   return <a
     className={className || undefined}
     href={`/networks/${encodeURIComponent(networkId)}/accounts/${encodeURIComponent(address)}`}
-    title={title ?? address}
+    title={title || undefined}
     style={{ color: 'inherit', textDecoration: 'none' }}
   >{children ?? address}</a>
 }
