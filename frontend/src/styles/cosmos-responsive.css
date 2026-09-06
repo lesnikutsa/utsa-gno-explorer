@@ -19,7 +19,26 @@
     min-width: 46px;
     text-align: center;
   }
+}
 
+/* Collapsed desktop / medium browser window: keep all seven facts on one row.
+   Give Application and Block history more room because their values are longest. */
+@media (max-width: 1100px) and (min-width: 900px) {
+  .cosmos-node-strip > dl {
+    display: grid;
+    grid-template-columns: .65fr 1.15fr .75fr .8fr .85fr 1.55fr .9fr;
+  }
+
+  .cosmos-node-strip > dl > div {
+    min-width: 0;
+    flex: none;
+    padding-right: 9px;
+    padding-left: 9px;
+  }
+}
+
+/* Smaller tablet widths still need two balanced rows. */
+@media (max-width: 899px) and (min-width: 761px) {
   .cosmos-node-strip > dl {
     display: grid;
     grid-template-columns: repeat(12, minmax(0, 1fr));
