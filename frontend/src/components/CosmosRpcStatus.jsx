@@ -104,7 +104,7 @@ export function CosmosRpcStatus({ source, pool = [] }) {
   return <div className="rpc-pool" ref={root} onPointerEnter={(event) => { cancelClose(); if (event.pointerType === 'mouse') setOpen(true) }} onPointerLeave={delayedClose}>
     <button type="button" className={`rpc-pool__trigger rpc-pool__trigger--${triggerHealthy ? 'success' : 'warning'}`} onFocus={() => setOpen(true)} onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-controls="cosmos-rpc-pool" aria-label="RPC and API endpoint mode"><span className="rpc-pool__compact">{compact}</span></button>
     {open && <div className="rpc-pool__popover cosmos-endpoint-mode" id="cosmos-rpc-pool" role="region" aria-label="RPC and API endpoints" onPointerEnter={cancelClose} onPointerLeave={delayedClose}>
-      <div className="rpc-pool__heading"><strong>Endpoint mode</strong><span>{providerMode === 'auto' ? 'Automatic capability-aware failover' : 'Manual pair · no cross-provider fallback'}</span></div>
+      <div className="rpc-pool__heading"><strong>Endpoint mode</strong><span>{providerMode === 'auto' ? 'Automatic bounded failover · capability-aware' : 'Manual pair · no cross-provider fallback'}</span></div>
       {providers.length > 0 ? <div className="cosmos-endpoint-mode__choices" role="radiogroup" aria-label="Endpoint provider mode">
         <label className={`cosmos-endpoint-mode__choice ${providerMode === 'auto' ? 'is-selected' : ''}`}><input type="radio" name="cosmos-endpoint-provider" value="auto" checked={providerMode === 'auto'} onChange={() => chooseProvider('auto')} /><span><strong>Auto</strong><small>RPC and API may use different healthy providers</small></span></label>
         {providers.map((provider) => <label className={`cosmos-endpoint-mode__choice ${providerMode === provider.id ? 'is-selected' : ''}`} key={provider.id}><input type="radio" name="cosmos-endpoint-provider" value={provider.id} checked={providerMode === provider.id} onChange={() => chooseProvider(provider.id)} /><span><strong>{provider.label}</strong><small>Pin this RPC + API pair</small></span></label>)}
@@ -115,7 +115,8 @@ export function CosmosRpcStatus({ source, pool = [] }) {
 
       {providers.length > 0 && <><div className="rpc-pool__heading cosmos-endpoint-mode__health-heading"><strong>Provider health</strong><span>{providers.length} configured pairs</span></div><div className="rpc-pool__list">{providers.map((provider) => {
         const healthy = endpointHealthy(provider.rpc) && endpointHealthy(provider.api)
-        return <div className="rpc-pool__row cosmos-endpoint-mode__health" key={provider.id}><span className="rpc-pool__host">{provider.label}</span><span className="rpc-pool__latency">RPC {latency(provider.rpc.latency_ms)} · API {latency(provider.api.latency_ms)}</span><span className={`rpc-pool__state rpc-pool__state--${healthy ? 'healthy' : 'degraded'}`}>{healthy ? 'Healthy' : 'Degraded'}</span></div>
+        const preferred = provider.id === diagnostics?.preferred_rpc_provider_id || provider.id === diagnostics?.preferred_api_provider_id
+        return <div className="rpc-pool__row cosmos-endpoint-mode__health" key={provider.id}><span className="rpc-pool__host">{provider.label}</span><span className="rpc-pool__latency">RPC {latency(provider.rpc.latency_ms)} · API {latency(provider.api.latency_ms)}</span><span className={`rpc-pool__state rpc-pool__state--${healthy ? 'healthy' : 'degraded'}`}>{preferred ? 'Selected · ' : ''}{healthy ? 'Healthy' : 'Degraded'}</span></div>
       })}</div></>}
       {diagnosticsError && <div className="cosmos-endpoint-mode__notice">Endpoint diagnostics are temporarily unavailable. Current Explorer data remains usable.</div>}
     </div>}
