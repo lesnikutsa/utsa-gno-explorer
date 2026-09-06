@@ -24,6 +24,16 @@ def _service(request: Request, network_id: str):
     return services[network_id]
 
 
+@router.get("/api/networks/{network_id}/endpoint-status")
+async def get_cosmos_endpoint_status(request: Request, network_id: str):
+    service = _service(request, network_id)
+    try:
+        return await service.endpoint_status()
+    except Exception:
+        LOGGER.info("Cosmos endpoint status failed network=%s reason=upstream_unavailable", network_id)
+        raise HTTPException(status_code=503, detail="Endpoint status is temporarily unavailable") from None
+
+
 @router.get(
     "/api/networks/{network_id}/accounts/{address}",
     response_model=CosmosAccountDetailResponse,
