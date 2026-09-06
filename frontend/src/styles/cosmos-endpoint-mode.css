@@ -25,7 +25,7 @@
 .cosmos-endpoint-mode__choice:hover,
 .cosmos-endpoint-mode__choice.is-selected {
   border-color: var(--color-accent);
-  background: var(--color-row-hover);
+  background: var(--color-card-hover);
 }
 
 .cosmos-endpoint-mode__choice input {
