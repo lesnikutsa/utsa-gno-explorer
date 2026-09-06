@@ -78,10 +78,10 @@ const weightLabel = (weight) => {
   return `${percent.toFixed(percent === Math.trunc(percent) ? 0 : 2)}%`
 }
 
-function VoteHero({ tally }) {
+function VoteHero({ tally, proposalId }) {
   const result = useMemo(() => tallyPercentages(tally), [tally])
   return <section className="panel cosmos-governance-detail__vote-panel">
-    <div className="panel__heading"><h2>Vote Results</h2></div>
+    <div className="panel__heading cosmos-governance-detail__vote-heading"><h2>Vote Results <span>Proposal #{proposalId}</span></h2></div>
     {!result ? <p className="muted cosmos-governance-detail__empty-tally">No tally is available for this proposal yet.</p> : <>
       <div className="cosmos-governance-detail__vote-metrics">
         {CHOICES.map(([key, text, tone], index) => <article className={`cosmos-governance-detail__vote-metric ${tone}`} key={key}>
@@ -250,11 +250,11 @@ export function CosmosGovernanceDetail({ network, proposalId }) {
     <a className="cosmos-back block-detail__back" href={`/networks/${network.id}/governance`}>← Back to Governance</a>
 
     <header className="cosmos-governance-detail__hero">
-      <div className="cosmos-governance-detail__hero-title"><span>Proposal #{proposal.proposal_id}</span><h1>{proposal.title}</h1></div>
+      <div className="cosmos-governance-detail__hero-title"><h1>{proposal.title}</h1></div>
       <div className="cosmos-governance-detail__hero-badges"><span className={`cosmos-gov-type cosmos-gov-type--${typeTone(proposal.proposal_type)}`}>{proposal.proposal_type}</span><span className={`cosmos-gov-status cosmos-gov-status--${statusTone(proposal.status)}`}>{label(proposal.status)}</span></div>
     </header>
 
-    <VoteHero tally={proposal.tally} />
+    <VoteHero tally={proposal.tally} proposalId={proposal.proposal_id} />
     <ProposalCountdown proposal={proposal} />
 
     <section className="panel cosmos-governance-detail__details">
