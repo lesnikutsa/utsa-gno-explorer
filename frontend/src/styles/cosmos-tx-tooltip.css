@@ -6,6 +6,11 @@
   overflow: visible;
 }
 
+.cosmos-blocks-table .cosmos-table td:nth-child(2),
+.cosmos-blocks-table .cosmos-table td:nth-child(5) {
+  overflow: visible;
+}
+
 .cosmos-tx-tooltip[data-tooltip]::before,
 .cosmos-tx-tooltip[data-tooltip]::after,
 .cosmos-data-tooltip[data-tooltip]::before,
