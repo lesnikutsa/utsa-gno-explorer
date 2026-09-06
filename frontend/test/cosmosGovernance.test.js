@@ -4,7 +4,9 @@ import test from 'node:test'
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
 const page = read('../src/pages/CosmosGovernance.jsx')
+const detail = read('../src/pages/CosmosGovernanceDetail.jsx')
 const styles = read('../src/styles/cosmos-governance.css')
+const detailStyles = read('../src/styles/cosmos-governance-detail.css')
 const app = read('../src/App.jsx')
 
 test('Cosmos governance reuses validator summary, tabs and search structure', () => {
@@ -29,9 +31,12 @@ test('Cosmos governance keeps search compact when the viewport narrows', () => {
   assert.match(mobileSearchRule, /flex:\s*0 0 34px;/)
 })
 
-test('Cosmos governance table mirrors validator numbering and keeps titles bounded', () => {
+test('Cosmos governance table mirrors validator numbering, bounds titles, and links both to proposal detail', () => {
   assert.match(page, /<th>#<\/th><th>Title<\/th><th>Type<\/th><th>Status<\/th><th>Voting end<\/th><th>Vote split<\/th>/)
   assert.match(page, /className="cosmos-governance__proposal-id">\{proposal\.proposal_id\}/)
+  assert.match(page, /const detailHref = `\/networks\/\$\{network\.id\}\/governance\/\$\{proposal\.proposal_id\}`/)
+  assert.match(page, /className="cosmos-governance__proposal-link" href=\{detailHref\}/)
+  assert.match(page, /className="cosmos-governance__title-link" href=\{detailHref\}/)
   assert.match(page, /cosmos-governance__title-tooltip/)
   assert.match(page, /data-tooltip=\{titleTooltip \|\| undefined\}/)
   assert.doesNotMatch(page, /title=\{proposal\.title\}/)
@@ -51,6 +56,8 @@ test('Cosmos governance dates are deterministic English UTC rather than browser 
   assert.match(page, /getUTCHours\(\)/)
   assert.match(page, /UTC`/)
   assert.doesNotMatch(page, /toLocaleDateString\(undefined/)
+  assert.match(detail, /const MONTHS = \['Jan', 'Feb', 'Mar'/)
+  assert.match(detail, /getUTCSeconds\(\)/)
 })
 
 test('Cosmos governance keeps proposal status and readable centered Gno-inspired vote split visualisation', () => {
@@ -71,9 +78,38 @@ test('Cosmos governance keeps proposal status and readable centered Gno-inspired
   assert.match(styles, /\.cosmos-gov-status--passed/)
 })
 
-test('Cosmos governance has its own network route and leaves legacy Gno governance routes intact', () => {
+test('Cosmos governance detail makes vote percentages prominent and the split bar full width', () => {
+  assert.match(detail, /<VoteHero tally=\{proposal\.tally\}/)
+  assert.match(detail, /cosmos-governance-detail__vote-metrics/)
+  assert.match(detail, /result\.percentages\[key\]\.toFixed\(2\)/)
+  assert.match(detail, /cosmos-governance-detail__vote-bar/)
+  assert.match(detailStyles, /\.cosmos-governance-detail__vote-metric > strong \{[^}]*font-size:\s*clamp\(24px, 2\.5vw, 36px\)/)
+  assert.match(detailStyles, /\.cosmos-governance-detail__vote-bar \{[^}]*width:\s*calc\(100% - 32px\);[^}]*height:\s*12px;/)
+  assert.match(detailStyles, /\.cosmos-governance-detail__vote-bar \.is-yes \{ background: var\(--color-success\); \}/)
+})
+
+test('Cosmos governance detail loads voters only when expanded and never uses native white title tooltips', () => {
+  assert.match(detail, /showVoters && <VotersList network=\{network\} proposalId=\{proposal\.proposal_id\}/)
+  assert.match(detail, /useCosmosResource\(`\/api\/networks\/\$\{network\.id\}\/governance\/\$\{proposalId\}\/votes`, 0\)/)
+  assert.match(detail, /CopyButton value=\{vote\.voter\} label="voter address" showTitle=\{false\}/)
+  assert.match(detail, /cosmos-governance-detail__vote-choice/)
+  assert.doesNotMatch(detail, /\stitle=/)
+})
+
+test('Cosmos governance detail exposes description and collapsible technical data without touching Gno detail', () => {
+  assert.match(detail, /Proposal Details/)
+  assert.match(detail, /<h2>Description<\/h2>/)
+  assert.match(detail, /Technical details/)
+  assert.match(detail, /<pre>\{message\.content\}<\/pre>/)
+  assert.match(detail, /showTitle=\{false\}/)
+})
+
+test('Cosmos governance has list and proposal routes while legacy Gno governance routes stay intact', () => {
   assert.match(app, /blocks\|transactions\|validators\|governance/)
   assert.match(app, /<CosmosGovernance network=\{network\}/)
+  assert.match(app, /<CosmosGovernanceDetail network=\{network\} proposalId=\{rawProposalId\}/)
+  assert.match(app, /rawProposalId && \(!\/\^\[1-9\]/)
   assert.match(app, /if \(path === '\/governance'/)
   assert.match(app, /<Governance governancePage=\{governancePage\}/)
+  assert.match(app, /<GovernanceDetail governanceDetail=\{governanceDetail\}/)
 })
