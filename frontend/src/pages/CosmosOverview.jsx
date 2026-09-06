@@ -7,6 +7,7 @@ import { ParameterHelp } from '../components/ParameterHelp'
 import { CosmosRpcStatus } from '../components/CosmosRpcStatus'
 import { useCosmosResource } from '../hooks/useCosmosResource'
 import { shortAddress } from '../utils/address'
+import { getCosmosEndpointProvider } from '../utils/cosmosEndpointProvider'
 import { formatCompactDecimal, formatProtocolDuration, formatProtocolPercent, formatTokenAmount } from '../utils/cosmosFormat'
 import { cosmosLivenessRisk, formatApproximateDuration } from '../utils/cosmosSlashing'
 import { relativeTime } from '../utils/time'
@@ -32,6 +33,13 @@ const Label = ({ children }) => <span>{children}{help[children] && <ParameterHel
 const Detail = ({ label, value, raw }) => <div><dt><Label>{label}</Label></dt><dd title={raw === undefined || raw === null ? undefined : String(raw)}>{value}</dd></div>
 const Advanced = ({ children }) => <details className="cosmos-advanced"><summary>More parameters</summary><dl className="cosmos-metrics">{children}</dl></details>
 function ParameterCard({ title, value, children }) { return <section className="panel cosmos-parameter-card"><div className="panel__heading"><h2>{title}</h2></div>{sectionUnavailable(value) ? <p className="cosmos-quiet-state">Section unavailable</p> : children}</section> }
+
+const formatRetainedBlocks = (count) => {
+  if (!Number.isInteger(count) || count <= 0) return 'unknown'
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(2).replace(/\.00$/, '')}M blocks`
+  if (count >= 1_000) return `${(count / 1_000).toFixed(count >= 100_000 ? 1 : 2).replace(/\.0+$/, '')}K blocks`
+  return `${count.toLocaleString()} blocks`
+}
 
 function MarketPanel({ network, market, marketError, history }) {
   const chartPoints = (history?.points || []).map((point) => ({ timestamp: Number(point.timestamp), price: Number(point.price) })).filter((point) => Number.isFinite(point.timestamp) && point.timestamp > 0 && Number.isFinite(point.price))
@@ -88,9 +96,26 @@ export function CosmosOverviewView({ data, market, marketError, history, blocks 
   const firstBlockHeight = blocks[0]?.height ?? null
   const previousHeight = useRef(null); const previousFirst = useRef(null)
   const [updatedHeight, setUpdatedHeight] = useState(null); const [insertedHeight, setInsertedHeight] = useState(null)
+  const [endpointDiagnostics, setEndpointDiagnostics] = useState(null)
+  const [endpointProviderMode, setEndpointProviderMode] = useState(() => getCosmosEndpointProvider(network.id))
   useEffect(() => { const timers = []; if (previousHeight.current !== null && latestHeight !== previousHeight.current) { setUpdatedHeight(latestHeight); timers.push(setTimeout(() => setUpdatedHeight(null), 720)) } if (previousFirst.current !== null && firstBlockHeight !== previousFirst.current) { setInsertedHeight(firstBlockHeight); timers.push(setTimeout(() => setInsertedHeight(null), 900)) } previousHeight.current = latestHeight; previousFirst.current = firstBlockHeight; return () => timers.forEach(clearTimeout) }, [firstBlockHeight, latestHeight])
+  useEffect(() => { setEndpointProviderMode(getCosmosEndpointProvider(network.id)); setEndpointDiagnostics(null) }, [network.id])
   const status = stale ? 'degraded' : data.network.operational_state || 'unavailable'
   const assets = data.assets_and_supply?.assets || []
+  const endpointProviders = endpointDiagnostics?.network_id === network.id ? (endpointDiagnostics.providers || []) : []
+  const rpcProvider = endpointProviderMode === 'auto'
+    ? endpointProviders.find((provider) => provider.rpc?.host === data.network.rpc_status_source)
+      || endpointProviders.find((provider) => provider.id === endpointDiagnostics?.preferred_rpc_provider_id)
+    : endpointProviders.find((provider) => provider.id === endpointProviderMode)
+  const selectedTxIndex = rpcProvider?.rpc?.tx_index || data.network.tx_index || 'unknown'
+  const historyFloor = rpcProvider?.rpc?.lowest_available_height
+  const historyHead = rpcProvider?.rpc?.height
+  const retainedBlocks = Number.isInteger(historyFloor) && Number.isInteger(historyHead) && historyHead >= historyFloor
+    ? historyHead - historyFloor + 1 : null
+  const blockHistory = retainedBlocks ? formatRetainedBlocks(retainedBlocks) : data.network.block_history_state
+  const blockHistoryRaw = retainedBlocks
+    ? `#${historyFloor.toLocaleString()} – #${historyHead.toLocaleString()} · ${retainedBlocks.toLocaleString()} blocks`
+    : null
   const blockColumns = useMemo(() => [
     { key: 'height', label: 'Height', render: (row) => <a className="table-link" href={`/networks/${network.id}/blocks/${row.height}`}><span className="accent-value mono">#{BigInt(row.height).toLocaleString()}</span></a> },
     { key: 'timestamp', label: 'Time', render: (row) => relativeTime(row.timestamp) },
@@ -103,7 +128,7 @@ export function CosmosOverviewView({ data, market, marketError, history, blocks 
   const validatorColumns = [{ key: 'moniker', label: 'Validator', render: (row) => <CosmosValidatorIdentity moniker={row.moniker} address={row.operator_address || row.consensus_address} imageSrc={row.avatar_url} showTitles={false} href={row.operator_address ? `/networks/${network.id}/validators/${encodeURIComponent(row.operator_address)}` : undefined} /> }, { key: 'missed_blocks_counter', label: 'Liveness risk', render: (row) => { const risk = riskFor(row); return <span className="cosmos-risk"><span className="cosmos-risk__summary"><strong className={missedCountClass(row.missed_blocks_counter)}>{row.missed_blocks_counter.toLocaleString()} missed</strong>{risk && <><span className="cosmos-risk__secondary">Budget left: {risk.budgetLeft.toLocaleString()}</span><span className="cosmos-risk__secondary">Penalty ETA: {risk.overThreshold ? 'threshold exceeded' : formatApproximateDuration(risk.seconds)}</span></>}<ParameterHelp label="earliest downtime penalty">Estimate assumes future missed blocks continue increasing the rolling missed-block counter. Exact penalty time may change as older misses leave the signing window.</ParameterHelp></span>{risk && <span className={`cosmos-risk__bar cosmos-risk__bar--${risk.tone}`}><i style={{ width: `${risk.usage * 100}%` }} /></span>}</span> } }]
   const staking = data.staking; const mint = data.mint; const slashing = data.slashing; const governance = data.governance; const distribution = data.distribution
   return <div className="cosmos-overview">
-    <section className="status-grid" aria-label="Network summary"><Card eyebrow="Latest Block" icon={BlocksIcon} value={`#${BigInt(latestHeight).toLocaleString()}`} meta="Auto-refresh every 5s" href={`/networks/${network.id}/blocks/${latestHeight}`} updating={updatedHeight === latestHeight} /><Card eyebrow="Network Status" icon={NetworkIcon} value={status.charAt(0).toUpperCase() + status.slice(1)} tone={status === 'healthy' ? 'healthy' : status === 'degraded' || status === 'syncing' ? 'degraded' : 'error'} meta={data.network.catching_up ? 'Node is catching up' : stale ? 'Showing last successful response' : 'API connection status'} /><Card eyebrow="Active Validators" icon={ValidatorsIcon} value={sectionUnavailable(staking) ? 'Unavailable' : staking.active_validator_count.toLocaleString()} meta="Current validator set" /><Card eyebrow="Chain ID" icon={ChainIcon} value={network.expectedChainId} meta={<CosmosRpcStatus source={data.network.rpc_status_source} pool={data.network.rpc_pool} />} /></section>
+    <section className="status-grid" aria-label="Network summary"><Card eyebrow="Latest Block" icon={BlocksIcon} value={`#${BigInt(latestHeight).toLocaleString()}`} meta="Auto-refresh every 5s" href={`/networks/${network.id}/blocks/${latestHeight}`} updating={updatedHeight === latestHeight} /><Card eyebrow="Network Status" icon={NetworkIcon} value={status.charAt(0).toUpperCase() + status.slice(1)} tone={status === 'healthy' ? 'healthy' : status === 'degraded' || status === 'syncing' ? 'degraded' : 'error'} meta={data.network.catching_up ? 'Node is catching up' : stale ? 'Showing last successful response' : 'API connection status'} /><Card eyebrow="Active Validators" icon={ValidatorsIcon} value={sectionUnavailable(staking) ? 'Unavailable' : staking.active_validator_count.toLocaleString()} meta="Current validator set" /><Card eyebrow="Chain ID" icon={ChainIcon} value={network.expectedChainId} meta={<CosmosRpcStatus source={data.network.rpc_status_source} pool={data.network.rpc_pool} onDiagnostics={setEndpointDiagnostics} onProviderMode={setEndpointProviderMode} />} /></section>
     <div className="dashboard-grid cosmos-dashboard-grid"><section className="panel dashboard-grid__blocks"><div className="panel__heading"><h2>Latest Blocks</h2>{blocksStale ? <span className="panel__meta cosmos-stale">Stale · last successful data</span> : <span className="panel__meta panel__meta--live"><span className="live-dot" />Live · every 5s</span>}</div><DataTable columns={blockColumns} rows={blocks.slice(0, 7)} rowKey={(row) => row.height} rowClassName={(row, index) => insertedHeight === null ? '' : index === 0 && row.height === insertedHeight ? 'is-new-row' : 'is-settling-row'} emptyMessage={blocksError ? 'Blocks are currently unavailable.' : 'No locally available blocks.'} /></section><section className="panel dashboard-grid__validators"><div className="panel__heading"><h2>Validators by Missed Blocks</h2><span className="panel__meta">Active set</span></div><DataTable columns={validatorColumns} rows={validators} rowKey={(row) => row.consensus_address} emptyMessage="No active validator misses reported." /></section></div>
     <MarketPanel network={network} market={market} marketError={marketError} history={history} />
     <div className="cosmos-parameters">
@@ -114,6 +139,6 @@ export function CosmosOverviewView({ data, market, marketError, history, blocks 
       <ParameterCard title="Security / Slashing" value={slashing}><dl className="cosmos-metrics"><Detail label="Signed blocks window" value={slashing?.signed_blocks_window?.toLocaleString() ?? '—'} /><Detail label="Allowed misses" value={slashing?.allowed_missed_threshold?.toLocaleString() ?? '—'} /><Detail label="Minimum signed" value={formatProtocolPercent(slashing?.minimum_signed_per_window)} /></dl><Advanced><Detail label="Downtime jail" value={formatProtocolDuration(slashing?.downtime_jail_duration)} /><Detail label="Downtime slash" value={formatProtocolPercent(slashing?.downtime_slash_fraction)} /><Detail label="Double-sign slash" value={formatProtocolPercent(slashing?.double_sign_slash_fraction)} /></Advanced></ParameterCard>
       <ParameterCard title="Distribution / Economics" value={distribution}><dl className="cosmos-metrics"><Detail label="Community tax" value={formatProtocolPercent(distribution?.community_tax)} /><Detail label="Withdraw address" value={distribution?.withdraw_address_enabled ? 'Enabled' : 'Disabled'} />{distribution?.nakamoto_bonus && <Detail label="Nakamoto Bonus" value={distribution.nakamoto_bonus.enabled ? 'Enabled' : 'Disabled'} />}</dl>{distribution?.nakamoto_bonus && <Advanced><Detail label="Bonus coefficient" value={`${distribution.nakamoto_bonus.minimum_coefficient} – ${distribution.nakamoto_bonus.maximum_coefficient}`} /><Detail label="Bonus period" value={distribution.nakamoto_bonus.period_epoch_identifier} /></Advanced>}</ParameterCard>
     </div>
-    <section className="panel cosmos-node-strip"><div className="panel__heading"><h2>Node / Network</h2></div><dl><Detail label="Tx index" value={data.network.tx_index} /><Detail label="Application" value={[data.network.application_name, data.network.application_version].filter(Boolean).join(' ') || '—'} /><Detail label="SDK" value={data.network.sdk_version || '—'} /><Detail label="CometBFT" value={data.network.cometbft_version || '—'} /><Detail label="Node version" value={data.network.node_version || '—'} /><Detail label="Block history" value={data.network.block_history_state} /><Detail label="Historical state" value={data.network.historical_state} /></dl></section>
+    <section className="panel cosmos-node-strip"><div className="panel__heading"><h2>Node / Network</h2>{rpcProvider && <span className="panel__meta">RPC: {rpcProvider.label}</span>}</div><dl><Detail label="Tx index" value={selectedTxIndex} /><Detail label="Application" value={[data.network.application_name, data.network.application_version].filter(Boolean).join(' ') || '—'} /><Detail label="SDK" value={data.network.sdk_version || '—'} /><Detail label="CometBFT" value={data.network.cometbft_version || '—'} /><Detail label="Node version" value={data.network.node_version || '—'} /><Detail label="Block history" value={blockHistory} raw={blockHistoryRaw} /><Detail label="Historical state" value={data.network.historical_state} /></dl></section>
   </div>
 }
