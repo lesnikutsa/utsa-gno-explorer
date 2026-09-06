@@ -1,0 +1,105 @@
+import asyncio
+from types import SimpleNamespace
+from urllib.parse import urlsplit
+
+from api.cosmos.cache import RequestCache
+from api.cosmos.registry import (CANONICAL_NETWORKS, NETWORKS, get_network,
+                                 provider_alias_id, public_networks)
+from api.cosmos.service import CosmosService
+
+
+def candidate(endpoint, height, latency):
+    return SimpleNamespace(endpoint=endpoint, height=height, latency=latency)
+
+
+def test_atomone_declares_three_ordered_rpc_api_pairs():
+    definition = CANONICAL_NETWORKS["atomone-mainnet"]
+    assert [provider.id for provider in definition.endpoint_providers] == [
+        "utsa", "itrocket", "publicnode"]
+    assert [provider.label for provider in definition.endpoint_providers] == [
+        "UTSA", "IT Rocket", "PublicNode"]
+    assert tuple(provider.rpc_endpoint for provider in definition.endpoint_providers) == definition.transport.rpc_endpoints
+    assert tuple(provider.rest_endpoint for provider in definition.endpoint_providers) == definition.transport.rest_endpoints
+    assert len(definition.endpoint_providers) == 3
+
+
+def test_manual_provider_aliases_pin_exactly_one_pair_and_stay_private():
+    canonical = CANONICAL_NETWORKS["atomone-mainnet"]
+    for provider in canonical.endpoint_providers:
+        alias_id = provider_alias_id("atomone-mainnet", provider.id)
+        alias = get_network(alias_id)
+        assert alias is NETWORKS[alias_id]
+        assert alias.canonical_id == "atomone-mainnet"
+        assert alias.selected_provider_id == provider.id
+        assert alias.transport.rpc_endpoints == (provider.rpc_endpoint,)
+        assert alias.transport.rest_endpoints == (provider.rest_endpoint,)
+        assert len(alias.endpoint_providers) == 1
+
+    public_ids = [item["id"] for item in public_networks()]
+    assert "atomone-mainnet" in public_ids
+    assert all("-provider-" not in network_id for network_id in public_ids)
+
+
+def test_endpoint_status_reports_independent_auto_rpc_and_api_preferences():
+    definition = CANONICAL_NETWORKS["atomone-mainnet"]
+    providers = {provider.id: provider for provider in definition.endpoint_providers}
+    service = object.__new__(CosmosService)
+    service.definition = definition
+    service.cache = RequestCache()
+
+    rpc_candidates = (
+        candidate(providers["publicnode"].rpc_endpoint, 10_000, 0.010),
+        candidate(providers["utsa"].rpc_endpoint, 10_000, 0.020),
+        candidate(providers["itrocket"].rpc_endpoint, 9_999, 0.030),
+    )
+    rest_candidates = (
+        candidate(providers["itrocket"].rest_endpoint, 10_000, 0.015),
+        candidate(providers["utsa"].rest_endpoint, 10_000, 0.025),
+        candidate(providers["publicnode"].rest_endpoint, 10_000, 0.035),
+    )
+
+    async def cached(kind):
+        return rpc_candidates if kind == "rpc" else rest_candidates
+
+    service.adapter = SimpleNamespace(
+        _cached_candidates=cached,
+        _host=lambda endpoint: urlsplit(endpoint).hostname,
+    )
+
+    result = asyncio.run(service.endpoint_status())
+    assert result["mode"] == "auto"
+    assert result["selected_provider_id"] is None
+    assert result["preferred_rpc_provider_id"] == "publicnode"
+    assert result["preferred_api_provider_id"] == "itrocket"
+    assert result["mixed_providers"] is True
+    assert len(result["providers"]) == 3
+    assert all(row["rpc"]["state"] == "healthy" for row in result["providers"])
+    assert all(row["api"]["state"] == "healthy" for row in result["providers"])
+
+
+def test_endpoint_status_keeps_unavailable_side_visible():
+    definition = CANONICAL_NETWORKS["atomone-mainnet"]
+    providers = {provider.id: provider for provider in definition.endpoint_providers}
+    service = object.__new__(CosmosService)
+    service.definition = definition
+    service.cache = RequestCache()
+
+    async def cached(kind):
+        if kind == "rpc":
+            return (candidate(providers["utsa"].rpc_endpoint, 10_000, 0.010),)
+        return (candidate(providers["itrocket"].rest_endpoint, 10_000, 0.020),)
+
+    service.adapter = SimpleNamespace(
+        _cached_candidates=cached,
+        _host=lambda endpoint: urlsplit(endpoint).hostname,
+    )
+
+    result = asyncio.run(service.endpoint_status())
+    rows = {row["id"]: row for row in result["providers"]}
+    assert result["mixed_providers"] is True
+    assert rows["utsa"]["rpc"]["state"] == "healthy"
+    assert rows["utsa"]["api"]["state"] == "unavailable"
+    assert rows["itrocket"]["rpc"]["state"] == "unavailable"
+    assert rows["itrocket"]["api"]["state"] == "healthy"
+    assert rows["publicnode"]["rpc"]["state"] == "unavailable"
+    assert rows["publicnode"]["api"]["state"] == "unavailable"
