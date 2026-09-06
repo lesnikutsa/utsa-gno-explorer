@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { request } from '../services/api'
 import { formatTokenAmount } from '../utils/cosmosFormat'
 import '../styles/cosmos-account-activity.css'
+import '../styles/cosmos-tx-tooltip.css'
 
 const ACTION_LABELS = {
   received: 'Received',
@@ -138,7 +139,7 @@ export function CosmosAccountActivity({ network, address, market }) {
                   <td><strong className={`cosmos-account-activity__action is-${actionTone(item)}`}>{item.success ? (ACTION_LABELS[item.action] || 'Transaction') : `Failed · ${ACTION_LABELS[item.action] || 'Transaction'}`}</strong>{item.type_url && <code className="cosmos-account-activity__type">{item.type_url}</code>}</td>
                   <td><AmountDetail item={item} network={network} market={market} /></td>
                   <td><a className="accent-value cosmos-account-activity__height" href={`/networks/${network.id}/blocks/${item.height}`}>#{item.height.toLocaleString()}</a><small>{utc(item.timestamp)}</small></td>
-                  <td><a className="cosmos-account-activity__tx" href={`/networks/${network.id}/transactions/${item.tx_hash}`} title={item.tx_hash}>{shorten(item.tx_hash, 10, 6)}</a></td>
+                  <td><a className="cosmos-account-activity__tx cosmos-tx-tooltip" href={`/networks/${network.id}/transactions/${item.tx_hash}`} data-tooltip={item.tx_hash} aria-label={`Open transaction ${item.tx_hash}`}>{shorten(item.tx_hash, 10, 6)}</a></td>
                 </tr>)}</tbody>
               </table></div>
               {state.status === 'partial' && <p className="muted cosmos-account-activity__note">Some transaction-index sources are temporarily unavailable.</p>}
