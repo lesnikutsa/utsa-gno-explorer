@@ -5,7 +5,10 @@ import test from 'node:test'
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
 const page = read('../src/pages/CosmosTransactions.jsx')
 const blockDetail = read('../src/pages/CosmosBlockDetail.jsx')
+const validatorDetail = read('../src/pages/CosmosValidatorDetail.jsx')
+const accountActivity = read('../src/components/CosmosAccountActivity.jsx')
 const styles = read('../src/styles/cosmos-transactions.css')
+const tooltipStyles = read('../src/styles/cosmos-tx-tooltip.css')
 const accountStyles = read('../src/styles/cosmos-account-activity.css')
 
 test('Cosmos transaction columns follow Type, hash, time, block, status, fee, gas order', () => {
@@ -21,19 +24,28 @@ test('Cosmos transaction types use scoped badge tones and compact status pills',
 })
 
 test('Cosmos transaction hashes share bright default, accent hover, and larger compact text', () => {
-  assert.match(page, /className="cosmos-tx-hash"/)
+  assert.match(page, /className="cosmos-tx-hash cosmos-tx-tooltip"/)
   assert.match(page, /transactions\/\$\{encodeURIComponent\(row\.tx_hash\)\}/)
-  assert.match(page, /data-tooltip=\{`Transaction hash\\n\$\{row\.tx_hash\}`\}/)
-  assert.doesNotMatch(page, /className="cosmos-tx-hash"[^>]*title=/)
+  assert.match(page, /data-tooltip=\{row\.tx_hash\}/)
+  assert.doesNotMatch(page, /data-tooltip=\{`Transaction hash/)
+  assert.doesNotMatch(page, /className="cosmos-tx-hash cosmos-tx-tooltip"[^>]*title=/)
   assert.match(styles, /\.cosmos-tx-hash \{[^}]*color: var\(--color-text-bright\)[^}]*font-size: 11px/)
   assert.match(styles, /\.cosmos-tx-hash:hover, \.cosmos-tx-hash:focus-visible \{[^}]*color: var\(--color-accent\)/)
   assert.match(styles, /\.cosmos-validator-activity a\.cosmos-validator-activity__tx,[\s\S]*\.cosmos-account-activity a\.cosmos-account-activity__tx \{[^}]*color: var\(--color-text-bright\)[^}]*font-size: 11px/)
   assert.match(accountStyles, /\.cosmos-account-activity__tx:hover, \.cosmos-account-activity__tx:focus-visible \{ color: var\(--color-accent\); \}/)
 })
 
-test('Cosmos transaction hash tooltip is explorer styled and block detail uses the same link semantics', () => {
-  assert.match(styles, /\.cosmos-tx-hash\[data-tooltip\]::after \{[^}]*background: var\(--color-popover\)[^}]*content: attr\(data-tooltip\)/)
-  assert.match(blockDetail, /className="transaction-hash transaction-link mono cosmos-hash-value"/)
-  assert.match(styles, /\.cosmos-block-detail a\.transaction-link\.cosmos-hash-value \{[^}]*color: var\(--color-text-bright\)/)
-  assert.match(styles, /\.cosmos-block-detail a\.transaction-link\.cosmos-hash-value:hover,[\s\S]*color: var\(--color-accent\)/)
+test('Cosmos shortened transaction hashes use one hash-only Explorer tooltip', () => {
+  assert.match(accountActivity, /className="cosmos-account-activity__tx cosmos-tx-tooltip"[^>]*data-tooltip=\{item\.tx_hash\}/)
+  assert.doesNotMatch(accountActivity, /cosmos-account-activity__tx[^>]*title=\{item\.tx_hash\}/)
+  assert.match(validatorDetail, /className="mono cosmos-validator-activity__tx cosmos-tx-tooltip"[^>]*data-tooltip=\{item\.tx_hash\}/)
+  assert.doesNotMatch(validatorDetail, /cosmos-validator-activity__tx[^>]*title=\{item\.tx_hash\}/)
+  assert.match(tooltipStyles, /\.cosmos-tx-tooltip\[data-tooltip\]::after \{[^}]*background: var\(--color-card\)[^}]*color: var\(--color-text-bright\)[^}]*content: attr\(data-tooltip\)/)
+})
+
+test('Block detail full transaction hash uses the same neutral to accent link semantics without a redundant tooltip', () => {
+  assert.match(blockDetail, /className="transaction-hash mono cosmos-hash-value cosmos-tx-full-hash-link"/)
+  assert.doesNotMatch(blockDetail, /cosmos-tx-full-hash-link[^>]*title=\{tx\.hash\}/)
+  assert.match(styles, /\.cosmos-block-detail a\.cosmos-tx-full-hash-link \{[^}]*color: var\(--color-text-bright\)/)
+  assert.match(styles, /\.cosmos-block-detail a\.cosmos-tx-full-hash-link:hover,[\s\S]*color: var\(--color-accent\)/)
 })
