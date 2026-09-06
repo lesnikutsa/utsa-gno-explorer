@@ -29,13 +29,13 @@ test('Pearl enables every existing feature while future capabilities stay disabl
     assert.match(registry, new RegExp(`NetworkCapability\\.${capability},`))
   }
   const enabledCapabilities = registry.slice(registry.indexOf('capabilities: Object.freeze(['), registry.indexOf(']),', registry.indexOf('capabilities: Object.freeze([')))
-  for (const capability of ['NETWORK_PARAMETERS', 'CONSENSUS_DIAGNOSTICS']) {
+  for (const capability of ['CONSENSUS', 'NETWORK_PARAMETERS', 'CONSENSUS_DIAGNOSTICS']) {
     assert.match(registry, new RegExp(`${capability}:`))
     assert.doesNotMatch(enabledCapabilities, new RegExp(`NetworkCapability\\.${capability}`))
   }
 })
 
-test('navigation retains the exact Pearl order and is filtered declaratively by capability', () => {
+test('navigation order stays declarative and is filtered by capability', () => {
   const items = [...navigation.matchAll(/label: '([^']+)'[^\n]+href: '([^']+)'[^\n]+capability: NetworkCapability\.(\w+)/g)]
     .map(([, label, href, capability]) => ({ label, href, capability }))
   assert.deepEqual(items, [
@@ -46,6 +46,7 @@ test('navigation retains the exact Pearl order and is filtered declaratively by 
     { label: 'Tokens', href: '/tokens', capability: 'TOKENS' },
     { label: 'Validators', href: '/validators', capability: 'VALIDATORS' },
     { label: 'Governance', href: '/governance', capability: 'GOVERNANCE' },
+    { label: 'Consensus', href: '/consensus', capability: 'CONSENSUS' },
   ])
   assert.match(sidebar, /navigationItems\.filter\(\(\{ capability \}\) => hasNetworkCapability\(selectedNetwork, capability\)\)/)
 })
