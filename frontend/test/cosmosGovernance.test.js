@@ -78,25 +78,48 @@ test('Cosmos governance keeps proposal status and readable centered Gno-inspired
   assert.match(styles, /\.cosmos-gov-status--passed/)
 })
 
-test('Cosmos governance detail makes vote percentages prominent and the split bar full width', () => {
+test('Cosmos governance detail keeps vote colors, uses account-sized numbers and subtle hover cards', () => {
   assert.match(detail, /<VoteHero tally=\{proposal\.tally\}/)
   assert.match(detail, /cosmos-governance-detail__vote-metrics/)
   assert.match(detail, /result\.percentages\[key\]\.toFixed\(2\)/)
   assert.match(detail, /cosmos-governance-detail__vote-bar/)
-  assert.match(detailStyles, /\.cosmos-governance-detail__vote-metric > strong \{[^}]*font-size:\s*clamp\(24px, 2\.5vw, 36px\)/)
+  assert.match(detailStyles, /\.cosmos-governance-detail__vote-metric > strong \{[^}]*font-family:\s*var\(--font-ui\)[^}]*font-size:\s*clamp\(18px, 1\.55vw, 22px\)/)
+  assert.match(detailStyles, /\.cosmos-governance-detail__vote-metric:hover \{ background: var\(--color-overlay-hover\); \}/)
   assert.match(detailStyles, /\.cosmos-governance-detail__vote-bar \{[^}]*width:\s*calc\(100% - 32px\);[^}]*height:\s*12px;/)
   assert.match(detailStyles, /\.cosmos-governance-detail__vote-bar \.is-yes \{ background: var\(--color-success\); \}/)
+  assert.match(detailStyles, /\.cosmos-governance-detail__field:hover \{ background: var\(--color-overlay-hover\); \}/)
+  assert.match(detailStyles, /\.cosmos-governance-detail__field \{[^}]*padding:\s*10px 13px;/)
 })
 
-test('Cosmos governance detail loads voters only when expanded and never uses native white title tooltips', () => {
-  assert.match(detail, /showVoters && <VotersList network=\{network\} proposalId=\{proposal\.proposal_id\}/)
+test('Cosmos governance detail adds a live deadline card only for deposit or voting proposals', () => {
+  assert.match(detail, /import \{ countdownParts \} from '\.\.\/utils\/futureBlock'/)
+  assert.match(detail, /function ProposalCountdown\(\{ proposal \}\)/)
+  assert.match(detail, /proposal\.status === 'voting'/)
+  assert.match(detail, /proposal\.status === 'deposit'/)
+  assert.match(detail, /window\.setInterval\(\(\) => setNow\(Date\.now\(\)\), 1000\)/)
+  assert.match(detail, /cosmos-future-countdown__grid/)
+  assert.match(detail, /<ProposalCountdown proposal=\{proposal\} \/>/)
+})
+
+test('Cosmos governance detail loads voters on demand and explains completed-proposal vote retention', () => {
+  assert.match(detail, /showVoters && <VotersList network=\{network\} proposalId=\{proposal\.proposal_id\} proposalStatus=\{proposal\.status\}/)
   assert.match(detail, /useCosmosResource\(`\/api\/networks\/\$\{network\.id\}\/governance\/\$\{proposalId\}\/votes`, 0\)/)
   assert.match(detail, /CopyButton value=\{vote\.voter\} label="voter address" showTitle=\{false\}/)
+  assert.match(detail, /No live voter records are exposed for this completed proposal\./)
   assert.match(detail, /cosmos-governance-detail__vote-choice/)
   assert.doesNotMatch(detail, /\stitle=/)
 })
 
-test('Cosmos governance detail exposes description and collapsible technical data without touching Gno detail', () => {
+test('Cosmos governance detail renders readable description blocks and highlighted safe links', () => {
+  assert.match(detail, /function ProposalDescription\(\{ value \}\)/)
+  assert.match(detail, /renderInlineLinks/)
+  assert.match(detail, /target="_blank" rel="noreferrer"/)
+  assert.match(detail, /<ProposalDescription value=\{data\.summary\} \/>/)
+  assert.match(detailStyles, /\.cosmos-governance-detail__description-body \{[^}]*max-width:\s*1120px;[^}]*font-size:\s*14px;[^}]*line-height:\s*1\.72;/)
+  assert.match(detailStyles, /\.cosmos-governance-detail__description-body a \{[^}]*color:\s*var\(--color-accent\);[^}]*text-decoration:\s*underline;/)
+})
+
+test('Cosmos governance detail exposes compact proposal details and collapsible technical data without touching Gno detail', () => {
   assert.match(detail, /Proposal Details/)
   assert.match(detail, /<h2>Description<\/h2>/)
   assert.match(detail, /Technical details/)
