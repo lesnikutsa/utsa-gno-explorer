@@ -6,8 +6,9 @@ const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
 const tooltipStyles = read('../src/styles/cosmos-tx-tooltip.css')
 const validatorDetail = read('../src/pages/CosmosValidatorDetail.jsx')
 
-test('Cosmos Blocks tooltip cells are not clipped by the shared table cell overflow rule', () => {
+test('Cosmos Blocks tooltip cells are not clipped or painted under neighboring rows', () => {
   assert.match(tooltipStyles, /\.cosmos-blocks-table \.cosmos-table td:nth-child\(2\),[\s\S]*td:nth-child\(5\) \{\s*overflow: visible;/)
+  assert.match(tooltipStyles, /\.cosmos-blocks:not\(\.cosmos-transactions\) \.cosmos-blocks-table tbody tr:hover,[\s\S]*tr:focus-within \{[\s\S]*z-index: 90;/)
 })
 
 test('validator detail removes redundant browser-native white tooltips from visible data', () => {
