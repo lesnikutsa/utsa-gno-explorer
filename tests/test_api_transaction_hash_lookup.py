@@ -98,7 +98,7 @@ class TransactionHashLookupTests(unittest.TestCase):
     def test_endpoint_paths_coexist_and_lookup_response_scope_is_explicit(self):
         from api.app import app
 
-        paths = {route.path for route in app.routes}
+        paths = {route.path for route in app.routes if hasattr(route, "path")}
         self.assertIn("/api/transactions", paths)
         self.assertIn("/api/transactions/by-hash/{tx_hash}", paths)
         self.assertIn("/api/blocks/{height}/transactions/{index}", paths)
