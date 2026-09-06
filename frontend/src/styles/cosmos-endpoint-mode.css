@@ -102,10 +102,10 @@
 }
 
 .rpc-pool__row.cosmos-endpoint-mode__health {
-  grid-template-columns: minmax(86px, 1fr) auto auto minmax(42px, auto);
+  grid-template-columns: 96px 94px minmax(104px, 1fr) minmax(90px, auto);
   align-items: center;
-  gap: 7px;
-  padding-block: 5px;
+  gap: 5px;
+  padding: 5px 0;
   font-size: 9px;
 }
 
@@ -133,6 +133,10 @@
 .cosmos-endpoint-mode__health .rpc-pool__state {
   font-size: 9px;
   white-space: nowrap;
+}
+
+.cosmos-endpoint-mode__health .rpc-pool__state {
+  justify-self: end;
 }
 
 .cosmos-endpoint-mode__notice {
