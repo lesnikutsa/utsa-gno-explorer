@@ -9,6 +9,9 @@
 .cosmos-governance-detail__hero-badges .cosmos-gov-status { min-height: 24px; padding: 3px 9px; font-size: 11px; }
 
 .cosmos-governance-detail__vote-panel { overflow: hidden; }
+.cosmos-governance-detail__vote-heading { border-bottom: 0; }
+.cosmos-governance-detail__vote-heading h2 { display: flex; align-items: baseline; gap: 7px; }
+.cosmos-governance-detail__vote-heading h2 span { color: var(--color-text-secondary); font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 /* Match the shared validator/account metric strip exactly: soft border frame, 1px separators, 5px inner tiles. */
 .cosmos-governance-detail__vote-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; overflow: hidden; margin: 4px 16px 16px; padding: 0; border: 1px solid var(--color-border-soft); border-radius: 6px; background: var(--color-border-soft); }
 .cosmos-governance-detail__vote-metric { display: grid; min-width: 0; gap: 4px; place-items: center; padding: 9px 10px; border: 0; border-radius: 5px; background: var(--color-surface-subtle); box-shadow: none; text-align: center; transition: background .15s ease; }
@@ -38,7 +41,7 @@
 .cosmos-governance-detail__deadline-time strong { color: var(--color-text-bright); font-weight: 600; }
 
 /* Proposal Details uses the same neutral fact-tile frame as validator detail. */
-.cosmos-governance-detail__details-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; overflow: hidden; margin: 0; border: 1px solid var(--color-border-soft); border-radius: 6px; background: var(--color-border-soft); }
+.cosmos-governance-detail__details-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; overflow: hidden; margin: 4px 16px 16px; border: 1px solid var(--color-border-soft); border-radius: 6px; background: var(--color-border-soft); }
 .cosmos-governance-detail__field { min-width: 0; padding: 9px 10px; border: 0; border-radius: 5px; background: var(--color-surface-subtle); transition: background .15s ease; }
 .cosmos-governance-detail__field:hover { background: var(--color-overlay-hover); }
 .cosmos-governance-detail__field.is-wide { grid-column: span 2; }
@@ -103,10 +106,11 @@
 @media (max-width: 700px) {
   .cosmos-governance-detail__hero { align-items: flex-start; flex-direction: column; gap: 10px; }
   .cosmos-governance-detail__hero-badges { padding-bottom: 0; }
+  .cosmos-governance-detail__vote-heading h2 { flex-wrap: wrap; gap: 4px 7px; }
   .cosmos-governance-detail__vote-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 4px 10px 12px; }
   .cosmos-governance-detail__vote-metric > strong { font-size: 18px; }
   .cosmos-governance-detail__vote-bar { width: calc(100% - 20px); margin: 0 10px 14px; }
-  .cosmos-governance-detail__details-grid { grid-template-columns: minmax(0, 1fr); }
+  .cosmos-governance-detail__details-grid { grid-template-columns: minmax(0, 1fr); margin: 4px 10px 12px; }
   .cosmos-governance-detail__field.is-wide { grid-column: span 1; }
   .cosmos-governance-detail__description-body { padding: 15px; font-size: 13px; }
 }
