@@ -107,7 +107,7 @@ def test_endpoint_status_keeps_unavailable_side_visible():
     assert rows["publicnode"]["api"]["state"] == "unavailable"
 
 
-def test_rpc_capabilities_are_point_probes_and_share_long_cache():
+def test_rpc_capabilities_find_usable_history_floor_with_bounded_point_probes_and_cache(monkeypatch):
     definition = CANONICAL_NETWORKS["atomone-mainnet"]
     provider = definition.endpoint_providers[0]
     service = object.__new__(CosmosService)
@@ -116,6 +116,7 @@ def test_rpc_capabilities_are_point_probes_and_share_long_cache():
     service.adapter = SimpleNamespace(_host=lambda endpoint: urlsplit(endpoint).hostname)
 
     calls = []
+    usable_from = 9_550_000
 
     class Transport:
         async def get_object(self, endpoint, path, **_kwargs):
@@ -143,22 +144,36 @@ def test_rpc_capabilities_are_point_probes_and_share_long_cache():
                 }
             if path == "/block?height=1":
                 return {"error": {"data": "height 1 is not available, lowest height is 3133197"}}
-            raise AssertionError(f"unexpected request: {path}")
+            height = int(path.rsplit("=", 1)[1])
+            return {"probe_height": height, "usable": height >= usable_from}
 
+    def fake_normalize(block, commit, results, **kwargs):
+        height = kwargs["requested_height"]
+        if (block.get("usable") and commit.get("usable") and results.get("usable")
+                and block.get("probe_height") == height
+                and commit.get("probe_height") == height
+                and results.get("probe_height") == height):
+            return {"height": height}
+        raise ValueError("detail unavailable")
+
+    monkeypatch.setattr("api.cosmos.service._core.normalize_detail", fake_normalize)
     service.transport = Transport()
 
     async def run():
         first = await service._provider_rpc_capabilities(provider, "atomone-mainnet")
+        first_call_count = len(calls)
         second = await service._provider_rpc_capabilities(provider, "atomone-mainnet")
-        return first, second
+        return first, second, first_call_count
 
-    first, second = asyncio.run(run())
+    first, second, first_call_count = asyncio.run(run())
     assert first == second == {
         "tx_index": "on",
-        "lowest_available_height": 3_133_197,
+        "lowest_available_height": usable_from,
     }
-    assert calls == [
+    assert len(calls) == first_call_count
+    assert calls[0:2] == [
         (provider.rpc_endpoint, "/status"),
         (provider.rpc_endpoint, "/block?height=1"),
     ]
-    assert all("tx" not in path for _endpoint, path in calls)
+    assert first_call_count <= 2 + 3 * (2 + 32)
+    assert all("tx_search" not in path and not path.startswith("/tx?") for _endpoint, path in calls)
