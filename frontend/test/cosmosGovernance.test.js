@@ -78,7 +78,7 @@ test('Cosmos governance keeps proposal status and readable centered Gno-inspired
   assert.match(styles, /\.cosmos-gov-status--passed/)
 })
 
-test('Cosmos governance detail keeps vote colors, uses account-sized numbers and subtle hover cards', () => {
+test('Cosmos governance detail keeps vote colors, uses account-sized numbers and shared Cosmos fact tiles', () => {
   assert.match(detail, /<VoteHero tally=\{proposal\.tally\}/)
   assert.match(detail, /cosmos-governance-detail__vote-metrics/)
   assert.match(detail, /result\.percentages\[key\]\.toFixed\(2\)/)
@@ -87,8 +87,11 @@ test('Cosmos governance detail keeps vote colors, uses account-sized numbers and
   assert.match(detailStyles, /\.cosmos-governance-detail__vote-metric:hover \{ background: var\(--color-overlay-hover\); \}/)
   assert.match(detailStyles, /\.cosmos-governance-detail__vote-bar \{[^}]*width:\s*calc\(100% - 32px\);[^}]*height:\s*12px;/)
   assert.match(detailStyles, /\.cosmos-governance-detail__vote-bar \.is-yes \{ background: var\(--color-success\); \}/)
+  assert.match(detailStyles, /\.cosmos-governance-detail__vote-metrics \{[^}]*gap:\s*1px;[^}]*border:\s*1px solid var\(--color-border-soft\);[^}]*border-radius:\s*6px;[^}]*background:\s*var\(--color-border-soft\);/)
+  assert.match(detailStyles, /\.cosmos-governance-detail__vote-metric \{[^}]*padding:\s*9px 10px;[^}]*border-radius:\s*5px;[^}]*background:\s*var\(--color-surface-subtle\);/)
+  assert.match(detailStyles, /\.cosmos-governance-detail__details-grid \{[^}]*gap:\s*1px;[^}]*border:\s*1px solid var\(--color-border-soft\);[^}]*border-radius:\s*6px;[^}]*background:\s*var\(--color-border-soft\);/)
   assert.match(detailStyles, /\.cosmos-governance-detail__field:hover \{ background: var\(--color-overlay-hover\); \}/)
-  assert.match(detailStyles, /\.cosmos-governance-detail__field \{[^}]*padding:\s*10px 13px;/)
+  assert.match(detailStyles, /\.cosmos-governance-detail__field \{[^}]*padding:\s*9px 10px;[^}]*border-radius:\s*5px;[^}]*background:\s*var\(--color-surface-subtle\);/)
 })
 
 test('Cosmos governance detail adds a live deadline card only for deposit or voting proposals', () => {
