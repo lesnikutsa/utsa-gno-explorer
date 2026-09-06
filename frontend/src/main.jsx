@@ -6,6 +6,7 @@ import './styles/theme.css'
 import './styles/app.css'
 import './styles/cosmos-account-validator-identity.css'
 import './styles/cosmos-activity-badges.css'
+import './styles/cosmos-detail-surfaces.css'
 import { initializeTheme } from './utils/theme'
 import { SelectedNetworkProvider } from './context/SelectedNetworkContext'
 

@@ -1,0 +1,159 @@
+.cosmos-governance-detail { display: grid; gap: 16px; }
+.cosmos-governance-detail .panel { min-width: 0; }
+.cosmos-governance-detail__hero { display: flex; min-width: 0; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 2px 2px 0; }
+.cosmos-governance-detail__hero-title { min-width: 0; }
+.cosmos-governance-detail__hero-title > span { display: block; margin-bottom: 5px; color: var(--color-text-secondary); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.cosmos-governance-detail__hero-title h1 { margin: 0; color: var(--color-text-bright); font-size: clamp(22px, 2vw, 30px); line-height: 1.2; overflow-wrap: anywhere; }
+.cosmos-governance-detail__hero-badges { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; padding-bottom: 3px; }
+.cosmos-governance-detail__hero-badges .cosmos-gov-type,
+.cosmos-governance-detail__hero-badges .cosmos-gov-status { min-height: 24px; padding: 3px 9px; font-size: 11px; }
+
+.cosmos-governance-detail__vote-panel { overflow: hidden; }
+.cosmos-governance-detail__vote-heading { border-bottom: 0; }
+.cosmos-governance-detail__vote-heading h2 { display: flex; align-items: baseline; gap: 7px; }
+.cosmos-governance-detail__vote-heading h2 span { color: var(--color-text-secondary); font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+/* Match the shared validator/account metric strip exactly: soft border frame, 1px separators, 5px inner tiles. */
+.cosmos-governance-detail__vote-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; overflow: hidden; margin: 4px 16px 16px; padding: 0; border: 1px solid var(--color-border-soft); border-radius: 6px; background: var(--color-border-soft); }
+.cosmos-governance-detail__vote-metric { display: grid; min-width: 0; gap: 4px; place-items: center; padding: 9px 10px; border: 0; border-radius: 5px; background: var(--color-surface-subtle); box-shadow: none; text-align: center; transition: background .15s ease; }
+.cosmos-governance-detail__vote-metric:hover { background: var(--color-overlay-hover); }
+.cosmos-governance-detail__vote-metric > span { font-size: 12px; font-weight: 800; letter-spacing: .08em; }
+.cosmos-governance-detail__vote-metric > strong { font-family: var(--font-ui); font-size: clamp(18px, 1.55vw, 22px); font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.cosmos-governance-detail__vote-metric > small { color: var(--color-text-secondary); font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cosmos-governance-detail__vote-metric.is-yes > span,
+.cosmos-governance-detail__vote-metric.is-yes > strong { color: var(--color-success); }
+.cosmos-governance-detail__vote-metric.is-no > span,
+.cosmos-governance-detail__vote-metric.is-no > strong { color: var(--color-accent); }
+.cosmos-governance-detail__vote-metric.is-veto > span,
+.cosmos-governance-detail__vote-metric.is-veto > strong { color: #ff765f; }
+.cosmos-governance-detail__vote-metric.is-abstain > span,
+.cosmos-governance-detail__vote-metric.is-abstain > strong { color: var(--color-warning); }
+.cosmos-governance-detail__vote-bar { display: flex; width: calc(100% - 32px); height: 12px; margin: 0 16px 18px; overflow: hidden; border-radius: 4px; background: var(--color-surface-subtle); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-border) 70%, transparent); }
+.cosmos-governance-detail__vote-bar i { display: block; min-width: 0; height: 100%; }
+.cosmos-governance-detail__vote-bar .is-yes { background: var(--color-success); }
+.cosmos-governance-detail__vote-bar .is-no { background: var(--color-accent); }
+.cosmos-governance-detail__vote-bar .is-veto { background: #ff765f; }
+.cosmos-governance-detail__vote-bar .is-abstain { background: var(--color-warning); }
+.cosmos-governance-detail__empty-tally { padding: 0 16px 16px; }
+
+.cosmos-governance-detail__deadline { padding: 2px 16px 16px; }
+.cosmos-governance-detail__deadline .cosmos-future-countdown { margin: 18px auto 12px; }
+.cosmos-governance-detail__deadline-time { margin: 0; color: var(--color-text-secondary); font-size: 10px; text-align: center; }
+.cosmos-governance-detail__deadline-time strong { color: var(--color-text-bright); font-weight: 600; }
+
+/* Proposal Details uses the same neutral fact-tile frame as validator detail. */
+.cosmos-governance-detail__details-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; overflow: hidden; margin: 4px 16px 16px; border: 1px solid var(--color-border-soft); border-radius: 6px; background: var(--color-border-soft); }
+.cosmos-governance-detail__field { min-width: 0; padding: 9px 10px; border: 0; border-radius: 5px; background: var(--color-surface-subtle); transition: background .15s ease; }
+.cosmos-governance-detail__field:hover { background: var(--color-overlay-hover); }
+.cosmos-governance-detail__field.is-wide { grid-column: span 2; }
+.cosmos-governance-detail__field dt { margin-bottom: 5px; color: var(--color-table-heading); font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+.cosmos-governance-detail__field dd { min-width: 0; margin: 0; color: var(--color-text-bright); font-size: 12px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.cosmos-governance-detail__field code { color: var(--color-text-bright); font-size: 10px; }
+.cosmos-governance-detail__copy-row { display: inline-flex; max-width: 100%; align-items: center; gap: 7px; }
+.cosmos-governance-detail__copy-row a,
+.cosmos-governance-detail__voter a { min-width: 0; color: var(--color-text-bright); text-decoration: none; overflow-wrap: anywhere; }
+.cosmos-governance-detail__copy-row a:hover,
+.cosmos-governance-detail__copy-row a:focus-visible,
+.cosmos-governance-detail__voter a:hover,
+.cosmos-governance-detail__voter a:focus-visible { color: var(--color-accent); }
+.cosmos-governance-detail__deposit { display: block; }
+.cosmos-governance-detail__deposit + .cosmos-governance-detail__deposit { margin-top: 3px; }
+
+.cosmos-governance-detail__description-body { max-width: 1120px; padding: 18px; color: var(--color-text-bright); font-size: 14px; line-height: 1.72; overflow-wrap: anywhere; }
+.cosmos-governance-detail__description-body p { margin: 0 0 15px; }
+.cosmos-governance-detail__description-body p:last-child { margin-bottom: 0; }
+.cosmos-governance-detail__description-body h3,
+.cosmos-governance-detail__description-body h4 { margin: 19px 0 9px; color: var(--color-text-bright); line-height: 1.35; }
+.cosmos-governance-detail__description-body h3:first-child,
+.cosmos-governance-detail__description-body h4:first-child { margin-top: 0; }
+.cosmos-governance-detail__description-body h3 { font-size: 15px; }
+.cosmos-governance-detail__description-body h4 { font-size: 14px; }
+.cosmos-governance-detail__description-body a { color: var(--color-accent); font-weight: 600; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--color-accent) 55%, transparent); text-underline-offset: 2px; }
+.cosmos-governance-detail__description-body a:hover,
+.cosmos-governance-detail__description-body a:focus-visible { color: var(--color-text-bright); text-decoration-color: var(--color-accent); }
+
+.cosmos-governance-detail__toggle { width: 100%; padding: 13px 16px; border: 0; background: transparent; color: var(--color-text-bright); font: inherit; font-size: 12px; font-weight: 700; text-align: left; cursor: pointer; }
+.cosmos-governance-detail__toggle:hover,
+.cosmos-governance-detail__toggle:focus-visible { color: var(--color-accent); }
+.cosmos-governance-detail__voters-toggle[aria-expanded="true"],
+.cosmos-governance-detail__technical > .cosmos-governance-detail__toggle[aria-expanded="true"] { border-bottom: 1px solid var(--color-border); }
+.cosmos-governance-detail__voters-state { padding: 15px 16px; color: var(--color-text-secondary); }
+.cosmos-governance-detail__voters-heading { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; color: var(--color-text-secondary); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.cosmos-governance-detail__voters-heading strong { display: inline-grid; min-width: 28px; min-height: 22px; place-items: center; border: 1px solid var(--color-border-soft); border-radius: 5px; background: var(--color-surface-subtle); color: var(--color-text-bright); font-size: 11px; font-variant-numeric: tabular-nums; }
+.cosmos-governance-detail__voters-table { border-top: 1px solid var(--color-border); }
+.cosmos-governance-detail__voters-table table { width: 100%; min-width: 720px; table-layout: fixed; }
+.cosmos-governance-detail__voters-table th:first-child,
+.cosmos-governance-detail__voters-table td:first-child { width: 66%; }
+.cosmos-governance-detail__voter { display: inline-flex; max-width: 100%; align-items: center; gap: 7px; }
+.cosmos-governance-detail__voter a { font-family: var(--font-mono, monospace); font-size: 11px; }
+.cosmos-governance-detail__voters-empty { color: var(--color-text-secondary); }
+.cosmos-governance-detail__vote-options { display: flex; flex-wrap: wrap; gap: 6px; }
+.cosmos-governance-detail__vote-choice { display: inline-flex; min-height: 21px; align-items: center; gap: 4px; padding: 2px 7px; border: 1px solid currentColor; border-radius: 5px; background: color-mix(in srgb, currentColor 8%, transparent); font-size: 10px; font-weight: 700; white-space: nowrap; }
+.cosmos-governance-detail__vote-choice small { color: currentColor; font-size: 9px; font-weight: 700; opacity: .9; }
+.cosmos-governance-detail__vote-choice.is-yes { color: var(--color-success); }
+.cosmos-governance-detail__vote-choice.is-no { color: var(--color-accent); }
+.cosmos-governance-detail__vote-choice.is-veto { color: #ff765f; }
+.cosmos-governance-detail__vote-choice.is-abstain { color: var(--color-warning); }
+.cosmos-governance-detail__vote-choice.is-unknown { color: var(--color-text-secondary); }
+
+.cosmos-governance-detail__technical-body { display: grid; gap: 14px; padding: 14px 16px 16px; }
+.cosmos-governance-detail__technical-body h3 { margin: 0 0 7px; color: var(--color-text-secondary); font-size: 10px; letter-spacing: .05em; text-transform: uppercase; }
+.cosmos-governance-detail__technical-body pre { max-width: 100%; margin: 0; padding: 12px; overflow: auto; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-surface-subtle); color: var(--color-text-bright); font-size: 10px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+@media (max-width: 1000px) {
+  .cosmos-governance-detail__details-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 700px) {
+  .cosmos-governance-detail__hero { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .cosmos-governance-detail__hero-badges { padding-bottom: 0; }
+  .cosmos-governance-detail__vote-heading h2 { flex-wrap: wrap; gap: 4px 7px; }
+  .cosmos-governance-detail__vote-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 4px 10px 12px; }
+  .cosmos-governance-detail__vote-metric > strong { font-size: 18px; }
+  .cosmos-governance-detail__vote-bar { width: calc(100% - 20px); margin: 0 10px 14px; }
+  .cosmos-governance-detail__details-grid { grid-template-columns: minmax(0, 1fr); margin: 4px 10px 12px; }
+  .cosmos-governance-detail__field.is-wide { grid-column: span 1; }
+  .cosmos-governance-detail__description-body { padding: 15px; font-size: 13px; }
+}
+
+/* Keep the proposal hero aligned with the standard Cosmos block/transaction detail heading rhythm. */
+.cosmos-governance-detail > .block-detail__back { margin-bottom: -6px; }
+.cosmos-governance-detail__hero-title h1 { font-size: 24px; }
+
+/* Governance section headings are labels only; the panels themselves provide the surrounding boundary. */
+.cosmos-governance-detail__vote-heading,
+.cosmos-governance-detail__details > .panel__heading { border-bottom: 0; }
+
+/* Keep validator-like 1px spacing within each logical row, but add breathing room between the 4 / 3 / 3 rows. */
+.cosmos-governance-detail__details .cosmos-governance-detail__details-grid {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: 1px;
+  row-gap: 12px;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+}
+.cosmos-governance-detail__details .cosmos-governance-detail__field {
+  grid-column: span 3;
+  border: 1px solid var(--color-border-soft);
+}
+.cosmos-governance-detail__details .cosmos-governance-detail__field:nth-child(n + 5),
+.cosmos-governance-detail__details .cosmos-governance-detail__field.is-wide { grid-column: span 4; }
+
+@media (max-width: 1000px) {
+  .cosmos-governance-detail__details .cosmos-governance-detail__details-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 8px;
+    row-gap: 10px;
+  }
+  .cosmos-governance-detail__details .cosmos-governance-detail__field,
+  .cosmos-governance-detail__details .cosmos-governance-detail__field:nth-child(n + 5),
+  .cosmos-governance-detail__details .cosmos-governance-detail__field.is-wide { grid-column: span 1; }
+}
+
+@media (max-width: 700px) {
+  .cosmos-governance-detail__hero-title h1 { font-size: 24px; }
+  .cosmos-governance-detail__details .cosmos-governance-detail__details-grid {
+    grid-template-columns: minmax(0, 1fr);
+    column-gap: 0;
+  }
+}

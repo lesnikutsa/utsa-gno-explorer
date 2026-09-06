@@ -49,7 +49,7 @@ class AverageBlockTimeContractTests(unittest.TestCase):
         self.assertIn("array_agg(interval_seconds order by height)", self.sql)
         self.assertIn("maximum_height - minimum_height + 1 = sample_size", self.sql)
         self.assertIn("else array[]::double precision[]", self.sql)
-        paths = {route.path for route in app.app.routes}
+        paths = {route.path for route in app.app.routes if hasattr(route, "path")}
         self.assertIn("/api/network", paths)
         self.assertNotIn("/api/average-block-time", paths)
 

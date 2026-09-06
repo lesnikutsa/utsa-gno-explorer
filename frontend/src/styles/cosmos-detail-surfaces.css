@@ -1,0 +1,30 @@
+/* Keep the main Cosmos detail surfaces on one neutral palette.
+   Outer cards are flat --color-card; nested metric/fact cards share --color-surface-subtle. */
+.cosmos-governance-detail .cosmos-governance-detail__vote-panel,
+.cosmos-governance-detail .cosmos-governance-detail__details,
+.cosmos-governance-detail .cosmos-governance-detail__description,
+.cosmos-account-detail .cosmos-account-hero {
+  background: var(--color-card);
+}
+
+.cosmos-governance-detail .cosmos-governance-detail__vote-metric,
+.cosmos-governance-detail .cosmos-governance-detail__field,
+.cosmos-account-detail .cosmos-account-summary-grid > article,
+.cosmos-account-detail .cosmos-account-wallet-asset {
+  background: var(--color-surface-subtle);
+}
+
+/* Match the account Balance / Delegated / Rewards / Unbonding hover behavior,
+   but only for the four Vote Results subtiles. */
+.cosmos-governance-detail .cosmos-governance-detail__vote-metric:hover {
+  background: var(--color-overlay-hover);
+}
+
+.cosmos-governance-detail .cosmos-governance-detail__description-body {
+  background: transparent;
+}
+
+/* The Vote Results title is part of the card body, so do not split it with a full-width rule. */
+.cosmos-governance-detail .cosmos-governance-detail__vote-panel > .panel__heading {
+  border-bottom: 0;
+}

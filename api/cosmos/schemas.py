@@ -34,7 +34,7 @@ class PublicNetwork(StrictModel):
     logo_url: str = Field(min_length=8, max_length=2048)
     assets: list[PublicNetworkAsset] = Field(min_length=1, max_length=16)
     address_prefixes: PublicAddressPrefixes
-    capabilities: list[Literal["overview", "blocks", "transactions", "validators", "network-parameters"]] = Field(min_length=1)
+    capabilities: list[Literal["overview", "blocks", "transactions", "validators", "governance", "network-parameters"]] = Field(min_length=1)
 
 
 class PublicNetworksResponse(StrictModel):
