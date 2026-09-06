@@ -35,6 +35,6 @@
 .cosmos-account-activity a.cosmos-account-activity__tx:hover,
 .cosmos-account-activity a.cosmos-account-activity__tx:focus-visible { color: var(--color-accent); }
 
-.cosmos-block-detail a.cosmos-tx-full-hash-link { color: var(--color-text-bright); text-decoration: none; }
-.cosmos-block-detail a.cosmos-tx-full-hash-link:hover,
-.cosmos-block-detail a.cosmos-tx-full-hash-link:focus-visible { color: var(--color-accent); }
+.cosmos-block-detail a.transaction-link.cosmos-hash-value { color: var(--color-text-bright); text-decoration: none; }
+.cosmos-block-detail a.transaction-link.cosmos-hash-value:hover,
+.cosmos-block-detail a.transaction-link.cosmos-hash-value:focus-visible { color: var(--color-accent); }
