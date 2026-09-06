@@ -8,6 +8,7 @@
 .cosmos-tx-tooltip[data-tooltip]::after {
   position: absolute;
   right: 0;
+  left: auto;
   z-index: 80;
   pointer-events: none;
   opacity: 0;
