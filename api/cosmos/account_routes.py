@@ -64,11 +64,11 @@ async def get_cosmos_governance(request: Request, network_id: str):
     response_model_exclude_none=True,
 )
 async def get_cosmos_governance_detail(request: Request, network_id: str, proposal_id: int):
+    if proposal_id <= 0:
+        raise HTTPException(status_code=400, detail="Invalid governance proposal ID")
     service = _service(request, network_id)
     try:
         return await load_governance_detail(service, proposal_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid governance proposal ID") from None
     except AllEndpointsUnavailable:
         raise HTTPException(status_code=503, detail="Governance proposal is temporarily unavailable") from None
     except Exception:
@@ -82,11 +82,11 @@ async def get_cosmos_governance_detail(request: Request, network_id: str, propos
     response_model_exclude_none=True,
 )
 async def get_cosmos_governance_votes(request: Request, network_id: str, proposal_id: int):
+    if proposal_id <= 0:
+        raise HTTPException(status_code=400, detail="Invalid governance proposal ID")
     service = _service(request, network_id)
     try:
         return await load_governance_votes(service, proposal_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid governance proposal ID") from None
     except AllEndpointsUnavailable:
         raise HTTPException(status_code=503, detail="Governance votes are temporarily unavailable") from None
     except Exception:
