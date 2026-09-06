@@ -1,0 +1,48 @@
+/* Cosmos-only responsive polish. Keep shared Gno layout behavior unchanged. */
+@media (max-width: 1100px) and (min-width: 761px) {
+  .app-frame:has(.cosmos-node-strip) .topbar-block-time-control {
+    width: 90px;
+    flex-basis: 90px;
+  }
+
+  .app-frame:has(.cosmos-node-strip) .topbar-block-time {
+    gap: 5px;
+    padding: 0 8px;
+  }
+
+  .app-frame:has(.cosmos-node-strip) .topbar-block-time__label {
+    display: none;
+  }
+
+  .app-frame:has(.cosmos-node-strip) .topbar-block-time__value {
+    width: auto;
+    min-width: 46px;
+    text-align: center;
+  }
+
+  .cosmos-node-strip > dl {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .cosmos-node-strip > dl > div {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .cosmos-node-strip > dl {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cosmos-node-strip > dl > div {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .cosmos-node-strip > dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
