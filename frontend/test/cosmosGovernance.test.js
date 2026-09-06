@@ -16,12 +16,28 @@ test('Cosmos governance reuses validator summary, tabs and search structure', ()
   assert.match(page, /Rejected \/ failed/)
 })
 
-test('Cosmos governance table keeps proposal status and Gno-inspired vote split visualisation', () => {
-  assert.match(page, /<th>Proposal<\/th><th>Title<\/th><th>Type<\/th><th>Status<\/th><th>Voting end<\/th><th>Vote split<\/th>/)
+test('Cosmos governance table mirrors validator numbering and keeps titles bounded', () => {
+  assert.match(page, /<th>#<\/th><th>Title<\/th><th>Type<\/th><th>Status<\/th><th>Voting end<\/th><th>Vote split<\/th>/)
+  assert.match(page, /className="cosmos-governance__proposal-id">\{proposal\.proposal_id\}/)
+  assert.match(page, /className="cosmos-governance__title" title=\{proposal\.title\}/)
+  assert.match(styles, /\.cosmos-governance__proposal-id \{[^}]*min-width: 23px;[^}]*height: 19px;/)
+  assert.match(styles, /\.cosmos-governance__title \{[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;[^}]*white-space: nowrap;/)
+})
+
+test('Cosmos governance dates are deterministic English UTC rather than browser locale', () => {
+  assert.match(page, /const MONTHS = \['Jan', 'Feb', 'Mar'/)
+  assert.match(page, /getUTCDate\(\)/)
+  assert.match(page, /getUTCHours\(\)/)
+  assert.match(page, /UTC`/)
+  assert.doesNotMatch(page, /toLocaleDateString\(undefined/)
+})
+
+test('Cosmos governance keeps proposal status and centered Gno-inspired vote split visualisation', () => {
   assert.match(page, /cosmos-gov-type/)
   assert.match(page, /cosmos-gov-status/)
   assert.match(page, /cosmos-governance-votes__labels/)
   assert.match(page, /cosmos-governance-votes__bar/)
+  assert.match(styles, /\.cosmos-governance-votes__labels \{[^}]*justify-content: center;/)
   assert.match(styles, /\.cosmos-governance-votes__bar/)
   assert.match(styles, /\.cosmos-gov-status--passed/)
 })
