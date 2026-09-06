@@ -19,6 +19,7 @@ export const NetworkCapability = Object.freeze({
   TOKENS: 'tokens',
   VALIDATORS: 'validators',
   GOVERNANCE: 'governance',
+  CONSENSUS: 'consensus',
   NETWORK_DISTRIBUTION: 'network-distribution',
   VALIDATOR_SIGNING_HISTORY: 'validator-signing-history',
   TELEGRAM_MONITORING: 'telegram-monitoring',
