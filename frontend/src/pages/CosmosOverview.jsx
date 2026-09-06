@@ -22,7 +22,7 @@ const help = {
   'Allowed misses': 'How many blocks a validator may miss within the signing window before downtime penalties apply.',
   'Minimum signed': 'The minimum share of blocks a validator must sign in the window.',
   Quorum: 'The minimum voting power participation required for a governance proposal.',
-  Threshold: 'The minimum share of non-abstaining votes required for a governance proposal to pass.',
+  Threshold: 'The minimum share of non-abstaining votes required for a proposal to pass.',
   'Community tax': 'The share of staking rewards directed to the community pool.',
   'Unbonding time': 'How long stake remains locked while moving out of the bonded state.',
   'Commission limits': 'Protocol bounds applied to validator commission rates.',
