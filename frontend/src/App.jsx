@@ -41,6 +41,7 @@ import { CosmosValidators } from './pages/CosmosValidators'
 import { CosmosValidatorDetail } from './pages/CosmosValidatorDetail'
 import { CosmosGovernance } from './pages/CosmosGovernance'
 import { CosmosGovernanceDetail } from './pages/CosmosGovernanceDetail'
+import { CosmosConsensus } from './pages/CosmosConsensus'
 import { CosmosTransactionDetail } from './pages/CosmosTransactionDetail'
 import { CosmosTransactionHashRoute } from './pages/CosmosTransactionHashRoute'
 import { CosmosAccountDetail } from './pages/CosmosAccountDetail'
@@ -215,7 +216,7 @@ export default function App() {
   const cosmosTxMatch = path.match(/^\/networks\/([^/]+)\/blocks\/([1-9]\d{0,18})\/transactions\/(\d{1,4})\/?$/)
   const cosmosTxHashMatch = path.match(/^\/networks\/([^/]+)\/transactions\/([0-9A-Fa-f]{64})\/?$/)
   const cosmosAccountMatch = path.match(/^\/networks\/([^/]+)\/accounts\/([^/]+)\/?$/)
-  const cosmosMatch = path.match(/^\/networks\/([^/]+)(?:\/(blocks|transactions|validators|governance)(?:\/([^/]+))?)?\/?$/)
+  const cosmosMatch = path.match(/^\/networks\/([^/]+)(?:\/(blocks|transactions|validators|governance|consensus)(?:\/([^/]+))?)?\/?$/)
   const cosmosNetworkId = cosmosTxMatch?.[1] || cosmosTxHashMatch?.[1] || cosmosAccountMatch?.[1] || cosmosMatch?.[1]
   if (cosmosNetworkId) {
     const network = getNetworkById(cosmosNetworkId)
@@ -235,7 +236,7 @@ export default function App() {
     }
     const rawHeight = cosmosMatch[2] === 'blocks' ? cosmosMatch[3] : null
     const rawProposalId = cosmosMatch[2] === 'governance' ? cosmosMatch[3] : null
-    if (cosmosMatch[2] === 'transactions' && cosmosMatch[3]) return <main className="route-error"><h1>Route not found</h1></main>
+    if ((cosmosMatch[2] === 'transactions' || cosmosMatch[2] === 'consensus') && cosmosMatch[3]) return <main className="route-error"><h1>Route not found</h1></main>
     if (rawProposalId && (!/^[1-9]\d{0,18}$/.test(rawProposalId) || BigInt(rawProposalId) > 9223372036854775807n)) return <main className="route-error"><h1>Route not found</h1></main>
     const renderContent = ({ overview, blocks, blockTime }) => rawHeight
       ? (/^[1-9]\d{0,18}$/.test(rawHeight) && BigInt(rawHeight) <= 9223372036854775807n
@@ -246,6 +247,7 @@ export default function App() {
       : cosmosMatch[2] === 'validators' ? <CosmosValidators network={network} />
       : rawProposalId ? <CosmosGovernanceDetail network={network} proposalId={rawProposalId} />
       : cosmosMatch[2] === 'governance' ? <CosmosGovernance network={network} />
+      : cosmosMatch[2] === 'consensus' ? <CosmosConsensus network={network} />
       : cosmosMatch[2] === 'blocks' ? <CosmosBlocks network={network} resource={blocks} /> : <CosmosOverview network={network} overview={overview} blocks={blocks} averageBlockSeconds={blockTime.average} />
     return <CosmosExplorerLayout network={network}>{renderContent}</CosmosExplorerLayout>
   }
