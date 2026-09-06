@@ -1,0 +1,21 @@
+.cosmos-transactions .cosmos-table table { min-width: 1050px; table-layout: fixed; }
+.cosmos-transactions .cosmos-table th:nth-child(1), .cosmos-transactions .cosmos-table td:nth-child(1) { width: 16%; }
+.cosmos-transactions .cosmos-table th:nth-child(2), .cosmos-transactions .cosmos-table td:nth-child(2) { width: 18%; }
+.cosmos-transactions .cosmos-table th:nth-child(3), .cosmos-transactions .cosmos-table td:nth-child(3) { width: 12%; }
+.cosmos-transactions .cosmos-table th:nth-child(4), .cosmos-transactions .cosmos-table td:nth-child(4) { width: 13%; }
+.cosmos-transactions .cosmos-table th:nth-child(5), .cosmos-transactions .cosmos-table td:nth-child(5) { width: 11%; }
+.cosmos-transactions .cosmos-table th:nth-child(6), .cosmos-transactions .cosmos-table td:nth-child(6) { width: 18%; }
+.cosmos-transactions .cosmos-table th:nth-child(7), .cosmos-transactions .cosmos-table td:nth-child(7) { width: 12%; }
+
+.cosmos-tx-type { display: inline-flex; min-height: 20px; max-width: 100%; align-items: center; padding: 2px 7px; overflow: hidden; border: 1px solid currentColor; border-radius: 5px; font-size: 10px; font-weight: 600; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.cosmos-tx-type--transfer { border-color: #387f9d; background: rgb(56 127 157 / 12%); color: #75c8e8; }
+.cosmos-tx-type--staking { color: var(--color-success); background: color-mix(in srgb, var(--color-success) 10%, transparent); }
+.cosmos-tx-type--reward { color: var(--color-warning); background: color-mix(in srgb, var(--color-warning) 10%, transparent); }
+.cosmos-tx-type--governance, .cosmos-tx-type--exec { color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
+.cosmos-tx-type--ibc { border-color: #4c7892; background: rgb(76 120 146 / 10%); color: #8bb9d2; }
+.cosmos-tx-type--other { color: var(--color-text-secondary); background: color-mix(in srgb, var(--color-text-secondary) 8%, transparent); }
+.cosmos-tx-type .cosmos-tx-more { margin-left: 4px; color: currentColor; font-size: 9px; opacity: .75; }
+
+.cosmos-transactions .cosmos-tx-status { min-height: 20px; padding: 1px 7px; font-size: 10px; line-height: 1.2; }
+.cosmos-tx-hash { display: inline-block; max-width: 100%; overflow: hidden; color: var(--color-text-secondary); font-family: var(--font-mono); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.cosmos-tx-hash:hover, .cosmos-tx-hash:focus-visible { color: var(--color-accent); }
