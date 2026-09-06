@@ -20,15 +20,17 @@ class CosmosRegistryTests(unittest.TestCase):
         self.assertEqual(ATOMONE.transport.rpc_endpoints, (
             "https://m-atomone.rpc.utsa.tech",
             "https://atomone-mainnet-rpc.itrocket.net",
-            "https://atomone-rpc.publicnode.com:443",
+            "https://rpc-m.atomone.vinjan-inc.com",
+            "https://atomone-rpc.allinbits.com:443",
         ))
         self.assertEqual(ATOMONE.transport.rest_endpoints, (
             "https://m-atomone.api.utsa.tech",
             "https://atomone-mainnet-api.itrocket.net",
-            "https://atomone-rest.publicnode.com",
+            "https://api-m.atomone.vinjan-inc.com",
+            "https://atomone-api.allinbits.com",
         ))
         self.assertEqual([provider.id for provider in ATOMONE.endpoint_providers],
-                         ["utsa", "itrocket", "publicnode"])
+                         ["utsa", "itrocket", "vinjan", "allinbits"])
         self.assertEqual(ATOMONE.logo_url,
             "https://raw.githubusercontent.com/lesnikutsa/explorer/master/public/logos/Atomone.png")
 
