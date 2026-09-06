@@ -7,7 +7,14 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from .account_activity import CosmosAccountActivityResponse, load_account_activity
 from .account_detail import CosmosAccountDetailResponse, load_account_snapshot
 from .errors import AllEndpointsUnavailable
-from .governance import CosmosGovernancePageResponse, load_governance_page
+from .governance import (
+    CosmosGovernanceDetailResponse,
+    CosmosGovernancePageResponse,
+    CosmosGovernanceVotesResponse,
+    load_governance_detail,
+    load_governance_page,
+    load_governance_votes,
+)
 from .registry import get_network
 from .transaction_endpoint_policy import CosmosTransactionHistoryResponse
 
@@ -49,6 +56,42 @@ async def get_cosmos_governance(request: Request, network_id: str):
     except Exception:
         LOGGER.info("Cosmos governance failed network=%s reason=upstream_unavailable", network_id)
         raise HTTPException(status_code=503, detail="Governance data is temporarily unavailable") from None
+
+
+@router.get(
+    "/api/networks/{network_id}/governance/{proposal_id}",
+    response_model=CosmosGovernanceDetailResponse,
+    response_model_exclude_none=True,
+)
+async def get_cosmos_governance_detail(request: Request, network_id: str, proposal_id: int):
+    service = _service(request, network_id)
+    try:
+        return await load_governance_detail(service, proposal_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid governance proposal ID") from None
+    except AllEndpointsUnavailable:
+        raise HTTPException(status_code=503, detail="Governance proposal is temporarily unavailable") from None
+    except Exception:
+        LOGGER.info("Cosmos governance detail failed network=%s proposal=%s reason=upstream_unavailable", network_id, proposal_id)
+        raise HTTPException(status_code=503, detail="Governance proposal is temporarily unavailable") from None
+
+
+@router.get(
+    "/api/networks/{network_id}/governance/{proposal_id}/votes",
+    response_model=CosmosGovernanceVotesResponse,
+    response_model_exclude_none=True,
+)
+async def get_cosmos_governance_votes(request: Request, network_id: str, proposal_id: int):
+    service = _service(request, network_id)
+    try:
+        return await load_governance_votes(service, proposal_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid governance proposal ID") from None
+    except AllEndpointsUnavailable:
+        raise HTTPException(status_code=503, detail="Governance votes are temporarily unavailable") from None
+    except Exception:
+        LOGGER.info("Cosmos governance votes failed network=%s proposal=%s reason=upstream_unavailable", network_id, proposal_id)
+        raise HTTPException(status_code=503, detail="Governance votes are temporarily unavailable") from None
 
 
 @router.get(
