@@ -9,6 +9,7 @@ export const RealmsIcon = () => <Icon><path d="m8 8-4 4 4 4M16 8l4 4-4 4M14 5l-4
 export const TokensIcon = () => <Icon><circle cx="12" cy="12" r="8" /><path d="M9 9h6M12 7v10M9 15h6" /></Icon>
 export const ValidatorsIcon = () => <Icon><circle cx="12" cy="8" r="3" /><path d="M6.5 20c.4-4 2.2-6 5.5-6s5.1 2 5.5 6M18 7l1.5 1.5L22 6" /></Icon>
 export const GovernanceIcon = () => <Icon><path d="m14 5 5 5M12.5 6.5l3-3 5 5-3 3zM4 20l8-8M3 20h10M8.5 15.5l-2-2" /></Icon>
+export const ConsensusIcon = () => <Icon><circle cx="12" cy="12" r="2.5" /><circle cx="12" cy="12" r="7.5" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1" /></Icon>
 export const NetworkIcon = () => <Icon><circle cx="5" cy="12" r="2" /><circle cx="18" cy="6" r="2" /><circle cx="19" cy="18" r="2" /><path d="m7 11 9-4M7 13l10 4M18 8l1 8" /></Icon>
 export const MapIcon = () => <Icon><path d="m4 6 5-2 6 2 5-2v14l-5 2-6-2-5 2Z" /><path d="M9 4v14M15 6v14" /></Icon>
 export const ChainIcon = () => <Icon><path d="M9.5 14.5 8 16a3 3 0 0 1-4-4l3-3a3 3 0 0 1 4 0M14.5 9.5 16 8a3 3 0 0 1 4 4l-3 3a3 3 0 0 1-4 0M9 15l6-6" /></Icon>
