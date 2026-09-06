@@ -75,6 +75,8 @@ def test_endpoint_status_reports_independent_auto_rpc_and_api_preferences():
     assert len(result["providers"]) == 3
     assert all(row["rpc"]["state"] == "healthy" for row in result["providers"])
     assert all(row["api"]["state"] == "healthy" for row in result["providers"])
+    assert all(row["rpc"]["tx_index"] == "unknown" for row in result["providers"])
+    assert all(row["rpc"]["lowest_available_height"] is None for row in result["providers"])
 
 
 def test_endpoint_status_keeps_unavailable_side_visible():
@@ -103,3 +105,60 @@ def test_endpoint_status_keeps_unavailable_side_visible():
     assert rows["itrocket"]["api"]["state"] == "healthy"
     assert rows["publicnode"]["rpc"]["state"] == "unavailable"
     assert rows["publicnode"]["api"]["state"] == "unavailable"
+
+
+def test_rpc_capabilities_are_point_probes_and_share_long_cache():
+    definition = CANONICAL_NETWORKS["atomone-mainnet"]
+    provider = definition.endpoint_providers[0]
+    service = object.__new__(CosmosService)
+    service.definition = definition
+    service.cache = RequestCache()
+    service.adapter = SimpleNamespace(_host=lambda endpoint: urlsplit(endpoint).hostname)
+
+    calls = []
+
+    class Transport:
+        async def get_object(self, endpoint, path, **_kwargs):
+            calls.append((endpoint, path))
+            if path == "/status":
+                return {
+                    "result": {
+                        "sync_info": {
+                            "latest_block_height": "10227077",
+                            "latest_block_time": "2026-09-06T00:00:00Z",
+                            "catching_up": False,
+                        },
+                        "node_info": {
+                            "network": "atomone-1",
+                            "version": "0.38.22",
+                            "other": {"tx_index": "on"},
+                        },
+                        "application_version": {
+                            "name": "atomone",
+                            "version": "4.1.0",
+                            "cosmos_sdk_version": "v0.50.0",
+                            "comet_version": "0.38.22",
+                        },
+                    }
+                }
+            if path == "/block?height=1":
+                return {"error": {"data": "height 1 is not available, lowest height is 3133197"}}
+            raise AssertionError(f"unexpected request: {path}")
+
+    service.transport = Transport()
+
+    async def run():
+        first = await service._provider_rpc_capabilities(provider, "atomone-mainnet")
+        second = await service._provider_rpc_capabilities(provider, "atomone-mainnet")
+        return first, second
+
+    first, second = asyncio.run(run())
+    assert first == second == {
+        "tx_index": "on",
+        "lowest_available_height": 3_133_197,
+    }
+    assert calls == [
+        (provider.rpc_endpoint, "/status"),
+        (provider.rpc_endpoint, "/block?height=1"),
+    ]
+    assert all("tx" not in path for _endpoint, path in calls)
