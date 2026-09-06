@@ -141,11 +141,13 @@ export function CosmosRpcStatus({ source, pool = [], onDiagnostics, onProviderMo
         } else if (provider.id === manualProvider?.id) {
           marker = 'Manual'
         }
+        const providerState = reachable ? 'Healthy' : 'Unavailable'
+        const statusText = marker ? `${marker} · ${providerState}` : providerState
         return <div className="rpc-pool__row cosmos-endpoint-mode__health" key={provider.id}>
           <span className="rpc-pool__host"><span className={`cosmos-endpoint-mode__dot rpc-pool__state--${reachable ? 'healthy' : 'degraded'}`} aria-hidden="true">●</span>{provider.label}</span>
           <span className="cosmos-endpoint-mode__height">{height(provider.rpc.height)}</span>
           <span className="rpc-pool__latency">R {compactLatency(provider.rpc.latency_ms)} · A {compactLatency(provider.api.latency_ms)} ms</span>
-          <span className={`rpc-pool__state rpc-pool__state--${reachable ? 'healthy' : 'degraded'}`}>{marker || (reachable ? '' : 'Down')}</span>
+          <span className={`rpc-pool__state rpc-pool__state--${reachable ? 'healthy' : 'degraded'}`}>{statusText}</span>
         </div>
       })}</div></>}
       {diagnosticsError && <div className="cosmos-endpoint-mode__notice">Endpoint diagnostics are temporarily unavailable.</div>}
