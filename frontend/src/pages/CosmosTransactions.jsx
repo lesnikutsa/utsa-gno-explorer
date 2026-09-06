@@ -3,6 +3,7 @@ import { useCosmosResource } from '../hooks/useCosmosResource'
 import { relativeTime } from '../utils/time'
 import { formatTokenAmount } from '../utils/cosmosFormat'
 import '../styles/cosmos-transactions.css'
+import '../styles/cosmos-tx-tooltip.css'
 
 const shortHash = (hash) => `${hash.slice(0, 7)}...${hash.slice(-7)}`
 const compact = (value) => value == null ? '—' : Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(value)
@@ -38,7 +39,7 @@ export function CosmosTransactions({ network }) {
     {state === 'indexing_unavailable' && <section className="cosmos-card"><h2>Transaction search unavailable</h2><p>The upstream node does not expose indexed transaction search.</p></section>}
     {state === 'available' && <><section className="panel cosmos-blocks-table"><div className="cosmos-table"><table><thead><tr><th>Type</th><th>Tx hash</th><th>Time</th><th>Block</th><th>Status</th><th>Fee</th><th>Gas</th></tr></thead><tbody>{rows.length ? rows.map((row, index) => <tr key={row.tx_hash} className={!cursor && row.tx_hash === newest && index === 0 ? 'is-new-row' : ''}>
       <td title={row.primary_message_type || undefined}><span className={`cosmos-tx-type cosmos-tx-type--${typeTone(row)}`}>{row.primary_action}{row.message_count > 1 && <small className="cosmos-tx-more">+{row.message_count - 1}</small>}</span></td>
-      <td><a className="cosmos-tx-hash" href={`/networks/${network.id}/transactions/${encodeURIComponent(row.tx_hash)}`} data-tooltip={`Transaction hash\n${row.tx_hash}`} aria-label={`Open transaction ${row.tx_hash}`}>{shortHash(row.tx_hash)}</a></td>
+      <td><a className="cosmos-tx-hash cosmos-tx-tooltip" href={`/networks/${network.id}/transactions/${encodeURIComponent(row.tx_hash)}`} data-tooltip={row.tx_hash} aria-label={`Open transaction ${row.tx_hash}`}>{shortHash(row.tx_hash)}</a></td>
       <td><time dateTime={row.timestamp} title={row.timestamp}>{relativeTime(row.timestamp)}</time></td>
       <td><a className="table-link" href={`/networks/${network.id}/blocks/${row.height}`}><span className="accent-value mono">#{row.height.toLocaleString()}</span></a></td>
       <td><span className={`cosmos-tx-status cosmos-tx-status--${row.success ? 'success' : 'failed'}`}>{row.success ? 'Success' : 'Failed'}</span></td>
