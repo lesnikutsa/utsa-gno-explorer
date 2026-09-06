@@ -4,7 +4,7 @@ import test from 'node:test'
 import { formatProtocolDuration, formatProtocolPercent, formatSignedTokenAmount, formatTokenAmount } from '../src/utils/cosmosFormat.js'
 import { normalizePublicCosmosNetwork } from '../src/utils/publicNetworkRegistry.js'
 import { deriveBlockTimeMetrics } from '../src/utils/cosmosBlockTime.js'
-import { cosmosLivenessRisk } from '../utils/cosmosSlashing.js'
+import { cosmosLivenessRisk } from '../src/utils/cosmosSlashing.js'
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
 const app = read('../src/App.jsx')
@@ -146,7 +146,7 @@ test('Cosmos SDK liveness boundaries preserve strict greater-than semantics', ()
   const base = { startHeight: 100, currentHeight: 201, signedWindow: 100, minimumSigned: '0.5', averageBlockSeconds: 5 }
   assert.equal(cosmosLivenessRisk({ ...base, missedBlocks: 50 }).overThreshold, false)
   assert.equal(cosmosLivenessRisk({ ...base, missedBlocks: 51 }).overThreshold, true)
-  const initialWindow = cosmosLivenessRisk({ ...base, currentHeight: 150, missedBlocks: 50 }).overThreshold
+  const initialWindow = cosmosLivenessRisk({ ...base, currentHeight: 150, missedBlocks: 50 })
   assert.equal(initialWindow.overThreshold, false)
   assert.equal(initialWindow.earliestBlocks, 51)
   assert.equal(cosmosLivenessRisk({ ...base, missedBlocks: 0 }).budgetLeft, 50)
