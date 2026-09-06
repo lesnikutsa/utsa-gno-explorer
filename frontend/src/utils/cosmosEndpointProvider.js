@@ -23,7 +23,12 @@ export const cosmosApiNetworkId = (url) => {
 
 export const getCosmosEndpointProvider = (networkId) => {
   if (!SAFE_ID.test(networkId || '')) return 'auto'
-  const value = storage()?.getItem(`${STORAGE_PREFIX}${networkId}`)
+  let value = null
+  try {
+    value = storage()?.getItem(`${STORAGE_PREFIX}${networkId}`) ?? null
+  } catch {
+    return 'auto'
+  }
   return value && SAFE_ID.test(value) ? value : 'auto'
 }
 
