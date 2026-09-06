@@ -1,0 +1,63 @@
+.cosmos-tx-tooltip {
+  position: relative;
+  z-index: 1;
+  overflow: visible;
+}
+
+.cosmos-tx-tooltip[data-tooltip]::before,
+.cosmos-tx-tooltip[data-tooltip]::after {
+  position: absolute;
+  right: 0;
+  z-index: 80;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-3px);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.cosmos-tx-tooltip[data-tooltip]::before {
+  top: calc(100% + 3px);
+  margin-right: 12px;
+  border: 5px solid transparent;
+  border-bottom-color: var(--color-border);
+  content: '';
+}
+
+.cosmos-tx-tooltip[data-tooltip]::after {
+  top: calc(100% + 12px);
+  width: max-content;
+  max-width: min(460px, calc(100vw - 40px));
+  padding: 7px 9px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-card);
+  box-shadow: 0 7px 20px var(--color-shadow);
+  color: var(--color-text-bright);
+  content: attr(data-tooltip);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  white-space: nowrap;
+}
+
+.cosmos-tx-tooltip[data-tooltip]:hover,
+.cosmos-tx-tooltip[data-tooltip]:focus-visible {
+  z-index: 81;
+}
+
+.cosmos-tx-tooltip[data-tooltip]:hover::before,
+.cosmos-tx-tooltip[data-tooltip]:hover::after,
+.cosmos-tx-tooltip[data-tooltip]:focus-visible::before,
+.cosmos-tx-tooltip[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (max-width: 560px) {
+  .cosmos-tx-tooltip[data-tooltip]::after {
+    max-width: calc(100vw - 28px);
+    white-space: normal;
+  }
+}
