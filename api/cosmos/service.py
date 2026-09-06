@@ -20,6 +20,10 @@ _original_reencode_bech32_address = reencode_bech32_address
 _original_metadata = metadata
 
 _HISTORY_FLOOR = re.compile(r"lowest height is\s+(\d+)", re.IGNORECASE)
+_HISTORY_UNAVAILABLE = re.compile(
+    r"(?:lowest height is|height[^\n]*not available|could not find[^\n]*height|pruned)",
+    re.IGNORECASE,
+)
 _PROVIDER_CAPABILITY_TTL = 3600.0
 _PROVIDER_HISTORY_SEARCH_LIMIT = 32
 
@@ -47,12 +51,13 @@ class CosmosService(TransactionEndpointPolicyMixin, _core.CosmosService):
     async def _provider_rpc_capabilities(self, provider, canonical_id: str):
         """Read slow-changing RPC capabilities with a long shared cache.
 
-        `/status` supplies the tx-index flag and current height. A single
-        `/block?height=1` request supplies a cheap lower-bound hint when the
-        node reports one. If that hinted block cannot actually be rendered by
-        the explorer, a bounded binary search finds the first recent height for
-        which `/block`, `/commit`, and `/block_results` all normalize as a full
-        block-detail response. No transaction search or full-chain scan occurs.
+        `/status` supplies the tx-index flag and current height. Each block-detail
+        RPC method is asked once at height 1 so provider-reported pruning floors
+        can be compared independently. A reported floor is then verified with a
+        single point request. Only a method whose own reported floor is truly
+        unavailable gets a bounded method-specific binary search. Transient or
+        rate-limit style responses abort that refinement instead of being
+        misclassified as pruning. No transaction search or full-chain scan occurs.
         """
         transport = getattr(self, "transport", None)
         if transport is None:
@@ -63,7 +68,6 @@ class CosmosService(TransactionEndpointPolicyMixin, _core.CosmosService):
         async def load():
             tx_index = "unknown"
             latest_height = None
-            lowest_available_height = None
 
             try:
                 payload = await transport.get_object(provider.rpc_endpoint, "/status")
@@ -78,85 +82,113 @@ class CosmosService(TransactionEndpointPolicyMixin, _core.CosmosService):
             except Exception:
                 pass
 
-            floor_hint = None
-            try:
-                payload = await transport.get_object(
-                    provider.rpc_endpoint, "/block?height=1", accept_error_payload=True)
-                result = payload.get("result") if isinstance(payload, dict) else None
-                block = result.get("block") if isinstance(result, dict) else None
-                header = block.get("header") if isinstance(block, dict) else None
-                if isinstance(header, dict) and str(header.get("height")) == "1":
-                    floor_hint = 1
-                else:
-                    error = payload.get("error") if isinstance(payload, dict) else None
-                    if isinstance(error, dict):
-                        message = error.get("data") or error.get("message") or ""
-                        match = _HISTORY_FLOOR.search(str(message))
-                        if match:
-                            value = int(match.group(1))
-                            if value > 0:
-                                floor_hint = value
-            except Exception:
-                pass
+            paths = {
+                "block": "/block?height={height}",
+                "commit": "/commit?height={height}",
+                "block_results": "/block_results?height={height}",
+            }
 
-            probe_cache = {}
+            def error_text(payload):
+                if not isinstance(payload, dict):
+                    return ""
+                error = payload.get("error")
+                if isinstance(error, dict):
+                    return str(error.get("data") or error.get("message") or "")
+                if "code" in payload and "result" not in payload:
+                    return str(payload.get("message") or payload.get("detail") or "")
+                return ""
 
-            async def detail_available(height: int) -> bool:
-                if height in probe_cache:
-                    return probe_cache[height]
-                if height <= 0 or latest_height is None or height > latest_height:
-                    probe_cache[height] = False
+            def valid_result(kind: str, payload, height: int):
+                if not isinstance(payload, dict) or "result" not in payload:
+                    return None
+                result = payload.get("result")
+                if result is None:
                     return False
+                if not isinstance(result, dict):
+                    return None
                 try:
-                    block, commit, results = await asyncio.gather(
-                        transport.get_object(
-                            provider.rpc_endpoint, f"/block?height={height}",
-                            accept_error_payload=True),
-                        transport.get_object(
-                            provider.rpc_endpoint, f"/commit?height={height}",
-                            accept_error_payload=True),
-                        transport.get_object(
-                            provider.rpc_endpoint, f"/block_results?height={height}",
-                            accept_error_payload=True),
+                    if kind == "block":
+                        block = result.get("block")
+                        header = block.get("header") if isinstance(block, dict) else None
+                        return isinstance(header, dict) and int(header.get("height")) == height
+                    if kind == "commit":
+                        signed = result.get("signed_header")
+                        header = signed.get("header") if isinstance(signed, dict) else None
+                        commit = signed.get("commit") if isinstance(signed, dict) else None
+                        return (isinstance(header, dict) and isinstance(commit, dict)
+                                and int(header.get("height")) == height
+                                and int(commit.get("height")) == height)
+                    return int(result.get("height")) == height
+                except (TypeError, ValueError):
+                    return None
+
+            async def request(kind: str, height: int):
+                try:
+                    payload = await transport.get_object(
+                        provider.rpc_endpoint,
+                        paths[kind].format(height=height),
+                        accept_error_payload=True,
                     )
-                    _core.normalize_detail(
-                        block, commit, results,
-                        network_id=canonical_id,
-                        expected_chain_id=self.definition.transport.chain_id,
-                        requested_height=height,
-                        local_height=latest_height,
-                        identities={},
-                    )
-                    probe_cache[height] = True
                 except Exception:
-                    probe_cache[height] = False
-                return probe_cache[height]
+                    return None, None
 
-            if latest_height is not None and latest_height > 0:
-                lower = floor_hint if isinstance(floor_hint, int) and floor_hint > 0 else 1
-                lower = min(lower, latest_height)
+                message = error_text(payload)
+                match = _HISTORY_FLOOR.search(message)
+                floor = int(match.group(1)) if match else None
+                if message:
+                    if _HISTORY_UNAVAILABLE.search(message):
+                        return False, floor
+                    return None, floor
 
-                if await detail_available(lower):
-                    lowest_available_height = lower
+                state = valid_result(kind, payload, height)
+                return state, floor
+
+            async def method_floor(kind: str):
+                state_at_one, reported = await request(kind, 1)
+                if state_at_one is True:
+                    hint = 1
+                elif isinstance(reported, int) and reported > 0:
+                    hint = reported
                 else:
-                    # Avoid probing the moving tip itself when possible. A
-                    # finalized recent block is a more stable upper bound.
-                    upper = latest_height - 1 if latest_height > lower else latest_height
-                    if upper <= lower or not await detail_available(upper):
-                        upper = latest_height
+                    return None
 
-                    if upper > lower and await detail_available(upper):
-                        unavailable = lower
-                        available = upper
-                        for _ in range(_PROVIDER_HISTORY_SEARCH_LIMIT):
-                            if available - unavailable <= 1:
-                                break
-                            middle = (unavailable + available) // 2
-                            if await detail_available(middle):
-                                available = middle
-                            else:
-                                unavailable = middle
-                        lowest_available_height = available
+                if latest_height is None or latest_height <= 0:
+                    return None
+                hint = min(hint, latest_height)
+
+                state, _reported = await request(kind, hint)
+                if state is True:
+                    return hint
+                if state is None:
+                    return None
+
+                upper = latest_height - 1 if latest_height > hint else latest_height
+                if upper <= hint:
+                    return None
+                upper_state, _reported = await request(kind, upper)
+                if upper_state is not True:
+                    return None
+
+                unavailable = hint
+                available = upper
+                for _ in range(_PROVIDER_HISTORY_SEARCH_LIMIT):
+                    if available - unavailable <= 1:
+                        break
+                    middle = (unavailable + available) // 2
+                    middle_state, _reported = await request(kind, middle)
+                    if middle_state is None:
+                        return None
+                    if middle_state:
+                        available = middle
+                    else:
+                        unavailable = middle
+                return available
+
+            lowest_available_height = None
+            if latest_height is not None and latest_height > 0:
+                floors = await asyncio.gather(*(method_floor(kind) for kind in paths))
+                if all(isinstance(value, int) and value > 0 for value in floors):
+                    lowest_available_height = max(floors)
 
             return {
                 "tx_index": tx_index,
