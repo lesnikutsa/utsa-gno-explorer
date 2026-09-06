@@ -19,42 +19,19 @@
     min-width: 46px;
     text-align: center;
   }
-}
 
-/* Collapsed desktop / medium browser window: keep all seven facts on one row.
-   Give Application and Block history more room because their values are longest. */
-@media (max-width: 1100px) and (min-width: 900px) {
+  /* Collapsed desktop / tablet browser window: keep all seven facts on one row.
+     Application and Block history get extra room because their values are longest. */
   .cosmos-node-strip > dl {
     display: grid;
-    grid-template-columns: .65fr 1.15fr .75fr .8fr .85fr 1.55fr .9fr;
+    grid-template-columns: .62fr 1.16fr .72fr .78fr .82fr 1.52fr .86fr;
   }
 
   .cosmos-node-strip > dl > div {
     min-width: 0;
     flex: none;
-    padding-right: 9px;
-    padding-left: 9px;
-  }
-}
-
-/* Smaller tablet widths still need two balanced rows. */
-@media (max-width: 899px) and (min-width: 761px) {
-  .cosmos-node-strip > dl {
-    display: grid;
-    grid-template-columns: repeat(12, minmax(0, 1fr));
-  }
-
-  .cosmos-node-strip > dl > div {
-    min-width: 0;
-    flex: none;
-  }
-
-  .cosmos-node-strip > dl > div:nth-child(-n+4) {
-    grid-column: span 3;
-  }
-
-  .cosmos-node-strip > dl > div:nth-child(n+5) {
-    grid-column: span 4;
+    padding-right: 7px;
+    padding-left: 7px;
   }
 }
 
