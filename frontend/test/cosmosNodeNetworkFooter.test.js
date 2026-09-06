@@ -4,7 +4,7 @@ import test from 'node:test'
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
 
-test('Cosmos pages share the Node / Network strip above the common footer', () => {
+test('Cosmos pages share the compact node metrics strip above the common footer', () => {
   const layout = read('../src/layouts/CosmosExplorerLayout.jsx')
   const strip = read('../src/components/CosmosNodeNetworkStrip.jsx')
   const overview = read('../src/pages/CosmosOverview.jsx')
@@ -14,14 +14,14 @@ test('Cosmos pages share the Node / Network strip above the common footer', () =
   assert.match(layout, /!isOverview && <CosmosNodeNetworkStrip network=\{network\} overview=\{overview\} \/>/)
   assert.match(layout, /<CosmosResourceFooter \/>/)
 
-  // Overview already owns the same strip at the same visual position, so it is not duplicated there.
-  assert.match(overview, /className="panel cosmos-node-strip"/)
+  // Overview keeps its full titled Node / Network panel; other Cosmos pages use only the metric row.
+  assert.match(overview, /<h2>Node \/ Network<\/h2>/)
+  assert.doesNotMatch(strip, /<h2>Node \/ Network<\/h2>/)
+  assert.doesNotMatch(strip, /panel__heading/)
 
-  assert.match(strip, /Node \/ Network/)
   assert.match(strip, /endpoint-status/)
   assert.match(strip, /subscribeCosmosEndpointProvider/)
   assert.match(strip, /lowest_available_height/)
   assert.match(strip, /selectedTxIndex/)
   assert.match(strip, /RPC provider/)
-  assert.match(strip, /RPC: \{rpcProvider\.label\}/)
 })
