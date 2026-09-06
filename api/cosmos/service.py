@@ -1,5 +1,7 @@
 """Public Cosmos service facade with transaction-specific endpoint policy."""
 
+import asyncio
+
 from . import service_core as _core
 from .service_core import *  # noqa: F401,F403
 from .transaction_endpoint_policy import (
@@ -36,6 +38,65 @@ _core.metadata = _forward_metadata
 
 class CosmosService(TransactionEndpointPolicyMixin, _core.CosmosService):
     """Cosmos aggregation service with operation-aware transaction failover."""
+
+    async def endpoint_status(self):
+        """Return shared, bounded health for configured paired providers."""
+        providers = self.definition.endpoint_providers
+        canonical_id = self.definition.canonical_id or self.definition.transport.network_id
+        cache_key = (canonical_id, "endpoint_provider_status", ())
+
+        async def load():
+            rpc_result, rest_result = await asyncio.gather(
+                self.adapter._cached_candidates("rpc"),
+                self.adapter._cached_candidates("rest"),
+                return_exceptions=True,
+            )
+            rpc_candidates = () if isinstance(rpc_result, Exception) else tuple(rpc_result)
+            rest_candidates = () if isinstance(rest_result, Exception) else tuple(rest_result)
+            rpc_by_endpoint = {candidate.endpoint: candidate for candidate in rpc_candidates}
+            rest_by_endpoint = {candidate.endpoint: candidate for candidate in rest_candidates}
+
+            preferred_rpc = rpc_candidates[0].endpoint if rpc_candidates else None
+            preferred_api = rest_candidates[0].endpoint if rest_candidates else None
+            preferred_rpc_provider = next(
+                (provider.id for provider in providers if provider.rpc_endpoint == preferred_rpc), None)
+            preferred_api_provider = next(
+                (provider.id for provider in providers if provider.rest_endpoint == preferred_api), None)
+
+            rows = []
+            for provider in providers:
+                rpc = rpc_by_endpoint.get(provider.rpc_endpoint)
+                rest = rest_by_endpoint.get(provider.rest_endpoint)
+                rows.append({
+                    "id": provider.id,
+                    "label": provider.label,
+                    "rpc": {
+                        "host": self.adapter._host(provider.rpc_endpoint),
+                        "state": "healthy" if rpc is not None else "unavailable",
+                        "height": rpc.height if rpc is not None else None,
+                        "latency_ms": min(30000, max(0, round(rpc.latency * 1000))) if rpc is not None else None,
+                    },
+                    "api": {
+                        "host": self.adapter._host(provider.rest_endpoint),
+                        "state": "healthy" if rest is not None else "unavailable",
+                        "height": rest.height if rest is not None else None,
+                        "latency_ms": min(30000, max(0, round(rest.latency * 1000))) if rest is not None else None,
+                    },
+                })
+
+            return {
+                "network_id": canonical_id,
+                "mode": "manual" if self.definition.selected_provider_id else "auto",
+                "selected_provider_id": self.definition.selected_provider_id,
+                "preferred_rpc_provider_id": preferred_rpc_provider,
+                "preferred_api_provider_id": preferred_api_provider,
+                "mixed_providers": bool(
+                    preferred_rpc_provider and preferred_api_provider
+                    and preferred_rpc_provider != preferred_api_provider),
+                "providers": rows,
+            }
+
+        return await self.cache.get_or_load(cache_key, 15.0, load)
 
     async def _newer_history_cursor(self, anchor: int, upper: int, page: int,
                                     limit: int) -> str | None:
