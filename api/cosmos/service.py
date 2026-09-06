@@ -26,6 +26,9 @@ _HISTORY_UNAVAILABLE = re.compile(
 )
 _PROVIDER_CAPABILITY_TTL = 3600.0
 _PROVIDER_HISTORY_SEARCH_LIMIT = 32
+_PROVIDER_HISTORY_RETRIES = 3
+_PROVIDER_HISTORY_RETRY_DELAY = 0.25
+_PROVIDER_HISTORY_PACING = 0.10
 
 
 def _forward_valid_bech32_address(*args, **kwargs):
@@ -56,8 +59,9 @@ class CosmosService(TransactionEndpointPolicyMixin, _core.CosmosService):
         can be compared independently. A reported floor is then verified with a
         single point request. Only a method whose own reported floor is truly
         unavailable gets a bounded method-specific binary search. Transient or
-        rate-limit style responses abort that refinement instead of being
-        misclassified as pruning. No transaction search or full-chain scan occurs.
+        rate-limit style responses are retried with a short bounded backoff and
+        never classified as pruning. No transaction search or full-chain scan
+        occurs.
         """
         transport = getattr(self, "transport", None)
         if transport is None:
@@ -123,25 +127,32 @@ class CosmosService(TransactionEndpointPolicyMixin, _core.CosmosService):
                     return None
 
             async def request(kind: str, height: int):
-                try:
-                    payload = await transport.get_object(
-                        provider.rpc_endpoint,
-                        paths[kind].format(height=height),
-                        accept_error_payload=True,
-                    )
-                except Exception:
-                    return None, None
+                for attempt in range(_PROVIDER_HISTORY_RETRIES):
+                    payload = None
+                    try:
+                        payload = await transport.get_object(
+                            provider.rpc_endpoint,
+                            paths[kind].format(height=height),
+                            accept_error_payload=True,
+                        )
+                    except Exception:
+                        pass
+                    else:
+                        message = error_text(payload)
+                        match = _HISTORY_FLOOR.search(message)
+                        floor = int(match.group(1)) if match else None
+                        if message:
+                            if _HISTORY_UNAVAILABLE.search(message):
+                                return False, floor
+                        else:
+                            state = valid_result(kind, payload, height)
+                            if state is not None:
+                                return state, floor
 
-                message = error_text(payload)
-                match = _HISTORY_FLOOR.search(message)
-                floor = int(match.group(1)) if match else None
-                if message:
-                    if _HISTORY_UNAVAILABLE.search(message):
-                        return False, floor
-                    return None, floor
+                    if attempt + 1 < _PROVIDER_HISTORY_RETRIES:
+                        await asyncio.sleep(_PROVIDER_HISTORY_RETRY_DELAY * (attempt + 1))
 
-                state = valid_result(kind, payload, height)
-                return state, floor
+                return None, None
 
             async def method_floor(kind: str):
                 state_at_one, reported = await request(kind, 1)
@@ -174,6 +185,7 @@ class CosmosService(TransactionEndpointPolicyMixin, _core.CosmosService):
                 for _ in range(_PROVIDER_HISTORY_SEARCH_LIMIT):
                     if available - unavailable <= 1:
                         break
+                    await asyncio.sleep(_PROVIDER_HISTORY_PACING)
                     middle = (unavailable + available) // 2
                     middle_state, _reported = await request(kind, middle)
                     if middle_state is None:
