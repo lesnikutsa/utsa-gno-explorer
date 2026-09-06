@@ -4,6 +4,7 @@ import { useCosmosResource } from '../hooks/useCosmosResource'
 import { deriveBlockTimeMetrics } from '../utils/cosmosBlockTime'
 import { usePathname } from '../utils/navigation'
 import { ExplorerLayout } from './ExplorerLayout'
+import '../styles/cosmos-responsive.css'
 
 const healthFor = (resource) => {
   if (!resource.data) return resource.loading ? 'loading' : 'error'
