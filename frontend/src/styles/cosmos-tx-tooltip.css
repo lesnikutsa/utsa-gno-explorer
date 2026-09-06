@@ -11,6 +11,12 @@
   overflow: visible;
 }
 
+.cosmos-blocks:not(.cosmos-transactions) .cosmos-blocks-table tbody tr:hover,
+.cosmos-blocks:not(.cosmos-transactions) .cosmos-blocks-table tbody tr:focus-within {
+  position: relative;
+  z-index: 90;
+}
+
 .cosmos-tx-tooltip[data-tooltip]::before,
 .cosmos-tx-tooltip[data-tooltip]::after,
 .cosmos-data-tooltip[data-tooltip]::before,
