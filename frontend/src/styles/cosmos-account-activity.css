@@ -4,7 +4,7 @@
 .cosmos-account-activity th:nth-child(1), .cosmos-account-activity td:nth-child(1) { width: 34%; }
 .cosmos-account-activity th:nth-child(2), .cosmos-account-activity td:nth-child(2) { width: 18%; }
 .cosmos-account-activity th:nth-child(3), .cosmos-account-activity td:nth-child(3) { width: 24%; }
-.cosmos-account-activity th:nth-child(4), .cosmos-account-activity td:nth-child(4) { width: 24%; }
+.cosmos-account-activity th:nth-child(4), .cosmos-account-activity td:nth-child(4) { width: 24%; overflow: visible; }
 .cosmos-account-activity th { padding: 9px 16px; color: var(--color-text-secondary); font-family: inherit; font-size: 10px; font-weight: 700; text-align: left; text-transform: uppercase; letter-spacing: 0; }
 .cosmos-account-activity td { padding: 13px 16px; border-top: 1px solid var(--color-border); color: var(--color-text-bright); font-family: inherit; font-size: 11px; vertical-align: middle; }
 .cosmos-account-activity tbody tr:hover { background: var(--color-overlay-hover); }
@@ -29,7 +29,7 @@
 .cosmos-account-activity__detail { display: block; max-width: 100%; }
 .cosmos-account-activity__height { width: fit-content; font-size: 11px; font-weight: 600; }
 .cosmos-account-activity__height:hover, .cosmos-account-activity__height:focus-visible { color: var(--color-text-bright); }
-.cosmos-account-activity__tx { display: inline-block; max-width: 100%; overflow: hidden; color: var(--color-text-secondary); font-family: var(--font-mono); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.cosmos-account-activity__tx { display: inline-block; max-width: 100%; overflow: visible; color: var(--color-text-secondary); font-family: var(--font-mono); font-size: 10px; white-space: nowrap; }
 .cosmos-account-activity__tx:hover, .cosmos-account-activity__tx:focus-visible { color: var(--color-accent); }
 .cosmos-account-activity__note { margin: 0; padding: 8px 16px 0; font-size: 9px; }
 .cosmos-account-activity__more { padding: 10px 16px 12px; border-top: 1px solid var(--color-border); }
