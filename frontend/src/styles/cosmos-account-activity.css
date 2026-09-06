@@ -28,8 +28,9 @@
 .cosmos-account-activity__coin > small { color: var(--color-success); font-family: var(--font-ui); font-size: 11px; font-weight: 600; }
 .cosmos-account-activity__detail { display: block; max-width: 100%; }
 .cosmos-account-activity__height { width: fit-content; font-size: 11px; font-weight: 600; }
-.cosmos-account-activity__height:hover, .cosmos-account-activity__height:focus-visible, .cosmos-account-activity__tx:hover, .cosmos-account-activity__tx:focus-visible { color: var(--color-text-bright); }
+.cosmos-account-activity__height:hover, .cosmos-account-activity__height:focus-visible { color: var(--color-text-bright); }
 .cosmos-account-activity__tx { display: inline-block; max-width: 100%; overflow: hidden; color: var(--color-text-secondary); font-family: var(--font-mono); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.cosmos-account-activity__tx:hover, .cosmos-account-activity__tx:focus-visible { color: var(--color-accent); }
 .cosmos-account-activity__note { margin: 0; padding: 8px 16px 0; font-size: 9px; }
 .cosmos-account-activity__more { padding: 10px 16px 12px; border-top: 1px solid var(--color-border); }
 .cosmos-account-activity__more button { min-height: 30px; padding: 6px 11px; border: 1px solid var(--color-accent); border-radius: 5px; background: transparent; color: var(--color-text-bright); font-family: inherit; font-size: 10px; font-weight: 700; cursor: pointer; }
