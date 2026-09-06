@@ -107,7 +107,7 @@ def test_endpoint_status_keeps_unavailable_side_visible():
     assert rows["publicnode"]["api"]["state"] == "unavailable"
 
 
-def test_rpc_capabilities_find_usable_history_floor_with_bounded_point_probes_and_cache(monkeypatch):
+def test_rpc_capabilities_refine_only_the_method_with_a_bad_reported_floor_and_share_cache():
     definition = CANONICAL_NETWORKS["atomone-mainnet"]
     provider = definition.endpoint_providers[0]
     service = object.__new__(CosmosService)
@@ -116,7 +116,18 @@ def test_rpc_capabilities_find_usable_history_floor_with_bounded_point_probes_an
     service.adapter = SimpleNamespace(_host=lambda endpoint: urlsplit(endpoint).hostname)
 
     calls = []
-    usable_from = 9_550_000
+
+    def block(height):
+        return {"result": {"block": {"header": {"height": str(height)}}}}
+
+    def commit(height):
+        return {"result": {"signed_header": {
+            "header": {"height": str(height)},
+            "commit": {"height": str(height)},
+        }}}
+
+    def results(height):
+        return {"result": {"height": str(height)}}
 
     class Transport:
         async def get_object(self, endpoint, path, **_kwargs):
@@ -125,7 +136,7 @@ def test_rpc_capabilities_find_usable_history_floor_with_bounded_point_probes_an
                 return {
                     "result": {
                         "sync_info": {
-                            "latest_block_height": "10227077",
+                            "latest_block_height": "100",
                             "latest_block_time": "2026-09-06T00:00:00Z",
                             "catching_up": False,
                         },
@@ -142,21 +153,21 @@ def test_rpc_capabilities_find_usable_history_floor_with_bounded_point_probes_an
                         },
                     }
                 }
-            if path == "/block?height=1":
-                return {"error": {"data": "height 1 is not available, lowest height is 3133197"}}
+
+            kind = "block_results" if path.startswith("/block_results?") else (
+                "commit" if path.startswith("/commit?") else "block")
             height = int(path.rsplit("=", 1)[1])
-            return {"probe_height": height, "usable": height >= usable_from}
 
-    def fake_normalize(block, commit, results, **kwargs):
-        height = kwargs["requested_height"]
-        if (block.get("usable") and commit.get("usable") and results.get("usable")
-                and block.get("probe_height") == height
-                and commit.get("probe_height") == height
-                and results.get("probe_height") == height):
-            return {"height": height}
-        raise ValueError("detail unavailable")
+            if height == 1:
+                return {"error": {"data": "height 1 is not available, lowest height is 20"}}
+            if kind == "block":
+                return block(height)
+            if kind == "commit":
+                return commit(height)
+            if height < 40:
+                return {"error": {"data": f"could not find results for height #{height}"}}
+            return results(height)
 
-    monkeypatch.setattr("api.cosmos.service._core.normalize_detail", fake_normalize)
     service.transport = Transport()
 
     async def run():
@@ -168,12 +179,59 @@ def test_rpc_capabilities_find_usable_history_floor_with_bounded_point_probes_an
     first, second, first_call_count = asyncio.run(run())
     assert first == second == {
         "tx_index": "on",
-        "lowest_available_height": usable_from,
+        "lowest_available_height": 40,
     }
     assert len(calls) == first_call_count
-    assert calls[0:2] == [
-        (provider.rpc_endpoint, "/status"),
-        (provider.rpc_endpoint, "/block?height=1"),
-    ]
-    assert first_call_count <= 2 + 3 * (2 + 32)
+    assert calls.count((provider.rpc_endpoint, "/status")) == 1
+    assert {(provider.rpc_endpoint, path) for path in (
+        "/block?height=1", "/commit?height=1", "/block_results?height=1")}.issubset(set(calls))
+    assert first_call_count <= 20
     assert all("tx_search" not in path and not path.startswith("/tx?") for _endpoint, path in calls)
+
+
+def test_rpc_capabilities_do_not_turn_transient_provider_errors_into_fake_history_floor():
+    definition = CANONICAL_NETWORKS["atomone-mainnet"]
+    provider = definition.endpoint_providers[0]
+    service = object.__new__(CosmosService)
+    service.definition = definition
+    service.cache = RequestCache()
+    service.adapter = SimpleNamespace(_host=lambda endpoint: urlsplit(endpoint).hostname)
+
+    def block(height):
+        return {"result": {"block": {"header": {"height": str(height)}}}}
+
+    def commit(height):
+        return {"result": {"signed_header": {
+            "header": {"height": str(height)},
+            "commit": {"height": str(height)},
+        }}}
+
+    class Transport:
+        async def get_object(self, _endpoint, path, **_kwargs):
+            if path == "/status":
+                return {
+                    "result": {
+                        "sync_info": {
+                            "latest_block_height": "100",
+                            "latest_block_time": "2026-09-06T00:00:00Z",
+                            "catching_up": False,
+                        },
+                        "node_info": {
+                            "network": "atomone-1",
+                            "version": "0.38.22",
+                            "other": {"tx_index": "on"},
+                        },
+                    }
+                }
+            height = int(path.rsplit("=", 1)[1])
+            if height == 1:
+                return {"error": {"data": "height 1 is not available, lowest height is 20"}}
+            if path.startswith("/block?"):
+                return block(height)
+            if path.startswith("/commit?"):
+                return commit(height)
+            return {"code": 429, "message": "rate limit exceeded"}
+
+    service.transport = Transport()
+    result = asyncio.run(service._provider_rpc_capabilities(provider, "atomone-mainnet"))
+    assert result == {"tx_index": "on", "lowest_available_height": None}
