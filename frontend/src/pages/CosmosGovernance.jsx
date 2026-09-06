@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useCosmosResource } from '../hooks/useCosmosResource'
 import '../styles/cosmos-governance.css'
+import '../styles/cosmos-tx-tooltip.css'
 
 const TABS = ['all', 'voting', 'deposit', 'passed', 'rejected', 'failed']
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -122,9 +123,11 @@ export function CosmosGovernance({ network }) {
     <div className="table-scroll cosmos-governance__table"><table className="data-table"><thead><tr><th>#</th><th>Title</th><th>Type</th><th>Status</th><th>Voting end</th><th>Vote split</th></tr></thead><tbody>
       {proposals.length ? proposals.map((proposal) => {
         const end = dateValue(proposal.voting_end_time)
+        const proposalTitle = proposal.title || 'Untitled proposal'
+        const titleTooltip = proposalTitle.length > 54 ? proposalTitle : null
         return <tr key={proposal.proposal_id}>
           <td><span className="cosmos-governance__proposal-id">{proposal.proposal_id}</span></td>
-          <td><strong className="cosmos-governance__title" title={proposal.title}>{proposal.title}</strong></td>
+          <td><span className={`cosmos-governance__title-tooltip${titleTooltip ? ' cosmos-data-tooltip' : ''}`} data-tooltip={titleTooltip || undefined} tabIndex={titleTooltip ? 0 : undefined}><strong className="cosmos-governance__title">{proposalTitle}</strong></span></td>
           <td><span className={`cosmos-gov-type cosmos-gov-type--${typeTone(proposal.proposal_type)}`}>{proposal.proposal_type}</span></td>
           <td><span className={`cosmos-gov-status cosmos-gov-status--${statusTone(proposal.status)}`}>{label(proposal.status)}</span></td>
           <td><span className="cosmos-governance__date">{end.date}</span>{end.time && <small>{end.time}</small>}</td>
