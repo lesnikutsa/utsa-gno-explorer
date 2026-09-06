@@ -10,7 +10,7 @@
 
 .cosmos-governance-detail__vote-panel { overflow: hidden; }
 .cosmos-governance-detail__vote-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; padding: 4px 16px 16px; }
-.cosmos-governance-detail__vote-metric { display: grid; min-width: 0; gap: 4px; place-items: center; padding: 10px 12px; border-right: 1px solid var(--color-border); text-align: center; transition: background .15s ease; }
+.cosmos-governance-detail__vote-metric { display: grid; min-width: 0; gap: 4px; place-items: center; padding: 10px 12px; border-right: 1px solid var(--color-border); background: var(--color-surface-subtle); text-align: center; transition: background .15s ease; }
 .cosmos-governance-detail__vote-metric:hover { background: var(--color-overlay-hover); }
 .cosmos-governance-detail__vote-metric:last-child { border-right: 0; }
 .cosmos-governance-detail__vote-metric > span { font-size: 12px; font-weight: 800; letter-spacing: .08em; }
@@ -38,7 +38,7 @@
 .cosmos-governance-detail__deadline-time strong { color: var(--color-text-bright); font-weight: 600; }
 
 .cosmos-governance-detail__details-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; }
-.cosmos-governance-detail__field { min-width: 0; padding: 10px 13px; border-right: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); transition: background .15s ease; }
+.cosmos-governance-detail__field { min-width: 0; padding: 10px 13px; border-right: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); transition: background .15s ease; }
 .cosmos-governance-detail__field:hover { background: var(--color-overlay-hover); }
 .cosmos-governance-detail__field:nth-child(4n) { border-right: 0; }
 .cosmos-governance-detail__field.is-wide { grid-column: span 2; }
