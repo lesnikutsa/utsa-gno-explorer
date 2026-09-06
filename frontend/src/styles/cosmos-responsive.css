@@ -22,11 +22,20 @@
 
   .cosmos-node-strip > dl {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(12, minmax(0, 1fr));
   }
 
   .cosmos-node-strip > dl > div {
     min-width: 0;
+    flex: none;
+  }
+
+  .cosmos-node-strip > dl > div:nth-child(-n+4) {
+    grid-column: span 3;
+  }
+
+  .cosmos-node-strip > dl > div:nth-child(n+5) {
+    grid-column: span 4;
   }
 }
 
@@ -38,11 +47,20 @@
 
   .cosmos-node-strip > dl > div {
     min-width: 0;
+    flex: none;
+  }
+
+  .cosmos-node-strip > dl > div:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
   }
 }
 
 @media (max-width: 480px) {
   .cosmos-node-strip > dl {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cosmos-node-strip > dl > div {
+    grid-column: auto;
   }
 }
