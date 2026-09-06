@@ -2,6 +2,7 @@ import asyncio
 from types import SimpleNamespace
 from urllib.parse import urlsplit
 
+import api.cosmos.service as service_module
 from api.cosmos.cache import RequestCache
 from api.cosmos.registry import (CANONICAL_NETWORKS, NETWORKS, get_network,
                                  provider_alias_id, public_networks)
@@ -107,7 +108,10 @@ def test_endpoint_status_keeps_unavailable_side_visible():
     assert rows["publicnode"]["api"]["state"] == "unavailable"
 
 
-def test_rpc_capabilities_refine_only_the_method_with_a_bad_reported_floor_and_share_cache():
+def test_rpc_capabilities_refine_only_the_method_with_a_bad_reported_floor_and_share_cache(monkeypatch):
+    monkeypatch.setattr(service_module, "_PROVIDER_HISTORY_PACING", 0.0)
+    monkeypatch.setattr(service_module, "_PROVIDER_HISTORY_RETRY_DELAY", 0.0)
+
     definition = CANONICAL_NETWORKS["atomone-mainnet"]
     provider = definition.endpoint_providers[0]
     service = object.__new__(CosmosService)
@@ -116,6 +120,7 @@ def test_rpc_capabilities_refine_only_the_method_with_a_bad_reported_floor_and_s
     service.adapter = SimpleNamespace(_host=lambda endpoint: urlsplit(endpoint).hostname)
 
     calls = []
+    transient_seen = False
 
     def block(height):
         return {"result": {"block": {"header": {"height": str(height)}}}}
@@ -131,6 +136,7 @@ def test_rpc_capabilities_refine_only_the_method_with_a_bad_reported_floor_and_s
 
     class Transport:
         async def get_object(self, endpoint, path, **_kwargs):
+            nonlocal transient_seen
             calls.append((endpoint, path))
             if path == "/status":
                 return {
@@ -164,6 +170,9 @@ def test_rpc_capabilities_refine_only_the_method_with_a_bad_reported_floor_and_s
                 return block(height)
             if kind == "commit":
                 return commit(height)
+            if height == 59 and not transient_seen:
+                transient_seen = True
+                return {"code": 429, "message": "rate limit exceeded"}
             if height < 40:
                 return {"error": {"data": f"could not find results for height #{height}"}}
             return results(height)
@@ -181,15 +190,19 @@ def test_rpc_capabilities_refine_only_the_method_with_a_bad_reported_floor_and_s
         "tx_index": "on",
         "lowest_available_height": 40,
     }
+    assert transient_seen is True
     assert len(calls) == first_call_count
     assert calls.count((provider.rpc_endpoint, "/status")) == 1
     assert {(provider.rpc_endpoint, path) for path in (
         "/block?height=1", "/commit?height=1", "/block_results?height=1")}.issubset(set(calls))
-    assert first_call_count <= 20
+    assert first_call_count <= 22
     assert all("tx_search" not in path and not path.startswith("/tx?") for _endpoint, path in calls)
 
 
-def test_rpc_capabilities_do_not_turn_transient_provider_errors_into_fake_history_floor():
+def test_rpc_capabilities_do_not_turn_persistent_transient_errors_into_fake_history_floor(monkeypatch):
+    monkeypatch.setattr(service_module, "_PROVIDER_HISTORY_PACING", 0.0)
+    monkeypatch.setattr(service_module, "_PROVIDER_HISTORY_RETRY_DELAY", 0.0)
+
     definition = CANONICAL_NETWORKS["atomone-mainnet"]
     provider = definition.endpoint_providers[0]
     service = object.__new__(CosmosService)
