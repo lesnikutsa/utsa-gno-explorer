@@ -86,7 +86,7 @@ function AmountDetail({ item, network, market }) {
         {usd && <small>≈ {usd}</small>}
       </span>
     }) : <span>—</span>}
-    {item.detail && <small className="cosmos-account-activity__detail" title={item.detail}>{shorten(item.detail, 26, 12)}</small>}
+    {item.detail && <span className="cosmos-data-tooltip" data-tooltip={item.detail}><small className="cosmos-account-activity__detail">{shorten(item.detail, 26, 12)}</small></span>}
   </div>
 }
 
