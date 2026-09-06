@@ -101,15 +101,26 @@
   border-top: 0;
 }
 
-.cosmos-endpoint-mode__health {
-  grid-template-columns: 78px 116px minmax(130px, 1fr) auto;
+.rpc-pool__row.cosmos-endpoint-mode__health {
+  grid-template-columns: minmax(86px, 1fr) auto auto minmax(42px, auto);
   align-items: center;
-  gap: 5px;
+  gap: 7px;
+  padding-block: 5px;
   font-size: 9px;
 }
 
 .cosmos-endpoint-mode__health .rpc-pool__host {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
   font-weight: 700;
+}
+
+.cosmos-endpoint-mode__dot {
+  flex: 0 0 auto;
+  font-size: 8px;
+  line-height: 1;
 }
 
 .cosmos-endpoint-mode__height {
@@ -121,6 +132,7 @@
 .cosmos-endpoint-mode__health .rpc-pool__latency,
 .cosmos-endpoint-mode__health .rpc-pool__state {
   font-size: 9px;
+  white-space: nowrap;
 }
 
 .cosmos-endpoint-mode__notice {
@@ -140,8 +152,8 @@
   }
 }
 
-@media (max-width: 520px) {
-  .cosmos-endpoint-mode__health {
+@media (max-width: 460px) {
+  .rpc-pool__row.cosmos-endpoint-mode__health {
     grid-template-columns: minmax(0, 1fr) auto;
     row-gap: 3px;
   }
