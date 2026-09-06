@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { CopyButton } from '../components/CopyButton'
 import { useCosmosResource } from '../hooks/useCosmosResource'
 import { formatTokenAmount } from '../utils/cosmosFormat'
+import { countdownParts } from '../utils/futureBlock'
 import '../styles/cosmos-governance.css'
 import '../styles/cosmos-governance-detail.css'
 
@@ -96,6 +97,39 @@ function VoteHero({ tally }) {
   </section>
 }
 
+function ProposalCountdown({ proposal }) {
+  const target = proposal.status === 'voting'
+    ? proposal.voting_end_time
+    : proposal.status === 'deposit' ? proposal.deposit_end_time : null
+  const [now, setNow] = useState(Date.now())
+
+  useEffect(() => {
+    if (!target) return undefined
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [target])
+
+  if (!target) return null
+  const targetTime = Date.parse(target)
+  if (!Number.isFinite(targetTime) || targetTime <= now) return null
+  const countdown = countdownParts(target, now)
+  if (!countdown) return null
+
+  const heading = proposal.status === 'voting' ? 'Voting ends in' : 'Deposit period ends in'
+  return <section className="panel cosmos-governance-detail__deadline">
+    <div className="cosmos-future-countdown" aria-label={heading}>
+      <p>{heading}</p>
+      <div className="cosmos-future-countdown__grid">
+        {[['Days', countdown.days], ['Hours', countdown.hours], ['Minutes', countdown.minutes], ['Seconds', countdown.seconds]].map(([unit, value]) => <div key={unit}>
+          <strong>{unit === 'Days' ? value.toLocaleString('en-US') : String(value).padStart(2, '0')}</strong>
+          <span>{unit}</span>
+        </div>)}
+      </div>
+    </div>
+    <p className="cosmos-governance-detail__deadline-time">{heading.replace(' in', '')}: <strong>{dateValue(target)}</strong></p>
+  </section>
+}
+
 function ProposalField({ label: fieldLabel, children, wide = false }) {
   return <div className={`cosmos-governance-detail__field${wide ? ' is-wide' : ''}`}><dt>{fieldLabel}</dt><dd>{children}</dd></div>
 }
@@ -113,20 +147,82 @@ function VoteOptions({ options }) {
   })}</div>
 }
 
-function VotersList({ network, proposalId }) {
+function VotersList({ network, proposalId, proposalStatus }) {
   const resource = useCosmosResource(`/api/networks/${network.id}/governance/${proposalId}/votes`, 0)
   if (!resource.data && resource.loading) return <div className="cosmos-governance-detail__voters-state">Loading voters…</div>
   if (!resource.data) return <div className="cosmos-governance-detail__voters-state cosmos-error">Voter list is temporarily unavailable.</div>
   const votes = resource.data.votes || []
+  const emptyMessage = proposalStatus === 'deposit'
+    ? 'Voting has not started yet.'
+    : proposalStatus === 'voting'
+      ? 'No votes have been returned yet.'
+      : 'No live voter records are exposed for this completed proposal.'
   return <div className="cosmos-governance-detail__voters-content">
     <div className="cosmos-governance-detail__voters-heading"><span>Voters</span><strong>{resource.data.total}</strong></div>
     <div className="table-scroll cosmos-governance-detail__voters-table"><table className="data-table"><thead><tr><th>Voter</th><th>Vote</th></tr></thead><tbody>
       {votes.length ? votes.map((vote) => <tr key={vote.voter}>
         <td><span className="cosmos-governance-detail__voter"><a href={`/networks/${network.id}/accounts/${encodeURIComponent(vote.voter)}`}>{vote.voter}</a><CopyButton value={vote.voter} label="voter address" showTitle={false} /></span></td>
         <td><VoteOptions options={vote.options} /></td>
-      </tr>) : <tr><td colSpan="2">No votes returned for this proposal.</td></tr>}
+      </tr>) : <tr><td colSpan="2" className="cosmos-governance-detail__voters-empty">{emptyMessage}</td></tr>}
     </tbody></table></div>
   </div>
+}
+
+const descriptionBlocks = (value) => {
+  const lines = String(value || '').replace(/\r\n?/g, '\n').split('\n')
+  const blocks = []
+  let paragraph = []
+  const flush = () => {
+    if (!paragraph.length) return
+    blocks.push({ kind: 'paragraph', text: paragraph.join(' ') })
+    paragraph = []
+  }
+  for (const line of lines) {
+    const text = line.trim()
+    if (!text) {
+      flush()
+      continue
+    }
+    const heading = /^(#{1,3})\s+(.+)$/.exec(text)
+    if (heading) {
+      flush()
+      blocks.push({ kind: 'heading', level: heading[1].length, text: heading[2] })
+      continue
+    }
+    paragraph.push(text)
+  }
+  flush()
+  return blocks
+}
+
+const renderInlineLinks = (text, prefix) => {
+  const parts = []
+  const pattern = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<]+)/g
+  let cursor = 0
+  let match
+  let index = 0
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > cursor) parts.push(text.slice(cursor, match.index))
+    const href = match[2] || match[3]
+    const visible = match[1] || href
+    parts.push(<a href={href} key={`${prefix}-${index}`} target="_blank" rel="noreferrer">{visible}</a>)
+    cursor = match.index + match[0].length
+    index += 1
+  }
+  if (cursor < text.length) parts.push(text.slice(cursor))
+  return parts
+}
+
+function ProposalDescription({ value }) {
+  const blocks = descriptionBlocks(value)
+  if (!blocks.length) return <p>No summary provided.</p>
+  return blocks.map((block, index) => {
+    if (block.kind === 'heading') {
+      const Heading = block.level === 1 ? 'h3' : 'h4'
+      return <Heading key={`heading-${index}`}>{renderInlineLinks(block.text, `heading-${index}`)}</Heading>
+    }
+    return <p key={`paragraph-${index}`}>{renderInlineLinks(block.text, `paragraph-${index}`)}</p>
+  })
 }
 
 function TechnicalDetails({ messages, metadata }) {
@@ -159,6 +255,7 @@ export function CosmosGovernanceDetail({ network, proposalId }) {
     </header>
 
     <VoteHero tally={proposal.tally} />
+    <ProposalCountdown proposal={proposal} />
 
     <section className="panel cosmos-governance-detail__details">
       <div className="panel__heading"><h2>Proposal Details</h2></div>
@@ -178,12 +275,12 @@ export function CosmosGovernanceDetail({ network, proposalId }) {
 
     <section className="panel cosmos-governance-detail__description">
       <div className="panel__heading"><h2>Description</h2></div>
-      <div className="cosmos-governance-detail__description-body">{data.summary || 'No summary provided.'}</div>
+      <div className="cosmos-governance-detail__description-body"><ProposalDescription value={data.summary} /></div>
     </section>
 
     <section className="panel cosmos-governance-detail__voters">
       <button className="cosmos-governance-detail__toggle cosmos-governance-detail__voters-toggle" type="button" aria-expanded={showVoters} onClick={() => setShowVoters((value) => !value)}>{showVoters ? '▼' : '▶'} Voters</button>
-      {showVoters && <VotersList network={network} proposalId={proposal.proposal_id} />}
+      {showVoters && <VotersList network={network} proposalId={proposal.proposal_id} proposalStatus={proposal.status} />}
     </section>
 
     <TechnicalDetails messages={data.messages} metadata={data.metadata} />
