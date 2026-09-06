@@ -4,6 +4,7 @@ import test from 'node:test'
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
 const page = read('../src/pages/CosmosTransactions.jsx')
+const blocks = read('../src/pages/CosmosBlocks.jsx')
 const blockDetail = read('../src/pages/CosmosBlockDetail.jsx')
 const validatorDetail = read('../src/pages/CosmosValidatorDetail.jsx')
 const accountActivity = read('../src/components/CosmosAccountActivity.jsx')
@@ -40,7 +41,31 @@ test('Cosmos shortened transaction hashes use one hash-only Explorer tooltip', (
   assert.doesNotMatch(accountActivity, /cosmos-account-activity__tx[^>]*title=\{item\.tx_hash\}/)
   assert.match(validatorDetail, /className="mono cosmos-validator-activity__tx cosmos-tx-tooltip"[^>]*data-tooltip=\{item\.tx_hash\}/)
   assert.doesNotMatch(validatorDetail, /cosmos-validator-activity__tx[^>]*title=\{item\.tx_hash\}/)
-  assert.match(tooltipStyles, /\.cosmos-tx-tooltip\[data-tooltip\]::after \{[^}]*background: var\(--color-card\)[^}]*color: var\(--color-text-bright\)[^}]*content: attr\(data-tooltip\)/)
+  assert.match(tooltipStyles, /background: var\(--color-popover\)/)
+  assert.match(tooltipStyles, /color: var\(--color-text-bright\)/)
+  assert.match(tooltipStyles, /content: attr\(data-tooltip\)/)
+  assert.match(tooltipStyles, /left: 50%/)
+  assert.match(tooltipStyles, /translate\(-50%, -3px\)/)
+  assert.match(tooltipStyles, /\.cosmos-account-activity \.cosmos-tx-tooltip/)
+  assert.match(tooltipStyles, /\.cosmos-validator-activity \.cosmos-tx-tooltip/)
+  assert.match(accountStyles, /\.cosmos-account-activity__tx \{[^}]*overflow: visible/)
+})
+
+test('short or compact Cosmos values use Explorer tooltips instead of native browser titles', () => {
+  assert.match(page, /className="cosmos-data-tooltip" data-tooltip=\{row\.primary_message_type \|\| undefined\}/)
+  assert.match(page, /className="cosmos-data-tooltip" dateTime=\{row\.timestamp\} data-tooltip=\{row\.timestamp\}/)
+  assert.match(page, /cosmos-data-tooltip cosmos-data-tooltip--right" data-tooltip=\{`Gas used:/)
+  assert.doesNotMatch(page, /title=\{row\.primary_message_type/)
+  assert.doesNotMatch(page, /dateTime=\{row\.timestamp\} title=/)
+  assert.doesNotMatch(page, /title=\{`\$\{row\.gas_used\}/)
+  assert.match(blocks, /cosmos-data-tooltip cosmos-data-tooltip--right" data-tooltip=\{block\.hash\}/)
+  assert.doesNotMatch(blocks, /title=\{block\.hash\}/)
+})
+
+test('full block values do not repeat themselves in native tooltips', () => {
+  assert.doesNotMatch(blockDetail, /className=\{compact \? undefined : 'cosmos-hash-value'\} title=\{value\}/)
+  assert.doesNotMatch(blockDetail, /<time title=\{data\.timestamp\}/)
+  assert.match(blockDetail, /className="cosmos-data-tooltip cosmos-data-tooltip--right" data-tooltip=\{sig\.timestamp\}/)
 })
 
 test('Block detail full transaction hash uses the same neutral to accent link semantics without a redundant tooltip', () => {
