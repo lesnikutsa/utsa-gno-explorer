@@ -19,7 +19,9 @@ test('Cosmos governance reuses validator summary, tabs and search structure', ()
 test('Cosmos governance table mirrors validator numbering and keeps titles bounded', () => {
   assert.match(page, /<th>#<\/th><th>Title<\/th><th>Type<\/th><th>Status<\/th><th>Voting end<\/th><th>Vote split<\/th>/)
   assert.match(page, /className="cosmos-governance__proposal-id">\{proposal\.proposal_id\}/)
-  assert.match(page, /className="cosmos-governance__title" title=\{proposal\.title\}/)
+  assert.match(page, /cosmos-governance__title-tooltip/)
+  assert.match(page, /data-tooltip=\{titleTooltip \|\| undefined\}/)
+  assert.doesNotMatch(page, /title=\{proposal\.title\}/)
   assert.match(styles, /\.cosmos-governance__proposal-id \{[^}]*min-width: 23px;[^}]*height: 19px;/)
   assert.match(styles, /\.cosmos-governance__title \{[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;[^}]*white-space: nowrap;/)
 })
@@ -32,12 +34,12 @@ test('Cosmos governance dates are deterministic English UTC rather than browser 
   assert.doesNotMatch(page, /toLocaleDateString\(undefined/)
 })
 
-test('Cosmos governance keeps proposal status and centered Gno-inspired vote split visualisation', () => {
+test('Cosmos governance keeps proposal status and readable centered Gno-inspired vote split visualisation', () => {
   assert.match(page, /cosmos-gov-type/)
   assert.match(page, /cosmos-gov-status/)
   assert.match(page, /cosmos-governance-votes__labels/)
   assert.match(page, /cosmos-governance-votes__bar/)
-  assert.match(styles, /\.cosmos-governance-votes__labels \{[^}]*justify-content: center;/)
+  assert.match(styles, /\.cosmos-governance-votes__labels \{[^}]*justify-content: center;[^}]*font-size: 10px;[^}]*font-weight: 700;/)
   assert.match(styles, /\.cosmos-governance-votes__bar/)
   assert.match(styles, /\.cosmos-gov-status--passed/)
 })
