@@ -23,7 +23,13 @@ test('Cosmos governance table mirrors validator numbering and keeps titles bound
   assert.match(page, /data-tooltip=\{titleTooltip \|\| undefined\}/)
   assert.doesNotMatch(page, /title=\{proposal\.title\}/)
   assert.match(styles, /\.cosmos-governance__proposal-id \{[^}]*min-width: 23px;[^}]*height: 19px;/)
-  assert.match(styles, /\.cosmos-governance__title \{[^}]*font-size: 12px;[^}]*font-weight: 600;[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;[^}]*white-space: nowrap;/)
+
+  const titleRule = styles.match(/\.cosmos-governance__title \{([^}]*)\}/)?.[1] || ''
+  assert.match(titleRule, /font-size:\s*12px;/)
+  assert.match(titleRule, /font-weight:\s*600;/)
+  assert.match(titleRule, /overflow:\s*hidden;/)
+  assert.match(titleRule, /text-overflow:\s*ellipsis;/)
+  assert.match(titleRule, /white-space:\s*nowrap;/)
 })
 
 test('Cosmos governance dates are deterministic English UTC rather than browser locale', () => {
@@ -40,7 +46,14 @@ test('Cosmos governance keeps proposal status and readable centered Gno-inspired
   assert.match(page, /cosmos-governance-votes__labels/)
   assert.match(page, /cosmos-governance-votes__bar/)
   assert.match(styles, /\.cosmos-governance__table th:nth-child\(6\) \{ text-align: center; \}/)
-  assert.match(styles, /\.cosmos-governance-votes__labels \{[^}]*width: 100%;[^}]*justify-content: center;[^}]*font-size: 10px;[^}]*font-weight: 700;[^}]*text-align: center;/)
+
+  const voteLabelsRule = styles.match(/\.cosmos-governance-votes__labels \{([^}]*)\}/)?.[1] || ''
+  assert.match(voteLabelsRule, /width:\s*100%;/)
+  assert.match(voteLabelsRule, /justify-content:\s*center;/)
+  assert.match(voteLabelsRule, /font-size:\s*10px;/)
+  assert.match(voteLabelsRule, /font-weight:\s*700;/)
+  assert.match(voteLabelsRule, /text-align:\s*center;/)
+
   assert.match(styles, /\.cosmos-governance-votes__bar/)
   assert.match(styles, /\.cosmos-gov-status--passed/)
 })
