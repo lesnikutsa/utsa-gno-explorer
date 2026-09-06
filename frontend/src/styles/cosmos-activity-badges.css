@@ -1,0 +1,45 @@
+/* Shared Cosmos action/type visual language for contextual activity tables. */
+.cosmos-account-activity .cosmos-account-activity__action,
+.cosmos-validator-detail .cosmos-validator-activity td > strong {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 20px;
+  align-items: center;
+  padding: 2px 7px;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.cosmos-account-activity .cosmos-account-activity__action.is-positive,
+.cosmos-validator-detail .cosmos-validator-activity td > strong.is-positive {
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 10%, transparent);
+}
+
+.cosmos-account-activity .cosmos-account-activity__action.is-negative,
+.cosmos-account-activity .cosmos-account-activity__action.is-failed,
+.cosmos-validator-detail .cosmos-validator-activity td > strong.is-negative {
+  color: var(--color-error);
+  background: color-mix(in srgb, var(--color-error) 10%, transparent);
+}
+
+.cosmos-account-activity .cosmos-account-activity__action.is-warning {
+  color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 10%, transparent);
+}
+
+.cosmos-account-activity .cosmos-account-activity__action.is-neutral,
+.cosmos-validator-detail .cosmos-validator-activity td > strong.is-neutral {
+  color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 10%, transparent);
+}
+
+/* Keep the page-specific secondary line compact below the shared badge. */
+.cosmos-account-activity td:first-child > code,
+.cosmos-validator-detail .cosmos-validator-activity td:first-child > code {
+  margin-top: 4px;
+}
